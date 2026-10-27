@@ -21,6 +21,7 @@ final class AppSettings {
     var coresPerJob: Int { didSet { defaults.set(coresPerJob, forKey: Key.coresPerJob) } }
 
     init() {
+        let defaults = UserDefaults.standard
         enginePath = defaults.string(forKey: Key.enginePath) ?? Self.engineNextToSource() ?? ""
         su2Path = defaults.string(forKey: Key.su2Path) ?? ""
         let parallel = defaults.integer(forKey: Key.maxParallelJobs)

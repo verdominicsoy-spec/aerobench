@@ -60,6 +60,7 @@ public final class EngineProcess: @unchecked Sendable {
             )
         }
 
+        let process = self.process
         let stdout = Pipe()
         let stderr = Pipe()
         process.standardOutput = stdout
@@ -117,11 +118,11 @@ public final class EngineProcess: @unchecked Sendable {
         cancelRequested = true
         let wasLaunched = launched
         lock.unlock()
+        let process = self.process
         guard wasLaunched, process.isRunning else { return }
 
         let pid = process.processIdentifier
         kill(pid, SIGTERM)
-        let process = self.process
         DispatchQueue.global().asyncAfter(deadline: .now() + grace) {
             guard process.isRunning else { return }
             // The engine leads its own process group, so this also takes
