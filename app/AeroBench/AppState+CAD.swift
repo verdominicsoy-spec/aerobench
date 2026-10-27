@@ -79,4 +79,66 @@ extension AppState {
             }
         }
     }
+
+    // MARK: Geometry check and repair
+
+    func checkGeometry() {
+        guard let url = cad.fileURL else { return }
+        cad.setReport(nil)
+        cad.checkJob = jobs.submit(command: "cad-check", params: [
+            "path": .string(url.path), "units": .string(cad.meshUnits.rawValue), "preset": .string(cad.preset.rawValue),
+        ], in: jobsRoot) { [weak self] item in
+            guard let self, self.cad.fileURL == url, item.status == .succeeded, let text = item.resultText else { return }
+            do {
+                self.cad.setReport(try GeometryReport.decode(resultFile: Data(text.utf8)))
+            } catch {
+                self.show("Could not read the geometry report", error)
+            }
+        }
+    }
+
+    /// Applies the safe fixes, asks where to save the result, then opens it.
+    func repairGeometry() {
+        guard let url = cad.fileURL else { return }
+        cad.repairSummary = nil
+        cad.repairJob = jobs.submit(command: "cad-repair", params: [
+            "path": .string(url.path), "units": .string(cad.meshUnits.rawValue),
+        ], in: jobsRoot) { [weak self] item in
+            guard let self, item.status == .succeeded, let text = item.resultText,
+                  let obj = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+                  let data = obj["data"] as? [String: Any], let name = data["output"] as? String
+            else { return }
+            let after = (data["after"] as? [String: Any])?["problems"] as? Int
+            self.cad.repairSummary = Self.describe(done: data["done"] as? [String: Any] ?? [:], remaining: after)
+            let panel = NSSavePanel()
+            panel.title = "Save Repaired File"
+            panel.nameFieldStringValue = name
+            panel.directoryURL = url.deletingLastPathComponent()
+            guard panel.runModal() == .OK, let dest = panel.url else { return }
+            do {
+                if FileManager.default.fileExists(atPath: dest.path) { try FileManager.default.removeItem(at: dest) }
+                try FileManager.default.copyItem(at: item.workdir.appendingPathComponent(name), to: dest)
+                self.openCAD(dest)
+            } catch {
+                self.show("Could not save the repaired file", error)
+            }
+        }
+    }
+
+    private static func describe(done: [String: Any], remaining: Int?) -> String {
+        let labels: [(String, String)] = [
+            ("vertices_merged", "vertices merged"), ("degenerate_removed", "degenerate faces removed"),
+            ("duplicates_removed", "duplicate faces removed"), ("faces_flipped", "faces flipped"),
+            ("holes_closed", "holes closed"), ("parts_changed", "parts fixed"), ("parts_sewn", "parts sewn"),
+        ]
+        var parts = labels.compactMap { key, label -> String? in
+            guard let n = done[key] as? Int, n > 0 else { return nil }
+            return "\(n) \(label)"
+        }
+        if parts.isEmpty { parts = ["nothing needed fixing"] }
+        let tail = remaining.map { $0 == 0 ? " No problems left." : " \($0) problems left that need a manual fix." } ?? ""
+        let text = parts.joined(separator: ", ")
+        let sentence: String = String(text.prefix(1)).uppercased() + String(text.dropFirst())
+        return sentence + "." + tail
+    }
 }

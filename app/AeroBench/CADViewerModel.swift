@@ -48,8 +48,18 @@ final class CADViewerModel {
         didSet { viewer.setMarkers(points) }
     }
 
+    // Geometry check
+    var checkJob: JobItem?
+    var repairJob: JobItem?
+    private(set) var report: GeometryReport?
+    var repairSummary: String?
+    var shownIssues: Set<String> = [] {
+        didSet { updateIssueMarkers() }
+    }
+
     init() {
         viewer = SceneKitViewer()
+        viewer.pointSize = 9
         viewer.onPick = { [weak self] pick in self?.picked(pick) }
     }
 
@@ -75,6 +85,7 @@ final class CADViewerModel {
         viewer.show(model)
         visibleBounds = model.bounds()
         status = .ready
+        setReport(nil)
     }
 
     func clear() {
@@ -84,6 +95,7 @@ final class CADViewerModel {
         hidden = []
         viewer.show(nil)
         status = .empty
+        setReport(nil)
     }
 
     func isVisible(_ id: Int) -> Bool { !hidden.contains(id) }
@@ -97,6 +109,41 @@ final class CADViewerModel {
     private func picked(_ pick: PickResult) {
         guard measuring else { return }
         points = points.count >= 2 ? [pick.point] : points + [pick.point]
+    }
+
+    // MARK: Geometry check
+
+    func setReport(_ report: GeometryReport?) {
+        self.report = report
+        repairSummary = nil
+        shownIssues = Set((report?.allIssues ?? []).filter { $0.count > 0 && !$0.points.isEmpty && $0.severity != "info" }.map(\.kind))
+    }
+
+    /// Distinct, fixed colours per issue kind so markers can be told apart.
+    static func color(for kind: String) -> SIMD4<Float> {
+        switch kind {
+        case "self_intersections": SIMD4(0.9, 0.1, 0.1, 1)
+        case "interference": SIMD4(0.2, 0.5, 1.0, 1)
+        case "non_manifold_edges": SIMD4(0.8, 0.0, 0.8, 1)
+        case "open_edges", "brep_free_edges": SIMD4(1.0, 0.6, 0.0, 1)
+        case "flipped": SIMD4(0.1, 0.75, 0.75, 1)
+        case "duplicate_faces": SIMD4(0.6, 0.35, 0.1, 1)
+        case "degenerate", "brep_small_edges": SIMD4(0.9, 0.85, 0.1, 1)
+        default: SIMD4(1.0, 0.2, 0.5, 1)
+        }
+    }
+
+    private func updateIssueMarkers() {
+        var positions: [SIMD3<Float>] = []
+        var colors: [SIMD4<Float>] = []
+        for issue in report?.allIssues ?? [] where shownIssues.contains(issue.kind) {
+            let c = Self.color(for: issue.kind)
+            for p in issue.points where p.count == 3 {
+                positions.append(SIMD3(Float(p[0]), Float(p[1]), Float(p[2])))
+                colors.append(c)
+            }
+        }
+        viewer.setPoints(positions, colors: colors)
     }
 
     // MARK: Tessellation cache

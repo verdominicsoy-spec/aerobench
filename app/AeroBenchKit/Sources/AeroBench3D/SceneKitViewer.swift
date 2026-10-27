@@ -30,6 +30,8 @@ public final class SceneKitViewer: Viewer3D {
 
     public var onPick: ((PickResult) -> Void)?
     public var snapToVertices = true
+    /// Screen size of points shown with setPoints, in points.
+    public var pointSize: CGFloat = 3
 
     public var projection: Projection = .perspective {
         didSet {
@@ -411,9 +413,9 @@ extension SceneKitViewer {
         let indices = (0..<UInt32(positions.count)).map { $0 }
         let element = SCNGeometryElement(data: indices.withUnsafeBufferPointer { Data(buffer: $0) }, primitiveType: .point,
                                          primitiveCount: positions.count, bytesPerIndex: 4)
-        element.pointSize = 3
-        element.minimumPointScreenSpaceRadius = 1
-        element.maximumPointScreenSpaceRadius = 6
+        element.pointSize = pointSize
+        element.minimumPointScreenSpaceRadius = max(1, pointSize / 3)
+        element.maximumPointScreenSpaceRadius = pointSize * 2
         let geometry = SCNGeometry(sources: sources, elements: [element])
         let material = SCNMaterial()
         material.lightingModel = .constant

@@ -28,7 +28,7 @@ from OCP.TopoDS import TopoDS
 from OCP.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_ShapeTool
 
 from ..job import EngineError
-from .tessellate import MM, _entry, _name, _read
+from .tessellate import MM, _entry, _matrix, _name, _read
 
 MAX_POINTS = 2000
 
@@ -47,29 +47,39 @@ def _subshapes(shape, kind):
         exp.Next()
 
 
-def _parts(doc):
-    """(label, name) of every leaf part, once each."""
+def _instances(doc):
+    """[(label, name, world matrix)] for every placed part, in metres."""
     tool = XCAFDoc_DocumentTool.ShapeTool_s(doc.Main())
     free = Sequence_TDF_Label()
     tool.GetFreeShapes(free)
-    out, seen = [], set()
+    out = []
 
-    def walk(label):
+    def walk(label, parent):
         if XCAFDoc_ShapeTool.IsAssembly_s(label):
+            here = parent @ _matrix(XCAFDoc_ShapeTool.GetShape_s(label).Location())
             comps = Sequence_TDF_Label()
             XCAFDoc_ShapeTool.GetComponents_s(label, comps)
             for i in range(1, comps.Length() + 1):
                 ref = TDF_Label()
                 XCAFDoc_ShapeTool.GetReferredShape_s(comps.Value(i), ref)
-                walk(ref)
+                walk(ref, here @ _matrix(XCAFDoc_ShapeTool.GetLocation_s(comps.Value(i))))
         else:
-            entry = _entry(label)
-            if entry not in seen:
-                seen.add(entry)
-                out.append((label, _name(label) or f"Part {len(out) + 1}"))
+            # A part's own location is in its shape, which the analysis uses as is.
+            out.append((label, _name(label) or f"Part {len(out) + 1}", parent))
 
     for i in range(1, free.Length() + 1):
-        walk(free.Value(i))
+        walk(free.Value(i), np.eye(4))
+    return out
+
+
+def _parts(doc):
+    """(label, name) of every distinct part, once each."""
+    seen, out = set(), []
+    for label, name, _ in _instances(doc):
+        entry = _entry(label)
+        if entry not in seen:
+            seen.add(entry)
+            out.append((label, name))
     return out
 
 
@@ -101,37 +111,48 @@ def analyse_shape(shape, tolerance: float) -> dict:
 
 def check_brep(path: Path, tolerance_mm: float = 0.01) -> dict:
     doc = _read(path)
-    parts = _parts(doc)
-    totals = {k: [] for k in ("invalid_faces", "invalid_edges", "free_edges", "self_intersecting_wires", "small_edges")}
+    instances = _instances(doc)
+    kinds = ("invalid_faces", "invalid_edges", "free_edges", "self_intersecting_wires", "small_edges")
+    counts = {k: 0 for k in kinds}
+    points = {k: [] for k in kinds}
     invalid_parts = []
-    for label, name in parts:
-        shape = XCAFDoc_ShapeTool.GetShape_s(label)
-        r = analyse_shape(shape, tolerance_mm)
-        if not r["valid"]:
-            invalid_parts.append(name)
-        for k in totals:
-            totals[k] += r[k]
+    analysed: dict[str, dict] = {}
+    for label, name, world in instances:
+        entry = _entry(label)
+        first = entry not in analysed
+        if first:
+            analysed[entry] = analyse_shape(XCAFDoc_ShapeTool.GetShape_s(label), tolerance_mm)
+        r = analysed[entry]
+        if first:  # problems count once per part, however many times it is placed
+            if not r["valid"]:
+                invalid_parts.append(name)
+            for k in kinds:
+                counts[k] += len(r[k])
+        for k in kinds:  # but are marked at every placement
+            if r[k]:
+                local = np.asarray(r[k], float)
+                points[k] += (local @ world[:3, :3].T + world[:3, 3]).tolist()
 
-    def issue(kind, title, severity, points, detail, fixable):
-        pts = np.asarray(points, float).reshape(-1, 3)
+    def issue(kind, title, severity, key, detail, fixable):
+        pts = np.asarray(points[key], float).reshape(-1, 3)
         if len(pts) > MAX_POINTS:
             pts = pts[np.linspace(0, len(pts) - 1, MAX_POINTS).round().astype(int)]
-        return {"kind": kind, "title": title, "severity": severity, "count": len(points), "detail": detail,
+        return {"kind": kind, "title": title, "severity": severity, "count": counts[key], "detail": detail,
                 "fixable": fixable, "points": np.round(pts, 6).tolist()}
 
     issues = [
-        issue("brep_invalid_faces", "Invalid faces (B-rep)", "error", totals["invalid_faces"],
+        issue("brep_invalid_faces", "Invalid faces (B-rep)", "error", "invalid_faces",
               "Faces that fail OpenCascade's validity check (bad boundaries, curves off the surface, wrong orientation).", True),
-        issue("brep_invalid_edges", "Invalid edges (B-rep)", "error", totals["invalid_edges"],
+        issue("brep_invalid_edges", "Invalid edges (B-rep)", "error", "invalid_edges",
               "Edges whose curves or tolerances are inconsistent.", True),
-        issue("brep_self_intersecting_wires", "Self-intersecting face boundaries", "error", totals["self_intersecting_wires"],
+        issue("brep_self_intersecting_wires", "Self-intersecting face boundaries", "error", "self_intersecting_wires",
               "A face's boundary loop crosses itself.", True),
-        issue("brep_small_edges", "Tiny edges", "warning", totals["small_edges"],
+        issue("brep_small_edges", "Tiny edges", "warning", "small_edges",
               f"Edges shorter than {tolerance_mm:g} mm. They often cause meshing and boolean failures.", True),
-        issue("brep_free_edges", "Free edges (open surfaces)", "warning", totals["free_edges"],
+        issue("brep_free_edges", "Free edges (open surfaces)", "warning", "free_edges",
               "Edges with a face on one side only. Expected for surface models; for solids it means gaps. Sewing can close small gaps.", True),
     ]
-    return {"parts": len(parts), "invalid_parts": invalid_parts, "issues": issues,
+    return {"parts": len(analysed), "invalid_parts": invalid_parts, "issues": issues,
             "problems": int(sum(i["count"] for i in issues if i["severity"] in ("error", "warning")))}
 
 

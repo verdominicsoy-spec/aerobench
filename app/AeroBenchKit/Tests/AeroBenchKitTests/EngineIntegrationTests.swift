@@ -157,6 +157,16 @@ final class EngineIntegrationTests: XCTestCase {
         XCTAssertGreaterThan(model.triangleCount, 100)
     }
 
+    func testGeometryCheckOfTheSampleSTEP() async throws {
+        let step = ModelLoaderTests.samples.appendingPathComponent("sample_car.step")
+        let job = try makeJob(JobSpec(command: "cad-check", params: ["path": .string(step.path), "preset": .string("coarse")]))
+        guard case .succeeded(let url) = await job.run(onEvent: { _ in }) else { return XCTFail() }
+        let report = try GeometryReport.decode(resultFile: Data(contentsOf: url))
+        XCTAssertEqual(report.brep?.parts, 4)
+        XCTAssertEqual(report.brep?.invalidParts, [])
+        XCTAssertEqual(report.mesh.issues.first { $0.kind == "non_manifold_edges" }?.count, 0)
+    }
+
     func testMissingEngineIsAMessageNotACrash() async throws {
         let (_, url) = try JobFolder.create(in: root, spec: JobSpec(command: "ping"))
         let job = EngineProcess(executableURL: URL(fileURLWithPath: "/nonexistent/aeroengine"), command: "ping",

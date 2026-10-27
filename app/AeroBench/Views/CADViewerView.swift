@@ -83,6 +83,8 @@ struct CADToolbar: View {
             .frame(width: 120)
             Divider().frame(height: 18)
             Toggle("Measure", isOn: $cad.measuring).toggleStyle(.button)
+            Button("Check Geometry") { app.checkGeometry() }
+                .disabled(cad.fileURL == nil || (cad.checkJob.map { !$0.status.isFinished } ?? false))
             Toggle("Snap to vertex", isOn: $cad.snap)
             Spacer()
             Toggle("FPS", isOn: $cad.showStatistics)
@@ -122,6 +124,9 @@ struct CADSidePanel: View {
                     LabeledContent("Triangles", value: cad.triangleCount.formatted())
                     if cad.fromCache { Text("Loaded from the tessellation cache").font(.caption).foregroundStyle(.secondary) }
                 }
+            }
+            if cad.checkJob != nil || cad.report != nil {
+                GeometryCheckSection()
             }
             if let model = cad.model {
                 Section {
@@ -192,4 +197,84 @@ struct CADStatusBar: View {
     }
 
     private func mm(_ x: Double) -> String { x.formatted(.number.precision(.fractionLength(2))) }
+}
+
+struct GeometryCheckSection: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        let cad = app.cad
+        Section {
+            if let job = cad.checkJob, !job.status.isFinished {
+                HStack {
+                    ProgressView(value: job.progress, total: 100)
+                    Text(job.progressMessage).font(.caption).lineLimit(1)
+                }
+            } else if let job = cad.checkJob, job.status == .failed {
+                Label(job.message ?? "The check failed", systemImage: "xmark.octagon").foregroundStyle(.red)
+            }
+            if let report = cad.report {
+                if report.problems == 0 {
+                    Label("No problems found", systemImage: "checkmark.seal").foregroundStyle(.green)
+                } else {
+                    Label("\(report.problems) problems", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                }
+                LabeledContent("Bodies", value: "\(report.mesh.bodies)")
+                LabeledContent("Closed", value: report.mesh.closed ? "yes, watertight" : "no")
+                if report.mesh.intersectionsComplete == false {
+                    Text("The pierced-face check stopped early on this model.").font(.caption).foregroundStyle(.orange)
+                }
+                ForEach(report.allIssues.filter { $0.count > 0 }) { issue in
+                    IssueRow(issue: issue)
+                }
+                let passed = report.allIssues.filter { $0.count == 0 }.map(\.title)
+                if !passed.isEmpty {
+                    Text("Passed: " + passed.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary)
+                }
+                if report.anyFixable {
+                    HStack {
+                        Button("Repair…") { app.repairGeometry() }
+                            .disabled(cad.repairJob.map { !$0.status.isFinished } ?? false)
+                        if let job = cad.repairJob, !job.status.isFinished { ProgressView().controlSize(.small) }
+                    }
+                    Text("Merges duplicate vertices, removes degenerate and duplicate faces, makes normals consistent and outward, closes small holes (STEP/IGES: shape fixing and sewing). Pierced faces and non-manifold edges are left for you.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let summary = cad.repairSummary {
+                    Text(summary).font(.caption)
+                }
+                if let job = cad.repairJob, job.status == .failed {
+                    Label(job.message ?? "Repair failed", systemImage: "xmark.octagon").foregroundStyle(.red)
+                }
+            }
+        } header: {
+            Text("Geometry check")
+        }
+    }
+}
+
+struct IssueRow: View {
+    @Environment(AppState.self) private var app
+    let issue: GeometryReport.Issue
+
+    var body: some View {
+        let cad = app.cad
+        let c = CADViewerModel.color(for: issue.kind)
+        VStack(alignment: .leading, spacing: 2) {
+            Toggle(isOn: Binding(
+                get: { cad.shownIssues.contains(issue.kind) },
+                set: { on in if on { cad.shownIssues.insert(issue.kind) } else { cad.shownIssues.remove(issue.kind) } })) {
+                HStack {
+                    Circle().fill(Color(red: Double(c.x), green: Double(c.y), blue: Double(c.z))).frame(width: 10, height: 10)
+                    Text(issue.title)
+                    Spacer()
+                    Text("\(issue.count)").monospacedDigit()
+                        .foregroundStyle(issue.severity == "error" ? .red : issue.severity == "warning" ? .orange : .secondary)
+                }
+            }
+            .toggleStyle(.checkbox)
+            .disabled(issue.points.isEmpty)
+            Text(issue.detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
 }

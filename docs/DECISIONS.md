@@ -329,3 +329,19 @@ T8.4.5), each with its rule number and source. FSUK applies the FS geometry
 limits unchanged. The limits are relative to the car (tyres, head
 restraint), so Wing Lab turns them into a box only with the car's
 reference points.
+
+**Geometry check and repair.** Written in NumPy rather than pulling in
+MeshLab or similar: vertices are welded (1e-7 of the model size), then
+degenerate faces, duplicate faces (including back-to-back), open and
+non-manifold edges and inconsistent winding come from edge counting, and
+pierced faces from a uniform-grid broad phase plus segment-triangle tests
+(crossing a triangle's edge counts, merely touching does not). Candidate
+pairs are streamed in chunks so memory stays bounded; a million-triangle
+mesh checks in about 17 s on the cloud container. STEP/IGES are also checked
+as B-rep through OpenCascade (BRepCheck validity per face and edge,
+ShapeAnalysis_Wire self-intersection and tiny edges, free edges); OCP 8 cannot
+return BRepCheck's status lists, hence this route. B-rep problem markers are
+placed at every instance of a part, counted once per part. Repair only does
+what cannot make things worse; pierced faces and non-manifold edges need a
+remesh or boolean and a person's judgement, so they are reported only. The
+repaired file is never written over the original: you choose where it goes.

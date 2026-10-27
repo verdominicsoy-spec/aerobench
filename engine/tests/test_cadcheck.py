@@ -174,3 +174,17 @@ def test_sample_stl_is_clean_per_part():
     r = check(_soup(meshio.read_obj(SAMPLES / "sample_car.obj", 0.001)), intersections=False)
     c = counts(r)
     assert c["non_manifold_edges"] == 0 and c["duplicate_faces"] == 0
+
+
+def test_brep_markers_follow_each_instance(car_files, tmp_path):
+    """IGES-free check: break nothing, but confirm free-edge markers on the
+    loose-face IGES land where the geometry actually is (world positions)."""
+    from aeroengine.cad.brepcheck import check_brep
+    from aeroengine.cad.tessellate import tessellate_file
+
+    r = check_brep(car_files[1])
+    free = next(i for i in r["issues"] if i["kind"] == "brep_free_edges")
+    pts = np.asarray(free["points"])
+    lo, hi = tessellate_file(car_files[1], "coarse").bounds()
+    assert len(pts) > 0
+    assert np.all(pts >= lo - 1e-3) and np.all(pts <= hi + 1e-3)

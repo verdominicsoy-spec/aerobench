@@ -127,6 +127,16 @@ bounds readout follows what is visible. Turn on Measure and click two points;
 with Snap to vertex on, clicks snap to the nearest mesh vertex, so edges and
 corners measure exactly. STL and OBJ carry no units, so pick mm, m or in.
 
+**Check Geometry** looks for duplicate vertices and faces, degenerate
+faces, open edges and holes, non-manifold edges, flipped normals and pierced
+faces (within a part and between parts); for STEP/IGES also OpenCascade's
+B-rep validity, self-intersecting face boundaries, tiny edges and free edges.
+Problems are listed with counts and shown as coloured markers on the model.
+**Repair…** applies only the safe fixes (merge vertices, remove degenerate
+and duplicate faces, consistent outward normals, close small holes; shape
+fixing and sewing for STEP/IGES), saves the result where you choose and opens
+it. Pierced faces and non-manifold edges are flagged, never guessed at.
+
 `samples/sample_car.step` (and `.igs`, `.stl`, `.obj`) is a synthetic named
 assembly with known dimensions for checking all of this: the chassis is a
 1500 × 600 × 300 mm box with a corner at the origin, and the wheelbase is
@@ -166,7 +176,8 @@ distance; under about 5 ΔE means a good fit. *Reconstruct* builds the volume.
 *Save Calibration* writes the setup as JSON to reuse on later videos; it is
 also saved with the project in `flow/`.
 
-**Explore**: isosurfaces (several at once, colours from the colour map, with
+**Explore**: the object (the no-fluid space where geometry was, from the mask
+colours), isosurfaces (several at once, colours from the colour map, with
 opacity), a value window that shows voxels between two values, and a slice
 scrubber with the original frame beside the reconstructed plane, in mm.
 Export isosurfaces as .glb or .obj (mm) and the volume as .npz or .vti
