@@ -112,7 +112,7 @@ final class FlowFieldModel {
     // MARK: Calibration edits from the frame canvas
 
     func apply(rect: CGRect) {
-        let r = [rect.minX, rect.minY, rect.maxX, rect.maxY].map { $0.rounded() }
+        let r = [rect.minX, rect.minY, rect.maxX, rect.maxY].map { Double($0.rounded()) }
         switch tool {
         case .crop: calibration.crop = r
         case .exclude: calibration.exclude.append(r)
@@ -123,7 +123,8 @@ final class FlowFieldModel {
 
     func apply(line from: CGPoint, to: CGPoint) {
         guard tool == .legend else { return }
-        calibration.colormap = .init(preset: nil, legend: .init(frame: frameIndex, p0: [from.x, from.y], p1: [to.x, to.y], halfWidth: 3))
+        calibration.colormap = .init(preset: nil, legend: .init(frame: frameIndex, p0: [Double(from.x), Double(from.y)],
+                                                                p1: [Double(to.x), Double(to.y)], halfWidth: 3))
         tool = .none
     }
 
