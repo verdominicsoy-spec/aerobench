@@ -214,3 +214,57 @@ def test_reconstruct_reports_a_bad_calibration(engine, tmp_path):
     cal["spatial"] = {"mode": "points", "frames": []}
     code, events, _ = engine.run("flow-reconstruct", {"params": {"source": str(tmp_path / "s.mp4"), "calibration": cal}}, tmp_path / "job")
     assert code == 1 and events[-1]["type"] == "error"
+
+
+# The object (no-fluid region) ----------------------------------------------
+
+def test_object_surface_recovers_the_body(sweep):
+    from aeroengine.flow.iso import object_surface
+
+    _, _, vol, _ = sweep
+    mesh = object_surface(vol, ground_z=None)
+    assert mesh.triangle_count > 100
+    lo, hi = mesh.positions.min(0), mesh.positions.max(0)
+    x_end, half_y, z0, z1 = synthetic.BODY
+    cell = vol.y[1] - vol.y[0]
+    assert hi[0] == pytest.approx(x_end, abs=3 * (vol.x[1] - vol.x[0]))
+    assert hi[1] == pytest.approx(half_y, abs=2 * cell) and lo[1] == pytest.approx(-half_y, abs=2 * cell)
+    assert lo[2] == pytest.approx(z0, abs=2 * cell) and hi[2] == pytest.approx(z1, abs=2 * cell)
+    exact = x_end * 2 * half_y * (z1 - z0)
+    assert enclosed_volume(mesh) == pytest.approx(exact, rel=0.15)
+
+
+def test_object_ignores_the_ground_slab(tmp_path):
+    from aeroengine.flow.iso import object_surface
+
+    cal = synthetic.make_sweep(tmp_path / "p.mp4", frames=21, perspective=True)
+    # A window reaching below the ground, where the frames are white.
+    cal["window"] = [-0.5, 0.5, -0.15, 0.6]
+    vol, _ = reconstruct(tmp_path / "p.mp4", Calibration(cal))
+    with_ground = object_surface(vol, ground_z=None)
+    without = object_surface(vol, ground_z=0.0)
+    assert without.positions[:, 2].min() > 0
+    assert enclosed_volume(without) < enclosed_volume(with_ground)
+
+
+def test_exclusions_and_frame_borders_are_not_solid(sweep):
+    _, cal, vol, _ = sweep
+    # Nothing outside the synthetic body (and ground) was drawn white.
+    X, Y, Z = np.meshgrid(vol.x, vol.y, vol.z, indexing="ij")
+    x_end, half_y, z0, z1 = synthetic.BODY
+    # (The outermost cells sample the crop edge, which in the synthetic scene
+    # is the white surround; object_surface drops that layer.)
+    inner = (np.abs(Y) < synthetic.Y_HALF - 0.02) & (Z > 0.03) & (Z < synthetic.Z_TOP - 0.02)
+    far_from_body = (X > x_end + 0.1) & inner
+    assert vol.solid[far_from_body].sum() == 0
+
+
+def test_flow_object_command(engine, tmp_path):
+    cal = synthetic.make_sweep(tmp_path / "s.mp4", frames=21)
+    rec = tmp_path / "rec"
+    code, events, err = engine.run("flow-reconstruct", {"params": {"source": str(tmp_path / "s.mp4"), "calibration": cal}}, rec, timeout=180)
+    assert code == 0, (events, err)
+    code, events, err = engine.run("flow-object", {"params": {"volume": str(rec / "volume.npz")}}, tmp_path / "obj")
+    assert code == 0, (events, err)
+    data = json.loads((tmp_path / "obj" / "result.json").read_text())["data"]
+    assert data["triangles"] > 0 and (tmp_path / "obj" / "object.glb").exists()

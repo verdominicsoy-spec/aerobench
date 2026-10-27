@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+from scipy.ndimage import gaussian_filter
 from skimage.measure import marching_cubes
 
 from ..cad.meshio import Mesh, vertex_normals
@@ -30,6 +31,39 @@ def isosurface(vol: Volume, level: float, fill: float | None = None) -> Mesh:
         pos[:, axis] = np.interp(verts[:, axis], np.arange(len(padded)), padded)
     idx = faces.astype(np.uint32)
     return Mesh(pos.astype(np.float32), vertex_normals(pos, idx), idx, f"Cp0 = {level:g}")
+
+
+def _mesh_from_field(field: np.ndarray, level: float, pad: float, vol: Volume, name: str) -> Mesh:
+    field = np.pad(field.astype(np.float32), 1, constant_values=pad)
+    verts, faces, _, _ = marching_cubes(field, level)
+    pos = np.empty_like(verts, dtype=np.float64)
+    for axis, coords in enumerate((vol.x, vol.y, vol.z)):
+        padded = np.concatenate([[coords[0]], coords, [coords[-1]]])
+        pos[:, axis] = np.interp(verts[:, axis], np.arange(len(padded)), padded)
+    idx = faces.astype(np.uint32)
+    return Mesh(pos.astype(np.float32), vertex_normals(pos, idx), idx, name)
+
+
+def object_surface(vol: Volume, ground_z: float | None = 0.0, smooth: float = 1.0) -> Mesh:
+    """The no-fluid region (where the video showed geometry colours) as a
+    closed surface. Everything at or below `ground_z` is ignored so the white
+    below the ground plane does not show up as a slab; None keeps it."""
+    if vol.solid is None:
+        from ..job import EngineError
+
+        raise EngineError("this volume has no geometry mask", "reconstruct it again to show the object")
+    occ = vol.solid.astype(np.float32)
+    # The outermost layer in y and z samples the crop boundary, which can
+    # catch white margins around the plot; it is never trustworthy geometry.
+    occ[:, [0, -1], :] = 0
+    occ[:, :, [0, -1]] = 0
+    if ground_z is not None:
+        occ[:, :, vol.z <= ground_z + 0.5 * (vol.z[1] - vol.z[0])] = 0
+    if smooth > 0:
+        occ = gaussian_filter(occ, smooth)
+    if occ.max() <= 0.5:
+        return Mesh(np.zeros((0, 3), np.float32), np.zeros((0, 3), np.float32), np.zeros((0, 3), np.uint32), "Object")
+    return _mesh_from_field(occ, 0.5, 0.0, vol, "Object")
 
 
 def enclosed_volume(mesh: Mesh) -> float:

@@ -1,0 +1,44 @@
+{
+  "name": "Formula Student Rules 2027 v1.0 (FSG) with FSUK 2027 v1.0 supplement",
+  "note": "Aero geometry limits for Wing Lab. Values are data, not code: edit or add a file for a new season. Distances are relative to the car's own reference points (tyres, head restraint), so they become a box only once the car geometry is known.",
+  "sources": [
+    {"title": "Formula Student Rules 2027 v1.0", "url": "https://www.formulastudent.de/fileadmin/user_upload/all/2027/rules/FS_Rules_2027_v1.0.pdf"},
+    {"title": "Formula Student UK 2027 Rules v1.0 (supplementary)", "url": "https://www.imeche.org/docs/default-source/1-oscar/formula-student/2027/rules/fsuk-2027-rules---v1-0-supplementary.pdf?sfvrsn=2"}
+  ],
+  "height_mm": {
+    "forward_of_front_tyre_leading_edge_max": {"value": 350, "rule": "FS T8.2.1"},
+    "rearward_of_head_restraint_max": {"value": 1100, "rule": "FS T8.2.1"},
+    "elsewhere_max": {"value": "top of the nearer side's tyres", "rule": "FS T8.2.1"},
+    "ground_clearance_min": {"value": 30, "rule": "FS T2.2.1, static, any part other than tyres, driver seated"}
+  },
+  "length_mm": {
+    "rearward_of_rear_tyres_max": {"value": 250, "rule": "FS T8.2.3"},
+    "forward_of_front_tyres_max": {"value": 700, "rule": "FS T8.2.3"}
+  },
+  "width_mm": {
+    "below_tyre_top_rear_of_front_leading_edge": {"value": "inside the plane touching the outermost points of front and rear wheel/tyre", "rule": "FS T8.2.2"},
+    "rear_tyre_top_to_700_inboard_of_rear_tyre_inner": {"value": 150, "rule": "FS T8.2.2, FS T2.1.3"},
+    "700_to_1100_max": {"value": "not outboard of the rear wheel/tyre's outermost point", "rule": "FS T8.2.2"}
+  },
+  "keep_out_mm": {
+    "around_tyres_side_view": {"value": 75, "rule": "FS T2.1.3, in front of and behind each tyre, outboard of the tyre's inboard plane"},
+    "rear_tyre_zone_height": {"value": 700, "rule": "FS T2.1.3"},
+    "front_variable_cuboids": {"value": [75, 250], "rule": "FS T2.1.4, two 75 x 250 mm cuboids on the ground ahead of the front tyres"}
+  },
+  "conditions": {"value": "wheels straight, any suspension setup, with or without driver", "rule": "FS T8.2.4"},
+  "edge_radius_mm": {
+    "fs_forward_facing_min": {"value": 3, "rule": "FS T2.4.1"},
+    "fs_other_min": {"value": 1, "rule": "FS T2.4.1"},
+    "fsuk_forward_facing_horizontal_min": {"value": 5, "rule": "FSUK T8.4.5"},
+    "fsuk_forward_facing_vertical_min": {"value": 3, "rule": "FSUK T8.4.5"}
+  },
+  "strength": {
+    "distributed_load": {"value": "200 N over at least 225 cm2, at most 10 mm deflection", "rule": "FS T8.3.1"},
+    "point_load": {"value": "50 N any direction, at most 25 mm deflection", "rule": "FS T8.3.2"},
+    "fsuk_reduced_test_load": {"value": "a lower load (e.g. 100 N) may be used, deflection limits scaled", "rule": "FSUK T8.3.3"}
+  },
+  "other": {
+    "no_ground_contact": {"value": "no sliding skirts or devices touching the track", "rule": "FS T2.2.2"},
+    "no_fans_under_vehicle": {"value": "no powered device moving air from under the car", "rule": "FSUK T8.1.2"}
+  }
+}

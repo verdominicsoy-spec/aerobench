@@ -91,11 +91,13 @@ class Volume:
     vmin: float
     vmax: float
     colormap_rgb: np.ndarray  # (n, 3) 0..1, low to high
+    solid: np.ndarray | None = None  # (nx, ny, nz) uint8, 1 where a mask colour (geometry) was seen
 
     def save(self, folder: Path, calibration: dict, source: str) -> dict:
+        extra = {} if self.solid is None else {"solid": self.solid.astype(np.uint8)}
         np.savez_compressed(folder / "volume.npz", values=self.values, x=self.x, y=self.y, z=self.z,
                             frames=np.asarray(self.frames), value_range=np.array([self.vmin, self.vmax]),
-                            colormap=self.colormap_rgb, calibration=json.dumps(calibration), source=source)
+                            colormap=self.colormap_rgb, calibration=json.dumps(calibration), source=source, **extra)
         self.values.astype("<f4").tofile(folder / "volume.bin")
         meta = {
             "shape": list(self.values.shape),
@@ -107,6 +109,7 @@ class Volume:
             "value_range": [self.vmin, self.vmax],
             "colormap": np.round(self.colormap_rgb[:: max(len(self.colormap_rgb) // 64, 1)], 4).tolist(),
             "units": "m",
+            "has_solid": self.solid is not None,
         }
         (folder / "volume.json").write_text(json.dumps(meta))
         return meta
@@ -115,7 +118,8 @@ class Volume:
     def load(cls, npz: Path) -> "Volume":
         d = np.load(npz, allow_pickle=False)
         vr = d["value_range"]
-        return cls(d["values"], d["x"], d["y"], d["z"], d["frames"].tolist(), float(vr[0]), float(vr[1]), d["colormap"])
+        solid = d["solid"] if "solid" in d.files else None
+        return cls(d["values"], d["x"], d["y"], d["z"], d["frames"].tolist(), float(vr[0]), float(vr[1]), d["colormap"], solid)
 
 
 def build_lut(cal: Calibration, source: FrameSource) -> colormap.ColorLUT:
@@ -155,7 +159,7 @@ def world_grid(cal: Calibration, frames: list[int], width: int) -> tuple[np.ndar
 
 
 def _invert_slice(frame: np.ndarray, cal: Calibration, s, y: np.ndarray, z: np.ndarray,
-                  lut: colormap.ColorLUT, excl: np.ndarray) -> tuple[np.ndarray, dict]:
+                  lut: colormap.ColorLUT, excl: np.ndarray) -> tuple[np.ndarray, np.ndarray, dict]:
     # Pre-shrink so the grid samples about one pixel per cell (no aliasing).
     dy = y[1] - y[0]
     k = max(int(np.floor(s.sx * dy)), 1)
@@ -173,9 +177,14 @@ def _invert_slice(frame: np.ndarray, cal: Calibration, s, y: np.ndarray, z: np.n
     rgb = cv2.remap(small, mu, mv, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(255, 255, 255))
     ex = cv2.remap(small_ex, mu, mv, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=1.0) > 0.01
     values, dist = lut.invert(rgb)
-    empty = ex | (dist > cal.threshold)
+    # Mask colours are geometry: no fluid there. Kept separately from other
+    # empty cells (excluded, outside the frame, unrecognised colour) so the
+    # object can be shown.
+    solid = np.zeros(rgb.shape[:2], bool)
     for c in cal.mask_colors:
-        empty |= colormap.lab_distance(rgb, c) < cal.mask_tolerance
+        solid |= colormap.lab_distance(rgb, c) < cal.mask_tolerance
+    solid &= ~ex
+    empty = ex | (dist > cal.threshold) | solid
     values = values.astype(np.float32)
     if cal.median > 1 and (~empty).any():
         # NaN-aware median: fill empty cells from their nearest neighbour,
@@ -185,7 +194,7 @@ def _invert_slice(frame: np.ndarray, cal: Calibration, s, y: np.ndarray, z: np.n
     values[empty] = np.nan
     stats = {"median_dE": float(np.median(dist[~empty])) if (~empty).any() else None,
              "empty_fraction": float(empty.mean())}
-    return values, stats
+    return values, solid, stats
 
 
 def reconstruct(source_path: Path, cal: Calibration, progress: Callable[[float, str], None] | None = None) -> tuple[Volume, dict]:
@@ -196,40 +205,41 @@ def reconstruct(source_path: Path, cal: Calibration, progress: Callable[[float, 
     y, z = world_grid(cal, frames, cal.working_width)
     excl = _exclusion_mask(cal, source.size)
     values = np.full((len(frames), len(y), len(z)), np.nan, np.float32)
+    solid = np.zeros(values.shape, bool)
     x = np.array([cal.plane_x(f, frames[0], frames[-1]) for f in frames])
     stats = []
     for n, (i, frame) in enumerate(source.frames(frames)):
         k = frames.index(i)
-        values[k], st = _invert_slice(frame, cal, cal.scale_at(i), y, z, lut, excl)
+        values[k], solid[k], st = _invert_slice(frame, cal, cal.scale_at(i), y, z, lut, excl)
         stats.append(st)
         if n % 5 == 0 or n == len(frames) - 1:
             report(5 + 90 * (n + 1) / len(frames), f"plane {n + 1}/{len(frames)}")
     if len(stats) < len(frames):
         raise EngineError(f"the video ended early: read {len(stats)} of {len(frames)} frames")
     if x[0] > x[-1]:  # keep x increasing
-        values, x, frames = values[::-1].copy(), x[::-1].copy(), frames[::-1]
+        values, solid, x, frames = values[::-1].copy(), solid[::-1].copy(), x[::-1].copy(), frames[::-1]
     if cal.window is None:
-        values, y, z = _trim(values, y, z)
+        values, solid, y, z = _trim(values, solid, y, z)
     dEs = [s["median_dE"] for s in stats if s["median_dE"] is not None]
     summary = {
         "planes": len(frames),
         "median_dE": float(np.median(dEs)) if dEs else None,
         "empty_fraction": float(np.mean([s["empty_fraction"] for s in stats])),
     }
-    return Volume(values, x, y, z, frames, cal.vmin, cal.vmax, lut.rgb), summary
+    return Volume(values, x, y, z, frames, cal.vmin, cal.vmax, lut.rgb, solid.astype(np.uint8)), summary
 
 
-def _trim(values: np.ndarray, y: np.ndarray, z: np.ndarray, margin: int = 2):
+def _trim(values: np.ndarray, solid: np.ndarray, y: np.ndarray, z: np.ndarray, margin: int = 2):
     """Drops rows and columns that are empty in every plane (below ground,
     outside every frame)."""
     seen = np.isfinite(values).any(axis=0)
     if not seen.any():
-        return values, y, z
+        return values, solid, y, z
     jy = np.where(seen.any(axis=1))[0]
     jz = np.where(seen.any(axis=0))[0]
     a, b = max(jy[0] - margin, 0), min(jy[-1] + margin + 1, len(y))
     c, d = max(jz[0] - margin, 0), min(jz[-1] + margin + 1, len(z))
-    return values[:, a:b, c:d].copy(), y[a:b], z[c:d]
+    return values[:, a:b, c:d].copy(), solid[:, a:b, c:d].copy(), y[a:b], z[c:d]
 
 
 def preview(source_path: Path, cal: Calibration, frame_index: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict, np.ndarray]:
@@ -239,7 +249,7 @@ def preview(source_path: Path, cal: Calibration, frame_index: int) -> tuple[np.n
     lut = build_lut(cal, source)
     y, z = world_grid(cal, frames, cal.working_width)
     excl = _exclusion_mask(cal, source.size)
-    values, stats = _invert_slice(source.frame(frame_index), cal, cal.scale_at(frame_index), y, z, lut, excl)
+    values, _, stats = _invert_slice(source.frame(frame_index), cal, cal.scale_at(frame_index), y, z, lut, excl)
     return values, y, z, stats, lut.rgb
 
 

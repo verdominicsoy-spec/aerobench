@@ -115,6 +115,23 @@ def flow_iso(ctx: JobContext) -> dict:
     return {"glb": "iso.glb", "obj": "iso.obj" if meshes else None, "levels": out}
 
 
+@command("flow-object")
+def flow_object(ctx: JobContext) -> dict:
+    from ..cad.meshio import Model, Node, write_glb, write_obj
+    from ..flow.iso import enclosed_volume, object_surface
+    from ..flow.reconstruct import Volume
+
+    vol = Volume.load(_path(ctx, "volume"))
+    ground = ctx.params.get("ground_z", 0.0)
+    mesh = object_surface(vol, None if ground is None else float(ground), float(ctx.params.get("smooth", 1.0)))
+    model = Model([mesh] if mesh.triangle_count else [], [Node("Object", mesh=0 if mesh.triangle_count else None)])
+    write_glb(model, ctx.workdir / "object.glb")
+    if mesh.triangle_count:
+        write_obj(model, ctx.workdir / "object.obj", scale=1000.0)
+    return {"glb": "object.glb", "triangles": mesh.triangle_count,
+            "volume": enclosed_volume(mesh) if mesh.triangle_count else 0.0}
+
+
 @command("flow-export")
 def flow_export(ctx: JobContext) -> dict:
     from ..flow.iso import write_vti
