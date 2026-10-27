@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		AB00000000000000000000C3 /* AeroBenchKit in Frameworks */ = {isa = PBXBuildFile; productRef = AB00000000000000000000C2 /* AeroBenchKit */; };
+		AB00000000000000000000C6 /* AeroBench3D in Frameworks */ = {isa = PBXBuildFile; productRef = AB00000000000000000000C5 /* AeroBench3D */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +29,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AB00000000000000000000C3 /* AeroBenchKit in Frameworks */,
+				AB00000000000000000000C6 /* AeroBench3D in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -71,6 +73,7 @@
 			name = AeroBench;
 			packageProductDependencies = (
 				AB00000000000000000000C2 /* AeroBenchKit */,
+				AB00000000000000000000C5 /* AeroBench3D */,
 			);
 			productName = AeroBench;
 			productReference = AB00000000000000000000A4 /* AeroBench.app */;
@@ -265,6 +268,10 @@
 		AB00000000000000000000C2 /* AeroBenchKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = AeroBenchKit;
+		};
+		AB00000000000000000000C5 /* AeroBench3D */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AeroBench3D;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

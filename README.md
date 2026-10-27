@@ -5,20 +5,21 @@ Flow Field Viewer and Lap Sim. SwiftUI front end, Python compute engine. The
 full brief is in [docs/AeroBench_spec.pdf](docs/AeroBench_spec.pdf), and every
 judgement call made while building it is in [docs/DECISIONS.md](docs/DECISIONS.md).
 
-**Status:** Phase 1 (Lap Sim) built. Wing Lab, CAD Viewer and Flow Field Viewer are empty screens for now.
+**Status:** Phases 0–2 built (foundations, Lap Sim, CAD Viewer). Flow Field Viewer and Wing Lab are empty screens for now.
 
 ## Layout
 
 ```
 app/                  Xcode project (AeroBench.xcodeproj)
   AeroBench/          SwiftUI app sources
-  AeroBenchKit/       Swift package: engine runner, project and job files (unit tested)
+  AeroBenchKit/       Swift package: engine runner, project/job files, mesh loaders (AeroBenchKit)
+                      and the shared 3D viewer core (AeroBench3D), unit tested
 engine/               aeroengine Python package, managed with uv
   src/aeroengine/     CLI, job context, commands
   tests/              pytest suite
   scripts/            one-off tools (fetch_airfoils.py arrives in Phase 4)
 data/airfoils/        airfoil library, fetched not committed
-samples/              small test inputs
+samples/              small test inputs, including a synthetic CAD assembly
 docs/                 spec and DECISIONS.md
 ```
 
@@ -98,6 +99,34 @@ cat > /tmp/job.json <<'JSON'
 JSON
 uv run aeroengine lapsim --input /tmp/job.json --workdir "$(mktemp -d)"
 ```
+
+## CAD Viewer
+
+Drop a STEP, IGES, STL, OBJ or glb file on the window, or use Open. STL, OBJ
+and glb load directly. STEP and IGES go through the engine, which tessellates
+them with OpenCascade (coarse, medium or fine) into a .glb that keeps the
+assembly tree and part names; the result is cached in
+`~/Library/Caches/dev.aerobench.AeroBench/tessellations`, so reopening the same
+file at the same preset is instant.
+
+Drag to orbit, scroll or pinch to zoom, two-finger drag to pan (SceneKit's
+standard trackpad controls). Front/Back/Left/Right/Top/Bottom/Iso views, Fit,
+and perspective or orthographic. Untick parts in the tree to hide them; the
+bounds readout follows what is visible. Turn on Measure and click two points;
+with Snap to vertex on, clicks snap to the nearest mesh vertex, so edges and
+corners measure exactly. STL and OBJ carry no units, so pick mm, m or in.
+
+`samples/sample_car.step` (and `.igs`, `.stl`, `.obj`) is a synthetic named
+assembly with known dimensions for checking all of this: the chassis is a
+1500 × 600 × 300 mm box with a corner at the origin, and the wheelbase is
+1530 mm. For a frame-rate check at about a million triangles:
+
+```sh
+cd engine
+uv run python scripts/make_sample_cad.py --dense   # writes samples/dense_1M.stl (~50 MB, gitignored)
+```
+
+Then open it and tick FPS.
 
 ## The engine on its own
 

@@ -36,8 +36,7 @@ struct ContentView: View {
                 ToolPlaceholderView(title: "Wing Lab", systemImage: "airplane", phase: 4,
                                     summary: "Multi-element wings from the airfoil library, inviscid preview, SU2 runs and gap and angle optimisation.")
             case .cadViewer:
-                ToolPlaceholderView(title: "CAD Viewer", systemImage: "cube", phase: 2,
-                                    summary: "Open and inspect STEP, IGES, STL and OBJ files.")
+                CADViewerView()
             case .flowField:
                 ToolPlaceholderView(title: "Flow Field Viewer", systemImage: "wind", phase: 3,
                                     summary: "Rebuild a 3D Cp0 field from a video of section planes.")
@@ -48,6 +47,14 @@ struct ContentView: View {
             }
         }
         .navigationTitle(windowTitle)
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let url = urls.first,
+                  CADViewerModel.openableExtensions.contains(url.pathExtension.lowercased())
+            else { return false }
+            selection = .cadViewer
+            app.openCAD(url)
+            return true
+        }
         .alert(
             app.alert?.title ?? "",
             isPresented: Binding(get: { app.alert != nil }, set: { if !$0 { app.alert = nil } }),

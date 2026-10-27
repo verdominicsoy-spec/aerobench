@@ -1,4 +1,5 @@
 import XCTest
+import simd
 @testable import AeroBenchKit
 
 /// Runs the real Python engine. Set AEROBENCH_ENGINE to the repo's engine
@@ -87,6 +88,35 @@ final class EngineIntegrationTests: XCTestCase {
         XCTAssertEqual(result.deltaT?.count, result.track.s.count)
         XCTAssertLessThan(try XCTUnwrap(result.a.sensitivity).dtDcla, 0)
         XCTAssertEqual(result.a.car, setup.carA)
+    }
+
+    /// Phase 2 acceptance check, automated: STEP through the engine to glb
+    /// and into Swift, then measure known dimensions vertex to vertex.
+    func testSTEPTessellatesAndMeasuresWithinATenthOfAMillimetre() async throws {
+        let step = ModelLoaderTests.samples.appendingPathComponent("sample_car.step")
+        let job = try makeJob(JobSpec(command: "tessellate", params: ["path": .string(step.path), "preset": .string("medium")]))
+        guard case .succeeded = await job.run(onEvent: { _ in }) else { return XCTFail() }
+        let model = try ModelLoader.load(job.workdir.appendingPathComponent("model.glb"))
+
+        let root = try XCTUnwrap(model.roots.first)
+        XCTAssertEqual(root.name, "Sample Car")
+        XCTAssertEqual(root.children.map(\.name),
+                       ["Chassis", "Wheel FL", "Wheel FR", "Wheel RL", "Wheel RR", "Front Wing", "Rear Wing"])
+        XCTAssertEqual(model.meshes.count, 4)
+        XCTAssertEqual(model.instances().count, 9)
+
+        let chassis = try XCTUnwrap(model.instances().first { $0.node.name == "Chassis" })
+        let corners = model.meshes[chassis.node.mesh!].positions.map { p -> SIMD3<Double> in
+            let w = chassis.world * SIMD4<Float>(p, 1)
+            return SIMD3(Double(w.x), Double(w.y), Double(w.z))
+        }
+        func corner(_ x: Double, _ y: Double, _ z: Double) throws -> SIMD3<Double> {
+            try XCTUnwrap(corners.min { simd_distance($0, SIMD3(x, y, z)) < simd_distance($1, SIMD3(x, y, z)) })
+        }
+        let length = Measure.distance(try corner(0, 0, 0), try corner(1.5, 0, 0)) * 1000
+        let diagonal = Measure.distance(try corner(0, 0, 0), try corner(1.5, 0.6, 0.3)) * 1000
+        XCTAssertEqual(length, 1500, accuracy: 0.1)
+        XCTAssertEqual(diagonal, (1500.0 * 1500 + 600 * 600 + 300 * 300).squareRoot(), accuracy: 0.1)
     }
 
     func testMissingEngineIsAMessageNotACrash() async throws {

@@ -19,6 +19,7 @@ final class AppState {
 
     let settings: AppSettings
     let jobs: JobManager
+    let cad: CADViewerModel
     var project: OpenProject?
     var recentProjects: [URL] = []
     var alert: AppAlert?
@@ -39,6 +40,7 @@ final class AppState {
         let settings = AppSettings()
         self.settings = settings
         jobs = JobManager(settings: settings)
+        cad = CADViewerModel()
         recentProjects = (UserDefaults.standard.stringArray(forKey: Self.recentsKey) ?? [])
             .map { URL(fileURLWithPath: $0) }
             .filter { ProjectStore.isProject($0) }
