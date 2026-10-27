@@ -5,7 +5,12 @@ import simd
 
 @MainActor
 public final class SceneKitViewer: Viewer3D {
-    private let scnView: SCNView
+    private let scnView: OrbitSCNView
+    private var orbit = OrbitCamera()
+    /// Orbit centre set by double-clicking; nil means the view centre.
+    private var pivot: SIMD3<Double>?
+    /// Point the current pinch or scroll zooms toward, fixed for the gesture.
+    private var gestureAnchor: SIMD3<Double>?
     private let scene = SCNScene()
     private let modelRoot = SCNNode()
     private let markerRoot = SCNNode()
@@ -21,13 +26,15 @@ public final class SceneKitViewer: Viewer3D {
     private var radius: Float = 1
     private var currentView: StandardView = .iso
     private let clickTarget = ClickTarget()
+    private let doubleClickTarget = ClickTarget()
 
     public var onPick: ((PickResult) -> Void)?
     public var snapToVertices = true
 
     public var projection: Projection = .perspective {
         didSet {
-            cameraNode.camera?.usesOrthographicProjection = projection == .orthographic
+            orbit.orthographic = projection == .orthographic
+            cameraNode.camera?.usesOrthographicProjection = orbit.orthographic
             fitAll()
         }
     }
@@ -44,13 +51,13 @@ public final class SceneKitViewer: Viewer3D {
     public var view: NSView { scnView }
 
     public init() {
-        scnView = SCNView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), options: nil)
+        scnView = OrbitSCNView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), options: nil)
         scnView.scene = scene
         scnView.backgroundColor = .windowBackgroundColor
         scnView.antialiasingMode = .multisampling4X
-        scnView.allowsCameraControl = true
-        scnView.defaultCameraController.interactionMode = .orbitTurntable
-        scnView.defaultCameraController.inertiaEnabled = true
+        // Our own camera (OrbitCamera) instead of SceneKit's, which zooms only
+        // toward a fixed centre and stops there.
+        scnView.allowsCameraControl = false
 
         let camera = SCNCamera()
         camera.automaticallyAdjustsZRange = true
@@ -85,6 +92,14 @@ public final class SceneKitViewer: Viewer3D {
         click.buttonMask = 0x1
         click.delaysPrimaryMouseButtonEvents = false
         scnView.addGestureRecognizer(click)
+        let doubleClick = NSClickGestureRecognizer(target: doubleClickTarget, action: #selector(ClickTarget.fire(_:)))
+        doubleClick.numberOfClicksRequired = 2
+        doubleClick.delaysPrimaryMouseButtonEvents = false
+        doubleClickTarget.action = { [weak self] gesture in
+            MainActor.assumeIsolated { self?.setPivot(at: gesture.location(in: gesture.view)) }
+        }
+        scnView.addGestureRecognizer(doubleClick)
+        scnView.onInput = { [weak self] input in self?.handle(input) }
     }
 
     // MARK: Model
@@ -206,24 +221,73 @@ public final class SceneKitViewer: Viewer3D {
     }
 
     public func fitAll() {
-        let offset = cameraNode.simdPosition - center
-        let dir = simd_length(offset) > 0 ? simd_normalize(offset) : frame(currentView).0
-        place(direction: dir, up: cameraNode.simdWorldUp)
+        let offset = orbit.position - SIMD3<Double>(center)
+        let dir = simd_length(offset) > 0 ? simd_normalize(offset) : SIMD3<Double>(frame(currentView).0)
+        place(direction: SIMD3<Float>(dir), up: SIMD3<Float>(orbit.screenUp))
     }
 
     private func place(direction: SIMD3<Float>, up: SIMD3<Float>) {
-        guard let camera = cameraNode.camera else { return }
+        pivot = nil
+        orbit.worldUp = SIMD3<Double>(upAxis == .z ? SIMD3<Float>(0, 0, 1) : SIMD3<Float>(0, 1, 0))
+        orbit.fovY = Double(cameraNode.camera?.fieldOfView ?? 35) * .pi / 180
+        orbit.frame(center: SIMD3<Double>(center), radius: Double(radius), direction: SIMD3<Double>(direction),
+                    up: SIMD3<Double>(up), aspect: aspect)
+        applyCamera()
+    }
+
+    private var aspect: Double {
         let size = scnView.bounds.size
-        let aspect = size.height > 0 ? Float(size.width / size.height) : 1
-        let halfV = Float(camera.fieldOfView) * .pi / 360
-        let halfH = atan(tan(halfV) * aspect)
-        let half = min(halfV, halfH)
-        let distance = radius / sin(half) * 1.05
-        cameraNode.simdPosition = center + direction * distance
-        cameraNode.simdLook(at: center, up: up, localFront: SIMD3(0, 0, -1))
-        camera.orthographicScale = Double(radius * 1.05 * max(1, 1 / aspect))
-        scnView.defaultCameraController.target = SCNVector3(center)
-        scnView.defaultCameraController.worldUp = SCNVector3(up)
+        return size.height > 0 ? Double(size.width / size.height) : 1
+    }
+
+    private func applyCamera() {
+        cameraNode.simdPosition = SIMD3<Float>(orbit.position)
+        cameraNode.simdLook(at: SIMD3<Float>(orbit.target), up: SIMD3<Float>(orbit.screenUp), localFront: SIMD3(0, 0, -1))
+        cameraNode.camera?.usesOrthographicProjection = orbit.orthographic
+        cameraNode.camera?.orthographicScale = orbit.orthoHalfHeight
+    }
+
+    // MARK: Mouse and trackpad
+
+    private func handle(_ input: OrbitSCNView.Input) {
+        switch input {
+        case .orbit(let dx, let dy):
+            orbit.orbit(dx: dx, dy: dy, about: pivot)
+        case .pan(let dx, let dy):
+            orbit.pan(dx: dx, dy: dy, viewHeight: Double(scnView.bounds.height))
+        case .zoom(let factor, let location, let phase):
+            if phase == .began || phase == .discrete || gestureAnchor == nil {
+                gestureAnchor = pointUnder(location)
+            }
+            if let anchor = gestureAnchor { orbit.zoom(factor: factor, about: anchor) }
+            if phase == .ended || phase == .cancelled || phase == .discrete { gestureAnchor = nil }
+        }
+        applyCamera()
+    }
+
+    /// The surface point under a view location, or the target plane there.
+    private func pointUnder(_ location: CGPoint) -> SIMD3<Double> {
+        let hits = scnView.hitTest(location, options: [
+            .searchMode: SCNHitTestSearchMode.closest.rawValue,
+            .ignoreHiddenNodes: true,
+            .rootNode: modelRoot,
+        ])
+        if let hit = hits.first {
+            return SIMD3<Double>(hit.simdWorldCoordinates)
+        }
+        let size = scnView.bounds.size
+        let ndc = SIMD2<Double>(Double(location.x / max(size.width, 1)) * 2 - 1, Double(location.y / max(size.height, 1)) * 2 - 1)
+        return orbit.pointOnTargetPlane(ndc: ndc, aspect: aspect)
+    }
+
+    /// Double-click a surface to orbit around that point.
+    private func setPivot(at location: CGPoint) {
+        let hits = scnView.hitTest(location, options: [
+            .searchMode: SCNHitTestSearchMode.closest.rawValue,
+            .ignoreHiddenNodes: true,
+            .rootNode: modelRoot,
+        ])
+        pivot = hits.first.map { SIMD3<Double>($0.simdWorldCoordinates) }
     }
 
     // MARK: Picking and markers
@@ -377,6 +441,76 @@ extension SceneKitViewer {
             SIMD4(1, 0, 0, 0),
             SIMD4(Float(x), Float((y.lowerBound + y.upperBound) / 2), Float((z.lowerBound + z.upperBound) / 2), 1)
         ))
+    }
+}
+
+/// SCNView that turns mouse and trackpad input into camera moves.
+///   drag: orbit        shift/option-drag, right-drag, middle-drag: pan
+///   pinch: zoom at the cursor        mouse wheel or command-scroll: zoom at the cursor
+///   two-finger scroll on a trackpad: pan
+final class OrbitSCNView: SCNView {
+    enum Phase { case discrete, began, changed, ended, cancelled }
+
+    enum Input {
+        case orbit(dx: Double, dy: Double)
+        case pan(dx: Double, dy: Double)
+        case zoom(factor: Double, at: CGPoint, phase: Phase)
+    }
+
+    var onInput: ((Input) -> Void)?
+    private var last: CGPoint?
+    private var panning = false
+
+    override var acceptsFirstResponder: Bool { true }
+
+    private func location(_ event: NSEvent) -> CGPoint { convert(event.locationInWindow, from: nil) }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        last = location(event)
+        panning = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.option)
+    }
+
+    override func mouseDragged(with event: NSEvent) { drag(event, pan: panning) }
+    override func mouseUp(with event: NSEvent) { last = nil }
+    override func rightMouseDown(with event: NSEvent) { last = location(event) }
+    override func rightMouseDragged(with event: NSEvent) { drag(event, pan: true) }
+    override func rightMouseUp(with event: NSEvent) { last = nil }
+    override func otherMouseDown(with event: NSEvent) { last = location(event) }
+    override func otherMouseDragged(with event: NSEvent) { drag(event, pan: true) }
+    override func otherMouseUp(with event: NSEvent) { last = nil }
+
+    private func drag(_ event: NSEvent, pan: Bool) {
+        let p = location(event)
+        defer { last = p }
+        guard let l = last else { return }
+        let dx = Double(p.x - l.x), dy = Double(p.y - l.y)
+        onInput?(pan ? .pan(dx: dx, dy: dy) : .orbit(dx: dx, dy: dy))
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let trackpad = event.hasPreciseScrollingDeltas
+        if trackpad && !event.modifierFlags.contains(.command) {
+            // Same convention as a scroll view: AppKit has already applied the
+            // user's natural-scrolling setting to the deltas.
+            onInput?(.pan(dx: Double(event.scrollingDeltaX), dy: Double(-event.scrollingDeltaY)))
+            return
+        }
+        let amount = Double(event.scrollingDeltaY) * (trackpad ? 0.01 : 0.1)
+        guard amount != 0 else { return }
+        onInput?(.zoom(factor: exp(-amount), at: location(event), phase: Self.phase(event.phase)))
+    }
+
+    override func magnify(with event: NSEvent) {
+        onInput?(.zoom(factor: 1 / max(1 + Double(event.magnification), 0.05), at: location(event), phase: Self.phase(event.phase)))
+    }
+
+    private static func phase(_ p: NSEvent.Phase) -> Phase {
+        if p.contains(.began) { return .began }
+        if p.contains(.ended) { return .ended }
+        if p.contains(.cancelled) { return .cancelled }
+        if p.contains(.changed) || p.contains(.stationary) { return .changed }
+        return .discrete
     }
 }
 

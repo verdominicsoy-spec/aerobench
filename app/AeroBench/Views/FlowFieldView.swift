@@ -607,6 +607,30 @@ struct FlowExplorePanel: View {
                     Text("Marching cubes in the engine; releasing a slider recomputes. Empty space counts as the top of the range, so surfaces close around bodies.")
                 }
 
+                Section {
+                    Toggle("Show the object", isOn: Binding(get: { flow.objectOn }, set: { app.setFlowObject($0) }))
+                    if flow.objectComputing { ProgressView().controlSize(.small) }
+                    if let error = flow.objectError {
+                        Text(error).font(.caption).foregroundStyle(.orange)
+                    }
+                    if flow.objectOn {
+                        LabeledContent("Opacity") {
+                            Slider(value: $flow.objectOpacity, in: 0.1...1, onEditingChanged: { editing in
+                                if !editing { flow.updateIsosurfaces() }
+                            })
+                        }
+                        Toggle("Ignore everything below the ground (z ≤ 0)", isOn: $flow.objectIgnoreBelowGround)
+                            .onChange(of: flow.objectIgnoreBelowGround) {
+                                flow.objectModel = nil
+                                app.computeFlowObject()
+                            }
+                    }
+                } header: {
+                    Text("Object")
+                } footer: {
+                    Text("The space with no fluid: wherever the video showed a mask colour (white geometry by default). Volumes reconstructed before this was added need reconstructing again.")
+                }
+
                 Section("Value window") {
                     Toggle("Show voxels between", isOn: $flow.windowOn)
                     if flow.windowOn {

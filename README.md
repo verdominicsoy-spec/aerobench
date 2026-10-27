@@ -119,8 +119,9 @@ assembly tree and part names; the result is cached in
 `~/Library/Caches/dev.aerobench.AeroBench/tessellations`, so reopening the same
 file at the same preset is instant.
 
-Drag to orbit, scroll or pinch to zoom, two-finger drag to pan (SceneKit's
-standard trackpad controls). Front/Back/Left/Right/Top/Bottom/Iso views, Fit,
+Drag to orbit; pinch (or a mouse wheel, or ⌘-scroll) zooms toward the point
+under the cursor, as close as you like; two-finger scroll, shift-drag or
+right-drag pans; double-click a part to orbit around that point. Front/Back/Left/Right/Top/Bottom/Iso views, Fit,
 and perspective or orthographic. Untick parts in the tree to hide them; the
 bounds readout follows what is visible. Turn on Measure and click two points;
 with Snap to vertex on, clicks snap to the nearest mesh vertex, so edges and

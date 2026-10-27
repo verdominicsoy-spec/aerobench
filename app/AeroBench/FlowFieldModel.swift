@@ -60,6 +60,13 @@ final class FlowFieldModel {
     private(set) var volume: FlowVolume?
     private(set) var volumeFolder: URL?
     var isoLevels: [IsoLevel] = []
+    /// The no-fluid region (geometry), meshed by the engine on request.
+    var objectOn = false
+    var objectOpacity = 1.0
+    var objectIgnoreBelowGround = true
+    var objectModel: Model3D?
+    var objectComputing = false
+    var objectError: String?
     var windowOn = false { didSet { updateWindow() } }
     var windowLo = -1.0
     var windowHi = 0.0
@@ -163,6 +170,9 @@ final class FlowFieldModel {
         self.volume = volume
         volumeFolder = folder
         isoLevels = []
+        objectOn = false
+        objectModel = nil
+        objectError = nil
         windowLo = volume.vmin
         windowHi = (volume.vmin + volume.vmax) / 2
         viewer.show(nil, resetCamera: false)
@@ -177,6 +187,15 @@ final class FlowFieldModel {
         guard let volume else { return }
         var meshes: [TriangleMesh] = []
         var children: [ModelNode] = []
+        if objectOn, let object = objectModel {
+            let grey = SIMD4<Float>(0.72, 0.72, 0.75, Float(objectOpacity))
+            for inst in object.instances() {
+                var mesh = object.meshes[inst.node.mesh!]
+                mesh.colors = Array(repeating: grey, count: mesh.positions.count)
+                meshes.append(mesh)
+                children.append(ModelNode(name: "Object", transform: inst.world, mesh: meshes.count - 1))
+            }
+        }
         for iso in isoLevels where iso.visible {
             guard let model = iso.model else { continue }
             let c = volume.color(iso.level)
@@ -227,6 +246,8 @@ final class FlowFieldModel {
         volume = nil
         volumeFolder = nil
         isoLevels = []
+        objectOn = false
+        objectModel = nil
         previewImage = nil
         viewer.show(nil, resetCamera: false)
         viewer.setFrame(nil)

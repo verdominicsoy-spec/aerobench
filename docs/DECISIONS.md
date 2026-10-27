@@ -305,3 +305,27 @@ limit 3%), isosurface volumes at Cp0 0, 0.3 and 0.6 within 1–2.5% of exact
 needs Dominic's dimensions), the sweep reconstructs to 300 planes in about 20
 s with a recognisable car body, rear wing with endplate vortices, and a wake
 that merges downstream.
+
+## After Phase 3: feedback round
+
+**Own camera instead of SceneKit's.** SceneKit's built-in camera control
+zooms only toward a fixed centre and stops when it gets there, so you could
+not get in close to a part off-centre. `OrbitCamera` (AeroBench3D) replaces
+it: turntable orbit with world up kept up, pan in the view plane, zoom toward
+the point under the cursor with no lower limit, and a double-click pivot.
+The maths is unit tested (the zoom point, the pivot and panned content stay
+where they should on screen).
+
+**Flow Field object.** Cells that match a mask colour are now kept as a
+solid mask in the volume instead of being discarded as empty. `flow-object`
+meshes it after a one-voxel Gaussian blur, ignoring the outermost y/z layer
+(it samples the crop edge) and, by default, everything at or below z = 0, so
+the white below the ground is not shown as a slab. Excluded areas and frame
+borders are never solid.
+
+**Rules as data.** `data/rules/fs2027_aero.json` holds the FS Rules 2027 v1.0
+aero limits (T8.2, T2.1-T2.4) and the FSUK 2027 differences (T8.1.2, T8.3.3,
+T8.4.5), each with its rule number and source. FSUK applies the FS geometry
+limits unchanged. The limits are relative to the car (tyres, head
+restraint), so Wing Lab turns them into a box only with the car's
+reference points.

@@ -99,6 +99,39 @@ extension AppState {
         }
     }
 
+    /// Meshes the no-fluid region once per volume, then shows or hides it.
+    func setFlowObject(_ on: Bool) {
+        flow.objectOn = on
+        flow.objectError = nil
+        guard on, flow.objectModel == nil else {
+            flow.updateIsosurfaces()
+            return
+        }
+        computeFlowObject()
+    }
+
+    func computeFlowObject() {
+        guard let folder = flow.volumeFolder else { return }
+        flow.objectComputing = true
+        let ground: JSONValue = flow.objectIgnoreBelowGround ? .double(0) : .null
+        _ = jobs.submit(command: "flow-object", params: [
+            "volume": .string(folder.appendingPathComponent("volume.npz").path), "ground_z": ground,
+        ], in: jobsRoot) { [weak self] item in
+            guard let self, self.flow.volumeFolder == folder else { return }
+            self.flow.objectComputing = false
+            guard item.status == .succeeded else {
+                self.flow.objectError = item.message ?? "The object could not be built."
+                self.flow.objectOn = false
+                return
+            }
+            self.flow.objectModel = try? ModelLoader.load(item.workdir.appendingPathComponent("object.glb"))
+            if self.flow.objectModel?.triangleCount ?? 0 == 0 {
+                self.flow.objectError = "No geometry was found. Check the mask colours in the calibration."
+            }
+            self.flow.updateIsosurfaces()
+        }
+    }
+
     func addIsosurface() {
         guard let volume = flow.volume else { return }
         let level = flow.isoLevels.isEmpty ? (volume.vmin + volume.vmax) / 2 : volume.vmin + 0.25 * (volume.vmax - volume.vmin)
