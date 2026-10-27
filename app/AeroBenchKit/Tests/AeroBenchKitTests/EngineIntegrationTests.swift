@@ -116,7 +116,9 @@ final class EngineIntegrationTests: XCTestCase {
         let length = Measure.distance(try corner(0, 0, 0), try corner(1.5, 0, 0)) * 1000
         let diagonal = Measure.distance(try corner(0, 0, 0), try corner(1.5, 0.6, 0.3)) * 1000
         XCTAssertEqual(length, 1500, accuracy: 0.1)
-        XCTAssertEqual(diagonal, (1500.0 * 1500 + 600 * 600 + 300 * 300).squareRoot(), accuracy: 0.1)
+        let size: SIMD3<Double> = [1500, 600, 300]
+        let expectedDiagonal: Double = simd_length(size)
+        XCTAssertEqual(diagonal, expectedDiagonal, accuracy: 0.1)
     }
 
     func testMissingEngineIsAMessageNotACrash() async throws {
