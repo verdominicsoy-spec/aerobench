@@ -42,8 +42,7 @@ struct ContentView: View {
                 ToolPlaceholderView(title: "Flow Field Viewer", systemImage: "wind", phase: 3,
                                     summary: "Rebuild a 3D Cp0 field from a video of section planes.")
             case .lapSim:
-                ToolPlaceholderView(title: "Lap Sim", systemImage: "flag.checkered", phase: 1,
-                                    summary: "Point-mass lap sim that turns aero changes into lap time.")
+                LapSimView()
             case .jobs:
                 JobsView()
             }

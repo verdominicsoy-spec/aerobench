@@ -94,3 +94,67 @@ Linux container, and the spec asks for steps that actually work on the Mac.
 
 **Airfoil data ignored by git now.** `data/airfoils/*` is gitignored ahead of
 Phase 4 because UIUC's redistribution terms have not been checked yet.
+
+## Phase 1: Lap Sim
+
+**Placeholder car.** Mass with driver 280 kg, ClA 3.5 m², CdA 1.3 m², μ lateral
+1.5, μ longitudinal 1.4, peak power 80 kW, driven axle share 0.55, downforce on
+the driven axle 0.55, Crr 0.015, air density 1.225 kg/m³, top speed 33 m/s
+(119 km/h). Rough figures for a typical Formula Student car with a full aero
+package, not the team's numbers. They live only in the app
+(`CarParameters.placeholder`); the engine requires every field in the job so
+there is a single source of defaults. The app marks any value still equal to
+its placeholder with "est.".
+
+**Extra input: downforce share on the driven axle.** The spec counts the driven
+axle's share of downforce in traction but does not list a balance input, so
+`aero_balance_driven` was added, defaulting to the same 0.55 as the static
+split.
+
+**Rolling resistance acts on static weight only.** With rolling resistance on
+the downforce-loaded tyres, extra ClA can make a power-limited straight slower,
+which breaks the "adding ClA never makes a lap slower" check. The effect is
+small at FS speeds. Revisit if it ever matters.
+
+**The forward pass never decelerates.** Where drive force cannot beat drag and
+rolling resistance (at the cornering limit, where the friction circle leaves
+no longitudinal grip, or at the power-limited top speed) the car holds its
+speed rather than slowing down. Slowing down is the braking pass's job. This
+is the usual quasi-steady simplification and is what makes a constant-radius
+skidpad run exactly at sqrt(μ g R).
+
+**Integration.** Heun's method in v² over distance, with segment time
+2 ds / (v_i + v_{i+1}), exact for constant acceleration. At 0.5 m spacing,
+halving the step moves lap time by under 0.01% on all built-in tracks, well
+inside the 0.5% check. A 381 m lap takes about 30 ms.
+
+**Closed tracks run three laps back to back and keep the middle one**, so the
+reported lap is a flying lap independent of where the start line is. Open
+tracks start at the given start speed (0 by default) and end without braking.
+
+**Endurance.** Total time is laps × flying-lap time, energy is laps × per-lap
+energy. Energy is mechanical energy at the wheels, the integral of positive
+drive force over distance. No standing start, driver change, tyre or
+efficiency model.
+
+**Sensitivities.** Central differences with a step of 5% of the value
+(at least 0.05 m² for ClA, 0.02 m² for CdA), falling back to a forward
+difference when the lower point would be negative. Exchange rate is
+−(∂t/∂CdA)/(∂t/∂ClA): the ClA that pays for one m² of CdA at equal lap time.
+Reported as n/a when ClA does not change the lap time at all.
+
+**Built-in tracks.** Skidpad: one 9.125 m centreline-radius circle, flying.
+Acceleration: 75 m straight from rest. Test track: a synthetic closed loop
+defined as a polar curve r(θ) = 55 (1 + 0.28 cos 2θ + 0.12 sin 3θ) m, about
+381 m long, 12.4 m tightest radius, with a reverse-curvature section. Its
+curvature is analytic. The skidpad radius, acceleration length and start
+speed are editable. Real event layouts are imported as CSV.
+
+**CSV tracks** go through a cubic smoothing spline (`scipy.interpolate.splprep`,
+periodic for closed loops) with smoothing set from the expected point scatter
+(0.05 m by default, editable), then are resampled by true arc length.
+Curvature comes from the spline's derivatives.
+
+**Display units.** Speeds in km/h, power in kW, everything stored SI. The
+track map colormap (blue slow to red fast) is a plain v1 choice, to be
+replaced by sage37 tokens when styling starts.

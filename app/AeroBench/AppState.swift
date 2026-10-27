@@ -1,6 +1,7 @@
 import AeroBenchKit
 import AppKit
 import Observation
+import UniformTypeIdentifiers
 
 struct AppAlert: Identifiable {
     let id = UUID()
@@ -24,6 +25,13 @@ final class AppState {
     /// The most recent ping, shown on the project screen.
     var pingJob: JobItem?
 
+    /// Lap Sim inputs. Saved to the project's lapsim/setup.json on save.
+    var lapSim = LapSimSetup() {
+        didSet { if lapSim != oldValue { project?.isDirty = true } }
+    }
+    var lapSimJob: JobItem?
+    var lapSimOutput: LapSimOutput?
+
     private static let recentsKey = "recentProjects"
     @ObservationIgnored private var terminationObserver: NSObjectProtocol?
 
@@ -35,6 +43,7 @@ final class AppState {
             .map { URL(fileURLWithPath: $0) }
             .filter { ProjectStore.isProject($0) }
         jobs.loadHistory(from: jobsRoot)
+        showLatestLapSim()
         terminationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -105,6 +114,7 @@ final class AppState {
     func saveProject() {
         guard let project else { return }
         do {
+            try lapSim.save(toProject: project.url)
             let saved = try ProjectStore.save(project.manifest, at: project.url)
             self.project?.manifest = saved
             self.project?.isDirty = false
@@ -118,6 +128,7 @@ final class AppState {
         project = nil
         pingJob = nil
         jobs.loadHistory(from: jobsRoot)
+        showLatestLapSim()
     }
 
     func updateManifest(_ change: (inout ProjectManifest) -> Void) {
@@ -135,11 +146,14 @@ final class AppState {
         if project?.isDirty == true { saveProject() }
         project = OpenProject(url: url, manifest: manifest)
         pingJob = nil
+        lapSim = LapSimSetup.load(fromProject: url) ?? LapSimSetup()
+        project?.isDirty = false
         recentProjects.removeAll { $0.standardizedFileURL == url.standardizedFileURL }
         recentProjects.insert(url, at: 0)
         recentProjects = Array(recentProjects.prefix(10))
         storeRecents()
         jobs.loadHistory(from: jobsRoot)
+        showLatestLapSim()
     }
 
     private func storeRecents() {
@@ -155,6 +169,78 @@ final class AppState {
     @discardableResult
     func runDummy(duration: Int, keepMesh: Bool) -> JobItem {
         jobs.submit(command: "dummy", params: ["duration": .int(duration)], keepMesh: keepMesh, in: jobsRoot)
+    }
+
+    // MARK: Lap Sim
+
+    var lapSimFolder: URL? {
+        project.map { ProjectStore.toolURL(for: $0.url, tool: "lapsim") }
+    }
+
+    func runLapSim() {
+        if lapSim.track.kind == .csv {
+            guard let url = lapSim.track.csvURL(lapsimFolder: lapSimFolder),
+                  FileManager.default.fileExists(atPath: url.path)
+            else {
+                alert = AppAlert(title: "No track file", message: "Import a centreline CSV first.")
+                return
+            }
+        }
+        do {
+            let params = try lapSim.jobParams(lapsimFolder: lapSimFolder)
+            lapSimJob = jobs.submit(command: "lapsim", params: params, in: jobsRoot) { [weak self] item in
+                self?.loadLapSimResult(from: item)
+            }
+        } catch {
+            show("Could not start the lap sim", error)
+        }
+    }
+
+    /// Copies a centreline CSV into the project (or references it in place
+    /// when no project is open) and selects it.
+    func importTrackCSV() {
+        let panel = NSOpenPanel()
+        panel.title = "Import Track Centreline"
+        panel.message = "A CSV of x, y centreline points."
+        panel.allowedContentTypes = [.commaSeparatedText, .plainText, .text]
+        panel.allowsOtherFileTypes = true
+        guard panel.runModal() == .OK, let source = panel.url else { return }
+        do {
+            if let folder = lapSimFolder {
+                let tracks = folder.appendingPathComponent("tracks")
+                try FileManager.default.createDirectory(at: tracks, withIntermediateDirectories: true)
+                var dest = tracks.appendingPathComponent(source.lastPathComponent)
+                var n = 2
+                while FileManager.default.fileExists(atPath: dest.path) {
+                    dest = tracks.appendingPathComponent("\(source.deletingPathExtension().lastPathComponent)-\(n).\(source.pathExtension)")
+                    n += 1
+                }
+                try FileManager.default.copyItem(at: source, to: dest)
+                lapSim.track.csvPath = "tracks/\(dest.lastPathComponent)"
+            } else {
+                lapSim.track.csvPath = source.path
+            }
+            lapSim.track.kind = .csv
+        } catch {
+            show("Could not import the track", error)
+        }
+    }
+
+    private func loadLapSimResult(from item: JobItem) {
+        guard item.status == .succeeded, let text = item.resultText else { return }
+        do {
+            let result = try LapSimResult.decode(resultFile: Data(text.utf8))
+            lapSimOutput = LapSimOutput(jobID: item.id, result: result)
+        } catch {
+            item.append("error", "could not read the lap sim result: \(error.localizedDescription)")
+            lapSimOutput = nil
+        }
+    }
+
+    private func showLatestLapSim() {
+        lapSimJob = jobs.jobs.first { $0.command == "lapsim" && $0.status == .succeeded }
+        lapSimOutput = nil
+        if let job = lapSimJob { loadLapSimResult(from: job) }
     }
 
     func show(_ title: String, _ error: Error) {

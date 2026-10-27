@@ -5,7 +5,7 @@ Flow Field Viewer and Lap Sim. SwiftUI front end, Python compute engine. The
 full brief is in [docs/AeroBench_spec.pdf](docs/AeroBench_spec.pdf), and every
 judgement call made while building it is in [docs/DECISIONS.md](docs/DECISIONS.md).
 
-**Status:** Phase 0 (foundations). The four tools are empty screens for now.
+**Status:** Phase 1 (Lap Sim) built. Wing Lab, CAD Viewer and Flow Field Viewer are empty screens for now.
 
 ## Layout
 
@@ -66,6 +66,37 @@ The same three behaviours are covered by automated tests in
 ```sh
 cd app/AeroBenchKit
 AEROBENCH_ENGINE="$PWD/../../engine" swift test
+```
+
+## Lap Sim
+
+Quasi-steady point-mass lap sim. Pick a track (built-in test track, skidpad,
+75 m acceleration run, or an imported centreline CSV), set car A and
+optionally car B, and Run (⌘R). Results show lap time, endurance time and
+energy, a speed trace, a track map coloured by speed, the B minus A time
+delta, and dt/dClA, dt/dCdA with the ClA-for-CdA exchange rate.
+
+The car values shipped are **placeholder estimates**, marked "est." until you
+change them. Every value is editable and saved in the project's
+`lapsim/setup.json` when you save.
+
+Track CSVs: the first two numeric columns are taken as x and y; header and `#`
+comment lines are skipped; commas, semicolons, tabs or spaces all work. Pick m
+or mm in the app. Whether the loop is closed is detected from whether the ends
+meet, or set it by hand. With a project open, imported CSVs are copied into
+`lapsim/tracks/`.
+
+The engine side can be run by hand too:
+
+```sh
+cd engine
+cat > /tmp/job.json <<'JSON'
+{"params": {"track": {"builtin": "skidpad"},
+  "car": {"mass": 280, "cla": 3.5, "cda": 1.3, "mu_lat": 1.5, "mu_long": 1.4,
+          "power": 80000, "driven_axle_fraction": 0.55, "aero_balance_driven": 0.55,
+          "crr": 0.015, "rho": 1.225, "v_max": 33}}}
+JSON
+uv run aeroengine lapsim --input /tmp/job.json --workdir "$(mktemp -d)"
 ```
 
 ## The engine on its own

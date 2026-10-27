@@ -42,6 +42,10 @@ public enum ProjectStore {
     public static let toolFolders = ["wing", "cad", "flow", "lapsim"]
     public static let jobsFolder = "jobs"
 
+    public static func toolURL(for project: URL, tool: String) -> URL {
+        project.appendingPathComponent(tool)
+    }
+
     public static func jobsURL(for project: URL) -> URL {
         project.appendingPathComponent(jobsFolder)
     }

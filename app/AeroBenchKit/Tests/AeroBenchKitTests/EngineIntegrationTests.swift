@@ -73,6 +73,22 @@ final class EngineIntegrationTests: XCTestCase {
         XCTAssertTrue(message.contains("failed on purpose"), message)
     }
 
+    func testLapSimResultDecodes() async throws {
+        var setup = LapSimSetup()
+        setup.compare = true
+        setup.carB.cla += 1
+        let job = try makeJob(JobSpec(command: "lapsim", params: try setup.jobParams(lapsimFolder: nil)))
+        guard case .succeeded(let url) = await job.run(onEvent: { _ in }) else { return XCTFail() }
+        let result = try LapSimResult.decode(resultFile: Data(contentsOf: url))
+        XCTAssertEqual(result.track.name, "Test track")
+        XCTAssertEqual(result.a.v.count, result.track.s.count)
+        let b = try XCTUnwrap(result.b)
+        XCTAssertLessThan(b.lapTime, result.a.lapTime)
+        XCTAssertEqual(result.deltaT?.count, result.track.s.count)
+        XCTAssertLessThan(try XCTUnwrap(result.a.sensitivity).dtDcla, 0)
+        XCTAssertEqual(result.a.car, setup.carA)
+    }
+
     func testMissingEngineIsAMessageNotACrash() async throws {
         let (_, url) = try JobFolder.create(in: root, spec: JobSpec(command: "ping"))
         let job = EngineProcess(executableURL: URL(fileURLWithPath: "/nonexistent/aeroengine"), command: "ping",

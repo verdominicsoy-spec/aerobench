@@ -63,3 +63,11 @@ public enum AeroJSON {
         Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
     }
 }
+
+extension JSONValue {
+    /// Any Encodable value as a JSONValue, for building job params.
+    public init<T: Encodable>(encoding value: T) throws {
+        let data = try JSONEncoder().encode(value)
+        self = try JSONDecoder().decode(JSONValue.self, from: data)
+    }
+}

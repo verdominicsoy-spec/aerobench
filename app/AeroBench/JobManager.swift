@@ -25,6 +25,8 @@ final class JobItem: Identifiable {
     var log: [LogLine] = []
     var cancelRequested = false
     @ObservationIgnored var process: EngineProcess?
+    /// Called on the main actor once the job has ended, however it ended.
+    @ObservationIgnored var onFinish: ((JobItem) -> Void)?
 
     init(id: String, command: String, workdir: URL, created: Date) {
         self.id = id
@@ -91,7 +93,8 @@ final class JobManager {
     var runningCount: Int { jobs.filter { $0.status == .running }.count }
 
     @discardableResult
-    func submit(command: String, params: [String: JSONValue] = [:], keepMesh: Bool = false, in jobsRoot: URL) -> JobItem {
+    func submit(command: String, params: [String: JSONValue] = [:], keepMesh: Bool = false, in jobsRoot: URL,
+                onFinish: ((JobItem) -> Void)? = nil) -> JobItem {
         let su2 = settings.su2Path.trimmingCharacters(in: .whitespaces)
         let spec = JobSpec(
             command: command,
@@ -110,7 +113,9 @@ final class JobManager {
             item.detail = error.localizedDescription
             item.finished = Date()
         }
+        item.onFinish = onFinish
         jobs.insert(item, at: 0)
+        if item.status.isFinished { onFinish?(item) }
         startQueued()
         return item
     }
@@ -122,6 +127,7 @@ final class JobManager {
             item.message = "Cancelled before it started"
             item.finished = AeroJSON.now()
             persist(item)
+            item.onFinish?(item)
         case .running:
             item.cancelRequested = true
             item.append("info", "cancel requested")
@@ -230,6 +236,8 @@ final class JobManager {
         } catch {
             item.append("error", "could not write log.txt: \(error.localizedDescription)")
         }
+        item.onFinish?(item)
+        item.onFinish = nil
         startQueued()
     }
 
