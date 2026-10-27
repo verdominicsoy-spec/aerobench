@@ -38,12 +38,22 @@ uv sync
 uv run pytest -q          # should be all green
 cd ..
 
-# 3. The app
-open app/AeroBench.xcodeproj
+# 3. The app: double-click AeroBench.command in Finder
 ```
 
-In Xcode pick the **AeroBench** scheme and **My Mac**, then Run (⌘R). Signing is
-set to "Sign to Run Locally", so no Apple developer team is needed.
+**`AeroBench.command` is the everyday way in.** Double-click it in Finder: it
+pulls the latest version, updates the engine, rebuilds the app (only what
+changed; the first build takes a minute or two) and opens it. If any step
+fails it says why and opens the last build that worked. Drag it to the right
+side of the Dock to launch from there. The built app lives in `build/` (not
+committed).
+
+The first time, macOS may say it cannot verify the script: right-click it,
+choose Open, then Open again. After that a double-click is enough.
+
+To work on the code itself, open `app/AeroBench.xcodeproj` in Xcode and Run
+(⌘R) with the **AeroBench** scheme and **My Mac**. Signing is set to "Sign to
+Run Locally", so no Apple developer team is needed.
 
 On first launch the engine folder in Settings (⌘,) defaults to this repo's
 `engine/` folder. If it shows "Engine not found", point it at `engine/` and make

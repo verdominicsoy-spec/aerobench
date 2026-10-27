@@ -32,9 +32,9 @@ jobs:
         working-directory: app/AeroBenchKit
         env:
           AEROBENCH_ENGINE: ${{ github.workspace }}/engine
-      - name: Build AeroBench.app
+      - name: Build AeroBench.app with the double-click launcher
         if: ${{ !cancelled() }}
-        run: >
-          xcodebuild -project app/AeroBench.xcodeproj -scheme AeroBench
-          -configuration Debug -destination 'platform=macOS,arch=arm64'
-          -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+        run: ./AeroBench.command --no-pull --no-launch
+      - name: Show the build log
+        if: ${{ failure() }}
+        run: tail -100 build/last-build.log
