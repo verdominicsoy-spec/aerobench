@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  engine:
+    name: Engine tests (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+        working-directory: engine
+      - run: uv run pytest -q
+        working-directory: engine
+
+  mac:
+    name: App build and job-runner tests (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Engine environment and tests
+        run: uv sync && uv run pytest -q
+        working-directory: engine
+      - name: Toolchain
+        run: xcodebuild -version && swift --version
+      - name: AeroBenchKit tests (drive the real engine)
+        run: swift test
+        working-directory: app/AeroBenchKit
+        env:
+          AEROBENCH_ENGINE: ${{ github.workspace }}/engine
+      - name: Build AeroBench.app
+        run: >
+          xcodebuild -project app/AeroBench.xcodeproj -scheme AeroBench
+          -configuration Debug -destination 'platform=macOS,arch=arm64'
+          -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
