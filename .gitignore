@@ -1,0 +1,19 @@
+# macOS / Xcode
+.DS_Store
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+.swiftpm/
+.build/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
+
+# Airfoil library is fetched, not committed (see docs/DECISIONS.md once 8.1 lands)
+data/airfoils/*
+!data/airfoils/.gitkeep

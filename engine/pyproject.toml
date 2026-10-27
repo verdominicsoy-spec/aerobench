@@ -1,0 +1,22 @@
+[project]
+name = "aeroengine"
+version = "0.1.0"
+description = "Compute engine for AeroBench. Every operation is a CLI subcommand driven by a JSON job file."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+# Phase 0 needs nothing beyond the standard library. Each phase adds its own
+# numerics dependencies when it lands (see docs/DECISIONS.md).
+dependencies = []
+
+[project.scripts]
+aeroengine = "aeroengine.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
