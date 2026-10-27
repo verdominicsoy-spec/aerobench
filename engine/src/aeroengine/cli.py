@@ -45,8 +45,22 @@ def _on_sigterm(signum: int, frame: object) -> None:
     raise JobCancelled()
 
 
+def _private_event_stream():
+    """Events get their own copy of stdout. File descriptor 1 is pointed at
+    stderr, so anything a native library (OpenCascade, gmsh, SU2) prints
+    lands in the log instead of corrupting the JSON-lines stream."""
+    try:
+        sys.stdout.flush()
+        fd = os.dup(1)
+        os.dup2(2, 1)
+        sys.stdout = sys.stderr
+        return os.fdopen(fd, "w", buffering=1, encoding="utf-8")
+    except (OSError, ValueError, AttributeError):
+        return sys.stdout
+
+
 def main(argv: list[str] | None = None) -> int:
-    emit = Emitter()
+    emit = Emitter(_private_event_stream())
     try:
         args = _parser().parse_args(argv)
     except _UsageError as exc:

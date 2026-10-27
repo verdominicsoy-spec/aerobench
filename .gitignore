@@ -17,3 +17,6 @@ __pycache__/
 # Airfoil library is fetched, not committed (see docs/DECISIONS.md once 8.1 lands)
 data/airfoils/*
 !data/airfoils/.gitkeep
+
+# Large generated test meshes (engine/scripts/make_sample_cad.py --dense)
+samples/dense_*.stl

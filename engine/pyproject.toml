@@ -7,6 +7,7 @@ requires-python = ">=3.12,<3.13"
 # Phase 0 needs nothing beyond the standard library. Each phase adds its own
 # numerics dependencies when it lands (see docs/DECISIONS.md).
 dependencies = [
+    "cadquery-ocp>=8,<9",
     "numpy>=2.5.4",
     "scipy>=1.18.1",
 ]
