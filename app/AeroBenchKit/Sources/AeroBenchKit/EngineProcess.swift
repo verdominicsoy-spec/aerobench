@@ -73,18 +73,8 @@ public final class EngineProcess: @unchecked Sendable {
             }
         }
 
-        lock.lock()
-        if cancelRequested {
-            lock.unlock()
-            return .cancelled
-        }
-        do {
-            try process.run()
-            launched = true
-            lock.unlock()
-        } catch {
-            lock.unlock()
-            return .failed(message: "Could not start the engine", detail: error.localizedDescription)
+        if let early = launch() {
+            return early
         }
 
         let state = StreamState()
@@ -155,14 +145,71 @@ public final class EngineProcess: @unchecked Sendable {
         return .failed(message: "Engine finished without producing a result", detail: tail)
     }
 
-    private static func readLines(_ handle: FileHandle, _ body: (String) -> Void) async {
+    /// Starts the process unless cancel came first. Returns an outcome only
+    /// if the job ends here. Kept synchronous so the lock is never held
+    /// across a suspension point.
+    private func launch() -> Outcome? {
+        lock.lock(); defer { lock.unlock() }
+        if cancelRequested { return .cancelled }
         do {
-            for try await line in handle.bytes.lines {
-                body(line)
-            }
+            try process.run()
+            launched = true
+            return nil
         } catch {
-            // Pipe closed under us. The exit status tells the real story.
+            return .failed(message: "Could not start the engine", detail: error.localizedDescription)
         }
+    }
+
+    private static func readLines(_ handle: FileHandle, _ body: (String) -> Void) async {
+        for await line in lines(of: handle) {
+            body(line)
+        }
+    }
+
+    /// Lines from a pipe as soon as each one arrives. FileHandle.bytes is not
+    /// used because it holds pipe output back until its buffer fills, which
+    /// stalls live progress.
+    private static func lines(of handle: FileHandle) -> AsyncStream<String> {
+        AsyncStream { continuation in
+            let buffer = LineBuffer()
+            handle.readabilityHandler = { h in
+                let data = h.availableData
+                if data.isEmpty {
+                    h.readabilityHandler = nil
+                    if let rest = buffer.remainder() { continuation.yield(rest) }
+                    continuation.finish()
+                } else {
+                    for line in buffer.append(data) { continuation.yield(line) }
+                }
+            }
+        }
+    }
+}
+
+/// Splits a byte stream into newline-terminated lines.
+private final class LineBuffer: @unchecked Sendable {
+    // Only touched from one handle's readabilityHandler, which runs serially.
+    private var pending = Data()
+
+    func append(_ data: Data) -> [String] {
+        pending.append(data)
+        var lines: [String] = []
+        while let newline = pending.firstIndex(of: 0x0A) {
+            lines.append(Self.decode(pending[pending.startIndex..<newline]))
+            pending.removeSubrange(pending.startIndex...newline)
+        }
+        return lines
+    }
+
+    func remainder() -> String? {
+        defer { pending.removeAll() }
+        return pending.isEmpty ? nil : Self.decode(pending[...])
+    }
+
+    private static func decode(_ bytes: Data.SubSequence) -> String {
+        var line = String(decoding: bytes, as: UTF8.self)
+        if line.hasSuffix("\r") { line.removeLast() }
+        return line
     }
 }
 

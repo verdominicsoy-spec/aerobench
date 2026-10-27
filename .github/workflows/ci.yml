@@ -33,6 +33,7 @@ jobs:
         env:
           AEROBENCH_ENGINE: ${{ github.workspace }}/engine
       - name: Build AeroBench.app
+        if: ${{ !cancelled() }}
         run: >
           xcodebuild -project app/AeroBench.xcodeproj -scheme AeroBench
           -configuration Debug -destination 'platform=macOS,arch=arm64'
