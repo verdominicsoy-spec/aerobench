@@ -121,6 +121,42 @@ final class EngineIntegrationTests: XCTestCase {
         XCTAssertEqual(diagonal, expectedDiagonal, accuracy: 0.1)
     }
 
+    /// Flow Field round trip: the engine's synthetic sweep and its own
+    /// calibration, reconstructed and read back in Swift.
+    func testFlowDemoReconstructsAndLoads() async throws {
+        let demo = try makeJob(JobSpec(command: "flow-demo", params: ["frames": .int(31), "perspective": .bool(true)]))
+        guard case .succeeded = await demo.run(onEvent: { _ in }) else { return XCTFail("demo failed") }
+        let cal = try FlowCalibration.load(demo.workdir.appendingPathComponent("demo_calibration.json"))
+        XCTAssertTrue(cal.problems.isEmpty, "\(cal.problems)")
+        XCTAssertEqual(cal.spatial.frames.count, 2)
+
+        let calJSON = try cal.jsonValue()
+        let rec = try makeJob(JobSpec(command: "flow-reconstruct", params: [
+            "source": .string(demo.workdir.appendingPathComponent("demo.mp4").path),
+            "calibration": calJSON,
+        ]))
+        guard case .succeeded = await rec.run(onEvent: { _ in }) else { return XCTFail("reconstruct failed") }
+        let vol = try FlowVolume.load(folder: rec.workdir)
+        XCTAssertEqual(vol.nx, 31)
+        XCTAssertEqual(vol.values.count, vol.nx * vol.ny * vol.nz)
+        XCTAssertEqual(vol.vmin, -1)
+        let finite = vol.values.filter { !$0.isNaN }
+        XCTAssertGreaterThan(finite.count, vol.values.count / 2)
+        XCTAssertLessThan(finite.min()!, 0)  // the wake core
+        let slice = try XCTUnwrap(vol.sliceImage(plane: 15))
+        XCTAssertEqual(slice.width, vol.ny)
+        let window = vol.windowPoints(lo: -1, hi: 0, maxPoints: 1000)
+        XCTAssertGreaterThan(window.positions.count, 100)
+        XCTAssertLessThanOrEqual(window.positions.count, 1000)
+
+        let iso = try makeJob(JobSpec(command: "flow-iso", params: [
+            "volume": .string(rec.workdir.appendingPathComponent("volume.npz").path), "levels": .array([.double(0)]),
+        ]))
+        guard case .succeeded = await iso.run(onEvent: { _ in }) else { return XCTFail("iso failed") }
+        let model = try ModelLoader.load(iso.workdir.appendingPathComponent("iso.glb"))
+        XCTAssertGreaterThan(model.triangleCount, 100)
+    }
+
     func testMissingEngineIsAMessageNotACrash() async throws {
         let (_, url) = try JobFolder.create(in: root, spec: JobSpec(command: "ping"))
         let job = EngineProcess(executableURL: URL(fileURLWithPath: "/nonexistent/aeroengine"), command: "ping",

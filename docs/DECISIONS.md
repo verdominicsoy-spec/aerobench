@@ -233,3 +233,75 @@ automated (STEP → engine → glb → Swift → vertex-to-vertex distance).
 **cadquery-ocp pinned to 8.x.** OCP 8 moved its collection classes
 (`OCP.OCP.collections.Sequence_TDF_Label` and friends) and changed some
 signatures; the code targets 8.x.
+
+## Phase 3: Flow Field Viewer
+
+Built against a real STAR-CCM+ Cp0 sweep from Dominic (1080p H.264, 900
+frames, kept out of the repo), which shaped several of these.
+
+**Perspective cameras are supported.** That video is a perspective view: the
+plane moves away from a fixed camera, so the ground line climbs from row
+1017 to 693 over the sweep and a pixel covers more metres in later frames.
+A pinhole model (scale ∝ 1/distance, distance linear in frame) fits its
+ground line to 1.2 px across all 900 frames. So the scale can be calibrated
+on two frames (first and last) and is interpolated between them as
+1/scale linear in frame; the image of the world origin moves linearly with
+the scale. One calibrated frame means a fixed scale (parallel camera).
+
+**Everything is resampled to one world grid before stacking.** Each frame is
+pre-shrunk (area averaging) to about one pixel per grid cell, then sampled at
+the grid's world positions through that frame's scale. This is what makes a
+perspective sweep stack into a consistent volume. The grid covers everything
+any frame sees by default ("all", trimmed to where data exists), or only what
+every frame sees ("common"), or an explicit world window. The window matters
+for perspective sweeps: the far frames see a much bigger region than the near
+ones, and without a window the near planes get few cells.
+
+**Colour inversion** is nearest colour in CIELAB against a 512-entry table,
+with pixels further than a threshold (12 ΔE by default) marked empty, and mask
+colours (white by default, 10 ΔE) marked empty. The median filter is NaN-aware:
+empty cells are filled from their nearest neighbour, filtered, then emptied
+again.
+
+**Legend sampling averages across the bar and smooths along it** (3% of its
+length). STAR draws a stepped legend (about 30 bands) but a smooth field;
+smoothing turns the steps back into the continuous map. Detecting band edges
+was tried and is unreliable through H.264.
+
+**No automatic lighting correction.** STAR lights the plane, so the field's
+colours are not exactly the legend's. On the real video the plane sits about
+3.5 ΔE (median) from the sampled legend, freestream (Cp0 = 1) reads 0.984,
+and a lit corner a little lower. A fitted per-channel gain and offset only cut
+the median to 2.1 ΔE and made the lit corner worse, so it was left out. The
+capture guide says to turn lighting off.
+
+**The STAR-CCM+ preset** is the blue-yellow-red map as sampled from that
+legend through H.264, so approximate. Sampling the legend in the video being
+reconstructed is the more accurate option. Viridis uses a published polynomial
+fit (within about 1/255), jet and rainbow are their usual formulas.
+
+**Isosurfaces** use scikit-image marching cubes in the engine, one job per
+level, about 2 s for 300 × 256 × 136. Empty voxels are filled with the top of
+the range (freestream for Cp0), so surfaces close around bodies, and the
+volume is padded by one layer so surfaces close at its edges. That also makes
+their enclosed volume measurable. OBJ export is in mm, glb in metres.
+
+**Value window** runs in Swift on the raw volume (volume.bin), thinned evenly
+to at most 250,000 points so it stays interactive.
+
+**VTK export** is ImageData (.vti) with raw appended float32, written directly.
+Uneven plane spacing is resampled to even spacing along x first, since
+ImageData needs it. VTK's own reader reads it back exactly (tested).
+
+**Regression test (the spec's acceptance check).** An analytic wake (spreading
+and recovering downstream) with a body and ground, rendered with the STAR
+preset and a banded legend, encoded with libx264 at CRF 18 (yuv420p),
+reconstructed, compared to the analytic field away from body and domain edges.
+Fixed and perspective cameras both pass: worst error 0.041 (2.1% of the range,
+limit 3%), isosurface volumes at Cp0 0, 0.3 and 0.6 within 1–2.5% of exact
+(limit 5%). imageio-ffmpeg supplies an ffmpeg with libx264 on every platform.
+
+**Real video, qualitative.** With a guessed absolute scale (the real one
+needs Dominic's dimensions), the sweep reconstructs to 300 planes in about 20
+s with a recognisable car body, rear wing with endplate vortices, and a wake
+that merges downstream.

@@ -5,7 +5,7 @@ Flow Field Viewer and Lap Sim. SwiftUI front end, Python compute engine. The
 full brief is in [docs/AeroBench_spec.pdf](docs/AeroBench_spec.pdf), and every
 judgement call made while building it is in [docs/DECISIONS.md](docs/DECISIONS.md).
 
-**Status:** Phases 0–2 built (foundations, Lap Sim, CAD Viewer). Flow Field Viewer and Wing Lab are empty screens for now.
+**Status:** Phases 0–3 built (foundations, Lap Sim, CAD Viewer, Flow Field Viewer). Wing Lab is an empty screen for now.
 
 ## Layout
 
@@ -127,6 +127,42 @@ uv run python scripts/make_sample_cad.py --dense   # writes samples/dense_1M.stl
 ```
 
 Then open it and tick FPS.
+
+## Flow Field Viewer
+
+Rebuilds a 3D total pressure (Cp0) field from a video of section planes
+stepping through the flow, such as a STAR-CCM+ plane sweep.
+
+**Calibrate** (left panel, top to bottom), drawing on the frame on the right:
+
+1. Open the video (mp4/mov) or a folder of frames, or drop the video on the window.
+2. Draw the crop around the plot region, and exclusion boxes over the legend,
+   axis triad and any labels.
+3. Pick the colour map, or *Sample the legend* and drag along the colour bar
+   from its low end to its high end.
+4. Enter the value range (the legend's ends, e.g. −1 and 1).
+5. Scale: click two points whose y, z you know (y right, z up). If the camera is
+   perspective (later planes look smaller, the ground line creeps up the
+   screen), tick *Perspective camera* and do it on the first and last frames.
+   Optionally limit the grid to a window around the region of interest.
+6. Plane positions: x at the first and last frame (even spacing), or a CSV of
+   one x per frame in mm. Frame range and stride.
+7. Mask colours (white geometry and background by default), colour-distance
+   threshold, median filter, working resolution.
+
+*Check This Frame* runs one plane and shows the result with the median colour
+distance; under about 5 ΔE means a good fit. *Reconstruct* builds the volume.
+*Save Calibration* writes the setup as JSON to reuse on later videos; it is
+also saved with the project in `flow/`.
+
+**Explore**: isosurfaces (several at once, colours from the colour map, with
+opacity), a value window that shows voxels between two values, and a slice
+scrubber with the original frame beside the reconstructed plane, in mm.
+Export isosurfaces as .glb or .obj (mm) and the volume as .npz or .vti
+(ParaView).
+
+*Demo Sweep* generates a synthetic perspective sweep with a known answer and
+its calibration, to try the tool without real data.
 
 ## The engine on its own
 

@@ -38,8 +38,7 @@ struct ContentView: View {
             case .cadViewer:
                 CADViewerView()
             case .flowField:
-                ToolPlaceholderView(title: "Flow Field Viewer", systemImage: "wind", phase: 3,
-                                    summary: "Rebuild a 3D Cp0 field from a video of section planes.")
+                FlowFieldView()
             case .lapSim:
                 LapSimView()
             case .jobs:
@@ -48,12 +47,19 @@ struct ContentView: View {
         }
         .navigationTitle(windowTitle)
         .dropDestination(for: URL.self) { urls, _ in
-            guard let url = urls.first,
-                  CADViewerModel.openableExtensions.contains(url.pathExtension.lowercased())
-            else { return false }
-            selection = .cadViewer
-            app.openCAD(url)
-            return true
+            guard let url = urls.first else { return false }
+            let ext = url.pathExtension.lowercased()
+            if CADViewerModel.openableExtensions.contains(ext) {
+                selection = .cadViewer
+                app.openCAD(url)
+                return true
+            }
+            if ["mp4", "mov", "m4v"].contains(ext) {
+                selection = .flowField
+                Task { await app.flow.open(url) }
+                return true
+            }
+            return false
         }
         .alert(
             app.alert?.title ?? "",

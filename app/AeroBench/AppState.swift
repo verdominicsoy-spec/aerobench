@@ -20,6 +20,7 @@ final class AppState {
     let settings: AppSettings
     let jobs: JobManager
     let cad: CADViewerModel
+    let flow: FlowFieldModel
     var project: OpenProject?
     var recentProjects: [URL] = []
     var alert: AppAlert?
@@ -41,11 +42,13 @@ final class AppState {
         self.settings = settings
         jobs = JobManager(settings: settings)
         cad = CADViewerModel()
+        flow = FlowFieldModel()
         recentProjects = (UserDefaults.standard.stringArray(forKey: Self.recentsKey) ?? [])
             .map { URL(fileURLWithPath: $0) }
             .filter { ProjectStore.isProject($0) }
         jobs.loadHistory(from: jobsRoot)
         showLatestLapSim()
+        flow.onCalibrationChange = { [weak self] in self?.project?.isDirty = true }
         terminationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -117,6 +120,7 @@ final class AppState {
         guard let project else { return }
         do {
             try lapSim.save(toProject: project.url)
+            try saveFlowState(toProject: project.url)
             let saved = try ProjectStore.save(project.manifest, at: project.url)
             self.project?.manifest = saved
             self.project?.isDirty = false
@@ -156,6 +160,7 @@ final class AppState {
         storeRecents()
         jobs.loadHistory(from: jobsRoot)
         showLatestLapSim()
+        loadFlowState(fromProject: url)
     }
 
     private func storeRecents() {

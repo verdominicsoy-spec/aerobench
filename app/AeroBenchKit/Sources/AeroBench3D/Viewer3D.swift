@@ -40,11 +40,26 @@ public protocol Viewer3D: AnyObject {
     var showsStatistics: Bool { get set }
     var onPick: ((PickResult) -> Void)? { get set }
 
-    func show(_ model: Model3D?)
+    /// Replaces the model. With resetCamera false the view stays where it is.
+    func show(_ model: Model3D?, resetCamera: Bool)
     func setHidden(_ ids: Set<Int>)
     func look(from view: StandardView)
     func fitAll()
     func setMarkers(_ points: [SIMD3<Double>])
+
+    /// Frames the camera on these bounds (metres) instead of the model's,
+    /// and draws them as a box labelled in mm. nil goes back to the model.
+    func setFrame(_ bounds: (min: SIMD3<Double>, max: SIMD3<Double>)?)
+    /// Coloured points, for showing voxels. Empty clears them.
+    func setPoints(_ positions: [SIMD3<Float>], colors: [SIMD4<Float>])
+    /// An image on the plane x = const, spanning y and z (metres). nil clears it.
+    func setSlice(_ image: CGImage?, x: Double, y: ClosedRange<Double>, z: ClosedRange<Double>)
+}
+
+extension Viewer3D {
+    public func show(_ model: Model3D?) {
+        show(model, resetCamera: true)
+    }
 }
 
 /// Hosts any Viewer3D in SwiftUI.
