@@ -327,8 +327,9 @@ borders are never solid.
 aero limits (T8.2, T2.1-T2.4) and the FSUK 2027 differences (T8.1.2, T8.3.3,
 T8.4.5), each with its rule number and source. FSUK applies the FS geometry
 limits unchanged. The limits are relative to the car (tyres, head
-restraint), so Wing Lab turns them into a box only with the car's
-reference points.
+restraint). Wing Lab works on a wing in a free plane, not placed on the car,
+so a rules box there is an optional rectangle the user places, with this file
+as the reference for its size.
 
 **Geometry check and repair.** Written in NumPy rather than pulling in
 MeshLab or similar: vertices are welded (1e-7 of the model size), then
@@ -345,3 +346,32 @@ placed at every instance of a part, counted once per part. Repair only does
 what cannot make things worse; pierced faces and non-manifold edges need a
 remesh or boolean and a person's judgement, so they are reported only. The
 repaired file is never written over the original: you choose where it goes.
+
+**Perspective sweeps without drift.** With a perspective camera the scale of
+every plane came from two clicked frames and the pinhole model between them.
+Any error in those clicks, or a camera off the centreline, made the planes
+drift: the ground crept up and the object and fine detail smeared. Now the
+ground line is measured in every frame instead (the first non-mask pixel up
+from the bottom of the crop, median over columns clear of exclusions, needs
+15% of columns), and a pinhole model v = vh + K / (a ± frame) is fitted to it
+robustly (soft L1). Each frame's scale is the reference scale times the ratio
+of its ground distance below the horizon, and its z = 0 sits on the measured
+ground, so one calibrated frame is enough. On the real STAR video the fit is
+within 0.3 px median and 0.6 px worst over the sweep. A fixed camera shows up
+as a constant ground row and is used as such. A fit worse than 3 px median
+stops the job rather than produce a wrong volume. Tracking needs +z up in the
+frames; top views still use two calibrated frames.
+
+**Any perpendicular view.** The calibration says which world axis points right
+and which up in the frames; the remaining axis is the sweep. Internally
+everything is in image-plane h, v and the volume is turned into world x, y, z
+at the end, with mirrored axes flipped, so the Explore tools, exports and the
+3D slice do not care which way the video looked. volume.json now carries all
+three coordinate arrays and the axes (the old y0/dy/z0/dz stay for older
+readers).
+
+**Detail follows the video.** A fixed 256 cells across threw away most of a
+1080p frame. With a detail level the cell is 1.5 px of the sharpest frame
+(finer gains nothing, the colours blend over a pixel or two), made coarser
+only if the grid would exceed the voxel budget: 8, 30 or 100 million voxels
+(0.03, 0.12, 0.4 GB as float32).

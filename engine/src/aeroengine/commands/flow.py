@@ -29,14 +29,18 @@ def _calibration(ctx: JobContext):
 
 @command("flow-demo")
 def flow_demo(ctx: JobContext) -> dict:
-    from ..flow.synthetic import make_sweep
+    from ..flow.synthetic import VIEWS, make_sweep
 
     perspective = bool(ctx.params.get("perspective", True))
     frames = int(ctx.params.get("frames", 121))
+    view = ctx.params.get("view", "rear")
+    if view not in VIEWS:
+        raise EngineError(f"view must be one of {', '.join(VIEWS)}")
     ctx.emit.progress(5, "rendering and encoding demo sweep")
-    cal = make_sweep(ctx.workdir / "demo.mp4", frames=frames, perspective=perspective)
+    cal = make_sweep(ctx.workdir / "demo.mp4", frames=frames, perspective=perspective, view=view)
     (ctx.workdir / "demo_calibration.json").write_text(json.dumps(cal, indent=2))
-    return {"video": "demo.mp4", "calibration": "demo_calibration.json", "frames": frames, "perspective": perspective}
+    return {"video": "demo.mp4", "calibration": "demo_calibration.json", "frames": frames, "perspective": perspective,
+            "view": view}
 
 
 @command("flow-preview")

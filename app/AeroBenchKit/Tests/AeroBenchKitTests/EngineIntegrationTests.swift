@@ -157,6 +157,31 @@ final class EngineIntegrationTests: XCTestCase {
         XCTAssertGreaterThan(model.triangleCount, 100)
     }
 
+    /// A side view (planes along y) calibrated on one frame, with the ground
+    /// line setting the scale of the rest.
+    func testSideViewWithGroundTracking() async throws {
+        let demo = try makeJob(JobSpec(command: "flow-demo", params: [
+            "frames": .int(21), "perspective": .bool(true), "view": .string("side"),
+        ]))
+        guard case .succeeded = await demo.run(onEvent: { _ in }) else { return XCTFail("demo failed") }
+        var cal = try FlowCalibration.load(demo.workdir.appendingPathComponent("demo_calibration.json"))
+        XCTAssertEqual(cal.axes, .init(right: "+x", up: "+z"))
+        cal.spatial.frames = Array(cal.spatial.frames.prefix(1))
+        cal.ground.track = true
+        XCTAssertTrue(cal.problems.isEmpty, "\(cal.problems)")
+        let rec = try makeJob(JobSpec(command: "flow-reconstruct", params: [
+            "source": .string(demo.workdir.appendingPathComponent("demo.mp4").path),
+            "calibration": try cal.jsonValue(),
+        ]))
+        guard case .succeeded = await rec.run(onEvent: { _ in }) else { return XCTFail("reconstruct failed") }
+        let vol = try FlowVolume.load(folder: rec.workdir)
+        XCTAssertEqual(vol.sweepLetter, "y")
+        XCTAssertEqual(vol.planeCount, 21)
+        let slice = try XCTUnwrap(vol.sliceImage(plane: 10))
+        XCTAssertEqual(slice.width, vol.nx)
+        XCTAssertEqual(slice.height, vol.nz)
+    }
+
     func testGeometryCheckOfTheSampleSTEP() async throws {
         let step = ModelLoaderTests.samples.appendingPathComponent("sample_car.step")
         let job = try makeJob(JobSpec(command: "cad-check", params: ["path": .string(step.path), "preset": .string("coarse")]))

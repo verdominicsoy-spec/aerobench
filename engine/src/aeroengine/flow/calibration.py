@@ -1,8 +1,11 @@
 """Capture calibration: everything needed to turn frames into a volume.
 
 Stored as JSON so one capture setup can be reused on later videos. Pixel
-coordinates are in the source frame (origin top left, v down). World
-coordinates are metres: y to the right, z up, x along the sweep.
+coordinates are in the source frame (origin top left, v down, continuous:
+pixel i covers [i, i+1)). World coordinates are metres in the car's frame.
+`axes` says which world axis points right and which up in the frames (read
+it off STAR's axis triad); the remaining axis is the sweep. Internally the
+image-plane coordinates are h (right) and v (up).
 """
 
 from __future__ import annotations
@@ -49,6 +52,15 @@ def _rect(v: Any, label: str) -> tuple[int, int, int, int]:
     return x0, y0, x1, y1
 
 
+DETAIL_CAPS = {"low": 8_000_000, "medium": 30_000_000, "high": 100_000_000}  # voxels
+
+
+def _axis(v: Any, label: str) -> tuple[int, str]:
+    if not (isinstance(v, str) and len(v) == 2 and v[0] in "+-" and v[1] in "xyz"):
+        raise EngineError(f"axes.{label} must be one of +x, -x, +y, -y, +z, -z")
+    return (1 if v[0] == "+" else -1), v[1]
+
+
 class Calibration:
     def __init__(self, data: Any) -> None:
         if not isinstance(data, dict):
@@ -85,6 +97,22 @@ class Calibration:
                 raise EngineError("window must have ymax > ymin and zmax > zmin")
         if self.working_width < 16:
             raise EngineError("working_width must be at least 16")
+        axes = data.get("axes") or {"right": "+y", "up": "+z"}
+        self.right = _axis(axes.get("right"), "right")
+        self.up = _axis(axes.get("up"), "up")
+        if self.right[1] == self.up[1]:
+            raise EngineError("axes.right and axes.up must be different axes")
+        self.sweep_axis = ({"x", "y", "z"} - {self.right[1], self.up[1]}).pop()
+        ground = data.get("ground") or {}
+        self.track_ground = bool(ground.get("track", False))
+        self.ground_level = float(ground.get("level", 0.0))
+        if self.track_ground and self.up != (1, "z"):
+            raise EngineError("ground tracking needs +z pointing up in the frames", "for top views, calibrate two frames instead")
+        self.ground_fit: tuple[float, float, float, int] | None = None  # (vh, K, a, direction) set by reconstruct
+        self.ground_rows: dict[int, float] | None = None  # constant ground (no perspective): frame -> row
+        self.detail = data.get("detail")
+        if self.detail is not None and self.detail not in DETAIL_CAPS:
+            raise EngineError("detail must be low, medium or high")
         self._spatial(data.get("spatial"))
         self._planes(data.get("planes"))
 
@@ -105,6 +133,8 @@ class Calibration:
                 if len(pts) != 2:
                     raise EngineError(f"{label} needs exactly two points")
                 (pa, wa), (pb, wb) = ((_pair(p.get("px"), f"{label} px"), _pair(p.get("world"), f"{label} world")) for p in pts)
+                signs = np.array([self.right[0], self.up[0]], float)
+                wa, wb = wa * signs, wb * signs  # world right/up coordinates to image-plane h, v
                 dp, dw = np.linalg.norm(pb - pa), np.linalg.norm(wb - wa)
                 if dp < 2 or dw <= 0:
                     raise EngineError(f"{label}: the two points must be apart in the frame and in the world")
@@ -117,17 +147,38 @@ class Calibration:
             w, h = _num(sp, "width", "spatial"), _num(sp, "height", "spatial")
             if w <= 0 or h <= 0:
                 raise EngineError("spatial width and height must be positive")
-            oy, oz = _pair(sp.get("origin", [0, 0]), "spatial.origin")  # world of crop bottom-left
+            oy, oz = _pair(sp.get("origin", [0, 0]), "spatial.origin") * [self.right[0], self.up[0]]  # crop bottom-left
             x0, y0, x1, y1 = self.crop
             sx, sy = (x1 - x0) / w, (y1 - y0) / h
             self.scales.append((0, FrameScale(sx, sy, x0 - sx * oy, y1 + sy * oz)))
         else:
             raise EngineError(f"unknown spatial mode '{mode}'", "expected points or size")
 
+    def ground_row(self, frame: float) -> float:
+        if self.ground_rows is not None:
+            return float(np.median(list(self.ground_rows.values())))
+        vh, k, a, direction = self.ground_fit
+        return vh + k / (a + direction * frame)
+
     def scale_at(self, frame: int) -> FrameScale:
         """Pixel mapping at a frame. With two calibrated frames the pixel
         scale follows a pinhole camera looking along the sweep: 1/scale is
-        linear in the plane's distance, and so in frame number."""
+        linear in the plane's distance, and so in frame number. With ground
+        tracking the scale comes from the tracked ground line instead (its
+        height above the horizon is proportional to the scale) and the ground
+        is pinned to its z level in every frame."""
+        if self.track_ground and (self.ground_fit is not None or self.ground_rows is not None):
+            f0, ref = self.scales[0]
+            if self.ground_rows is not None:  # parallel camera: constant scale, measured ground row
+                return FrameScale(ref.sx, ref.sy, ref.cu, self.ground_row(frame) + ref.sy * self.ground_level)
+            vh = self.ground_fit[0]
+            s = ref.sx * (self.ground_row(frame) - vh) / (self.ground_row(f0) - vh)
+            cu = ref.cu
+            if len(self.scales) == 2:  # a second frame fixes sideways drift (camera off the centreline)
+                (_, a), (_, b) = self.scales
+                if abs(b.sx - a.sx) > 1e-12:
+                    cu = a.cu + (s - a.sx) / (b.sx - a.sx) * (b.cu - a.cu)
+            return FrameScale(s, s, cu, self.ground_row(frame) + s * self.ground_level)
         if len(self.scales) == 1:
             return self.scales[0][1]
         (f1, a), (f2, b) = self.scales

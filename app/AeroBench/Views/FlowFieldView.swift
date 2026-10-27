@@ -62,8 +62,13 @@ struct FlowCalibrationPanel: View {
             Section {
                 HStack {
                     Button("Open Video…") { app.openFlowSourcePanel() }
-                    Button("Demo Sweep") { app.runFlowDemo() }
-                        .help("A synthetic sweep with a known answer and a matching calibration")
+                    Menu("Demo Sweep") {
+                        Button("Rear View") { app.runFlowDemo(view: "rear") }
+                        Button("Front View") { app.runFlowDemo(view: "front") }
+                        Button("Side View") { app.runFlowDemo(view: "side") }
+                    }
+                    .fixedSize()
+                    .help("A synthetic sweep with a known answer and a matching calibration")
                 }
                 if let error = flow.loadError {
                     Label(error, systemImage: "xmark.octagon").foregroundStyle(.red)
@@ -122,6 +127,24 @@ struct FlowCalibrationPanel: View {
             }
 
             Section {
+                let axes = cal.axes
+                HStack {
+                    Picker("Right in the frame", selection: $flow.calibration.axes.right) {
+                        ForEach(FlowCalibration.Axes.choices, id: \.self) { Text($0).tag($0) }
+                    }
+                    Picker("Up", selection: $flow.calibration.axes.up) {
+                        ForEach(FlowCalibration.Axes.choices, id: \.self) { Text($0).tag($0) }
+                    }
+                }
+                Text(axes.isValid ? "Planes step along \(axes.sweepLetter). Read the axes off STAR's triad: rear view +y / +z, front view −y / +z, side view +x / +z (car facing left) or −x / +z."
+                                  : "Right and up must be different axes.")
+                    .font(.caption).foregroundStyle(axes.isValid ? Color.secondary : Color.orange)
+                Toggle("Track the ground line", isOn: $flow.calibration.ground.track)
+                    .disabled(axes.up != "+z")
+                    .help("Finds where the ground meets the flow in every frame and pins z = 0 to it, so the planes cannot drift.")
+                if cal.ground.track {
+                    NumberField(label: "Ground line is at z", unit: "mm", value: mm({ cal.ground.level }, { flow.calibration.ground.level = $0 }))
+                }
                 Picker("Method", selection: $flow.calibration.spatial.mode) {
                     Text("Two points of known position").tag("points")
                     Text("Crop size").tag("size")
@@ -130,7 +153,7 @@ struct FlowCalibrationPanel: View {
                     ForEach(0..<max(cal.spatial.frames.count, 1), id: \.self) { slot in
                         CalFrameEditor(slot: slot, perspective: cal.spatial.frames.count == 2)
                     }
-                    Toggle("Perspective camera (calibrate a second frame)", isOn: Binding(
+                    Toggle(cal.ground.track ? "Also calibrate a second frame (corrects sideways drift)" : "Perspective camera (calibrate a second frame)", isOn: Binding(
                         get: { cal.spatial.frames.count == 2 },
                         set: { on in
                             if on {
@@ -142,9 +165,9 @@ struct FlowCalibrationPanel: View {
                 } else {
                     NumberField(label: "Crop width", unit: "mm", value: mm({ cal.spatial.width ?? 1 }, { flow.calibration.spatial.width = $0 }))
                     NumberField(label: "Crop height", unit: "mm", value: mm({ cal.spatial.height ?? 1 }, { flow.calibration.spatial.height = $0 }))
-                    NumberField(label: "Bottom-left y", unit: "mm", value: mm({ cal.spatial.origin?.first ?? 0 }, { v in
+                    NumberField(label: "Bottom-left \(cal.axes.rightLetter)", unit: "mm", value: mm({ cal.spatial.origin?.first ?? 0 }, { v in
                         var o = flow.calibration.spatial.origin ?? [0, 0]; o[0] = v; flow.calibration.spatial.origin = o }))
-                    NumberField(label: "Bottom-left z", unit: "mm", value: mm({ cal.spatial.origin?.last ?? 0 }, { v in
+                    NumberField(label: "Bottom-left \(cal.axes.upLetter)", unit: "mm", value: mm({ cal.spatial.origin?.last ?? 0 }, { v in
                         var o = flow.calibration.spatial.origin ?? [0, 0]; o[1] = v; flow.calibration.spatial.origin = o }))
                 }
                 Picker("Grid covers", selection: $flow.calibration.extent) {
@@ -155,15 +178,17 @@ struct FlowCalibrationPanel: View {
                     get: { cal.window != nil },
                     set: { flow.calibration.window = $0 ? [-0.9, 0.9, 0, 1] : nil }))
                 if let w = cal.window {
-                    NumberField(label: "y from", unit: "mm", value: mm({ w[0] }, { flow.calibration.window?[0] = $0 }))
-                    NumberField(label: "y to", unit: "mm", value: mm({ w[1] }, { flow.calibration.window?[1] = $0 }))
-                    NumberField(label: "z from", unit: "mm", value: mm({ w[2] }, { flow.calibration.window?[2] = $0 }))
-                    NumberField(label: "z to", unit: "mm", value: mm({ w[3] }, { flow.calibration.window?[3] = $0 }))
+                    NumberField(label: "\(cal.axes.rightLetter) from", unit: "mm", value: mm({ w[0] }, { flow.calibration.window?[0] = $0 }))
+                    NumberField(label: "\(cal.axes.rightLetter) to", unit: "mm", value: mm({ w[1] }, { flow.calibration.window?[1] = $0 }))
+                    NumberField(label: "\(cal.axes.upLetter) from", unit: "mm", value: mm({ w[2] }, { flow.calibration.window?[2] = $0 }))
+                    NumberField(label: "\(cal.axes.upLetter) to", unit: "mm", value: mm({ w[3] }, { flow.calibration.window?[3] = $0 }))
                 }
             } header: {
                 Text("4  Scale")
             } footer: {
-                Text("Click two points whose y, z you know (y to the right, z up). A perspective camera makes later planes look smaller: calibrate the first and last frames and the scale in between follows the pinhole model.")
+                Text(cal.ground.track
+                     ? "Click two points whose \(cal.axes.rightLetter), \(cal.axes.upLetter) you know on one frame. The ground line then sets the scale and height of every other frame (a perspective camera makes later planes look smaller)."
+                     : "Click two points whose \(cal.axes.rightLetter), \(cal.axes.upLetter) you know. A perspective camera makes later planes look smaller: calibrate the first and last frames and the scale in between follows the pinhole model, or track the ground line instead.")
             }
 
             Section("5  Plane positions") {
@@ -172,8 +197,8 @@ struct FlowCalibrationPanel: View {
                     Text("From CSV, one per frame").tag("csv")
                 }
                 if cal.planes.mode == "linear" {
-                    NumberField(label: "x at first frame", unit: "mm", value: mm({ cal.planes.start }, { flow.calibration.planes.start = $0 }))
-                    NumberField(label: "x at last frame", unit: "mm", value: mm({ cal.planes.end }, { flow.calibration.planes.end = $0 }))
+                    NumberField(label: "\(cal.axes.sweepLetter) at first frame", unit: "mm", value: mm({ cal.planes.start }, { flow.calibration.planes.start = $0 }))
+                    NumberField(label: "\(cal.axes.sweepLetter) at last frame", unit: "mm", value: mm({ cal.planes.end }, { flow.calibration.planes.end = $0 }))
                 } else {
                     HStack {
                         Text("\(cal.planes.positions?.count ?? 0) positions")
@@ -209,7 +234,16 @@ struct FlowCalibrationPanel: View {
                 NumberField(label: "Mask tolerance", unit: "ΔE", value: $flow.calibration.maskTolerance)
                 NumberField(label: "Reject colours further than", unit: "ΔE", value: $flow.calibration.threshold)
                 Stepper("Median filter \(cal.median <= 1 ? "off" : "\(cal.median) × \(cal.median)")", value: $flow.calibration.median, in: 1...7, step: 2)
-                Stepper("Working width \(cal.workingWidth) cells", value: $flow.calibration.workingWidth, in: 64...1024, step: 64)
+                Picker("Detail", selection: $flow.calibration.detail) {
+                    Text("Fixed width").tag(String?.none)
+                    Text("Low").tag(String?.some("low"))
+                    Text("Medium").tag(String?.some("medium"))
+                    Text("High").tag(String?.some("high"))
+                }
+                .help("Low, Medium and High follow the video's own pixels (about 1.5 px a cell) up to 8, 30 or 100 million voxels.")
+                if cal.detail == nil {
+                    Stepper("Working width \(cal.workingWidth) cells", value: $flow.calibration.workingWidth, in: 64...1024, step: 64)
+                }
             } header: {
                 Text("6  Masks and filtering")
             } footer: {
@@ -304,9 +338,9 @@ struct CalFrameEditor: View {
                     Button(index == 0 ? "Click A" : "Click B") { flow.tool = .point(slot: slot, index: index) }
                     Text(point.flatMap { $0.px.count == 2 ? "\(Int($0.px[0])), \(Int($0.px[1])) px" : nil } ?? "–")
                         .font(.caption.monospacedDigit()).frame(width: 90, alignment: .leading)
-                    TextField("y", value: worldBinding(index, 0), format: .number.precision(.fractionLength(0...2)))
+                    TextField(flow.calibration.axes.rightLetter, value: worldBinding(index, 0), format: .number.precision(.fractionLength(0...2)))
                         .frame(width: 64)
-                    TextField("z", value: worldBinding(index, 1), format: .number.precision(.fractionLength(0...2)))
+                    TextField(flow.calibration.axes.upLetter, value: worldBinding(index, 1), format: .number.precision(.fractionLength(0...2)))
                         .frame(width: 64)
                     Text("mm").foregroundStyle(.secondary)
                 }
@@ -381,6 +415,11 @@ struct FlowFramePane: View {
                         }
                         if let lo = flow.previewStats["value_min"] as? Double, let hi = flow.previewStats["value_max"] as? Double {
                             Text("Values \(lo, format: .number.precision(.fractionLength(2))) to \(hi, format: .number.precision(.fractionLength(2)))")
+                        }
+                        if let ground = flow.previewStats["ground"] as? [String: Any],
+                           let resid = ground["residual_median_px"] as? Double {
+                            let camera = ground["camera"] as? String == "pinhole" ? "perspective camera" : "fixed camera"
+                            Text("Ground line found, \(camera), fit within \(resid, format: .number.precision(.fractionLength(1))) px")
                         }
                         Text("Grey is empty. A median distance under about 5 ΔE means the colour map fits well; much higher, check the colour map and lighting.")
                             .font(.caption).foregroundStyle(.secondary)
@@ -591,9 +630,10 @@ struct FlowExplorePanel: View {
                 Section("Volume") {
                     LabeledContent("Grid", value: "\(v.nx) × \(v.ny) × \(v.nz)")
                     LabeledContent("x", value: range(v.x.first ?? 0, v.x.last ?? 0))
-                    LabeledContent("y", value: range(v.y0, v.y1))
-                    LabeledContent("z", value: range(v.z0, v.z1))
-                    LabeledContent("Cell", value: "\(String(format: "%.1f", v.dy * 1000)) mm")
+                    LabeledContent("y", value: range(v.y.first ?? 0, v.y.last ?? 0))
+                    LabeledContent("z", value: range(v.z.first ?? 0, v.z.last ?? 0))
+                    LabeledContent("Cell", value: "\(String(format: "%.1f", v.cellSize * 1000)) mm")
+                    LabeledContent("Planes along", value: v.sweepLetter)
                 }
 
                 Section {
@@ -645,8 +685,8 @@ struct FlowExplorePanel: View {
 
                 Section("Slice") {
                     Slider(value: Binding(get: { Double(flow.sliceIndex) }, set: { flow.sliceIndex = Int($0.rounded()) }),
-                           in: 0...Double(max(v.nx - 1, 1)))
-                    LabeledContent("Plane", value: "\(flow.sliceIndex + 1) of \(v.nx), x = \(String(format: "%.0f", v.x[min(flow.sliceIndex, v.nx - 1)] * 1000)) mm")
+                           in: 0...Double(max(v.planeCount - 1, 1)))
+                    LabeledContent("Plane", value: "\(flow.sliceIndex + 1) of \(v.planeCount), \(v.sweepLetter) = \(String(format: "%.0f", v.planePosition(flow.sliceIndex) * 1000)) mm")
                     Toggle("Show the slice in 3D", isOn: $flow.sliceIn3D)
                 }
 
@@ -729,16 +769,21 @@ struct SliceCompare: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 if let v = flow.volume {
-                    Text("Reconstructed, x = \(String(format: "%.0f", v.x[min(flow.sliceIndex, v.nx - 1)] * 1000)) mm").font(.caption).bold()
+                    Text("Reconstructed, \(v.sweepLetter) = \(String(format: "%.0f", v.planePosition(flow.sliceIndex) * 1000)) mm").font(.caption).bold()
                     if let slice = flow.sliceImage {
+                        // Laid out as the video showed it: the right axis across, the up axis up.
+                        let across = v.range(v.right.index), upward = v.range(v.up.index)
+                        let left = v.right.sign > 0 ? across.lowerBound : across.upperBound
+                        let rightEnd = v.right.sign > 0 ? across.upperBound : across.lowerBound
+                        let top = v.up.sign > 0 ? upward.upperBound : upward.lowerBound
                         Image(decorative: slice, scale: 1)
                             .resizable()
                             .interpolation(.none)
-                            .aspectRatio((v.y1 - v.y0) / max(v.z1 - v.z0, 1e-9), contentMode: .fit)
+                            .aspectRatio((across.upperBound - across.lowerBound) / max(upward.upperBound - upward.lowerBound, 1e-9), contentMode: .fit)
                             .background(Color.gray.opacity(0.3))
-                            .overlay(alignment: .bottomLeading) { axisLabel("y \(Int(v.y0 * 1000))") }
-                            .overlay(alignment: .bottomTrailing) { axisLabel("y \(Int(v.y1 * 1000)) mm") }
-                            .overlay(alignment: .topLeading) { axisLabel("z \(Int(v.z1 * 1000)) mm") }
+                            .overlay(alignment: .bottomLeading) { axisLabel("\(v.right.letter) \(Int(left * 1000))") }
+                            .overlay(alignment: .bottomTrailing) { axisLabel("\(v.right.letter) \(Int(rightEnd * 1000)) mm") }
+                            .overlay(alignment: .topLeading) { axisLabel("\(v.up.letter) \(Int(top * 1000)) mm") }
                     }
                 } else {
                     Text("Reconstructed").font(.caption).bold()

@@ -17,9 +17,11 @@ extension AppState {
 
     /// A synthetic sweep with a known answer and a matching calibration, to
     /// try the tool without real data.
-    func runFlowDemo() {
+    /// A synthetic sweep with a known answer: view is rear, front or side.
+    func runFlowDemo(view: String = "rear") {
         flow.loadError = nil
-        _ = jobs.submit(command: "flow-demo", params: ["frames": .int(121), "perspective": .bool(true)], in: jobsRoot) { [weak self] item in
+        let params: [String: JSONValue] = ["frames": .int(121), "perspective": .bool(true), "view": .string(view)]
+        _ = jobs.submit(command: "flow-demo", params: params, in: jobsRoot) { [weak self] item in
             guard let self else { return }
             guard item.status == .succeeded else {
                 self.flow.loadError = item.message ?? "The demo could not be generated."

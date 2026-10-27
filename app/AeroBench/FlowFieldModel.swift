@@ -178,7 +178,7 @@ final class FlowFieldModel {
         viewer.show(nil, resetCamera: false)
         viewer.setFrame(volume.bounds)
         viewer.look(from: .iso)
-        sliceIndex = volume.nx / 2
+        sliceIndex = volume.planeCount / 2
         updateWindow()
         mode = .explore
     }
@@ -224,13 +224,14 @@ final class FlowFieldModel {
     func refreshWindow() { updateWindow() }
 
     private func updateSlice() {
-        guard let volume, (0..<volume.nx).contains(sliceIndex) else {
+        guard let volume, (0..<volume.planeCount).contains(sliceIndex) else {
             sliceImage = nil
-            viewer.setSlice(nil, x: 0, y: 0...1, z: 0...1)
+            viewer.setSlice(nil, center: .zero, right: .zero, up: .zero)
             return
         }
         sliceImage = volume.sliceImage(plane: sliceIndex)
-        viewer.setSlice(sliceIn3D ? sliceImage : nil, x: volume.x[sliceIndex], y: volume.y0...volume.y1, z: volume.z0...volume.z1)
+        let place = volume.sliceFrame(plane: sliceIndex)
+        viewer.setSlice(sliceIn3D ? sliceImage : nil, center: place.center, right: place.right, up: place.up)
         let frame = volume.frames[sliceIndex]
         Task {
             guard let grabber = self.grabber, let image = try? await grabber.image(at: frame) else { return }
@@ -252,7 +253,7 @@ final class FlowFieldModel {
         viewer.show(nil, resetCamera: false)
         viewer.setFrame(nil)
         viewer.setPoints([], colors: [])
-        viewer.setSlice(nil, x: 0, y: 0...1, z: 0...1)
+        viewer.setSlice(nil, center: .zero, right: .zero, up: .zero)
     }
 }
 

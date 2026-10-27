@@ -423,10 +423,11 @@ extension SceneKitViewer {
         pointsNode.geometry = geometry
     }
 
-    public func setSlice(_ image: CGImage?, x: Double, y: ClosedRange<Double>, z: ClosedRange<Double>) {
+    public func setSlice(_ image: CGImage?, center: SIMD3<Double>, right: SIMD3<Double>, up: SIMD3<Double>) {
         sliceNode.geometry = nil
-        guard let image else { return }
-        let plane = SCNPlane(width: CGFloat(y.upperBound - y.lowerBound), height: CGFloat(z.upperBound - z.lowerBound))
+        let w = simd_length(right), h = simd_length(up)
+        guard let image, w > 0, h > 0 else { return }
+        let plane = SCNPlane(width: CGFloat(w), height: CGFloat(h))
         let material = SCNMaterial()
         material.lightingModel = .constant
         material.diffuse.contents = image
@@ -435,13 +436,14 @@ extension SceneKitViewer {
         material.transparency = 0.9
         plane.materials = [material]
         sliceNode.geometry = plane
-        // SCNPlane lies in its local x-y plane: map local x to world y,
-        // local y to world z, so its normal points along world x.
+        // SCNPlane lies in its local x-y plane: local x goes along `right`,
+        // local y along `up`, and the normal completes a right-handed frame.
+        let r = SIMD3<Float>(right / w), u = SIMD3<Float>(up / h)
         sliceNode.simdTransform = simd_float4x4(columns: (
-            SIMD4(0, 1, 0, 0),
-            SIMD4(0, 0, 1, 0),
-            SIMD4(1, 0, 0, 0),
-            SIMD4(Float(x), Float((y.lowerBound + y.upperBound) / 2), Float((z.lowerBound + z.upperBound) / 2), 1)
+            SIMD4(r, 0),
+            SIMD4(u, 0),
+            SIMD4(simd_cross(r, u), 0),
+            SIMD4(SIMD3<Float>(center), 1)
         ))
     }
 }

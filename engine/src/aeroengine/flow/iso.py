@@ -53,10 +53,14 @@ def object_surface(vol: Volume, ground_z: float | None = 0.0, smooth: float = 1.
 
         raise EngineError("this volume has no geometry mask", "reconstruct it again to show the object")
     occ = vol.solid.astype(np.float32)
-    # The outermost layer in y and z samples the crop boundary, which can
-    # catch white margins around the plot; it is never trustworthy geometry.
-    occ[:, [0, -1], :] = 0
-    occ[:, :, [0, -1]] = 0
+    # The outermost layer across each frame samples the crop boundary, which
+    # can catch white margins around the plot; it is never trustworthy geometry.
+    sweep = "xyz".index(vol.sweep_axis)
+    for axis in range(3):
+        if axis != sweep:
+            index = [slice(None)] * 3
+            index[axis] = [0, -1]
+            occ[tuple(index)] = 0
     if ground_z is not None:
         occ[:, :, vol.z <= ground_z + 0.5 * (vol.z[1] - vol.z[0])] = 0
     if smooth > 0:
@@ -74,22 +78,28 @@ def enclosed_volume(mesh: Mesh) -> float:
 
 def write_vti(vol: Volume, path: Path, name: str = "Cp0") -> None:
     """VTK ImageData with raw appended float32 data. ImageData needs even
-    spacing, so uneven plane positions are resampled along x first."""
-    x = vol.x
+    spacing, so an unevenly spaced sweep axis is resampled first."""
+    coords = [vol.x, vol.y, vol.z]
     values = vol.values
-    if not np.allclose(np.diff(x), x[1] - x[0], rtol=1e-6):
-        xu = np.linspace(x[0], x[-1], len(x))
-        values = np.stack([[np.interp(xu, x, values[:, j, k]) for k in range(values.shape[2])]
-                           for j in range(values.shape[1])]).transpose(2, 0, 1)
-        x = xu
+    for axis in range(3):
+        c = coords[axis]
+        if len(c) > 1 and not np.allclose(np.diff(c), c[1] - c[0], rtol=1e-6):
+            even = np.linspace(c[0], c[-1], len(c))
+            moved = np.moveaxis(values, axis, -1)
+            flat = moved.reshape(-1, len(c))
+            out = np.array([np.interp(even, c, row) for row in flat]).reshape(moved.shape)
+            values = np.moveaxis(out, -1, axis)
+            coords[axis] = even
+    x = coords[0]
+    vol_y, vol_z = coords[1], coords[2]
     nx, ny, nz = values.shape
     data = np.ascontiguousarray(values.transpose(2, 1, 0), dtype="<f4").tobytes()  # x fastest
-    dx, dy, dz = x[1] - x[0], vol.y[1] - vol.y[0], vol.z[1] - vol.z[0]
+    dx, dy, dz = x[1] - x[0], vol_y[1] - vol_y[0], vol_z[1] - vol_z[0]
     head = (
         '<?xml version="1.0"?>\n'
         '<VTKFile type="ImageData" version="1.0" byte_order="LittleEndian" header_type="UInt64">\n'
         f'  <ImageData WholeExtent="0 {nx - 1} 0 {ny - 1} 0 {nz - 1}" '
-        f'Origin="{x[0]:.9g} {vol.y[0]:.9g} {vol.z[0]:.9g}" Spacing="{dx:.9g} {dy:.9g} {dz:.9g}">\n'
+        f'Origin="{x[0]:.9g} {vol_y[0]:.9g} {vol_z[0]:.9g}" Spacing="{dx:.9g} {dy:.9g} {dz:.9g}">\n'
         f'    <Piece Extent="0 {nx - 1} 0 {ny - 1} 0 {nz - 1}">\n'
         f'      <PointData Scalars="{name}">\n'
         f'        <DataArray type="Float32" Name="{name}" format="appended" offset="0"/>\n'

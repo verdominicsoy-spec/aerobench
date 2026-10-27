@@ -32,8 +32,10 @@ def _clean_region(vol: Volume):
     """Voxels away from the body and the domain edges, where colours blend."""
     X, Y, Z = np.meshgrid(vol.x, vol.y, vol.z, indexing="ij")
     truth = synthetic.field(X, Y, Z)
-    near_body = binary_dilation(np.isnan(truth), iterations=2)
-    edge = (np.abs(Y) > synthetic.Y_HALF - 0.02) | (Z < 0.02) | (Z > synthetic.Z_TOP - 0.02)
+    body = (X < synthetic.BODY[0]) & (np.abs(Y) < synthetic.BODY[1]) & (Z > synthetic.BODY[2]) & (Z < synthetic.BODY[3])
+    near_body = binary_dilation(body, iterations=2)
+    edge = (np.abs(Y) > synthetic.Y_HALF - 0.02) | (Z < 0.02) | (Z > synthetic.Z_TOP - 0.02) | \
+           (X < synthetic.X0 + 0.02) | (X > synthetic.X1 - 0.02)
     return truth, ~near_body & ~edge
 
 
@@ -222,7 +224,8 @@ def test_object_surface_recovers_the_body(sweep):
     from aeroengine.flow.iso import object_surface
 
     _, _, vol, _ = sweep
-    mesh = object_surface(vol, ground_z=None)
+    # The crop reaches below the ground (for ground tracking), so cut there.
+    mesh = object_surface(vol, ground_z=0.0)
     assert mesh.triangle_count > 100
     lo, hi = mesh.positions.min(0), mesh.positions.max(0)
     x_end, half_y, z0, z1 = synthetic.BODY
@@ -268,3 +271,72 @@ def test_flow_object_command(engine, tmp_path):
     assert code == 0, (events, err)
     data = json.loads((tmp_path / "obj" / "result.json").read_text())["data"]
     assert data["triangles"] > 0 and (tmp_path / "obj" / "object.glb").exists()
+
+
+# Views, ground tracking and detail ------------------------------------------------
+
+def _max_error(vol: Volume) -> float:
+    truth, ok = _clean_region(vol)
+    rec = vol.values[ok]
+    assert np.isfinite(rec).mean() > 0.99
+    return float(np.nanmax(np.abs(rec - np.clip(truth[ok], -1, 1))))
+
+
+@pytest.mark.parametrize("view", ["front", "side"])
+def test_other_perpendicular_views(tmp_path, view):
+    cal = synthetic.make_sweep(tmp_path / "v.mp4", frames=61, view=view, perspective=True)
+    vol, _ = reconstruct(tmp_path / "v.mp4", Calibration(cal))
+    assert vol.sweep_axis == ("y" if view == "side" else "x")
+    assert np.all(np.diff(vol.x) > 0) and np.all(np.diff(vol.y) > 0) and np.all(np.diff(vol.z) > 0)
+    assert _max_error(vol) <= 0.03 * RANGE
+
+
+def test_ground_tracking_needs_one_frame_and_beats_a_misclicked_second(tmp_path):
+    cal = synthetic.make_sweep(tmp_path / "p.mp4", frames=61, perspective=True)
+    # The second calibration frame clicked 4 px too high: the planes drift.
+    sloppy = json.loads(json.dumps(cal))
+    for pt in sloppy["spatial"]["frames"][1]["points"]:
+        pt["px"][1] -= 4
+    drifted, _ = reconstruct(tmp_path / "p.mp4", Calibration(sloppy))
+    # Ground tracking with only the first frame calibrated.
+    tracked_cal = json.loads(json.dumps(cal))
+    tracked_cal["spatial"]["frames"] = tracked_cal["spatial"]["frames"][:1]
+    tracked_cal["ground"] = {"track": True}
+    tracked, summary = reconstruct(tmp_path / "p.mp4", Calibration(tracked_cal))
+    assert summary["ground"]["camera"] == "pinhole"
+    assert summary["ground"]["residual_median_px"] < 1.0
+    assert _max_error(tracked) <= 0.03 * RANGE
+    assert _max_error(tracked) < _max_error(drifted)
+
+
+def test_ground_tracking_on_a_fixed_camera(tmp_path):
+    cal = synthetic.make_sweep(tmp_path / "o.mp4", frames=31)
+    cal["ground"] = {"track": True}
+    vol, summary = reconstruct(tmp_path / "o.mp4", Calibration(cal))
+    assert summary["ground"]["camera"] == "constant"
+    assert _max_error(vol) <= 0.03 * RANGE
+
+
+def test_ground_fit_recovers_a_pinhole_camera():
+    from aeroengine.flow.reconstruct import fit_ground
+
+    rng = np.random.default_rng(3)
+    for d, vh, k, a in [(1, 540.0, 184000.0, 386.0), (-1, 300.0, 50000.0, 600.0)]:
+        f = np.arange(0, 300, 5, dtype=float)
+        rows = vh + k / (a + d * f) + rng.normal(0, 0.5, f.size)
+        rows[7] += 40  # one outlier (the car touching the ground)
+        kind, fit, resid = fit_ground(f, rows)
+        assert kind == "pinhole" and fit[3] == d
+        pred = fit[0] + fit[1] / (fit[2] + d * f)
+        truth = vh + k / (a + d * f)
+        assert np.max(np.abs(pred - truth)) < 1.0
+
+
+def test_detail_sets_the_cell_size(tmp_path):
+    cal = synthetic.make_sweep(tmp_path / "d.mp4", frames=21)
+    low, s_low = reconstruct(tmp_path / "d.mp4", Calibration({**cal, "detail": "low"}))
+    high, s_high = reconstruct(tmp_path / "d.mp4", Calibration({**cal, "detail": "high"}))
+    # About 1.5 px of the 600 px/m frames: 2.5 mm, unless the voxel budget says otherwise.
+    assert s_high["cell_mm"] == pytest.approx(2.5, rel=0.05)
+    assert s_low["cell_mm"] >= s_high["cell_mm"]
+    assert low.values.size <= 8_000_000 * 1.05

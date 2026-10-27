@@ -13,10 +13,19 @@ import numpy as np
 from ..job import EngineError
 from . import colormap
 
-X0, X1 = 0.0, 2.0  # sweep, m
+X0, X1 = 0.0, 2.0  # car length region, m
 Y_HALF = 0.6
 Z_TOP = 0.7
 BODY = (0.4, 0.25, 0.05, 0.15)  # x end, |y| half width, z bottom, z top
+WAKE_Y = 0.08  # the wake sits off the centreline so a mirrored axis would show
+
+# How each synthetic view is laid out: world axis to the right and up in the
+# frames, the sweep axis, and its range.
+VIEWS = {
+    "rear": {"right": "+y", "up": "+z", "sweep": "x", "range": (X0, X1), "h": (-Y_HALF, Y_HALF), "s0": 600.0},
+    "front": {"right": "-y", "up": "+z", "sweep": "x", "range": (X0, X1), "h": (-Y_HALF, Y_HALF), "s0": 600.0},
+    "side": {"right": "+x", "up": "+z", "sweep": "y", "range": (-Y_HALF, Y_HALF), "h": (X0, X1), "s0": 400.0},
+}
 
 
 def field(x, y, z):
@@ -24,9 +33,10 @@ def field(x, y, z):
     x, y, z = np.broadcast_arrays(np.asarray(x, float), np.asarray(y, float), np.asarray(z, float))
     amp = 1.7 * (1 - 0.3 * x)
     sy, sz, zc = 0.12 + 0.08 * x, 0.08 + 0.05 * x, 0.25 + 0.05 * x
-    v = 1 - amp * np.exp(-((y / sy) ** 2 + ((z - zc) / sz) ** 2))
+    v = 1 - amp * np.exp(-(((y - WAKE_Y) / sy) ** 2 + ((z - zc) / sz) ** 2))
     body = (x < BODY[0]) & (np.abs(y) < BODY[1]) & (z > BODY[2]) & (z < BODY[3])
-    return np.where(body, np.nan, v)
+    inside = (x >= X0) & (x <= X1) & (np.abs(y) <= Y_HALF)
+    return np.where(body | ~inside, np.nan, v)
 
 
 def wake_volume(level: float, n: int = 4001) -> float:
@@ -40,37 +50,52 @@ def wake_volume(level: float, n: int = 4001) -> float:
 
 @dataclass
 class Camera:
-    """u = cu + s y, v = cv - s z, with s fixed or pinhole-shrinking along x."""
+    """u = cu + s h, v = cv - s z, with s fixed or pinhole-shrinking along the sweep."""
 
+    view: str = "rear"
     width: int = 960
     height: int = 540
     perspective: bool = False
-    s0: float = 600.0  # px per m at the first plane
     distance: float = 1.5  # camera to first plane, m (perspective only)
 
-    def scale(self, x: float) -> float:
-        return self.s0 * self.distance / (self.distance + x - X0) if self.perspective else self.s0
+    @property
+    def spec(self) -> dict:
+        return VIEWS[self.view]
 
-    def centre(self, x: float) -> tuple[float, float]:
-        s = self.scale(x)
+    def scale(self, t: float) -> float:
+        s0, start = self.spec["s0"], self.spec["range"][0]
+        return s0 * self.distance / (self.distance + t - start) if self.perspective else s0
+
+    def centre(self, t: float) -> tuple[float, float]:
+        s = self.scale(t)
+        h_mid = sum(self.spec["h"]) / 2
         horizon, cam_height = 250.0, 0.3
-        if self.perspective:
-            return self.width / 2, horizon + s * cam_height
-        return self.width / 2, horizon + self.s0 * cam_height
+        s_for_v = s if self.perspective else self.spec["s0"]
+        return self.width / 2 - s * h_mid, horizon + s_for_v * cam_height
+
+    def world(self, t: float, h: np.ndarray, v: np.ndarray):
+        """World x, y, z of image-plane coordinates on the plane at sweep t."""
+        sign = 1 if self.spec["right"][0] == "+" else -1
+        right = self.spec["right"][1]
+        coords = {self.spec["sweep"]: np.full_like(h, t), right: sign * h, "z": v}
+        return coords["x"], coords["y"], coords["z"]
 
 
-def render(x: float, cam: Camera, rgb: np.ndarray, vmin: float, vmax: float) -> np.ndarray:
-    s = cam.scale(x)
-    cu, cv = cam.centre(x)
+# Kept for callers of the first version (rear view).
+def render(t: float, cam: Camera, rgb: np.ndarray, vmin: float, vmax: float) -> np.ndarray:
+    s = cam.scale(t)
+    cu, cv = cam.centre(t)
     u = np.arange(cam.width) + 0.5
     v = np.arange(cam.height) + 0.5
-    Y = (u[None, :] - cu) / s
-    Z = (cv - v[:, None]) / s
-    val = field(x, Y, Z)
-    inside = (np.abs(Y) <= Y_HALF) & (Z >= 0) & (Z <= Z_TOP) & ~np.isnan(val)
-    t = np.clip((np.nan_to_num(val) - vmin) / (vmax - vmin), 0, 1)
+    H = (u[None, :] - cu) / s + 0 * v[:, None]
+    V = (cv - v[:, None]) / s + 0 * u[None, :]
+    X, Y, Z = cam.world(t, H, V)
+    h_lo, h_hi = cam.spec["h"]
+    val = field(X, Y, Z)
+    inside = (H >= h_lo) & (H <= h_hi) & (V >= 0) & (V <= Z_TOP) & ~np.isnan(val)
+    tt = np.clip((np.nan_to_num(val) - vmin) / (vmax - vmin), 0, 1)
     img = np.full((cam.height, cam.width, 3), 255, np.uint8)
-    img[inside] = (rgb[(t[inside] * (len(rgb) - 1)).round().astype(int)] * 255).round().astype(np.uint8)
+    img[inside] = (rgb[(tt[inside] * (len(rgb) - 1)).round().astype(int)] * 255).round().astype(np.uint8)
     # A banded legend, as STAR draws it, in the bottom right.
     lx0, lx1, ly0, ly1 = cam.width - 330, cam.width - 30, cam.height - 40, cam.height - 18
     bands = 32
@@ -81,23 +106,24 @@ def render(x: float, cam: Camera, rgb: np.ndarray, vmin: float, vmax: float) -> 
 
 
 def make_sweep(out: Path, frames: int = 121, perspective: bool = False, cmap: str = "star_blue_yellow_red",
-               crf: int = 18, fps: int = 30) -> dict:
+               crf: int = 18, fps: int = 30, view: str = "rear") -> dict:
     """Writes an H.264 mp4 and returns a calibration that is correct for it."""
     try:
         import imageio_ffmpeg
     except ImportError as exc:  # pragma: no cover
         raise EngineError("imageio-ffmpeg is needed to encode the demo video") from exc
-    cam = Camera(perspective=perspective)
+    cam = Camera(view=view, perspective=perspective)
+    spec = cam.spec
     rgb = colormap.preset(cmap)
     vmin, vmax = -1.0, 1.0
-    xs = np.linspace(X0, X1, frames)
+    ts = np.linspace(*spec["range"], frames)
     cmd = [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
            "-s", f"{cam.width}x{cam.height}", "-r", str(fps), "-i", "-", "-c:v", "libx264", "-crf", str(crf),
            "-pix_fmt", "yuv420p", str(out)]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
-        for x in xs:
-            proc.stdin.write(render(x, cam, rgb, vmin, vmax).tobytes())
+        for t in ts:
+            proc.stdin.write(render(t, cam, rgb, vmin, vmax).tobytes())
         proc.stdin.close()
         err = proc.stderr.read().decode(errors="replace")
         if proc.wait() != 0:
@@ -106,26 +132,32 @@ def make_sweep(out: Path, frames: int = 121, perspective: bool = False, cmap: st
         if proc.poll() is None:
             proc.kill()
 
+    sign = 1 if spec["right"][0] == "+" else -1
+    h_lo, h_hi = spec["h"]
+
     def points(frame: int) -> dict:
-        x = xs[frame]
-        s = cam.scale(x)
-        cu, cv = cam.centre(x)
+        t = ts[frame]
+        s = cam.scale(t)
+        cu, cv = cam.centre(t)
         return {"frame": frame, "points": [
-            {"px": [cu - s * Y_HALF, cv], "world": [-Y_HALF, 0.0]},
-            {"px": [cu + s * Y_HALF, cv - s * Z_TOP], "world": [Y_HALF, Z_TOP]},
+            {"px": [cu + s * h_lo, cv], "world": [sign * h_lo, 0.0]},
+            {"px": [cu + s * h_hi, cv - s * Z_TOP], "world": [sign * h_hi, Z_TOP]},
         ]}
 
-    s0 = cam.scale(xs[0])
-    cu0, cv0 = cam.centre(xs[0])
+    s0 = cam.scale(ts[0])
+    cu0, cv0 = cam.centre(ts[0])
     return {
         "version": 1,
         "source_size": [cam.width, cam.height],
-        "crop": [cu0 - s0 * Y_HALF, cv0 - s0 * Z_TOP, cu0 + s0 * Y_HALF, cv0],
+        # A strip of ground below the plot so the ground line can be tracked.
+        "crop": [cu0 + s0 * h_lo, cv0 - s0 * Z_TOP, cu0 + s0 * h_hi, cv0 + 20],
         "exclude": [[cam.width - 340, cam.height - 50, cam.width - 20, cam.height - 8]],
         "colormap": {"preset": cmap},
         "value_range": [vmin, vmax],
+        "axes": {"right": spec["right"], "up": spec["up"]},
         "spatial": {"mode": "points", "frames": [points(0), points(frames - 1)] if perspective else [points(0)]},
-        "planes": {"mode": "linear", "start": X0, "end": X1, "first_frame": 0, "last_frame": frames - 1, "stride": 1},
+        "planes": {"mode": "linear", "start": float(ts[0]), "end": float(ts[-1]), "first_frame": 0,
+                   "last_frame": frames - 1, "stride": 1},
         "mask_colors": [[255, 255, 255]],
         "mask_tolerance": 10,
         "threshold": 12,

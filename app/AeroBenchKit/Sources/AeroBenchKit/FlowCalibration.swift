@@ -90,6 +90,45 @@ public struct FlowCalibration: Codable, Equatable, Sendable {
         }
     }
 
+    /// Which world axis points right and which up in the frames ("+y",
+    /// "-x", ...). The third axis is the sweep.
+    public struct Axes: Codable, Equatable, Sendable {
+        public var right = "+y"
+        public var up = "+z"
+
+        public init(right: String = "+y", up: String = "+z") {
+            self.right = right
+            self.up = up
+        }
+
+        public static let choices = ["+x", "-x", "+y", "-y", "+z", "-z"]
+
+        public var rightLetter: String { String(right.suffix(1)) }
+        public var upLetter: String { String(up.suffix(1)) }
+        /// The axis the planes step along.
+        public var sweepLetter: String {
+            ["x", "y", "z"].first { $0 != rightLetter && $0 != upLetter } ?? "x"
+        }
+
+        public var isValid: Bool {
+            Self.choices.contains(right) && Self.choices.contains(up) && rightLetter != upLetter
+        }
+    }
+
+    /// Find the ground line in every frame and pin world z = level to it, so
+    /// a perspective sweep needs one calibrated frame and cannot drift.
+    public struct Ground: Codable, Equatable, Sendable {
+        public var track = false
+        public var level = 0.0
+
+        public init(track: Bool = false, level: Double = 0.0) {
+            self.track = track
+            self.level = level
+        }
+    }
+
+    public static let detailLevels = ["low", "medium", "high"]
+
     public var version = 1
     public var sourceSize: [Int]?
     public var crop: [Double]?
@@ -105,6 +144,11 @@ public struct FlowCalibration: Codable, Equatable, Sendable {
     public var workingWidth = 256
     public var extent = "all"
     public var window: [Double]?
+    public var axes = Axes()
+    public var ground = Ground()
+    /// Grid resolution follows the frames' pixels up to this voxel budget;
+    /// nil uses the fixed working width.
+    public var detail: String?
 
     public init() {}
 
@@ -126,6 +170,9 @@ public struct FlowCalibration: Codable, Equatable, Sendable {
         workingWidth = try c.decodeIfPresent(Int.self, forKey: .workingWidth) ?? d.workingWidth
         extent = try c.decodeIfPresent(String.self, forKey: .extent) ?? d.extent
         window = try c.decodeIfPresent([Double].self, forKey: .window)
+        axes = try c.decodeIfPresent(Axes.self, forKey: .axes) ?? d.axes
+        ground = try c.decodeIfPresent(Ground.self, forKey: .ground) ?? d.ground
+        detail = try c.decodeIfPresent(String.self, forKey: .detail)
     }
 
     public static let presets = ["star_blue_yellow_red", "viridis", "jet", "rainbow"]
@@ -166,6 +213,8 @@ public struct FlowCalibration: Codable, Equatable, Sendable {
         if crop == nil { out.append("Draw the crop rectangle around the plot region.") }
         if colormap.preset == nil && colormap.legend == nil { out.append("Pick a colour map or sample the legend.") }
         if valueRange.count != 2 || !(valueRange[1] > valueRange[0]) { out.append("Set the value range, max above min.") }
+        if !axes.isValid { out.append("Right and up must be different axes.") }
+        if ground.track && axes.up != "+z" { out.append("Ground tracking needs +z pointing up; calibrate two frames instead.") }
         switch spatial.mode {
         case "points":
             if spatial.frames.isEmpty { out.append("Click two points of known position for the scale.") }

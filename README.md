@@ -162,17 +162,28 @@ stepping through the flow, such as a STAR-CCM+ plane sweep.
 3. Pick the colour map, or *Sample the legend* and drag along the colour bar
    from its low end to its high end.
 4. Enter the value range (the legend's ends, e.g. −1 and 1).
-5. Scale: click two points whose y, z you know (y right, z up). If the camera is
-   perspective (later planes look smaller, the ground line creeps up the
-   screen), tick *Perspective camera* and do it on the first and last frames.
-   Optionally limit the grid to a window around the region of interest.
-6. Plane positions: x at the first and last frame (even spacing), or a CSV of
-   one x per frame in mm. Frame range and stride.
+5. Scale. First say which world axis points right and which up in the
+   frames, off STAR's axis triad: a rear view is +y / +z, a front view
+   −y / +z, a side view +x / +z (or −x). The third axis is the one the planes
+   step along, and the volume always comes out in world x, y, z. Then click
+   two points whose positions you know on one frame.
+   For a perspective camera (later planes look smaller, the ground line
+   creeps up the screen), tick *Track the ground line*: the engine finds the
+   ground in every frame, fits a pinhole camera to it and pins z = 0 there,
+   so the planes cannot drift and one calibrated frame is enough. A second
+   calibrated frame is still worth it if the camera is off the centreline (it
+   fixes sideways drift). Without tracking, calibrate the first and last
+   frames. Optionally limit the grid to a window around the region of interest.
+6. Plane positions along the sweep axis at the first and last frame (even
+   spacing), or a CSV of one per frame in mm. Frame range and stride.
 7. Mask colours (white geometry and background by default), colour-distance
-   threshold, median filter, working resolution.
+   threshold, median filter, and detail: *Low*, *Medium* or *High* make the
+   grid follow the video's own pixels (about 1.5 px a cell) up to 8, 30 or
+   100 million voxels; *Fixed width* uses a set number of cells across.
 
 *Check This Frame* runs one plane and shows the result with the median colour
-distance; under about 5 ΔE means a good fit. *Reconstruct* builds the volume.
+distance (under about 5 ΔE means a good fit) and, with tracking on, how well
+the ground line fits. *Reconstruct* builds the volume.
 *Save Calibration* writes the setup as JSON to reuse on later videos; it is
 also saved with the project in `flow/`.
 
@@ -183,8 +194,9 @@ scrubber with the original frame beside the reconstructed plane, in mm.
 Export isosurfaces as .glb or .obj (mm) and the volume as .npz or .vti
 (ParaView).
 
-*Demo Sweep* generates a synthetic perspective sweep with a known answer and
-its calibration, to try the tool without real data.
+*Demo Sweep* generates a synthetic perspective sweep (rear, front or side
+view) with a known answer and its calibration, to try the tool without real
+data.
 
 ## The engine on its own
 

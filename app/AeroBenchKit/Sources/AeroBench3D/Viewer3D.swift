@@ -52,8 +52,9 @@ public protocol Viewer3D: AnyObject {
     func setFrame(_ bounds: (min: SIMD3<Double>, max: SIMD3<Double>)?)
     /// Coloured points, for showing voxels. Empty clears them.
     func setPoints(_ positions: [SIMD3<Float>], colors: [SIMD4<Float>])
-    /// An image on the plane x = const, spanning y and z (metres). nil clears it.
-    func setSlice(_ image: CGImage?, x: Double, y: ClosedRange<Double>, z: ClosedRange<Double>)
+    /// An image on a plane: centred at `center`, its full width along
+    /// `right` and full height along `up` (world vectors, metres). nil clears it.
+    func setSlice(_ image: CGImage?, center: SIMD3<Double>, right: SIMD3<Double>, up: SIMD3<Double>)
 }
 
 extension Viewer3D {
