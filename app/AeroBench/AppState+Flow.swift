@@ -216,6 +216,6 @@ extension AppState {
         if let job = jobs.jobs.first(where: { $0.command == "flow-reconstruct" && $0.status == .succeeded }) {
             loadFlowVolume(from: job)
         }
-        project?.isDirty = false
+        self.project?.isDirty = false
     }
 }
