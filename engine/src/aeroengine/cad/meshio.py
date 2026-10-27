@@ -216,3 +216,50 @@ def write_obj(model: Model, path: Path, scale: float = 1.0) -> None:
         lines += [f"f {base + 3*i} {base + 3*i + 1} {base + 3*i + 2}" for i in range(len(tris))]
         base += len(flat)
     Path(path).write_text("\n".join(lines) + "\n")
+
+
+# --- Reading STL and OBJ (for the geometry checks) -----------------------------
+
+def read_stl(path: Path, scale: float = 1.0) -> Model:
+    data = Path(path).read_bytes()
+    n = int.from_bytes(data[80:84], "little") if len(data) >= 84 else -1
+    if n >= 0 and len(data) == 84 + 50 * n:
+        rec = np.frombuffer(data, dtype=[("n", "<f4", 3), ("v", "<f4", (3, 3)), ("a", "<u2")], count=n, offset=84)
+        tris = rec["v"].astype(np.float64)
+    else:
+        nums = [line.split()[1:4] for line in data.decode(errors="replace").splitlines() if line.strip().startswith("vertex")]
+        tris = np.asarray(nums, float).reshape(-1, 3, 3)
+    tris = tris * scale
+    pos = tris.reshape(-1, 3).astype(np.float32)
+    idx = np.arange(len(pos), dtype=np.uint32).reshape(-1, 3)
+    mesh = Mesh(pos, vertex_normals(pos, idx), idx, Path(path).stem)
+    return Model([mesh], [Node(Path(path).stem, mesh=0)])
+
+
+def read_obj(path: Path, scale: float = 1.0) -> Model:
+    verts: list[list[float]] = []
+    groups: list[tuple[str, list[list[int]]]] = [(Path(path).stem, [])]
+    for line in Path(path).read_text(errors="replace").splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        if parts[0] == "v":
+            verts.append([float(a) for a in parts[1:4]])
+        elif parts[0] in ("o", "g"):
+            groups.append((" ".join(parts[1:]) or f"Group {len(groups)}", []))
+        elif parts[0] == "f":
+            ids = [int(t.split("/")[0]) for t in parts[1:]]
+            ids = [i - 1 if i > 0 else len(verts) + i for i in ids]
+            groups[-1][1].extend([ids[0], ids[k], ids[k + 1]] for k in range(1, len(ids) - 1))
+    v = np.asarray(verts, float) * scale
+    meshes, nodes = [], []
+    for name, faces in groups:
+        if not faces:
+            continue
+        f = np.asarray(faces, np.int64)
+        used, inv = np.unique(f, return_inverse=True)
+        pos = v[used].astype(np.float32)
+        idx = inv.reshape(-1, 3).astype(np.uint32)
+        meshes.append(Mesh(pos, vertex_normals(pos, idx), idx, name))
+        nodes.append(Node(name, mesh=len(meshes) - 1))
+    return Model(meshes, [Node(Path(path).stem, children=nodes)])
