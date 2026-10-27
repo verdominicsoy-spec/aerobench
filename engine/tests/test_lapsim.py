@@ -209,7 +209,10 @@ def test_csv_import_skips_headers_detects_closure_and_scales(tmp_path: Path):
     t = tracks.resolve({"csv": str(csv), "scale": 0.001})
     assert t.closed
     ref = tracks.from_points(x, y, closed=True)
-    assert t.length == pytest.approx(ref.length, rel=1e-6)
+    # The file is rounded to 1 micron, which shifts the smoothing spline's
+    # knots slightly (by ~25 ppm in length on macOS's scipy). A wrong unit
+    # scale or closure would be off by orders of magnitude more.
+    assert t.length == pytest.approx(ref.length, rel=1e-3)
 
 
 def test_open_csv_is_detected_as_open(tmp_path: Path):
