@@ -25,6 +25,16 @@ from .calibration import Calibration
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
 
 
+def _capture(path: Path) -> "cv2.VideoCapture":
+    """FFmpeg decodes the same way on every platform; macOS would otherwise
+    pick AVFoundation, whose colour conversion and frame counts can differ
+    from the run that was checked. The default backend is the fallback."""
+    cap = cv2.VideoCapture(str(path), cv2.CAP_FFMPEG)
+    if not cap.isOpened():
+        cap = cv2.VideoCapture(str(path))
+    return cap
+
+
 class FrameSource:
     """A video file or a folder of images, read as RGB uint8."""
 
@@ -40,7 +50,7 @@ class FrameSource:
             self.size = (first.shape[1], first.shape[0])
         elif path.is_file():
             self.images = None
-            cap = cv2.VideoCapture(str(path))
+            cap = _capture(path)
             if not cap.isOpened():
                 raise EngineError(f"could not open video {path.name}")
             self.count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -63,7 +73,7 @@ class FrameSource:
                 yield i, self._image(i)
             return
         wanted = set(indices)
-        cap = cv2.VideoCapture(str(self.path))
+        cap = _capture(self.path)
         i = 0
         last = max(indices)
         while i <= last:
@@ -293,16 +303,35 @@ def detect_ground_row(frame: np.ndarray, cal: Calibration) -> float:
     if len(cols) < 8:
         return float("nan")
     strip = frame[y0:y1][:, cols]
-    mask = np.zeros(strip.shape[:2], bool)
-    for c in cal.mask_colors:
-        mask |= colormap.lab_distance(strip, c) < cal.mask_tolerance
+    dist = np.min([colormap.lab_distance(strip, c) for c in cal.mask_colors], axis=0)
+    mask = dist < cal.mask_tolerance
     valid = mask[-1]
     above = ~mask[::-1]  # from the bottom up
     first = np.where(above.any(axis=0), above.argmax(axis=0), mask.shape[0])
     ok = valid & (first < mask.shape[0])
     if ok.sum() < 0.15 * len(cols):
         return float("nan")
-    return float(y0 + mask.shape[0] - np.median(first[ok]))
+    # To a fraction of a pixel: compression blurs the edge over a pixel or
+    # two, and whole-pixel edges flip with how a decoder rounds it (a pixel
+    # matters: far planes have the ground only tens of pixels below the
+    # horizon). The edge is where the colour distance from the ground colour
+    # crosses halfway between the flow's (3 px above) and the ground's.
+    n = mask.shape[0]
+    edges = []
+    for j in np.nonzero(ok)[0]:
+        b = n - first[j]  # first ground row from the top of the strip; b - 1 is not ground
+        if b < 4 or b >= n:
+            edges.append(float(b))
+            continue
+        d = dist[:, j]
+        mid = 0.5 * (d[b - 4] + d[min(b + 1, n - 1)])
+        edge = float(b)
+        for k in range(b - 3, b + 1):  # pixel centres at k + 0.5
+            if d[k] >= mid >= d[k + 1] and d[k] > d[k + 1]:
+                edge = k + 0.5 + (d[k] - mid) / (d[k] - d[k + 1])
+                break
+        edges.append(edge)
+    return float(y0 + np.median(edges))
 
 
 def fit_ground(frames: np.ndarray, rows: np.ndarray):

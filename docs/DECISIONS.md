@@ -461,3 +461,13 @@ detail level the planes are thinned so they are about as far apart as the
 cells across them. Same video, same time (about 40 s): 10 mm cells, 6.7 mm
 at high detail in 90 s.
 
+**Decoding the same everywhere.** The macOS CI run read the synthetic side
+view noticeably worse than Linux (worst cell 6% against 3.4%). Two changes:
+the engine asks OpenCV for its FFmpeg decoder explicitly (macOS would
+otherwise use AVFoundation, which converts colours its own way), and the
+ground edge is found to a fraction of a pixel (where the colour distance
+crosses halfway between flow and ground) instead of at whole pixels, which
+flip with how a decoder rounds a blurred edge. Re-encoding the side view
+from CRF 14 to 28 now moves the worst cell from 3.3% to 5.1% (it was 3.1%
+to 8.9%), and the worst ground misfit stays at 0.5 px.
+

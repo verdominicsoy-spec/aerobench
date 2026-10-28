@@ -504,10 +504,14 @@ def test_one_frame_tracking_with_the_camera_off_the_axis_origin(tmp_path):
     cal = synthetic.make_sweep(tmp_path / "s.mp4", frames=41, perspective=True, view="side")
     cal["ground"] = {"track": True}
     cal["spatial"]["frames"] = cal["spatial"]["frames"][:1]
-    vol, _ = reconstruct(tmp_path / "s.mp4", Calibration(cal))
+    vol, summary = reconstruct(tmp_path / "s.mp4", Calibration(cal))
     # Two calibrated frames reach 2.9% here; the worst cells for both are in
     # the steep wake core at the far planes.
-    assert _max_error(vol) <= 0.04 * RANGE
+    truth, ok = _clean_region(vol)
+    err = np.abs(vol.values[ok] - np.clip(truth[ok], -1, 1))
+    report = (f"max {np.nanmax(err) / RANGE:.1%}, 99.9% {np.nanpercentile(err, 99.9) / RANGE:.1%}, "
+              f"dE {summary['median_dE']:.2f}, ground {summary['ground']}")
+    assert _max_error(vol) <= 0.04 * RANGE, report
 
 
 def test_auto_region_spends_the_cells_on_the_flow(tmp_path):
