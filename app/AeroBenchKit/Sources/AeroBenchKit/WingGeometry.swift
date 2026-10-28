@@ -249,7 +249,7 @@ public struct Wing: Codable, Equatable, Sendable {
         return inside(a[0], b) || inside(b[0], a)
     }
 
-    static func inside(_ p: SIMD2<Double>, _ poly: [SIMD2<Double>]) -> Bool {
+    public static func inside(_ p: SIMD2<Double>, _ poly: [SIMD2<Double>]) -> Bool {
         var c = false
         var j = poly.count - 1
         for i in 0..<poly.count {

@@ -21,6 +21,7 @@ final class AppState {
     let jobs: JobManager
     let cad: CADViewerModel
     let flow: FlowFieldModel
+    let wingLab: WingLabModel
     var project: OpenProject?
     var recentProjects: [URL] = []
     var alert: AppAlert?
@@ -43,12 +44,14 @@ final class AppState {
         jobs = JobManager(settings: settings)
         cad = CADViewerModel()
         flow = FlowFieldModel()
+        wingLab = WingLabModel()
         recentProjects = (UserDefaults.standard.stringArray(forKey: Self.recentsKey) ?? [])
             .map { URL(fileURLWithPath: $0) }
             .filter { ProjectStore.isProject($0) }
         jobs.loadHistory(from: jobsRoot)
         showLatestLapSim()
         flow.onCalibrationChange = { [weak self] in self?.project?.isDirty = true }
+        wingLab.onChange = { [weak self] in self?.project?.isDirty = true }
         terminationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -121,6 +124,7 @@ final class AppState {
         do {
             try lapSim.save(toProject: project.url)
             try saveFlowState(toProject: project.url)
+            try wingLab.save(toProject: project.url)
             let saved = try ProjectStore.save(project.manifest, at: project.url)
             self.project?.manifest = saved
             self.project?.isDirty = false
@@ -153,6 +157,7 @@ final class AppState {
         project = OpenProject(url: url, manifest: manifest)
         pingJob = nil
         lapSim = LapSimSetup.load(fromProject: url) ?? LapSimSetup()
+        wingLab.reset(to: WingLabModel.load(fromProject: url) ?? WingLabModel.starter)
         project?.isDirty = false
         recentProjects.removeAll { $0.standardizedFileURL == url.standardizedFileURL }
         recentProjects.insert(url, at: 0)

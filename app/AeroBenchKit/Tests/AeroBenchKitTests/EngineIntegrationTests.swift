@@ -239,6 +239,46 @@ final class EngineIntegrationTests: XCTestCase {
         XCTAssertEqual(vol.z[best.k], 0.30, accuracy: 0.02)
     }
 
+    /// The engine builds the airfoil index; Swift reads it.
+    func testAirfoilIndexReadsInSwift() async throws {
+        let data = FileManager.default.temporaryDirectory.appendingPathComponent("aerobench-data-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: data) }
+        let job = try makeJob(JobSpec(command: "airfoil-index", params: ["data_dir": .string(data.path)]))
+        let outcome = await job.run(onEvent: { _ in })
+        guard case .succeeded = outcome else { return XCTFail("\(outcome)") }
+        let all = try AirfoilLibrary.load(data.appendingPathComponent("airfoils/index.sqlite"))
+        XCTAssertGreaterThan(all.count, 200)
+        let n2412 = try XCTUnwrap(all.first { $0.key == "naca/2412" })
+        XCTAssertEqual(n2412.thickness, 0.12, accuracy: 1e-3)
+        XCTAssertEqual(n2412.coords.count, 161)
+        var filter = AirfoilLibrary.Filter()
+        filter.text = "naca 2412"
+        XCTAssertEqual(all.filter { filter.matches($0, favourites: []) }.map(\.key), ["naca/2412"])
+    }
+
+    /// The live Swift panel method and the engine's agree on a three-element wing.
+    func testPanelMethodMatchesTheEngine() async throws {
+        let s = Airfoil.naca4("6412")!
+        let wing = Wing(elements: [
+            WingElement(airfoil: s, chord: 0.30, angle: 4),
+            WingElement(airfoil: s, chord: 0.12, angle: 25, leadingEdge: SIMD2(0.285, 0.02)),
+            WingElement(airfoil: s, chord: 0.08, angle: 45, leadingEdge: SIMD2(0.39, 0.06)),
+        ], alpha: 0)
+        let placed = wing.elements.map { $0.placed() }
+        let swift = try XCTUnwrap(PanelSolver(elements: placed, refChord: wing.refChord)).solve(alphaDeg: 2)
+        let elements = JSONValue.array(placed.map { .array($0.map { .array([.double($0.x), .double($0.y)]) }) })
+        let job = try makeJob(JobSpec(command: "wing-panel", params: [
+            "elements": elements, "alphas": .array([.double(2)]), "ref_chord": .double(wing.refChord),
+        ]))
+        let outcome = await job.run(onEvent: { _ in })
+        guard case .succeeded(let url) = outcome else { return XCTFail("\(outcome)") }
+        let result = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
+        let first = ((result["data"] as! [String: Any])["results"] as! [[String: Any]])[0]
+        let engineCl = first["cl"] as! [Double]
+        for (a, b) in zip(swift.cl, engineCl) { XCTAssertEqual(a, b, accuracy: 1e-8) }
+        XCTAssertEqual(swift.cmTotal, first["cm_total"] as! Double, accuracy: 1e-8)
+    }
+
     func testGeometryCheckOfTheSampleSTEP() async throws {
         let step = ModelLoaderTests.samples.appendingPathComponent("sample_car.step")
         let job = try makeJob(JobSpec(command: "cad-check", params: ["path": .string(step.path), "preset": .string("coarse")]))

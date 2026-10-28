@@ -33,8 +33,7 @@ struct ContentView: View {
             case .project:
                 ProjectView()
             case .wingLab:
-                ToolPlaceholderView(title: "Wing Lab", systemImage: "airplane", phase: 4,
-                                    summary: "Multi-element wings from the airfoil library, inviscid preview, SU2 runs and gap and angle optimisation.")
+                WingLabView()
             case .cadViewer:
                 CADViewerView()
             case .flowField:
@@ -78,17 +77,3 @@ struct ContentView: View {
     }
 }
 
-struct ToolPlaceholderView: View {
-    let title: String
-    let systemImage: String
-    let phase: Int
-    let summary: String
-
-    var body: some View {
-        ContentUnavailableView {
-            Label(title, systemImage: systemImage)
-        } description: {
-            Text("\(summary)\nArrives in Phase \(phase).")
-        }
-    }
-}
