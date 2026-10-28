@@ -8,11 +8,13 @@ requires-python = ">=3.12,<3.13"
 # numerics dependencies when it lands (see docs/DECISIONS.md).
 dependencies = [
     "cadquery-ocp>=8,<9",
+    "cmaes>=0.11",
     "gmsh>=4.13",
     "imageio-ffmpeg>=0.6.0",
     "neuralfoil>=0.3.3,<0.4",
     "numpy>=2.5.4",
     "opencv-python-headless>=5.0.0.93",
+    "optuna>=4,<5",
     "scikit-image>=0.26.0",
     "scipy>=1.18.1",
 ]
