@@ -120,6 +120,20 @@ def _surface_nodes(xy: np.ndarray, chord: float, xtr_suction: float, xtr_pressur
     return np.vstack([upper[::-1], lower[1:]])
 
 
+CORNER_DEG = 60.0  # a turn sharper than this between neighbouring segments is a corner
+
+
+def _convex_corners(nodes: np.ndarray, closed: bool) -> list[int]:
+    """Indices of nodes where a counter-clockwise outline turns left (outward,
+    convex) by more than CORNER_DEG."""
+    pts = np.vstack([nodes[-1:], nodes, nodes[:1]]) if closed else nodes
+    d = np.diff(pts, axis=0)
+    cross = d[:-1, 0] * d[1:, 1] - d[:-1, 1] * d[1:, 0]
+    turn = np.degrees(np.arctan2(cross, np.einsum("ij,ij->i", d[:-1], d[1:])))
+    idx = np.where(turn > CORNER_DEG)[0]
+    return [int(k) for k in idx] if closed else [int(k) + 1 for k in idx]
+
+
 def build(elements: list[np.ndarray], s: Settings, out: Path, inverted: list[bool] | None = None) -> dict:
     """Meshes the wing and writes `out` (.su2) with markers wall_0, wall_1,
     ... and farfield. Returns statistics."""
@@ -175,6 +189,9 @@ def build(elements: list[np.ndarray], s: Settings, out: Path, inverted: list[boo
             loops.append(geo.addCurveLoop(curves))
             wall_curves.append(curves)
             te_points += [tags[0]] if sharp else [tags[0], tags[-1]]
+            # Other sharp convex corners (a slat cusp, the lip of a cove) need
+            # a fan too, or the wall layers leave a hole gmsh cannot close.
+            te_points += [tags[k] for k in _convex_corners(nodes, closed=sharp) if k != 0 and k != len(nodes) - 1]
             surface_counts.append(len(nodes))
         centre = np.mean(np.vstack(elements), axis=0)
         r = s.farfield * s.ref_chord

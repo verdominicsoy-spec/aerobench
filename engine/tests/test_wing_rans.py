@@ -152,3 +152,14 @@ def test_wing_rans_end_to_end(tmp_path):
     assert len(data["surface"]) == 2 and len(data["surface"][1]["cp"]) > 50
     assert 0 < data["transition"][0][0] < 1  # predicted, not left at the default
     assert not (tmp_path / "w" / "mesh").exists()  # the mesh is not kept unless asked
+
+
+def test_convex_corners_get_fans():
+    from aeroengine.wing.mesh import _convex_corners
+
+    # A counter-clockwise L: five convex corners, one concave (index 3) that needs none.
+    ell = np.array([[0, 0], [2, 0], [2, 1], [1, 1], [1, 2], [0, 2]], float)
+    assert _convex_corners(ell, closed=True) == [0, 1, 2, 4, 5]
+    # A smooth section has none away from its trailing edge.
+    sec = naca4("4412")
+    assert all(k in (0, len(sec) - 1) for k in _convex_corners(sec, closed=False))
