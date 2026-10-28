@@ -226,9 +226,17 @@ final class EngineIntegrationTests: XCTestCase {
         let built = await rec.run(onEvent: { _ in })
         guard case .succeeded = built else { return XCTFail("\(built)") }
         let vol = try FlowVolume.load(folder: rec.workdir)
-        XCTAssertEqual(vol.planeCount, 31)
-        XCTAssertEqual(vol.y.first ?? 0, -0.6, accuracy: 0.03)
-        XCTAssertEqual(vol.y.last ?? 0, 0.6, accuracy: 0.03)
+        // The grid is trimmed to the flow, so check the field instead: the
+        // demo's wake core at x = 1 m is at y = 0.08 m (off the centreline,
+        // so a mirrored axis would show), z = 0.30 m.
+        let i = vol.x.indices.min { abs(vol.x[$0] - 1) < abs(vol.x[$1] - 1) }!
+        var best = (value: Float.infinity, j: 0, k: 0)
+        for j in 0..<vol.ny {
+            for k in 0..<vol.nz where vol.value(i, j, k) < best.value { best = (vol.value(i, j, k), j, k) }
+        }
+        XCTAssertEqual(vol.x[i], 1, accuracy: 0.05)
+        XCTAssertEqual(vol.y[best.j], 0.08, accuracy: 0.02)
+        XCTAssertEqual(vol.z[best.k], 0.30, accuracy: 0.02)
     }
 
     func testGeometryCheckOfTheSampleSTEP() async throws {
