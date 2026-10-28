@@ -35,17 +35,27 @@ cd "$SRC"
 
 MPI=disabled
 if command -v mpicc >/dev/null && command -v mpicxx >/dev/null; then MPI=enabled; fi
+
+# SU2's own meson.py wrapper clones every bundled library as a git
+# submodule, Eigen from gitlab.com included, which refuses anonymous clones
+# from some networks. None of them are needed here (they serve automatic
+# differentiation, CoolProp and Mutation++, all off), so build with meson
+# and ninja from a private Python environment instead.
+say "Getting the build tools (meson, ninja)"
+TOOLS="$HERE/build/su2-tools"
+[ -x "$TOOLS/bin/meson" ] || { "$PY" -m venv "$TOOLS" && "$TOOLS/bin/pip" install -q "meson>=1.3,<2" ninja; }
+export PATH="$TOOLS/bin:$PATH"
+
 say "Configuring (MPI $MPI)"
-# meson.py fetches SU2's own copies of meson, ninja and its small libraries.
 WIPE=""
 [ -d build ] && WIPE="--wipe"  # a half-finished earlier attempt
-"$PY" ./meson.py setup build $WIPE --prefix="$PREFIX" --buildtype=release \
+meson setup build $WIPE --prefix="$PREFIX" --buildtype=release \
   -Dwith-mpi="$MPI" -Denable-autodiff=false -Denable-directdiff=false -Denable-pywrapper=false \
   -Denable-tecio=false -Denable-cgns=false
 
 JOBS="$( (sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4) )"
 say "Building with $JOBS jobs (the long part)"
-./ninja -C build -j "$JOBS" install
+ninja -C build -j "$JOBS" install
 
 "$PREFIX/bin/SU2_CFD" --help | head -1
 say "Done. AeroBench finds SU2 in $PREFIX/bin by itself."
