@@ -245,11 +245,15 @@ def _run_once(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
     mpirun = shutil.which("mpirun", path=str(su2.parent)) or shutil.which("mpirun")
     if cores > 1 and mpirun:
         cmd = [mpirun, "-n", str(cores)] + (["--allow-run-as-root"] if hasattr(os, "geteuid") and os.geteuid() == 0 else []) + cmd
-        # One machine: keep Open MPI off UCX, whose one-sided component
-        # segfaulted SU2 on GitHub's Linux runners (and is for cluster networks).
+        # One machine: keep Open MPI off the cluster network transports.
+        # SU2 segfaulted on GitHub's Linux runners while Open MPI chose the
+        # one-sided component for MPI_Win_create: first in UCX's, then
+        # (intermittently) in rdma's, which probes the UCX-based uct
+        # transport. Shared memory and TCP are all one machine needs.
         env = dict(env or os.environ)
         env.setdefault("OMPI_MCA_osc", "^ucx")
         env.setdefault("OMPI_MCA_pml", "^ucx")
+        env.setdefault("OMPI_MCA_btl", "^uct,ofi,usnic")
     log = open(workdir / "su2.log", "w")
     proc = subprocess.Popen(cmd, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                             env=env, errors="replace")
