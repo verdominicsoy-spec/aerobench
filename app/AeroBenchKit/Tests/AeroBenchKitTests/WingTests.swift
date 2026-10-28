@@ -124,3 +124,43 @@ final class WingGeometryTests: XCTestCase {
         XCTAssertEqual(old.span, 1.0)
     }
 }
+
+final class WingPolarTests: XCTestCase {
+    func testDecodesTheEngineResult() throws {
+        let file = #"""
+        {"data": {"re": 500000.0, "n_crit": 9.0, "inverted": true, "rows": [
+          {"alpha": 2.0, "cl": -0.6, "cd": 0.008, "cm": 0.1, "transition_suction": 0.4, "transition_pressure": 1.0, "confidence": 0.97, "trusted": true},
+          {"alpha": 4.0, "cl": -0.8, "cd": 0.010, "cm": 0.1, "transition_suction": 0.2, "transition_pressure": 1.0, "confidence": 0.6, "trusted": false}]}}
+        """#
+        let polar = try WingPolar.decode(resultFile: Data(file.utf8))
+        XCTAssertEqual(polar.rows.count, 2)
+        XCTAssertEqual(polar.rows[1].trusted, false)
+        XCTAssertEqual(polar.rows[0].liftToDrag, 75, accuracy: 1e-9)
+        XCTAssertEqual(polar.row(near: 3.4)?.alpha, 4)
+        XCTAssertNil(polar.row(near: 20))
+        XCTAssertEqual(Wing(speed: 20).reynolds(chord: 0.3), 1.225 * 20 * 0.3 / 1.81e-5, accuracy: 1e-6)
+    }
+}
+
+final class WingRansResultTests: XCTestCase {
+    func testDecodesTheEngineResult() throws {
+        let file = #"""
+        {"data": {"re": 1000000.0, "mesh": {"file": "wing.su2", "cells": 70000, "triangles": 33000, "quads": 37000,
+          "first_cell_height_m": 3.1e-05, "layer_thickness_m": 0.015, "layers": 31, "min_gap_m": 0.0388,
+          "surface_nodes": [530, 419], "min_quality": 0.02, "bad_cells": 0},
+         "mesh_level": "medium", "transition": [[0.3, 0.6], [0.1, 0.4]], "model": "sst-lm",
+         "model_name": "SST with Langtry-Menter transition", "iterations": 1800, "converged": false,
+         "residual_drop": 3.2, "cl_change": 0.001, "cd_change": 0.0001, "reason": "residual fell 3.2 orders, needs 4.0",
+         "cl": 2.1, "cd": 0.031, "cm": -0.4, "elements": [{"marker": "wall_0", "cl": 1.7, "cd": 0.02, "cmz": -0.3},
+          {"marker": "wall_1", "cl": 0.4, "cd": 0.011, "cmz": -0.1}],
+         "surface": [{"x": [0, 0.5, 1], "y": [0, 0.05, 0], "cp": [1, -1, 0.2]}], "field": "flow.vtu",
+         "cfl": 10.0, "attempts": [{"cfl": 25.0, "outcome": "diverged at iteration 60"}, {"cfl": 10.0, "outcome": "finished"}]}}
+        """#
+        let r = try WingRansResult.decode(resultFile: Data(file.utf8))
+        XCTAssertFalse(r.converged)
+        XCTAssertEqual(r.elements.map(\.marker), ["wall_0", "wall_1"])
+        XCTAssertEqual(r.mesh.layers, 31)
+        XCTAssertEqual(r.attempts?.first?.outcome, "diverged at iteration 60")
+        XCTAssertEqual(r.liftToDrag, 2.1 / 0.031, accuracy: 1e-9)
+    }
+}

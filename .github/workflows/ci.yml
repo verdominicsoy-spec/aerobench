@@ -11,9 +11,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+      - name: gmsh's system libraries (macOS has them)
+        run: sudo apt-get update -q && sudo apt-get install -y -q libglu1-mesa libxcursor1 libxft2 libxinerama1 libxrender1
+      - name: SU2 from conda-forge, for the RANS tests
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: su2
+          create-args: su2=8.5.0 python=3.11
+          cache-environment: true
       - run: uv sync
         working-directory: engine
-      - run: uv run pytest -q
+      - run: AEROBENCH_SU2="$MAMBA_ROOT_PREFIX/envs/su2/bin/SU2_CFD" uv run pytest -q -rs
         working-directory: engine
 
   mac:

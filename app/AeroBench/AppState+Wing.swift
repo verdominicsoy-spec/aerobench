@@ -71,6 +71,58 @@ extension AppState {
         }
     }
 
+    /// A quick viscous polar of the selected element (NeuralFoil), at its own
+    /// chord's Reynolds number, over the angle range set in the inspector.
+    func runWingPolar() {
+        let lab = wingLab
+        guard let i = lab.selection, lab.wing.elements.indices.contains(i) else { return }
+        let e = lab.wing.elements[i]
+        let coords = JSONValue.array(e.airfoil.coords.map { .array([.double($0.x), .double($0.y)]) })
+        let params: [String: JSONValue] = [
+            "coords": coords, "re": .double(lab.wing.reynolds(chord: e.chord)), "n_crit": .double(lab.nCrit),
+            "alpha_start": .double(lab.alphaStart), "alpha_end": .double(lab.alphaEnd), "alpha_step": .double(lab.alphaStep),
+            "inverted": .bool(e.inverted),
+        ]
+        lab.polar = nil
+        lab.polarElement = i
+        lab.resultsTab = .polar
+        lab.polarJob = jobs.submit(command: "wing-polar", params: params, in: jobsRoot) { [weak self] item in
+            guard let self, item.status == .succeeded, let text = item.resultText else { return }
+            self.wingLab.polar = try? WingPolar.decode(resultFile: Data(text.utf8))
+        }
+    }
+
+    /// Meshes the wing and runs SU2 on it.
+    func runWingRANS() {
+        let lab = wingLab
+        let wing = lab.wing
+        guard !wing.elements.isEmpty else { return }
+        func points(_ p: [SIMD2<Double>]) -> JSONValue { .array(p.map { .array([.double($0.x), .double($0.y)]) }) }
+        let elements = JSONValue.array(wing.elements.map { e in
+            .object(["coords": points(e.placed()), "unit": points(e.airfoil.coords), "angle": .double(e.angle),
+                     "inverted": .bool(e.inverted), "chord": .double(e.chord)])
+        })
+        let params: [String: JSONValue] = [
+            "elements": elements, "speed": .double(wing.speed), "rho": .double(wing.rho), "mu": .double(wing.mu),
+            "alpha": .double(wing.alpha), "ref_chord": .double(wing.refChord),
+            "model": .string(lab.turbulenceModel.rawValue), "mesh": .string(lab.meshLevel),
+            "transition": lab.predictTransition ? .string("auto") : .array(wing.elements.map { _ in .array([.double(0), .double(0)]) }),
+            "turbulence_intensity": .double(lab.turbulenceIntensity / 100), "n_crit": .double(lab.nCrit),
+        ]
+        lab.ransResult = nil
+        lab.resultsTab = .cfd
+        lab.ransJob = jobs.submit(command: "wing-rans", params: params, in: jobsRoot) { [weak self] item in
+            guard let self, item.status == .succeeded, let text = item.resultText else { return }
+            self.wingLab.ransResult = try? WingRansResult.decode(resultFile: Data(text.utf8))
+            self.wingLab.ransFolder = item.workdir
+        }
+    }
+
+    /// Builds SU2 from source into the repo's build/su2 (once, 10 to 20 minutes).
+    func installSU2() {
+        wingLab.su2Job = jobs.submit(command: "su2-install", in: jobsRoot)
+    }
+
     /// Car B becomes car A with this wing in place of the one it replaces,
     /// and the Lap Sim compares the two.
     func sendWingToLapSim(cl: Double, cd: Double, replacedCla: Double, replacedCda: Double) {

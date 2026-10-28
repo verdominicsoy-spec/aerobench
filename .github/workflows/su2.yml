@@ -1,0 +1,30 @@
+name: SU2 on a Mac
+
+# Builds SU2 the way a user's Mac does (engine/scripts/install_su2.sh) and
+# runs a Wing Lab RANS case with it. Only when the script changes, or by hand.
+on:
+  push:
+    paths:
+      - engine/scripts/install_su2.sh
+      - .github/workflows/su2.yml
+  workflow_dispatch:
+
+jobs:
+  su2-mac:
+    name: Build SU2 and run a wing (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/cache@v4
+        with:
+          path: build/su2
+          key: su2-${{ runner.os }}-${{ hashFiles('engine/scripts/install_su2.sh') }}
+      - name: Build SU2 (engine/scripts/install_su2.sh)
+        run: ./engine/scripts/install_su2.sh
+      - name: A two-element RANS run with it
+        run: uv sync && uv run pytest -q -rs tests/test_wing_rans.py
+        working-directory: engine
+        env:
+          AEROBENCH_SU2: ${{ github.workspace }}/build/su2/bin/SU2_CFD

@@ -123,15 +123,21 @@ public struct Wing: Codable, Equatable, Sendable {
     public var minGap: Double  // m, closer than this is flagged
     public var span: Double  // m, for turning 2D coefficients into ClA and CdA
     public var factor3D: Double  // 2D to 3D: below 1 for a finite wing, user's estimate
+    public var speed: Double  // m/s, for the viscous solvers' Reynolds number
+    public var rho: Double  // kg/m^3
+    public var mu: Double  // Pa s
 
     public init(elements: [WingElement] = [], alpha: Double = 0, rulesBox: RulesBox? = nil, minGap: Double = 0.005,
-                span: Double = 1.0, factor3D: Double = 1.0) {
+                span: Double = 1.0, factor3D: Double = 1.0, speed: Double = 15, rho: Double = 1.225, mu: Double = 1.81e-5) {
         self.elements = elements
         self.alpha = alpha
         self.rulesBox = rulesBox
         self.minGap = minGap
         self.span = span
         self.factor3D = factor3D
+        self.speed = speed
+        self.rho = rho
+        self.mu = mu
     }
 
     public init(from decoder: Decoder) throws {
@@ -142,7 +148,13 @@ public struct Wing: Codable, Equatable, Sendable {
         minGap = try c.decodeIfPresent(Double.self, forKey: .minGap) ?? 0.005
         span = try c.decodeIfPresent(Double.self, forKey: .span) ?? 1.0
         factor3D = try c.decodeIfPresent(Double.self, forKey: .factor3D) ?? 1.0
+        speed = try c.decodeIfPresent(Double.self, forKey: .speed) ?? 15
+        rho = try c.decodeIfPresent(Double.self, forKey: .rho) ?? 1.225
+        mu = try c.decodeIfPresent(Double.self, forKey: .mu) ?? 1.81e-5
     }
+
+    /// Reynolds number on a chord at the wing's flow conditions.
+    public func reynolds(chord: Double) -> Double { rho * speed * chord / max(mu, 1e-12) }
 
     /// Coefficients are on the sum of the element chords.
     public var refChord: Double { max(elements.reduce(0) { $0 + $1.chord }, 1e-9) }

@@ -1,4 +1,5 @@
 import AeroBenchKit
+import AppKit
 import Charts
 import SwiftUI
 import simd
@@ -14,8 +15,8 @@ struct WingLabView: View {
             VSplitView {
                 WingCanvas()
                     .frame(minHeight: 280, maxHeight: .infinity)
-                CpPlot()
-                    .frame(minHeight: 150, idealHeight: 210)
+                WingResultsPane()
+                    .frame(minHeight: 170, idealHeight: 240)
             }
             .frame(minWidth: 420, maxWidth: .infinity)
             WingInspector()
@@ -376,6 +377,190 @@ struct WingCanvas: View {
     }
 }
 
+// MARK: Results
+
+struct WingResultsPane: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        @Bindable var lab = app.wingLab
+        VStack(alignment: .leading, spacing: 0) {
+            Picker("Results", selection: $lab.resultsTab) {
+                ForEach(WingLabModel.ResultsTab.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 300)
+            .padding([.top, .horizontal], 8)
+            switch lab.resultsTab {
+            case .pressure: CpPlot()
+            case .polar: PolarPlots()
+            case .cfd: CFDResults()
+            }
+        }
+    }
+}
+
+struct PolarPlots: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        let lab = app.wingLab
+        if let polar = lab.polar {
+            let rows = polar.rows
+            let element = lab.polarElement.map { WingIssue.label($0) } ?? ""
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("\(element), quick viscous (NeuralFoil), Re \(String(format: "%.0f", polar.re)), Ncrit \(String(format: "%.0f", polar.nCrit))")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if rows.contains(where: { !$0.trusted }) {
+                        Label("Hollow points: NeuralFoil is not confident there (usually past stall).", systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
+                }
+                HStack(spacing: 12) {
+                    Chart(rows) { r in
+                        LineMark(x: .value("α", r.alpha), y: .value("Cl", r.cl))
+                        PointMark(x: .value("α", r.alpha), y: .value("Cl", r.cl))
+                            .symbol(r.trusted ? .circle : .square).opacity(r.trusted ? 1 : 0.35)
+                    }
+                    .chartXAxisLabel("α (°)").chartYAxisLabel("Cl")
+                    Chart(rows) { r in
+                        LineMark(x: .value("Cd", r.cd), y: .value("Cl", r.cl))
+                        PointMark(x: .value("Cd", r.cd), y: .value("Cl", r.cl)).opacity(r.trusted ? 1 : 0.35)
+                    }
+                    .chartXAxisLabel("Cd").chartYAxisLabel("Cl")
+                    Chart(rows) { r in
+                        LineMark(x: .value("α", r.alpha), y: .value("x/c", r.transitionSuction), series: .value("Side", "Suction side"))
+                            .foregroundStyle(by: .value("Side", "Suction side"))
+                        LineMark(x: .value("α", r.alpha), y: .value("x/c", r.transitionPressure), series: .value("Side", "Pressure side"))
+                            .foregroundStyle(by: .value("Side", "Pressure side"))
+                    }
+                    .chartXAxisLabel("α (°)").chartYAxisLabel("Transition x/c")
+                    .chartYScale(domain: 0...1)
+                }
+                if let i = lab.polarElement, lab.wing.elements.indices.contains(i),
+                   let here = polar.row(near: lab.wing.elements[i].angle + lab.wing.alpha * (lab.wing.elements[i].inverted ? -1 : 1)) {
+                    HStack {
+                        Text(String(format: "At this element's angle (%.1f°): Cl %.3f, Cd %.4f, L/D %.0f, turbulent from %.0f%% chord on the suction side",
+                                    here.alpha, here.cl, here.cd, here.liftToDrag, here.transitionSuction * 100))
+                            .font(.caption.monospacedDigit())
+                        Button("Use this Cd for the Lap Sim") { lab.cdEstimate = here.cd }
+                            .buttonStyle(.link).font(.caption)
+                    }
+                }
+            }
+            .padding(8)
+        } else if let job = lab.polarJob, !job.status.isFinished {
+            ProgressView("Running NeuralFoil…").frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            Text("Pick Quick viscous in Solvers, select an element and run its polar.")
+                .foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+struct CFDResults: View {
+    @Environment(AppState.self) private var app
+
+    struct Point: Identifiable {
+        let id: Int
+        let element: String
+        let x: Double
+        let minusCp: Double
+    }
+
+    var body: some View {
+        let lab = app.wingLab
+        if let r = lab.ransResult {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    if r.converged {
+                        Label("Converged", systemImage: "checkmark.seal").foregroundStyle(.green)
+                    } else {
+                        Label("Not converged: not a result", systemImage: "xmark.octagon").foregroundStyle(.red)
+                        Text(r.reason ?? "").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text("\(r.modelName), \(r.meshLevel) mesh, Re \(String(format: "%.0f", r.re))").font(.caption)
+                    Grid(alignment: .trailing, horizontalSpacing: 10, verticalSpacing: 2) {
+                        GridRow {
+                            Text("").gridColumnAlignment(.leading)
+                            Text("Cl").bold()
+                            Text("Cd").bold()
+                        }
+                        ForEach(Array(r.elements.enumerated()), id: \.offset) { i, e in
+                            GridRow {
+                                Text(WingIssue.label(i))
+                                Text(e.cl.map { String(format: "%.3f", $0) } ?? "–")
+                                Text(e.cd.map { String(format: "%.4f", $0) } ?? "–")
+                            }
+                        }
+                        GridRow {
+                            Text("Total").bold()
+                            Text(String(format: "%.3f", r.cl)).bold()
+                            Text(String(format: "%.4f", r.cd)).bold()
+                        }
+                    }
+                    .font(.caption.monospacedDigit())
+                    Text(String(format: "L/D %.1f · %ld iterations · residual down %.1f orders", r.liftToDrag, r.iterations, r.residualDrop))
+                        .font(.caption2).foregroundStyle(.secondary)
+                    Text("\(r.mesh.cells) cells: \(r.mesh.quads) quads (\(r.mesh.layers) wall layers), \(r.mesh.triangles) triangles")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    if let attempts = r.attempts, attempts.count > 1 {
+                        Text("Diverged at CFL \(attempts.dropLast().map { String(format: "%g", $0.cfl) }.joined(separator: ", ")); finished at CFL \(String(format: "%g", r.cfl ?? 0)).")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    HStack {
+                        if r.converged {
+                            Button("Use for the Lap Sim") {
+                                lab.cdEstimate = r.cd
+                                app.sendWingToLapSim(cl: r.cl, cd: r.cd, replacedCla: lab.replacedCla, replacedCda: lab.replacedCda)
+                            }
+                            .help("Car B becomes car A with this wing (see Use in the Lap Sim for span and the 3D factor)")
+                        }
+                        if let folder = lab.ransFolder, let field = r.field {
+                            Button("Show Flow Field") { NSWorkspace.shared.activateFileViewerSelecting([folder.appendingPathComponent(field)]) }
+                                .help("flow.vtu, for ParaView")
+                        }
+                    }
+                    .buttonStyle(.link).font(.caption)
+                }
+                .frame(width: 260, alignment: .leading)
+                Chart(points(r)) { p in
+                    LineMark(x: .value("x (mm)", p.x), y: .value("−Cp", p.minusCp))
+                        .foregroundStyle(by: .value("Element", p.element))
+                }
+                .chartXAxisLabel("x (mm)").chartYAxisLabel("−Cp")
+                .opacity(r.converged ? 1 : 0.35)
+            }
+            .padding(8)
+        } else if let job = lab.ransJob, !job.status.isFinished {
+            VStack {
+                ProgressView(value: job.progress, total: 100)
+                Text(job.progressMessage).font(.caption)
+            }
+            .padding()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            Text("Pick RANS CFD in Solvers and run it.").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func points(_ r: WingRansResult) -> [Point] {
+        var out: [Point] = []
+        var id = 0
+        for (i, s) in r.surface.enumerated() {
+            let sides = s.side ?? Array(repeating: "", count: s.x.count)
+            for k in s.x.indices {
+                let series = sides[k].isEmpty ? WingIssue.label(i) : "\(WingIssue.label(i)) \(sides[k])"
+                out.append(Point(id: id, element: series, x: s.x[k] * 1000, minusCp: -s.cp[k]))
+                id += 1
+            }
+        }
+        return out
+    }
+}
+
 // MARK: Cp
 
 struct CpPlot: View {
@@ -429,9 +614,6 @@ struct CpPlot: View {
 
 struct WingInspector: View {
     @Environment(AppState.self) private var app
-    @State private var cdEstimate = 0.05
-    @State private var replacedCla = 0.0
-    @State private var replacedCda = 0.0
     @State private var sentNote: String?
 
     var body: some View {
@@ -483,6 +665,7 @@ struct WingInspector: View {
                 Text("The wing sits in its own plane, not on the car. The rules box is wherever you put it; data/rules/fs2027_aero.json has the FS and FSUK limits it comes from.")
             }
 
+            solversSection(lab)
             previewSection(lab)
             lapSimSection(lab)
 
@@ -519,6 +702,97 @@ struct WingInspector: View {
         }
     }
 
+    @ViewBuilder private func solversSection(_ lab: WingLabModel) -> some View {
+        let wing = lab.wing
+        Section {
+            Picker("Solver", selection: Binding(get: { lab.solver }, set: { lab.solver = $0 })) {
+                ForEach(WingLabModel.Solver.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            Text(lab.solver.purpose).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            NumberField(label: "Speed", unit: "m/s", value: Binding(get: { wing.speed }, set: { v in lab.edit { $0.speed = max(v, 0.1) } }))
+            NumberField(label: "Air density", unit: "kg/m³", value: Binding(get: { wing.rho }, set: { v in lab.edit { $0.rho = max(v, 0.01) } }))
+            NumberField(label: "Viscosity (×10⁻⁵)", unit: "Pa s", value: Binding(
+                get: { wing.mu * 1e5 }, set: { v in lab.edit { $0.mu = max(v, 0.01) * 1e-5 } }))
+            ForEach(Array(wing.elements.enumerated()), id: \.element.id) { i, e in
+                LabeledContent("Re, \(WingIssue.label(i))", value: String(format: "%.0f", wing.reynolds(chord: e.chord)))
+                    .font(.caption)
+            }
+            switch lab.solver {
+            case .preview:
+                EmptyView()
+            case .quickViscous:
+                quickViscousControls(lab)
+            case .rans:
+                ransControls(lab)
+            }
+        } header: {
+            Text("Solvers")
+        }
+    }
+
+    @ViewBuilder private func quickViscousControls(_ lab: WingLabModel) -> some View {
+        NumberField(label: "From α", unit: "°", value: Binding(get: { lab.alphaStart }, set: { lab.alphaStart = $0 }))
+        NumberField(label: "To α", unit: "°", value: Binding(get: { lab.alphaEnd }, set: { lab.alphaEnd = $0 }))
+        NumberField(label: "Step", unit: "°", value: Binding(get: { lab.alphaStep }, set: { lab.alphaStep = max($0, 0.1) }))
+        NumberField(label: "Turbulence (Ncrit)", value: Binding(get: { lab.nCrit }, set: { lab.nCrit = min(max($0, 1), 14) }))
+        Text("Ncrit 9 is a clean wind tunnel; lower (4 to 6) for the turbulent air behind a car, which trips the boundary layer sooner.")
+            .font(.caption).foregroundStyle(.secondary)
+        if let i = lab.selection, lab.wing.elements.indices.contains(i) {
+            Button("Polar of \(WingIssue.label(i)) (\(lab.wing.elements[i].airfoil.name))") { app.runWingPolar() }
+                .disabled(lab.polarJob.map { !$0.status.isFinished } ?? false)
+        } else {
+            Text("Select an element.").foregroundStyle(.secondary)
+        }
+        if let job = lab.polarJob, !job.status.isFinished || job.status == .failed {
+            JobInlineStatus(job: job)
+        }
+    }
+
+    @ViewBuilder private func ransControls(_ lab: WingLabModel) -> some View {
+        Picker("Model", selection: Binding(get: { lab.turbulenceModel }, set: { lab.turbulenceModel = $0 })) {
+            ForEach(WingLabModel.TurbulenceModel.allCases) { Text($0.title).tag($0) }
+        }
+        Text(lab.turbulenceModel.purpose).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        Picker("Mesh", selection: Binding(get: { lab.meshLevel }, set: { lab.meshLevel = $0 })) {
+            Text("Coarse (quick look)").tag("coarse")
+            Text("Medium").tag("medium")
+            Text("Fine").tag("fine")
+        }
+        Toggle("Laminar zones from the quick viscous solver", isOn: Binding(get: { lab.predictTransition }, set: { lab.predictTransition = $0 }))
+        Text("Where each element's flow is still laminar gets a finer, flow-aligned wall mesh (structured quads); turbulent regions and wakes get unstructured cells. With a fully turbulent model the zones only refine the mesh.")
+            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        if lab.turbulenceModel != .sa {
+            NumberField(label: "Turbulence intensity", unit: "%", value: Binding(get: { lab.turbulenceIntensity }, set: { lab.turbulenceIntensity = max($0, 0.01) }))
+        }
+        Button("Run CFD") { app.runWingRANS() }
+            .buttonStyle(.borderedProminent)
+            .disabled(lab.wing.elements.isEmpty || !lab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty
+                      || (lab.ransJob.map { !$0.status.isFinished } ?? false))
+        if !lab.wing.issues.filter({ $0.kind != .outsideRules }).isEmpty {
+            Text("Fix the overlapping or touching elements first.").font(.caption).foregroundStyle(.orange)
+        }
+        let needsSU2 = lab.ransJob.map { $0.status == .failed && ($0.message ?? "").contains("SU2 is not installed") } ?? false
+        if let job = lab.ransJob, !job.status.isFinished || job.status == .failed {
+            JobInlineStatus(job: job)
+        }
+        if needsSU2 {
+            su2Install(lab)
+        } else if let job = lab.su2Job {
+            JobInlineStatus(job: job)
+        }
+    }
+
+    @ViewBuilder private func su2Install(_ lab: WingLabModel) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("SU2 is built on your Mac from its source, once: 10 to 20 minutes. It needs Xcode's command line tools (xcode-select --install). With Open MPI (brew install open-mpi) first, it can use several cores.")
+                .font(.caption).fixedSize(horizontal: false, vertical: true)
+            Button("Install SU2") { app.installSU2() }
+                .disabled(lab.su2Job.map { !$0.status.isFinished } ?? false)
+            if let job = lab.su2Job { JobInlineStatus(job: job) }
+        }
+    }
+
     @ViewBuilder private func previewSection(_ lab: WingLabModel) -> some View {
         Section {
             if let r = lab.preview {
@@ -541,16 +815,16 @@ struct WingInspector: View {
     @ViewBuilder private func lapSimSection(_ lab: WingLabModel) -> some View {
         let wing = lab.wing
         let cl = lab.preview?.clTotal ?? 0
-        let add = wing.carContribution(cl: cl, cd: cdEstimate)
+        let add = wing.carContribution(cl: cl, cd: lab.cdEstimate)
         Section {
             NumberField(label: "Span", unit: "mm", value: mm({ wing.span }, { v in lab.edit { $0.span = max(v, 0.01) } }))
             NumberField(label: "2D to 3D factor", value: Binding(get: { wing.factor3D }, set: { v in lab.edit { $0.factor3D = max(v, 0) } }))
-            NumberField(label: "Cd (estimate until a viscous run)", value: $cdEstimate)
+            NumberField(label: "Cd (estimate until a viscous run)", value: Binding(get: { lab.cdEstimate }, set: { lab.cdEstimate = $0 }))
             LabeledContent("Adds", value: String(format: "ClA %.3f m²   CdA %.3f m²", add.cla, add.cda))
-            NumberField(label: "Replaces a wing worth ClA", unit: "m²", value: $replacedCla)
-            NumberField(label: "and CdA", unit: "m²", value: $replacedCda)
+            NumberField(label: "Replaces a wing worth ClA", unit: "m²", value: Binding(get: { lab.replacedCla }, set: { lab.replacedCla = $0 }))
+            NumberField(label: "and CdA", unit: "m²", value: Binding(get: { lab.replacedCda }, set: { lab.replacedCda = $0 }))
             Button("Compare in the Lap Sim") {
-                app.sendWingToLapSim(cl: cl, cd: cdEstimate, replacedCla: replacedCla, replacedCda: replacedCda)
+                app.sendWingToLapSim(cl: cl, cd: lab.cdEstimate, replacedCla: lab.replacedCla, replacedCda: lab.replacedCda)
                 sentNote = "Lap Sim car B is now car A with this wing. Run the Lap Sim to see the lap time difference."
             }
             .disabled(lab.preview == nil)

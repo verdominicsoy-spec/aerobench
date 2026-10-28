@@ -32,6 +32,74 @@ final class WingLabModel {
     }
     var libraryJob: JobItem?
 
+    // Solvers
+    enum Solver: String, CaseIterable, Identifiable {
+        case preview = "Inviscid preview"
+        case quickViscous = "Quick viscous"
+        case rans = "RANS CFD"
+
+        var id: String { rawValue }
+
+        var purpose: String {
+            switch self {
+            case .preview: "Live while you drag, every element together. No viscosity: lift trends and how the load splits, no drag."
+            case .quickViscous: "NeuralFoil (trained on XFOIL): one element in isolation, a whole polar in seconds, with drag and where the boundary layer turns turbulent. Picks sections; knows nothing of slot effects."
+            case .rans: "SU2 on a mesh around every element: slot flow, separation, the real gap effects. Minutes per run."
+            }
+        }
+    }
+    var solver: Solver = .preview
+    enum ResultsTab: String, CaseIterable, Identifiable {
+        case pressure = "Pressure"
+        case polar = "Polar"
+        case cfd = "CFD"
+
+        var id: String { rawValue }
+    }
+    var resultsTab: ResultsTab = .pressure
+    var polar: WingPolar?
+    var polarElement: Int?
+    var polarJob: JobItem?
+    var alphaStart = -4.0
+    var alphaEnd = 16.0
+    var alphaStep = 1.0
+    /// Amplification for free transition: 9 is a clean wind tunnel, lower
+    /// is a dirtier, more turbulent stream (behind a car, say).
+    var nCrit = 9.0
+    var cdEstimate = 0.05
+    var replacedCla = 0.0
+    var replacedCda = 0.0
+
+    // RANS
+    enum TurbulenceModel: String, CaseIterable, Identifiable {
+        case sa, sst
+        case sstLM = "sst-lm"
+
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .sa: "Spalart–Allmaras"
+            case .sst: "SST"
+            case .sstLM: "SST + transition"
+            }
+        }
+        var purpose: String {
+            switch self {
+            case .sa: "Fully turbulent, robust, the usual first choice for attached flow and modest flap angles."
+            case .sst: "Fully turbulent, better at the edge of separation: big flap angles, near stall."
+            case .sstLM: "Langtry–Menter transition: laminar runs, laminar separation bubbles and where they close. The one for FS Reynolds numbers when the details matter; slower and touchier."
+            }
+        }
+    }
+    var turbulenceModel: TurbulenceModel = .sa
+    var meshLevel = "medium"
+    var predictTransition = true
+    var turbulenceIntensity = 1.0  // percent
+    var ransJob: JobItem?
+    var ransResult: WingRansResult?
+    var ransFolder: URL?
+    var su2Job: JobItem?
+
     // The preview
     private(set) var preview: PanelSolution?
     private(set) var previewMilliseconds: Double = 0

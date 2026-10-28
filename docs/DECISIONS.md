@@ -471,3 +471,84 @@ flip with how a decoder rounds a blurred edge. Re-encoding the side view
 from CRF 14 to 28 now moves the worst cell from 3.3% to 5.1% (it was 3.1%
 to 8.9%), and the worst ground misfit stays at 0.5 px.
 
+
+## Phase 4: Wing Lab
+
+**A free plane.** Dominic asked for Wing Lab to analyse a wing locally, not
+anchored on the car, so there are no car reference points: the rules box is
+an optional rectangle he places, with data/rules/fs2027_aero.json as the
+reference for its size.
+
+**Airfoil library.** UIUC states no licence for redistributing its
+coordinates, so as the spec says the script (and the app's Download button)
+fetch them and nothing is committed (data/airfoils/ is gitignored). The NACA
+set is generated. All 1,665 UIUC files index in under 3 s; two are rejected
+as not single sections: an engine cowl (naca1) and the whole 30P30N three-
+element set in one file, which is kept in mind for the multi-element check.
+Normalising keeps a file's own chord line when it is already chord-along-x:
+de-rotating to the point furthest from the trailing edge tilted cambered NACA
+sections by about 0.09 degrees, which moved Cl by 4% at zero angle against
+their published polars. The re-panelling spline still rounds NACA's square
+root nose a touch: 0.26% of Cl, about 0.006 degrees.
+
+**Inviscid preview.** XFOIL's linear-vorticity stream-function method,
+extended to several elements with a stream function constant and a Kutta
+condition per element (and XFOIL's extrapolation at a closed trailing edge).
+Lift converges at second order to the exact Karman-Trefftz solution (5e-5 at
+320 panels); NACA 0012's lift slope is within 2% of 2 pi (1 + 0.77 t/c).
+It runs in Swift in the app (Accelerate's LU, factorised once per geometry,
+under 50 ms for three elements in a release build) because launching the
+Python engine alone takes longer than that; the engine keeps the reference
+copy, and the Swift tests check one against the other to 1e-8. The stream
+function grows with distance, so elements more than a few hundred chords
+apart lose precision; a real wing's are within a couple.
+
+**Three solvers for three questions.** Dominic asked for solvers suited to
+different things. Inviscid preview for angle trends and load split, live.
+NeuralFoil (MIT, a network trained on XFOIL, through aerosandbox: about
+400 MB in the engine environment and a 7 s first import, fine for a job) for
+picking sections: whole polars with drag and transition points in
+milliseconds, one element in isolation. SU2 RANS for the real slot flow. Each
+says in the app what it can and cannot tell you.
+
+**Trimmed mesh where laminar, polyhedral where turbulent.** Dominic's
+request, in STAR-CCM+'s terms. SU2 reads only triangles and quads in 2D, so
+true polyhedra would mean the STAR backend (listed for later). What the
+laminar/turbulent split actually needs is resolution, not a cell shape, so
+the SU2 mesh is zoned by the flow instead: structured quad wall layers
+everywhere (y+ about 1), finer flow-aligned wall cells from the leading edge
+to the transition point the quick viscous solver predicts on each surface
+(where a transition model needs them), unstructured triangles in the
+turbulent regions and wakes. With a fully turbulent model the zones only
+refine the mesh; they matter with SST plus Langtry-Menter.
+
+**Meshing robustness.** Each was a mesh SU2 diverged on, or one that would
+have failed in a slot:
+- gmsh's removeDuplicateNodes collapsed the trailing edge fan into
+  zero-area cells: not used.
+- Spacing that jumped 3.2x at a zone boundary, and 0.8% chord around a nose
+  of 1.6% radius: the surface spacing is now limited to a tenth of the local
+  radius of curvature (about 6 degrees per segment) and graded so neighbours
+  differ by at most 15%.
+- Wall-layer growth of 1.24: limited to 1.02-1.2.
+- Wall layers are capped at 40% of the narrowest gap so layers from
+  neighbouring elements cannot collide, and a slot that leaves room for
+  fewer than 10 layers is refused with that reason.
+
+**SU2 numerics.** On NACA 0012 at Re 6 million an adaptive CFL diverged twice
+and CFL 50 diverged at once; a fixed CFL 25 on two multigrid levels took the
+pressure residual down 8 orders in about 1,300 iterations (104 s, 4 cores).
+Coarser meshes tolerate less, so if SU2 diverges the run is retried at CFL 10
+and then 4, which is what one would do by hand; the result says which CFL it
+took. Converged means the pressure residual fell 4 orders and Cl and Cd moved
+less than 1e-4 of their value (with floors of 0.1 and 0.01, since a relative
+change means nothing at zero lift) over the last 200 iterations. Anything
+else is shown as not converged and greyed out.
+
+**Installing SU2.** There is no Mac package (conda-forge has Linux only), so
+engine/scripts/install_su2.sh builds SU2 8.5.0 from source into build/su2,
+with MPI if Open MPI is installed; the app offers it as a button, and the
+engine finds it there. A GitHub workflow builds it on a Mac the same way and
+runs a two-element wing whenever the script changes. Linux CI takes SU2 from
+conda-forge. gmsh's Linux wheel needs a few X/GL libraries even headless;
+macOS has them.

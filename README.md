@@ -5,7 +5,7 @@ Flow Field Viewer and Lap Sim. SwiftUI front end, Python compute engine. The
 full brief is in [docs/AeroBench_spec.pdf](docs/AeroBench_spec.pdf), and every
 judgement call made while building it is in [docs/DECISIONS.md](docs/DECISIONS.md).
 
-**Status:** Phases 0–3 built (foundations, Lap Sim, CAD Viewer, Flow Field Viewer). Wing Lab is an empty screen for now.
+**Status:** Phases 0–3 built (foundations, Lap Sim, CAD Viewer, Flow Field Viewer). Phase 4, Wing Lab, in progress: library, canvas, three solvers and SU2 runs are in; the optimiser is next.
 
 ## Layout
 
@@ -230,6 +230,58 @@ Export isosurfaces as .glb or .obj (mm) and the volume as .npz or .vti
 view) with a known answer and its calibration, to try the tool without real
 data.
 
+## Wing Lab
+
+A multi-element wing in its own plane (not placed on the car), analysed by
+the solver that suits the question.
+
+**Library** (left). The NACA 4 and 5-digit set is always there; *Download the
+Library* fetches the UIUC database (about 1,600 sections, not shipped with
+AeroBench since UIUC gives no licence to redistribute it). Search, filter by
+family, source, thickness and camber, star favourites, and *Import .dat…*
+your own (Selig or Lednicer) into My Airfoils. Every section is normalised to
+unit chord with the leading edge at the origin and its trailing edge
+thickness recorded.
+
+**Canvas** (middle). Drag a section onto the canvas to add an element, or onto
+an element to swap its shape and keep its chord, angle and place. Drag an
+element to move it, its round handle to turn it, its square handle to change
+its chord; *Snap* and the angle and chord locks help. Wings start inverted
+for downforce (a bigger angle means more downforce either way up). Gap
+(trailing edge of the element in front to this one's surface) and overlap
+(along the main chord) can be typed and move the element. Overlapping or
+too-close elements turn red; an optional rules box (you place it, using
+data/rules/fs2027_aero.json as the reference) turns them purple. ⌘Z / ⇧⌘Z
+undo and redo.
+
+**Solvers** (inspector, right):
+
+| Solver | For | Speed |
+| --- | --- | --- |
+| Inviscid preview (panel method) | lift trends and how the load splits between elements, live while dragging; no drag, no slot effects | under 50 ms |
+| Quick viscous (NeuralFoil) | choosing sections: a whole polar with drag and where the boundary layer turns turbulent, one element in isolation | seconds |
+| RANS CFD (SU2) | the real thing: slot flow, separation, gap effects; Spalart–Allmaras, SST, or SST with Langtry–Menter transition | minutes |
+
+The RANS mesh is zoned by the flow: structured quad wall layers on every
+element (y+ about 1), finer flow-aligned wall cells where the quick viscous
+solver says the flow is still laminar, unstructured triangles in the
+turbulent regions and along the wakes, far field 50 chords out. (SU2 reads
+triangles and quads in 2D, not polyhedra.) Runs that do not converge are
+shown as not converged, not as results.
+
+**Results** (under the canvas): inviscid Cp, the quick viscous polar (Cl–α,
+Cl–Cd, transition points), and the CFD run (Cl and Cd per element, surface
+Cp, convergence). *Show Flow Field* opens the run's flow.vtu in Finder for
+ParaView.
+
+**Into the Lap Sim**: with the span and a 2D-to-3D factor (your estimate),
+the wing's ClA = −Cl × span × total chord × factor (positive for downforce)
+and CdA. *Compare in the Lap Sim* makes car B car A with this wing in place of
+the one it replaces.
+
+**Export**: each element as a .dat, or all points as CSV, in mm in the wing's
+frame, for CATIA.
+
 ## The engine on its own
 
 ```sh
@@ -264,5 +316,17 @@ only if Keep mesh was ticked.
 
 ## SU2
 
-Not needed until Phase 4 (Wing Lab). The exact Apple silicon install steps will
-be written here once they have been checked on the actual machine.
+Wing Lab's RANS runs use SU2 8.5. There is no Mac package, so it is built
+from source once (10 to 20 minutes) into `build/su2` in the repo, where the
+engine finds it by itself. Either press *Install SU2* in Wing Lab when it
+asks, or:
+
+```bash
+xcode-select --install          # once, if you have not got the command line tools
+brew install open-mpi           # optional: lets SU2 use several cores
+./engine/scripts/install_su2.sh
+```
+
+The *SU2 on a Mac* GitHub workflow builds it the same way on a Mac and runs a
+two-element wing with it whenever the script changes. A different SU2 can be
+set in Settings (the SU2_CFD binary or its folder).
