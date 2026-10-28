@@ -213,11 +213,20 @@ def _surface_cp(path, placed) -> list[dict]:
     with open(path, newline="") as f:
         rows = list(csv.reader(f))
     names = [h.strip().strip('"') for h in rows[0]]
-    try:
-        ix, iy, icp = names.index("x"), names.index("y"), names.index("Pressure_Coefficient")
-    except ValueError:
+    if "x" not in names or "y" not in names:
         return []
-    pts = np.array([[float(r[ix]), float(r[iy]), float(r[icp])] for r in rows[1:] if len(r) == len(names)])
+    ix, iy = names.index("x"), names.index("y")
+    if "Pressure_Coefficient" in names:
+        icp, factor = names.index("Pressure_Coefficient"), 1.0
+    elif "Pressure" in names:
+        # SU2 8.5's CSV surface file holds only the solution variables. Its
+        # incompressible pressure is non-dimensional by rho V^2 (INC_NONDIM=
+        # INITIAL_VALUES) and zero in the free stream, so Cp is twice it
+        # (checked against the Pressure_Coefficient in flow.vtu).
+        icp, factor = names.index("Pressure"), 2.0
+    else:
+        return []
+    pts = np.array([[float(r[ix]), float(r[iy]), factor * float(r[icp])] for r in rows[1:] if len(r) == len(names)])
     owner = np.argmin([np.min(np.linalg.norm(pts[:, None, :2] - e[None, :, :], axis=2), axis=1) for e in placed], axis=0)
     out = []
     for i, e in enumerate(placed):
