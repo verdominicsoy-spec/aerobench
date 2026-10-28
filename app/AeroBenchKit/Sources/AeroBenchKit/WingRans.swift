@@ -29,6 +29,7 @@ public struct WingRansResult: Codable, Equatable, Sendable {
 
     public struct Attempt: Codable, Equatable, Sendable {
         public var cfl: Double
+        public var scheme: String?
         public var outcome: String
     }
 
@@ -49,6 +50,8 @@ public struct WingRansResult: Codable, Equatable, Sendable {
     public var surface: [Surface]
     public var field: String?
     public var cfl: Double?
+    /// "jst" (the default) or "fds", the more dissipative fallback whose drag reads high.
+    public var scheme: String?
     public var attempts: [Attempt]?
 
     public static func decode(resultFile data: Data) throws -> WingRansResult {

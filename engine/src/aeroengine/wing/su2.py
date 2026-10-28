@@ -24,6 +24,12 @@ import numpy as np
 from ..job import EngineError
 
 MODELS = {"sa": "Spalart-Allmaras", "sst": "SST", "sst-lm": "SST with Langtry-Menter transition"}
+# Convective schemes. JST (central, light fourth-order dissipation) is the
+# default: SU2's incompressible upwind FDS doubled NACA 0012's pressure drag
+# at 10 degrees on meshes of a few tens of thousands of cells (and on NASA's
+# own 225 x 65 grid). FDS stays as the fallback when JST will not run.
+SCHEMES = {"jst": "JST central", "fds": "FDS upwind (more dissipative: drag reads high)"}
+JST_DISSIPATION = (0.5, 0.005)  # second and fourth order coefficients
 
 
 @dataclass
@@ -46,6 +52,7 @@ class Case:
     # residual down 8 orders in about 1,000 iterations.
     cfl: float = 25.0
     multigrid: int = 2
+    scheme: str = "jst"
 
 
 def find_su2(hint: str | None = None) -> Path:
@@ -78,6 +85,12 @@ def config(case: Case, mesh: str) -> str:
         "sst-lm": (f"KIND_TURB_MODEL= SST\nKIND_TRANS_MODEL= LM\nFREESTREAM_TURBULENCEINTENSITY= {case.turbulence_intensity}\n"
                    "FREESTREAM_TURB2LAMVISCRATIO= 10.0"),
     }[case.model]
+    if case.scheme not in SCHEMES:
+        raise EngineError(f"unknown scheme '{case.scheme}'", f"expected one of {', '.join(SCHEMES)}")
+    flow_scheme = {
+        "jst": f"CONV_NUM_METHOD_FLOW= JST\nMUSCL_FLOW= NO\nJST_SENSOR_COEFF= ( {JST_DISSIPATION[0]}, {JST_DISSIPATION[1]} )",
+        "fds": "CONV_NUM_METHOD_FLOW= FDS\nMUSCL_FLOW= YES\nSLOPE_LIMITER_FLOW= NONE",
+    }[case.scheme]
     return f"""% AeroBench Wing Lab: 2D incompressible RANS
 SOLVER= INC_RANS
 {turb}
@@ -113,9 +126,7 @@ LINEAR_SOLVER= FGMRES
 LINEAR_SOLVER_PREC= ILU
 LINEAR_SOLVER_ERROR= 1E-6
 LINEAR_SOLVER_ITER= 15
-CONV_NUM_METHOD_FLOW= FDS
-MUSCL_FLOW= YES
-SLOPE_LIMITER_FLOW= NONE
+{flow_scheme}
 TIME_DISCRE_FLOW= EULER_IMPLICIT
 CONV_NUM_METHOD_TURB= SCALAR_UPWIND
 MUSCL_TURB= NO
@@ -186,27 +197,34 @@ def judge(history: dict[str, np.ndarray], case: Case) -> dict:
 
 
 CFL_STEPS = (25.0, 10.0, 4.0)  # tried in turn when SU2 diverges
+FALLBACK = ("fds", 10.0)  # last resort: the more dissipative scheme, flagged in the result
 
 
 def run(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int = 1,
         progress: Callable[[float, str], None] | None = None, env: dict | None = None) -> dict:
     """Runs SU2 at the case's CFL, and if it diverges, again at each lower
-    CFL in CFL_STEPS: what an engineer would do by hand. Every attempt is
-    judged the same way; the result says which CFL it took."""
+    CFL in CFL_STEPS, then once with the upwind scheme: what an engineer
+    would do by hand. Every attempt is judged the same way; the result says
+    which CFL and scheme it took."""
     from dataclasses import replace
 
     attempts = []
-    for cfl in [case.cfl] + [c for c in CFL_STEPS if c < case.cfl]:
+    plan = [(case.scheme, c) for c in [case.cfl] + [c for c in CFL_STEPS if c < case.cfl]]
+    if case.scheme != FALLBACK[0]:
+        plan.append(FALLBACK)
+    for scheme, cfl in plan:
         try:
-            out = _run_once(replace(case, cfl=cfl), mesh, workdir, su2, cores, progress, env)
+            out = _run_once(replace(case, cfl=cfl, scheme=scheme), mesh, workdir, su2, cores, progress, env)
             out["cfl"] = cfl
-            out["attempts"] = attempts + [{"cfl": cfl, "outcome": "finished"}]
+            out["scheme"] = scheme
+            out["attempts"] = attempts + [{"cfl": cfl, "scheme": scheme, "outcome": "finished"}]
             return out
         except Diverged as exc:
-            attempts.append({"cfl": cfl, "outcome": f"diverged at iteration {exc.iteration}"})
+            attempts.append({"cfl": cfl, "scheme": scheme, "outcome": f"diverged at iteration {exc.iteration}"})
             if progress:
-                progress(10, f"diverged at CFL {cfl:g}; trying a smaller step")
-    raise EngineError("SU2 diverged at every CFL tried", "; ".join(f"CFL {a['cfl']:g}: {a['outcome']}" for a in attempts)
+                progress(10, f"diverged ({SCHEMES[scheme]}, CFL {cfl:g}); trying again more cautiously")
+    raise EngineError("SU2 diverged at every CFL tried",
+                      "; ".join(f"{a['scheme'].upper()} CFL {a['cfl']:g}: {a['outcome']}" for a in attempts)
                       + ". Check the mesh: a finer level, or a wider slot.")
 
 

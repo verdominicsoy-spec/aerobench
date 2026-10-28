@@ -97,6 +97,36 @@ def test_config_per_model():
         config(case, "m.su2")
 
 
+def test_config_schemes():
+    case = Case(speed=20, rho=1.2, mu=1.8e-5, alpha_deg=5, ref_chord=0.4, ref_point=(0.1, 0), walls=["wall_0"])
+    jst = config(case, "m.su2")  # the default: central, and SU2 refuses MUSCL with it
+    assert "CONV_NUM_METHOD_FLOW= JST" in jst and "MUSCL_FLOW= NO" in jst and "JST_SENSOR_COEFF= ( 0.5, 0.005 )" in jst
+    case.scheme = "fds"
+    fds = config(case, "m.su2")
+    assert "CONV_NUM_METHOD_FLOW= FDS" in fds and "MUSCL_FLOW= YES" in fds and "JST" not in fds
+    case.scheme = "roe"
+    with pytest.raises(EngineError):
+        config(case, "m.su2")
+
+
+def test_divergence_ladder_ends_with_the_upwind_scheme(monkeypatch, tmp_path):
+    from aeroengine.wing import su2 as m
+
+    tried = []
+
+    def fake(case, *a, **k):
+        tried.append((case.scheme, case.cfl))
+        if case.scheme == "jst":
+            raise m.Diverged(42)
+        return {"converged": True}
+
+    monkeypatch.setattr(m, "_run_once", fake)
+    case = Case(speed=20, rho=1.2, mu=1.8e-5, alpha_deg=5, ref_chord=0.4, ref_point=(0.1, 0), walls=["wall_0"])
+    out = m.run(case, tmp_path / "m.su2", tmp_path, tmp_path / "SU2_CFD")
+    assert tried == [("jst", 25.0), ("jst", 10.0), ("jst", 4.0), ("fds", 10.0)]
+    assert out["scheme"] == "fds" and len(out["attempts"]) == 4
+
+
 su2 = pytest.mark.skipif(shutil.which("SU2_CFD") is None and not os.environ.get("AEROBENCH_SU2"),
                          reason="SU2 is not installed here")
 

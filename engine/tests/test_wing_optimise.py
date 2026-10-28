@@ -176,3 +176,14 @@ def test_parallel_trials(tmp_path, sampler):
     out = optimise.run(_starter(), spec, evaluate, tmp_path / "s.db", "s", tmp_path / "w")
     assert out["complete"] == 16 and calls["n"] == 16
     assert sum(t["state"] == "complete" for t in out["trials"]) == 16  # plus any invalid wings, never run
+
+
+def test_fallback_scheme_trials_are_failed(tmp_path):
+    spec = optimise.Spec([Variable(1, "angle", 20, 35)], trials=3, seed=6)
+    evaluate, _ = _fake()
+
+    def on_fallback(wing, folder):
+        return {**evaluate(wing, folder), "scheme": "fds"}
+
+    out = optimise.run(_starter(), spec, on_fallback, tmp_path / "s.db", "s", tmp_path / "w")
+    assert out["failed"] == 3 and all("fallback" in t["reason"] for t in out["trials"])

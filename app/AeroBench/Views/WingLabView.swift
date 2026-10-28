@@ -511,6 +511,10 @@ struct CFDResults: View {
                         Text("Diverged at CFL \(attempts.dropLast().map { String(format: "%g", $0.cfl) }.joined(separator: ", ")); finished at CFL \(String(format: "%g", r.cfl ?? 0)).")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
+                    if r.scheme == "fds" {
+                        Text("Finished only on the upwind fallback scheme, which is more dissipative: drag reads high (about 40% at 10° on NACA 0012). Lift is fine for comparisons.")
+                            .font(.caption2).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    }
                     HStack {
                         if r.converged {
                             Button("Use for the Lap Sim") {

@@ -179,7 +179,10 @@ def run(base: Wing, spec: Spec, evaluate: Evaluate, storage: Path, name: str, wo
                              element_cl=[e.get("cl") for e in res.get("elements", [])],
                              converged=bool(res["converged"]), iterations=res.get("iterations"),
                              cells=(res.get("mesh") or {}).get("cells"))
-                if res["converged"]:
+                if res.get("scheme", "jst") != "jst":
+                    # Its drag is on another scheme's footing: not comparable with the rest.
+                    attrs["reason"] = "ran only on the upwind fallback scheme, whose drag is not comparable"
+                elif res["converged"]:
                     value, feasible = score(spec, load, res["cd"])
                     attrs["feasible"] = feasible
                     state = optuna.trial.TrialState.COMPLETE
