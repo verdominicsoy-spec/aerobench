@@ -266,8 +266,10 @@ The RANS mesh is zoned by the flow: structured quad wall layers on every
 element (y+ about 1), finer flow-aligned wall cells where the quick viscous
 solver says the flow is still laminar, unstructured triangles in the
 turbulent regions and along the wakes, far field 50 chords out. (SU2 reads
-triangles and quads in 2D, not polyhedra.) Runs that do not converge are
-shown as not converged, not as results.
+triangles and quads in 2D, not polyhedra.) SU2 runs its JST central scheme;
+on NACA 0012 at Re 6 million that matches Ladson's lift within 2% and drag
+within about 15% up to 10° (docs/DECISIONS.md has the numbers). Runs that do
+not converge are shown as not converged, not as results.
 
 **Results** (under the canvas): inviscid Cp, the quick viscous polar (Cl–α,
 Cl–Cd, transition points), and the CFD run (Cl and Cd per element, surface

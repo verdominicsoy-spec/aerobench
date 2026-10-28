@@ -595,3 +595,58 @@ the engine also writes <name>.json, which the app follows while the study
 runs and reads when the project opens. Trials an interrupted session cut off
 are marked interrupted, queued again and not counted. Restarting a study
 with different variables or a different objective is refused.
+
+**Validation: NACA 0012 at Re 6 million against Ladson (NASA TM 4074, 80
+grit trip, from the NASA Turbulence Modeling Resource).** Spalart–Allmaras,
+default (medium) mesh, about 22,000 cells, 2 to 5 minutes a point on 4 cores:
+
+| α | Cl | Ladson Cl | Cd | Ladson Cd |
+| --- | --- | --- | --- | --- |
+| 0° | 0.000 | −0.013 (at −0.05°) | 0.00855 | 0.00809 |
+| 5° | 0.548 | 0.536 (interpolated) | 0.00977 | 0.0085 (interpolated) |
+| 10° | 1.071 | 1.071 (at 10.12°) | 0.0137 | 0.0120 |
+| 15° | not converged | 1.513 (at 15.26°) | | 0.0190 |
+
+Lift slope from 0° to 10° is 0.107 per degree against Ladson's 0.1065. Lift is
+within 2%; drag reads 5% high at 0° and 12–15% high at 5° to 10°, mostly
+pressure drag. At 15° Cl still swings by about 0.01 after 6,000 iterations,
+so the run is flagged as not converged rather than reported: treat results
+above about 12° on a single element (stall is near 17°) as a question for a
+finer mesh or a time-accurate run.
+
+**Mesh independence (same case, JST).** Coarse 13k, medium 22k, fine 45k
+cells:
+
+| Mesh | α=0° Cd | α=10° Cl | α=10° Cd |
+| --- | --- | --- | --- |
+| coarse | | 1.074 | 0.0141 |
+| medium (default) | 0.00855 | 1.071 | 0.0137 |
+| fine | 0.00842 | 1.069 | 0.0134 |
+
+Medium to fine moves lift 0.2% and drag 1.5–2%, so medium is the default
+and coarse (3% on drag, under half the time) is fine for optimiser trials.
+
+**The scheme, not the mesh, was the drag error.** The first study, on SU2's
+incompressible upwind FDS with MUSCL, gave Cl 1.04 and Cd 0.0168–0.0201 at
+10°, 37% over Ladson. Each change below was run on the medium mesh at 10°:
+finer leading edge spacing (0.0004 c) Cl 1.048 / Cd 0.0170; wall layers 2.5×
+the flat-plate boundary layer 1.047 / 0.0169; far field at 200 chords
+1.041 / 0.0174; least-squares reconstruction 1.047 / 0.0177; second-order
+turbulence convection 1.044 / 0.0178; no multigrid 1.038 / 0.0177. On NASA's
+own 225 × 65 grid the same set-up gave Cd 0.0174, and pressure drag
+integrated from the surface was 0.0116 against about 0.0055 expected:
+numerical dissipation. The JST central scheme (fourth-order coefficient
+0.005, a quarter of SU2's default; the default gave Cd 0.0149) fixed both
+lift and drag and converges at the same CFL 25. If JST diverges at every
+CFL, the run falls back to FDS once and says so; the app warns that its drag
+reads high, and the optimiser fails such trials since their drag would not
+compare with the rest.
+
+**Far field stays at 50 chords** (the spec's number): 200 chords moved Cd by
+2% and Cl by 0.3%.
+
+**Open MPI on one machine.** SU2 segfaulted intermittently on the Linux CI
+runners while Open MPI chose a one-sided component for MPI_Win_create. The
+engine now keeps Open MPI off UCX and the other cluster network transports
+(uct, ofi, usnic) when it runs SU2 under mpirun; a user's own OMPI_MCA
+settings still win.
