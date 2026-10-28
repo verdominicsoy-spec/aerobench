@@ -187,3 +187,13 @@ def test_fallback_scheme_trials_are_failed(tmp_path):
 
     out = optimise.run(_starter(), spec, on_fallback, tmp_path / "s.db", "s", tmp_path / "w")
     assert out["failed"] == 3 and all("fallback" in t["reason"] for t in out["trials"])
+
+
+def test_a_resumed_seeded_study_does_not_replay_its_proposals(tmp_path):
+    spec = optimise.Spec([Variable(1, "angle", 15, 40), Variable(1, "gap", 0.006, 0.02)], trials=4, seed=7)
+    evaluate, _ = _fake()
+    for total in (4, 8, 12):  # three sessions, each a fresh process in real use
+        spec.trials = total
+        out = optimise.run(_starter(), spec, evaluate, tmp_path / "s.db", "s", tmp_path / "w")
+    points = [tuple(round(v, 9) for v in t["params"].values()) for t in out["trials"] if t["state"] != "invalid"]
+    assert len(points) == len(set(points))

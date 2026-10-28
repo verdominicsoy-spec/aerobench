@@ -88,11 +88,14 @@ def score(spec: Spec, load: float, cd: float) -> tuple[float, bool]:
     return cd * (1 + PENALTY * short), short == 0
 
 
-def _sampler(spec: Spec) -> optuna.samplers.BaseSampler:
+def _sampler(spec: Spec, done: int = 0) -> optuna.samplers.BaseSampler:
+    # A resumed study must not replay the proposals of the session before:
+    # with a fixed seed it would, so the seed moves on by the trials so far.
+    seed = None if spec.seed is None else spec.seed + done
     if spec.sampler == "cmaes":
         # CMA-ES needs two or more variables; with one it samples at random.
-        return optuna.samplers.CmaEsSampler(seed=spec.seed, warn_independent_sampling=False)
-    return optuna.samplers.TPESampler(seed=spec.seed, constant_liar=spec.parallel > 1, n_startup_trials=8)
+        return optuna.samplers.CmaEsSampler(seed=seed, warn_independent_sampling=False)
+    return optuna.samplers.TPESampler(seed=seed, constant_liar=spec.parallel > 1, n_startup_trials=8)
 
 
 Evaluate = Callable[[Wing, Path], dict]
@@ -109,6 +112,8 @@ def run(base: Wing, spec: Spec, evaluate: Evaluate, storage: Path, name: str, wo
     rdb = optuna.storages.RDBStorage(f"sqlite:///{storage}", engine_kwargs={"connect_args": {"timeout": 60}})
     study = optuna.create_study(study_name=name, storage=rdb, direction=spec.direction, sampler=_sampler(spec),
                                 load_if_exists=True)
+    if study.trials:
+        study.sampler = _sampler(spec, len(study.trials))
     old = study.user_attrs.get("spec")
     now = _spec_dict(spec)
     if old and (old["variables"] != now["variables"] or old["objective"] != now["objective"]):
