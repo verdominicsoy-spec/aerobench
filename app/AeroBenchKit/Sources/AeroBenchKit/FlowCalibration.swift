@@ -70,7 +70,7 @@ public struct FlowCalibration: Codable, Equatable, Sendable {
     public struct Planes: Codable, Equatable, Sendable {
         public var mode = "linear"
         public var start = 0.0
-        public var end = 1.0
+        public var end = 0.0  // equal on purpose: nobody knows them until they are typed
         public var positions: [Double]?
         public var firstFrame = 0
         public var lastFrame: Int?
@@ -87,7 +87,7 @@ public struct FlowCalibration: Codable, Equatable, Sendable {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             mode = try c.decodeIfPresent(String.self, forKey: .mode) ?? "linear"
             start = try c.decodeIfPresent(Double.self, forKey: .start) ?? 0
-            end = try c.decodeIfPresent(Double.self, forKey: .end) ?? 1
+            end = try c.decodeIfPresent(Double.self, forKey: .end) ?? 0
             positions = try c.decodeIfPresent([Double].self, forKey: .positions)
             firstFrame = try c.decodeIfPresent(Int.self, forKey: .firstFrame) ?? 0
             lastFrame = try c.decodeIfPresent(Int.self, forKey: .lastFrame)
@@ -156,6 +156,8 @@ public struct FlowCalibration: Codable, Equatable, Sendable {
     /// Grid resolution follows the frames' pixels up to this voxel budget;
     /// nil uses the fixed working width.
     public var detail: String?
+    /// The quick setup's measurement (the engine ignores it; it sets `spatial`).
+    public var measure: Measure?
 
     public init() {}
 
@@ -180,6 +182,7 @@ public struct FlowCalibration: Codable, Equatable, Sendable {
         axes = try c.decodeIfPresent(Axes.self, forKey: .axes) ?? d.axes
         ground = try c.decodeIfPresent(Ground.self, forKey: .ground) ?? d.ground
         detail = try c.decodeIfPresent(String.self, forKey: .detail)
+        measure = try c.decodeIfPresent(Measure.self, forKey: .measure)
     }
 
     public static let presets = ["star_blue_yellow_red", "viridis", "jet", "rainbow"]
@@ -222,15 +225,23 @@ public struct FlowCalibration: Codable, Equatable, Sendable {
         if valueRange.count != 2 || !(valueRange[1] > valueRange[0]) { out.append("Set the value range, max above min.") }
         if !axes.isValid { out.append("Right and up must be different axes.") }
         if ground.track && axes.up != "+z" { out.append("Ground tracking needs +z pointing up; calibrate two frames instead.") }
+        return out + scaleProblems + planeProblems
+    }
+
+    /// What is missing from the scale (spatial calibration).
+    public var scaleProblems: [String] {
+        var out: [String] = []
         switch spatial.mode {
         case "points":
             if spatial.frames.isEmpty { out.append("Click two points of known position for the scale.") }
             for (i, f) in spatial.frames.enumerated() {
                 let label = spatial.frames.count == 2 ? "calibration frame \(i + 1)" : "the scale"
-                if f.points.count != 2 {
+                if f.points.count != 2 || f.points.contains(where: { $0.px.count != 2 }) {
                     out.append("Click both points for \(label).")
                 } else if f.points[0].world == f.points[1].world {
                     out.append("The two points for \(label) need different world positions.")
+                } else if f.points[0].px == f.points[1].px {
+                    out.append("The two points for \(label) are on the same pixel.")
                 }
             }
             if spatial.frames.count == 2 && spatial.frames[0].frame == spatial.frames[1].frame {
@@ -239,6 +250,12 @@ public struct FlowCalibration: Codable, Equatable, Sendable {
         default:
             if (spatial.width ?? 0) <= 0 { out.append("Enter the width the crop spans.") }
         }
+        return out
+    }
+
+    /// What is missing from the plane positions.
+    public var planeProblems: [String] {
+        var out: [String] = []
         if planes.mode == "linear" && planes.start == planes.end { out.append("Plane start and end positions must differ.") }
         if planes.mode == "csv" && (planes.positions?.count ?? 0) < 2 { out.append("Import a CSV of plane positions.") }
         if planes.mode == "camera" {

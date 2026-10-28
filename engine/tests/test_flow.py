@@ -473,3 +473,66 @@ def test_legend_sampling_reaches_the_map_ends(bands, worst):
     low = colormap.lab_distance(ends, cmap[0] * 255)[0, 0]
     high = colormap.lab_distance(ends, cmap[-1] * 255)[0, 1]
     assert max(low, high) < worst, (low, high)
+
+
+@pytest.mark.parametrize("view", ["front", "rear", "side"])
+def test_detect_reads_the_axis_triad(tmp_path, view):
+    from aeroengine.flow.detect import detect
+
+    cal = synthetic.make_sweep(tmp_path / "t.mp4", frames=15, perspective=True, view=view)
+    found = detect(FrameSource(tmp_path / "t.mp4"), {})
+    assert found["axes"] == cal["axes"]
+    assert "triad_box" in found and len(found["triad_box"]) == 4
+
+
+def test_triad_needs_two_arrows():
+    from aeroengine.flow.detect import read_triad
+
+    img = np.full((100, 100, 3), 255, np.uint8)
+    import cv2
+
+    cv2.arrowedLine(img, (50, 50), (90, 50), (30, 190, 30), 3, tipLength=0.35)  # only y, pointing right
+    assert read_triad(img, (0, 0, 100, 100)) is None
+    cv2.arrowedLine(img, (50, 50), (50, 10), (30, 30, 220), 3, tipLength=0.35)  # z up
+    assert read_triad(img, (0, 0, 100, 100)) == {"right": "+y", "up": "+z"}
+
+
+def test_one_frame_tracking_with_the_camera_off_the_axis_origin(tmp_path):
+    """In a side view the camera sits partway along the car, so planes shrink
+    towards the frame's centre, not towards x = 0: the sideways position has
+    to follow the vanishing point, not stay put."""
+    cal = synthetic.make_sweep(tmp_path / "s.mp4", frames=41, perspective=True, view="side")
+    cal["ground"] = {"track": True}
+    cal["spatial"]["frames"] = cal["spatial"]["frames"][:1]
+    vol, _ = reconstruct(tmp_path / "s.mp4", Calibration(cal))
+    # Two calibrated frames reach 2.9% here; the worst cells for both are in
+    # the steep wake core at the far planes.
+    assert _max_error(vol) <= 0.04 * RANGE
+
+
+def test_auto_region_spends_the_cells_on_the_flow(tmp_path):
+    cal = synthetic.make_sweep(tmp_path / "a.mp4", frames=41, perspective=True)
+    cal["detail"] = "low"
+    everything, s_all = reconstruct(tmp_path / "a.mp4", Calibration({**cal, "extent": "all"}))
+    auto, s_auto = reconstruct(tmp_path / "a.mp4", Calibration({**cal, "extent": "auto"}))
+    # The wake and body sit inside a smaller box, so its cells are finer...
+    assert s_auto["cell_mm"] < s_all["cell_mm"]
+    # ...and nothing that is not free stream is cut off.
+    X, Y, Z = np.meshgrid(everything.x, everything.y, everything.z, indexing="ij")
+    busy = np.isfinite(everything.values) & (everything.values < 0.9)
+    assert Y[busy].min() >= auto.y[0] and Y[busy].max() <= auto.y[-1]
+    assert Z[busy].max() <= auto.z[-1]
+    assert _max_error(auto) <= 0.04 * RANGE
+
+
+def test_planes_are_spaced_like_the_cells(tmp_path):
+    cal = synthetic.make_sweep(tmp_path / "p.mp4", frames=121, perspective=True)
+    # Planes typed 0.4 mm apart, much closer than low detail's cells (about
+    # 3 mm): not every frame is worth a plane. (Wrong positions for this
+    # video, but the spacing is all this checks.)
+    cal["planes"].update(start=0.0, end=0.05)
+    vol, summary = reconstruct(tmp_path / "p.mp4", Calibration({**cal, "detail": "low"}))
+    assert summary["plane_step"] > 1
+    assert len(vol.x) == len(range(0, 121, summary["plane_step"]))
+    spacing = (vol.x[-1] - vol.x[0]) / (len(vol.x) - 1)
+    assert spacing <= summary["cell_mm"] / 1000 * 1.01

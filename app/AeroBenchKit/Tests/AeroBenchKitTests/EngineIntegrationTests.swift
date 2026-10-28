@@ -200,6 +200,37 @@ final class EngineIntegrationTests: XCTestCase {
         XCTAssertEqual(data["ground_visible"] as? Bool, true)
     }
 
+    /// The quick setup as a user does it: open the demo, let detection fill
+    /// things in, measure the plot's width on one frame, type the plane
+    /// positions, build.
+    func testQuickSetupLikeAUser() async throws {
+        let demo = try makeJob(JobSpec(command: "flow-demo", params: ["frames": .int(31), "view": .string("front")]))
+        guard case .succeeded = await demo.run(onEvent: { _ in }) else { return XCTFail("demo failed") }
+        let video = demo.workdir.appendingPathComponent("demo.mp4").path
+        var cal = FlowCalibration()
+        let detect = try makeJob(JobSpec(command: "flow-detect", params: ["source": .string(video), "calibration": try cal.jsonValue()]))
+        let outcome = await detect.run(onEvent: { _ in })
+        guard case .succeeded(let url) = outcome else { return XCTFail("\(outcome)") }
+        cal.apply(try FlowDetection.decode(resultFile: Data(contentsOf: url)))
+        XCTAssertEqual(cal.axes, .init(right: "-y", up: "+z"))  // read off the demo's triad
+        XCTAssertTrue(cal.ground.track)
+        // The demo's plot is 1.2 m wide, 120 to 840 px on the first frame.
+        cal.measure = .init(frame: 0, p0: [121, 300], p1: [838, 301], width: 1.2, centre: 0)
+        cal.applyMeasure()
+        cal.planes.start = 0
+        cal.planes.end = 2
+        cal.planes.lastFrame = 30
+        XCTAssertTrue(cal.problems.isEmpty, "\(cal.problems)")
+        XCTAssertTrue(cal.quickSteps.allSatisfy(\.done))
+        let rec = try makeJob(JobSpec(command: "flow-reconstruct", params: ["source": .string(video), "calibration": try cal.jsonValue()]))
+        let built = await rec.run(onEvent: { _ in })
+        guard case .succeeded = built else { return XCTFail("\(built)") }
+        let vol = try FlowVolume.load(folder: rec.workdir)
+        XCTAssertEqual(vol.planeCount, 31)
+        XCTAssertEqual(vol.y.first ?? 0, -0.6, accuracy: 0.03)
+        XCTAssertEqual(vol.y.last ?? 0, 0.6, accuracy: 0.03)
+    }
+
     func testGeometryCheckOfTheSampleSTEP() async throws {
         let step = ModelLoaderTests.samples.appendingPathComponent("sample_car.step")
         let job = try makeJob(JobSpec(command: "cad-check", params: ["path": .string(step.path), "preset": .string("coarse")]))

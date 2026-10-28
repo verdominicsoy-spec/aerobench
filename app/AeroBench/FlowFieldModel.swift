@@ -23,6 +23,7 @@ enum FrameTool: Equatable {
     case legend
     case point(slot: Int, index: Int)  // spatial calibration frame slot, point 0 or 1
     case maskColor
+    case measure  // the quick setup's known width: a horizontal line
 }
 
 @MainActor @Observable
@@ -35,6 +36,8 @@ final class FlowFieldModel {
     }
 
     var mode: Mode = .calibrate
+    /// The guided quick setup, or every setting.
+    var showAllSettings = false
 
     // Source and calibration
     private(set) var sourceURL: URL?
@@ -52,7 +55,8 @@ final class FlowFieldModel {
 
     // Finding the crop, overlays and legend automatically
     var detectJob: JobItem?
-    var detectNote: String?
+    var detection: FlowDetection?
+    var detectNotes: [String] = []
 
     // Checking one frame
     var previewJob: JobItem?
@@ -135,10 +139,37 @@ final class FlowFieldModel {
     }
 
     func apply(line from: CGPoint, to: CGPoint) {
-        guard tool == .legend else { return }
-        calibration.colormap = .init(preset: nil, legend: .init(frame: frameIndex, p0: [Double(from.x), Double(from.y)],
-                                                                p1: [Double(to.x), Double(to.y)], halfWidth: 3))
+        switch tool {
+        case .legend:
+            calibration.colormap = .init(preset: nil, legend: .init(frame: frameIndex, p0: [Double(from.x), Double(from.y)],
+                                                                    p1: [Double(to.x), Double(to.y)], halfWidth: 3))
+        case .measure:
+            // Level, at the height it was started: only the width counts.
+            let old = calibration.measure
+            calibration.measure = .init(frame: frameIndex, p0: [Double(from.x), Double(from.y)], p1: [Double(to.x), Double(from.y)],
+                                        width: old?.width ?? 0, centre: old?.centre ?? 0)
+            calibration.applyMeasure()
+        default:
+            break
+        }
         tool = .none
+    }
+
+    /// Changes the known width or where its middle is, and the scale with it.
+    func setMeasure(width: Double? = nil, centre: Double? = nil) {
+        // The width can be typed before the line is drawn.
+        var m = calibration.measure ?? .init(frame: frameIndex, p0: [], p1: [], width: 0, centre: 0)
+        if let width { m.width = width }
+        if let centre { m.centre = centre }
+        calibration.measure = m
+        calibration.applyMeasure()
+    }
+
+    /// Changes the axes; the scale's points depend on which way right is.
+    func setAxes(right: String? = nil, up: String? = nil) {
+        if let right { calibration.axes.right = right }
+        if let up { calibration.axes.up = up }
+        calibration.applyMeasure()
     }
 
     func apply(point p: CGPoint) {
@@ -256,6 +287,10 @@ final class FlowFieldModel {
         objectOn = false
         objectModel = nil
         previewImage = nil
+        previewStats = [:]
+        reconstructStats = [:]
+        detection = nil
+        detectNotes = []
         viewer.show(nil, resetCamera: false)
         viewer.setFrame(nil)
         viewer.setPoints([], colors: [])

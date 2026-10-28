@@ -56,7 +56,7 @@ struct ContentView: View {
             }
             if ["mp4", "mov", "m4v"].contains(ext) {
                 selection = .flowField
-                Task { await app.flow.open(url) }
+                app.openFlowVideo(url)
                 return true
             }
             return false

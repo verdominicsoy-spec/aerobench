@@ -425,3 +425,39 @@ are enough). A 32-band STAR map's ends go from 11.6 to 1.2 ΔE off, a 16-band
 one from 22.5 to 8.2, a smooth one from 9.1 to 3.7. On the real video the
 median fit goes from 3.4 to 1.4 ΔE and free stream reads 0.996.
 
+**Quick setup.** "I can't get it to work" with seven sections of settings
+was fair: the scale asked for two clicked points with typed world
+coordinates, the axes for a reading of the triad, and auto-detect was a
+button to find. The quick setup asks only what the video cannot say: the
+legend's end numbers, one known width (dragged level on any frame, its middle
+the centreline by default) and the plane positions. Everything else is found
+on opening the video, including the axes: STAR draws the triad x red, y
+green, z blue, and each visible arrow's head is its wide end. It was
+checked by simulating careless users (lines 3 px off at each end, on random
+frames, defaults left alone) on front, rear and side synthetic sweeps: all
+built, 99% of cells within 1-4% of the range, one 6% where the line was
+measured on the farthest, smallest frame, which the app now warns about
+(under 250 px). New calibrations no longer default to planes at 0 and 1 m,
+which made the plane step look done before anyone typed anything. A point
+never clicked is now a problem before the engine sees it.
+
+**The vanishing point.** With one calibrated frame and ground tracking, the
+sideways offset used to stay fixed in pixels, which is right only for a
+camera on the right axis's origin. Planes shrink towards the vanishing
+point, and a CFD render puts it at the frame's centre: fitting the STAR
+video's car centreline against scale puts it at column 959 of 1920. That
+video's camera is about 120 px off the centreline, so the old model let the
+car wander 7 cm sideways through the sweep; now it stays within a few mm.
+Side views, where the camera sits partway along the car, needed this to
+work at all. `ground.principal_u` overrides the column for a cropped video.
+
+**Where the cells go.** On the STAR video "medium" detail gave 36 mm cells:
+the grid covered everything the far planes see (about 9 x 3 m, nearly all
+free stream) and all 900 planes, 3 mm apart. Two changes, both automatic in
+the quick setup: the `auto` extent bounds the grid by wherever the colours
+are not free stream (the most common value) or there is geometry not joined
+to the frame's edge, from 30 frames at quarter size, plus 15%; and with a
+detail level the planes are thinned so they are about as far apart as the
+cells across them. Same video, same time (about 40 s): 10 mm cells, 6.7 mm
+at high detail in 90 s.
+

@@ -98,6 +98,7 @@ def render(t: float, cam: Camera, rgb: np.ndarray, vmin: float, vmax: float) -> 
     tt = np.clip((np.nan_to_num(val) - vmin) / (vmax - vmin), 0, 1)
     img = np.full((cam.height, cam.width, 3), 255, np.uint8)
     img[inside] = (rgb[(tt[inside] * (len(rgb) - 1)).round().astype(int)] * 255).round().astype(np.uint8)
+    _triad(img, cam)
     # A banded legend, as STAR draws it, in the bottom right.
     lx0, lx1, ly0, ly1 = cam.width - 330, cam.width - 30, cam.height - 40, cam.height - 18
     bands = 32
@@ -105,6 +106,21 @@ def render(t: float, cam: Camera, rgb: np.ndarray, vmin: float, vmax: float) -> 
         c = (rgb[int(round((b + 0.5) / bands * (len(rgb) - 1)))] * 255).round().astype(np.uint8)
         img[ly0:ly1, lx0 + (lx1 - lx0) * b // bands: lx0 + (lx1 - lx0) * (b + 1) // bands] = c
     return img
+
+
+def _triad(img: np.ndarray, cam: "Camera") -> None:
+    """STAR's axis triad in the bottom left: x red, y green, z blue, the
+    axis along the sweep seen end-on as a dot."""
+    import cv2
+
+    colours = {"x": (220, 30, 30), "y": (30, 190, 30), "z": (30, 30, 220)}
+    ox, oy = 60, cam.height - 40
+    spec = cam.spec
+    for key, (dx, dy) in (("right", (1, 0)), ("up", (0, -1))):
+        sign = 1 if spec[key][0] == "+" else -1
+        cv2.arrowedLine(img, (ox, oy), (ox + sign * dx * 45, oy + sign * dy * 45), colours[spec[key][1]], 3,
+                        tipLength=0.35)
+    cv2.circle(img, (ox, oy), 5, colours[spec["sweep"]], -1)
 
 
 def make_sweep(out: Path, frames: int = 121, perspective: bool = False, cmap: str = "star_blue_yellow_red",

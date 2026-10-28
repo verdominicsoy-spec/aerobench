@@ -82,10 +82,12 @@ class Calibration:
         self.median = int(data.get("median", 3))
         self.working_width = int(data.get("working_width", 256))
         # "all": the region any frame sees (planes that do not see part of it
-        # are empty there). "common": only what every frame sees.
+        # are empty there). "common": only what every frame sees. "auto":
+        # around wherever the flow differs from the free stream or there is
+        # geometry, with a margin.
         self.extent = data.get("extent", "all")
-        if self.extent not in ("all", "common"):
-            raise EngineError("extent must be 'all' or 'common'")
+        if self.extent not in ("all", "common", "auto"):
+            raise EngineError("extent must be 'all', 'common' or 'auto'")
         # Optional world window [ymin, ymax, zmin, zmax] in metres: spend the
         # working resolution on just this region.
         self.window = data.get("window")
@@ -110,7 +112,12 @@ class Calibration:
             raise EngineError("ground tracking needs +z pointing up in the frames", "for top views, calibrate two frames instead")
         self.ground_fit: tuple[float, float, float, int] | None = None  # (vh, K, a, direction) set by reconstruct
         self.ground_rows: dict[int, float] | None = None  # constant ground (no perspective): frame -> row
-        self.frame_size: tuple[int, int] | None = None  # set by reconstruct, for plane positions from the camera
+        self.frame_size: tuple[int, int] | None = None  # set by reconstruct: the vanishing point, camera planes
+        # The vanishing point's column, if the video was cropped off-centre
+        # (otherwise the frame's centre).
+        self.principal_u = ground.get("principal_u")
+        if self.principal_u is not None:
+            self.principal_u = float(self.principal_u)
         self.detail = data.get("detail")
         if self.detail is not None and self.detail not in DETAIL_CAPS:
             raise EngineError("detail must be low, medium or high")
@@ -184,10 +191,18 @@ class Calibration:
             vh = self.ground_fit[0]
             s = ref.sx * (self.ground_row(frame) - vh) / (self.ground_row(f0) - vh)
             cu = ref.cu
-            if len(self.scales) == 2:  # a second frame fixes sideways drift (camera off the centreline)
+            if len(self.scales) == 2:  # a second frame measures the sideways drift
                 (_, a), (_, b) = self.scales
                 if abs(b.sx - a.sx) > 1e-12:
                     cu = a.cu + (s - a.sx) / (b.sx - a.sx) * (b.cu - a.cu)
+            elif self.principal_u is not None or self.frame_size is not None:
+                # Everything shrinks towards the vanishing point, which a CFD
+                # render puts at the frame's centre column. A camera off the
+                # world origin (off the centreline, or partway along the car
+                # in a side view) then drifts sideways correctly.
+                uc = self.principal_u if self.principal_u is not None else self.frame_size[0] / 2
+                h_cam = (uc - ref.cu) / ref.sx  # camera's position along the right axis (image-plane h)
+                cu = uc - s * h_cam
             return FrameScale(s, s, cu, self.ground_row(frame) + s * self.ground_level)
         if len(self.scales) == 1:
             return self.scales[0][1]

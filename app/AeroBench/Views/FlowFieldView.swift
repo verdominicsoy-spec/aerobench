@@ -38,9 +38,23 @@ struct FlowCalibrateView: View {
     @Environment(AppState.self) private var app
 
     var body: some View {
+        @Bindable var flow = app.flow
         HSplitView {
-            FlowCalibrationPanel()
-                .frame(minWidth: 340, idealWidth: 380, maxWidth: 480)
+            VStack(spacing: 0) {
+                Picker("Setup", selection: $flow.showAllSettings) {
+                    Text("Quick Setup").tag(false)
+                    Text("All Settings").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(8)
+                if flow.showAllSettings {
+                    FlowCalibrationPanel()
+                } else {
+                    FlowQuickSetupPanel()
+                }
+            }
+            .frame(minWidth: 340, idealWidth: 400, maxWidth: 500)
             FlowFramePane()
                 .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -48,7 +62,7 @@ struct FlowCalibrateView: View {
 }
 
 /// mm in the UI, metres in the calibration.
-private func mm(_ get: @escaping () -> Double, _ set: @escaping (Double) -> Void) -> Binding<Double> {
+func mm(_ get: @escaping () -> Double, _ set: @escaping (Double) -> Void) -> Binding<Double> {
     Binding(get: { get() * 1000 }, set: { set($0 / 1000) })
 }
 
@@ -92,9 +106,7 @@ struct FlowCalibrationPanel: View {
                 if let job = flow.detectJob, !job.status.isFinished || job.status == .failed {
                     JobInlineStatus(job: job)
                 }
-                if let note = flow.detectNote {
-                    Text(note).font(.caption).foregroundStyle(.secondary)
-                }
+                ForEach(flow.detectNotes, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
                 ForEach(Array(cal.exclude.enumerated()), id: \.offset) { i, r in
                     HStack {
                         Text("Exclusion \(i + 1): \(Int(r[2] - r[0])) × \(Int(r[3] - r[1])) px").font(.caption)
@@ -186,6 +198,7 @@ struct FlowCalibrationPanel: View {
                         var o = flow.calibration.spatial.origin ?? [0, 0]; o[1] = v; flow.calibration.spatial.origin = o }))
                 }
                 Picker("Grid covers", selection: $flow.calibration.extent) {
+                    Text("Around the flow (automatic)").tag("auto")
                     Text("Everything any frame sees").tag("all")
                     Text("Only what every frame sees").tag("common")
                 }
@@ -500,6 +513,7 @@ struct FlowFramePane: View {
         case .legend: "Drag along the middle of the colour bar, from the low end to the high end."
         case .point(let slot, let index): "Click point \(index == 0 ? "A" : "B")\(app.flow.calibration.spatial.frames.count == 2 ? " on calibration frame \(slot + 1)" : "")."
         case .maskColor: "Click a pixel whose colour should count as empty (geometry, background)."
+        case .measure: "Drag from one side of the thing you know the width of to the other. The line stays level."
         case .none: ""
         }
     }
@@ -562,7 +576,7 @@ struct FrameCanvas: View {
                             switch flow.tool {
                             case .crop, .exclude:
                                 if moved { flow.apply(rect: CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))) }
-                            case .legend:
+                            case .legend, .measure:
                                 if moved { flow.apply(line: a, to: b) }
                             case .point, .maskColor:
                                 flow.apply(point: b)
@@ -611,6 +625,23 @@ struct FrameCanvas: View {
                 ctx.draw(Text(label).font(.caption.bold()).foregroundStyle(.cyan), at: CGPoint(x: c.x + 12, y: c.y - 10))
             }
         }
+        if let measure = cal.measure, measure.p0.count == 2, measure.p1.count == 2 {
+            let here = measure.frame == flow.frameIndex
+            let a = m.toView(CGPoint(x: measure.p0[0], y: measure.p0[1]))
+            let b = m.toView(CGPoint(x: measure.p1[0], y: measure.p1[1]))
+            var line = Path()
+            line.move(to: a)
+            line.addLine(to: b)
+            for end in [a, b] {
+                line.move(to: CGPoint(x: end.x, y: end.y - 8))
+                line.addLine(to: CGPoint(x: end.x, y: end.y + 8))
+            }
+            let colour = Color.orange.opacity(here ? 1 : 0.4)
+            ctx.stroke(line, with: .color(colour), lineWidth: 2.5)
+            let label = measure.width > 0 ? "\(Int((measure.width * 1000).rounded())) mm" : "type the width"
+            ctx.draw(Text(here ? label : "\(label), on frame \(measure.frame)").font(.caption.bold()).foregroundStyle(colour),
+                     at: CGPoint(x: (a.x + b.x) / 2, y: a.y - 14))
+        }
         if let a = dragStart, let b = dragNow {
             let va = m.toView(a), vb = m.toView(b)
             var path = Path()
@@ -618,6 +649,9 @@ struct FrameCanvas: View {
             case .legend:
                 path.move(to: va)
                 path.addLine(to: vb)
+            case .measure:
+                path.move(to: va)
+                path.addLine(to: CGPoint(x: vb.x, y: va.y))
             default:
                 path.addRect(CGRect(x: min(va.x, vb.x), y: min(va.y, vb.y), width: abs(vb.x - va.x), height: abs(vb.y - va.y)))
             }

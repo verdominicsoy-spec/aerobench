@@ -116,6 +116,46 @@ def find_legend(frame: np.ndarray, boxes, lut: colormap.ColorLUT, threshold: flo
     return best[1] if best else None
 
 
+# STAR-CCM+ (like most CFD tools) draws the axis triad x red, y green, z blue.
+_TRIAD_HUES = {"x": [(0, 10), (170, 180)], "y": [(40, 85)], "z": [(100, 130)]}
+
+
+def read_triad(frame: np.ndarray, box) -> dict | None:
+    """Which world axes point right and up, from the axis triad in `box`:
+    each visible arrow is a thin coloured line whose head is the wide end.
+    None unless one arrow is clearly horizontal and another vertical."""
+    x0, y0, x1, y1 = box
+    h, w = frame.shape[:2]
+    x0, y0, x1, y1 = max(x0 - 10, 0), max(y0 - 10, 0), min(x1 + 10, w), min(y1 + 10, h)
+    hsv = cv2.cvtColor(np.ascontiguousarray(frame[y0:y1, x0:x1]), cv2.COLOR_RGB2HSV)
+    hue, sat, val = (hsv[..., k].astype(int) for k in range(3))
+    vivid = (sat > 90) & (val > 50)
+    right = up = None
+    for letter, ranges in _TRIAD_HUES.items():
+        m = vivid & np.any([(hue >= a) & (hue <= b) for a, b in ranges], axis=0)
+        ys, xs = np.nonzero(m)
+        if xs.size < 20:
+            continue
+        pts = np.column_stack([xs, ys]).astype(float)
+        centre = pts.mean(axis=0)
+        evals, evecs = np.linalg.eigh(np.cov((pts - centre).T))
+        if evals[1] < 3 * max(evals[0], 1e-9):
+            continue  # not elongated: an axis seen end-on
+        d = evecs[:, 1]
+        t = (pts - centre) @ d
+        across = np.abs((pts - centre) @ np.array([-d[1], d[0]]))
+        # The arrowhead is the wide end.
+        head = 1.0 if across[t > 0].max(initial=0) >= across[t < 0].max(initial=0) else -1.0
+        dx, dy = head * d
+        if abs(dx) > 2 * abs(dy) and right is None:
+            right = ("+" if dx > 0 else "-") + letter
+        elif abs(dy) > 2 * abs(dx) and up is None:
+            up = ("+" if dy < 0 else "-") + letter  # image y runs down
+    if right is None or up is None or right[1] == up[1]:
+        return None
+    return {"right": right, "up": up}
+
+
 def detect(source, cal_data: dict, samples: int = 24) -> dict:
     """Crop, exclusions, legend line and ground visibility for a video."""
     indices, frames = _sample(source, source.count, samples)
@@ -163,5 +203,14 @@ def detect(source, cal_data: dict, samples: int = 24) -> dict:
     crop = [x0, y0, x1, min(y1 + 16, h) if ground else y1]
 
     exclude = [list(b) for b in boxes if b[0] < crop[2] and crop[0] < b[2] and b[1] < crop[3] and crop[1] < b[3]]
+    # The triad, so the app can show it next to the axes it was read as.
+    axes, triad_box = None, None
+    for b in boxes:
+        if legend is not None and list(b) == legend["box"]:
+            continue
+        axes = read_triad(frames[middle], b)
+        if axes:
+            triad_box = list(b)
+            break
     return {"found": True, "crop": crop, "exclude": exclude, "legend": legend, "ground_visible": ground,
-            "frames_sampled": len(frames), "source_size": [w, h]}
+            "axes": axes, "triad_box": triad_box, "frames_sampled": len(frames), "source_size": [w, h]}

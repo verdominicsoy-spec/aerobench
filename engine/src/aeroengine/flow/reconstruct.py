@@ -147,45 +147,135 @@ def build_lut(cal: Calibration, source: FrameSource) -> colormap.ColorLUT:
     return colormap.ColorLUT(rgb, cal.vmin, cal.vmax)
 
 
-def world_grid(cal: Calibration, frames: list[int], width: int) -> tuple[np.ndarray, np.ndarray]:
-    """The h (right), v (up) grid: the crop's extent over the selected frames
-    (everything seen, or only what every frame sees, or the given window).
-    Spacing follows `detail` (about 1.5 pixels of the sharpest frame, capped
-    by a voxel budget) or else `width` samples across."""
+def _boxes(cal: Calibration, frames: list[int]) -> tuple[np.ndarray, list[float]]:
+    """Each frame's crop in image-plane metres (h0, h1, v0, v1), and its scale."""
     x0, y0, x1, y1 = cal.crop
     boxes, scales = [], []
     for f in frames:
         s = cal.scale_at(f)
         scales.append(s.sx)
         boxes.append(((x0 - s.cu) / s.sx, (x1 - s.cu) / s.sx, (s.cv - y1) / s.sy, (s.cv - y0) / s.sy))
-    b = np.array(boxes)
+    return np.array(boxes), scales
+
+
+def extent(cal: Calibration, frames: list[int], region=None) -> tuple[float, float, float, float]:
+    """The grid's (h0, h1, v0, v1): the window if given, else everything any
+    frame sees, what every frame sees, or (auto) `region` within what any
+    frame sees."""
+    b, _ = _boxes(cal, frames)
     if cal.window is not None:
         r0, r1, u0, u1 = cal.window  # world right / up coordinates
         h = sorted((cal.right[0] * r0, cal.right[0] * r1))
         v = sorted((cal.up[0] * u0, cal.up[0] * u1))
-        ylo, yhi, zlo, zhi = h[0], h[1], v[0], v[1]
-    elif cal.extent == "all":
-        ylo, yhi, zlo, zhi = b[:, 0].min(), b[:, 1].max(), b[:, 2].min(), b[:, 3].max()
+        out = (h[0], h[1], v[0], v[1])
+    elif cal.extent == "common":
+        out = (b[:, 0].max(), b[:, 1].min(), b[:, 2].max(), b[:, 3].min())
     else:
-        ylo, yhi, zlo, zhi = b[:, 0].max(), b[:, 1].min(), b[:, 2].max(), b[:, 3].min()
-    if not (yhi > ylo and zhi > zlo):
+        out = (b[:, 0].min(), b[:, 1].max(), b[:, 2].min(), b[:, 3].max())
+        if cal.extent == "auto" and region is not None:
+            out = (max(out[0], region[0]), min(out[1], region[1]), max(out[2], region[2]), min(out[3], region[3]))
+    if cal.track_ground and cal.window is None:
+        out = (out[0], out[1], max(out[2], cal.ground_level - 0.02 * (out[3] - out[2])), out[3])
+    if not (out[1] > out[0] and out[3] > out[2]):
         raise EngineError("the crop region does not overlap between the first and last frame",
                           "check the spatial calibration points")
-    if cal.detail is not None:
-        from .calibration import DETAIL_CAPS
+    return out
 
-        finest = 1.5 / max(scales)  # metres per cell at about 1.5 px of the sharpest frame
-        budget = (yhi - ylo) * (zhi - zlo) * len(frames) / DETAIL_CAPS[cal.detail]
-        cell = max(finest, float(np.sqrt(budget)))
+
+def _cell(cal: Calibration, frames: list[int], ext, planes: int) -> float | None:
+    """With a detail level: about 1.5 px of the sharpest frame, unless the
+    voxel budget needs it coarser."""
+    if cal.detail is None:
+        return None
+    from .calibration import DETAIL_CAPS
+
+    _, scales = _boxes(cal, frames)
+    finest = 1.5 / max(scales)
+    area = (ext[1] - ext[0]) * (ext[3] - ext[2])
+    return max(finest, float(np.sqrt(area * planes / DETAIL_CAPS[cal.detail])))
+
+
+def plane_step(cal: Calibration, frames: list[int], pos: np.ndarray, ext) -> int:
+    """With a detail level, use every k-th frame so the planes are about as
+    far apart as the cells across them: a video with planes much closer than
+    that spends the voxel budget on planes instead of detail."""
+    if cal.detail is None or len(frames) < 3:
+        return 1
+    spacing = abs(pos[-1] - pos[0]) / (len(frames) - 1)
+    if spacing <= 0:
+        return 1
+    k = 1
+    while True:
+        n = len(range(0, len(frames), k + 1))
+        if n < 2 or (k + 1) * spacing > _cell(cal, frames, ext, n):
+            return k
+        k += 1
+
+
+def world_grid(cal: Calibration, frames: list[int], width: int, region=None) -> tuple[np.ndarray, np.ndarray]:
+    """The h (right), v (up) grid over `extent`. Spacing follows `detail`
+    (see `_cell`) or else `width` samples across."""
+    ylo, yhi, zlo, zhi = extent(cal, frames, region)
+    cell = _cell(cal, frames, (ylo, yhi, zlo, zhi), len(frames))
+    if cell is not None:
         width = max(int(round((yhi - ylo) / cell)) + 1, 16)
     y = np.linspace(ylo, yhi, width)
     dy = y[1] - y[0]
-    if cal.track_ground and cal.window is None:
-        # The crop reaches below the ground so it can be tracked; nothing
-        # there is fluid, so do not spend cells on it.
-        zlo = max(zlo, cal.ground_level - 4 * dy)
     z = np.arange(zlo, zhi + dy / 2, dy)
     return y, z
+
+
+def region_of_interest(source: "FrameSource", cal: Calibration, frames: list[int], lut: colormap.ColorLUT,
+                       samples: int = 30, margin: float = 0.15) -> tuple[float, float, float, float] | None:
+    """Image-plane (h0, h1, v0, v1) around everything that is not free
+    stream: colours away from the most common value, and geometry (mask
+    colours) not joined to the crop's edge (that is background around a
+    plane smaller than the frame). Below a tracked ground is left out."""
+    pick = sorted(set(np.linspace(0, len(frames) - 1, min(samples, len(frames))).round().astype(int)))
+    chosen = [frames[i] for i in pick]
+    x0, y0, x1, y1 = cal.crop
+    k = 4  # look at quarter-size frames: this only has to find a box
+    found = []
+    excl = _exclusion_mask(cal, source.size)
+    for i, frame in source.frames(chosen):
+        small = cv2.resize(frame[max(y0, 0):y1, max(x0, 0):x1], None, fx=1 / k, fy=1 / k, interpolation=cv2.INTER_AREA)
+        ex = cv2.resize(excl[max(y0, 0):y1, max(x0, 0):x1], (small.shape[1], small.shape[0]), interpolation=cv2.INTER_AREA) > 0.01
+        values, dist = lut.invert(small)
+        mask = np.zeros(small.shape[:2], bool)
+        for c in cal.mask_colors:
+            mask |= colormap.lab_distance(small, c) < cal.mask_tolerance
+        flow = (dist < cal.threshold) & ~mask & ~ex
+        found.append((i, values, flow, mask & ~ex))
+    every = np.concatenate([v[f] for _, v, f, _ in found]) if found else np.array([])
+    if every.size < 100:
+        return None
+    hist, edges = np.histogram(every, bins=100, range=(cal.vmin, cal.vmax))
+    free = 0.5 * (edges[hist.argmax()] + edges[hist.argmax() + 1])
+    hs, vs = [], []
+    for i, values, flow, solid in found:
+        busy = flow & (np.abs(values - free) > 0.03 * (cal.vmax - cal.vmin))
+        n, labels = cv2.connectedComponents(solid.astype(np.uint8))
+        edge = set(np.unique(np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]]))) - {0}
+        inner = solid & ~np.isin(labels, list(edge))
+        busy = cv2.morphologyEx((busy | inner).astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)).astype(bool)
+        rows, cols = np.nonzero(busy)
+        if rows.size == 0:
+            continue
+        s = cal.scale_at(i)
+        u = x0 + (cols + 0.5) * k
+        r = y0 + (rows + 0.5) * k
+        h, v = (u - s.cu) / s.sx, (s.cv - r) / s.sy
+        if cal.track_ground:
+            keep = v > cal.ground_level
+            h, v = h[keep], v[keep]
+        if h.size:
+            hs += [h.min(), h.max()]
+            vs += [v.min(), v.max()]
+    if not hs:
+        return None
+    h0, h1, v0, v1 = min(hs), max(hs), min(vs), max(vs)
+    dh, dv = (h1 - h0) * margin + 0.02, (v1 - v0) * margin + 0.02
+    return h0 - dh, h1 + dh, v0 - dv, v1 + dv
 
 
 # --- Ground tracking --------------------------------------------------------
@@ -318,13 +408,19 @@ def reconstruct(source_path: Path, cal: Calibration, progress: Callable[[float, 
     if cal.track_ground:
         report(2, "tracking the ground line")
         ground = track_ground(source, cal, frames)
-    h, v = world_grid(cal, frames, cal.working_width)
-    excl = _exclusion_mask(cal, source.size)
-    values = np.full((len(frames), len(h), len(v)), np.nan, np.float32)
-    solid = np.zeros(values.shape, bool)
     pos = np.array([cal.plane_x(f, frames[0], frames[-1]) for f in frames])
     if ground is not None and cal.plane_mode != "camera":
         ground["implied_camera"] = cal.implied_camera(frames, pos, source.size)
+    region = None
+    if cal.extent == "auto" and cal.window is None:
+        report(5, "finding the flow around the car")
+        region = region_of_interest(source, cal, frames, lut)
+    step = plane_step(cal, frames, pos, extent(cal, frames, region))
+    frames, pos = frames[::step], pos[::step]
+    h, v = world_grid(cal, frames, cal.working_width, region)
+    excl = _exclusion_mask(cal, source.size)
+    values = np.full((len(frames), len(h), len(v)), np.nan, np.float32)
+    solid = np.zeros(values.shape, bool)
     stats = []
     for n, (i, frame) in enumerate(source.frames(frames)):
         k = frames.index(i)
@@ -344,6 +440,7 @@ def reconstruct(source_path: Path, cal: Calibration, progress: Callable[[float, 
         "median_dE": float(np.median(dEs)) if dEs else None,
         "empty_fraction": float(np.mean([s["empty_fraction"] for s in stats])),
         "cell_mm": float((h[1] - h[0]) * 1000),
+        "plane_step": step,
         "ground": ground,
     }
     return _to_world(cal, values, solid.astype(np.uint8), pos, h, v, frames, lut.rgb), summary
@@ -392,7 +489,8 @@ def preview(source_path: Path, cal: Calibration, frame_index: int) -> tuple[np.n
         if cal.plane_mode != "camera":
             pos = np.array([cal.plane_x(f, frames[0], frames[-1]) for f in frames])
             stats_ground["implied_camera"] = cal.implied_camera(frames, pos, source.size)
-    y, z = world_grid(cal, frames, cal.working_width)
+    region = region_of_interest(source, cal, frames, lut, samples=12) if cal.extent == "auto" and cal.window is None else None
+    y, z = world_grid(cal, frames, cal.working_width, region)
     excl = _exclusion_mask(cal, source.size)
     values, _, stats = _invert_slice(source.frame(frame_index), cal, cal.scale_at(frame_index), y, z, lut, excl)
     if cal.track_ground:

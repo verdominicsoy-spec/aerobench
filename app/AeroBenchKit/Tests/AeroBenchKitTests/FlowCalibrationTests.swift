@@ -28,6 +28,8 @@ final class FlowCalibrationTests: XCTestCase {
         var cal = FlowCalibration()
         XCTAssertTrue(cal.problems.contains { $0.contains("crop") })
         XCTAssertTrue(cal.problems.contains { $0.contains("two points") })
+        XCTAssertTrue(cal.problems.contains { $0.contains("Plane start and end") })  // until typed
+        cal.planes.end = 1
         cal.crop = [0, 0, 10, 10]
         cal.spatial.frames = [.init(frame: 0, points: [.init(px: [0, 0], world: [0, 0]), .init(px: [5, 0], world: [0.1, 0])])]
         XCTAssertTrue(cal.problems.isEmpty, "\(cal.problems)")
@@ -58,6 +60,7 @@ final class FlowCalibrationTests: XCTestCase {
         cal.crop = [0, 0, 10, 10]
         cal.spatial.mode = "size"
         cal.spatial.width = 1
+        cal.planes.end = 1
         XCTAssertTrue(cal.problems.isEmpty, "\(cal.problems)")  // no height needed: pixels are square
         cal.planes.mode = "camera"
         XCTAssertTrue(cal.problems.contains { $0.contains("ground tracking") })

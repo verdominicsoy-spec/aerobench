@@ -154,7 +154,27 @@ Then open it and tick FPS.
 Rebuilds a 3D total pressure (Cp0) field from a video of section planes
 stepping through the flow, such as a STAR-CCM+ plane sweep.
 
-**Calibrate** (left panel, top to bottom), drawing on the frame on the right:
+**Quick Setup** (the default, left panel, top to bottom):
+
+1. *Open Video…* (or drop it on the window). The app looks at frames across
+   the sweep and finds the plot, the legend (and reads its colours), the
+   things drawn over the flow, the axis triad and the ground line.
+2. *Legend*: type the numbers at the ends of the colour bar, shown zoomed.
+3. *Axes*: the triad from the video sits next to a drawing of the axes as
+   set; pick which arrow points right and which up until they match. They
+   are read off the video, so usually they already do.
+4. *Size*: find a frame where you can see something whose width you know
+   (the track between tyre centres, a wing's span), press *Measure*, drag
+   across it and type the width. Its middle is the centreline (y = 0) unless
+   you say otherwise; in a side view type where along x it is. With the
+   ground tracked, that one measurement sets every plane's scale.
+5. *Plane positions*: where the plane was in the first and last frames.
+6. *Build 3D*. The checklist above the button says what is still missing.
+   The result says what camera view angle your plane positions imply, and
+   warns if they look the wrong way round.
+
+*All Settings* has every option, for videos the quick setup cannot handle
+(no ground in view, a top view, plane positions from a CSV):
 
 1. Open the video (mp4/mov) or a folder of frames, or drop the video on the window.
 2. *Auto-detect* (or draw by hand): it looks at frames across the sweep and

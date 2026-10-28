@@ -12,7 +12,7 @@ extension AppState {
         panel.canChooseDirectories = true
         panel.allowedContentTypes = [.movie, .mpeg4Movie, .quickTimeMovie, .folder]
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        Task { await flow.open(url) }
+        openFlowVideo(url)
     }
 
     /// A synthetic sweep with a known answer and a matching calibration, to
@@ -31,52 +31,45 @@ extension AppState {
             } catch {
                 self.flow.loadError = error.localizedDescription
             }
-            Task { await self.flow.open(item.workdir.appendingPathComponent("demo.mp4")) }
+            Task {
+                await self.flow.open(item.workdir.appendingPathComponent("demo.mp4"))
+                self.flow.detectNotes = ["A synthetic sweep with its setup already filled in. Press Build 3D."]
+                self.autoDetectFlow(apply: false)
+            }
         }
     }
 
-    /// Finds the crop, the overlays to exclude, the legend bar and the ground
-    /// in the engine, and fills them into the calibration.
-    func autoDetectFlow() {
+    /// Opens a video the user picked and finds the plot, legend, axes and
+    /// ground in it straight away.
+    func openFlowVideo(_ url: URL) {
+        Task {
+            await flow.open(url)
+            if flow.sourceURL == url { autoDetectFlow() }
+        }
+    }
+
+    /// Finds the crop, the overlays to exclude, the legend bar, the axes and
+    /// the ground in the engine, and fills them into the calibration (or with
+    /// `apply` false only keeps them, to show the legend and triad).
+    func autoDetectFlow(apply: Bool = true) {
         guard let source = flow.sourceURL else { return }
         do {
             let params: [String: JSONValue] = ["source": .string(source.path), "calibration": try flow.calibration.jsonValue()]
-            flow.detectNote = nil
+            if apply { flow.detectNotes = [] }
             flow.detectJob = jobs.submit(command: "flow-detect", params: params, in: jobsRoot) { [weak self] item in
-                guard let self, item.status == .succeeded, let text = item.resultText,
-                      let obj = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
-                      let data = obj["data"] as? [String: Any] else { return }
-                self.applyDetection(data)
+                guard let self, self.flow.sourceURL == source else { return }
+                guard item.status == .succeeded, let text = item.resultText,
+                      let found = try? FlowDetection.decode(resultFile: Data(text.utf8)) else {
+                    guard apply else { return }
+                    self.flow.detectNotes = ["Could not look at the video: \(item.message ?? "unknown error"). Use All Settings to set it up by hand."]
+                    return
+                }
+                self.flow.detection = found
+                if apply { self.flow.detectNotes = self.flow.calibration.apply(found) }
             }
         } catch {
             show("Could not start the detection", error)
         }
-    }
-
-    private func applyDetection(_ data: [String: Any]) {
-        func numbers(_ value: Any?) -> [Double]? { (value as? [Any])?.compactMap { ($0 as? NSNumber)?.doubleValue } }
-        var cal = flow.calibration
-        var notes: [String] = []
-        guard data["found"] as? Bool == true, let crop = numbers(data["crop"]), crop.count == 4 else {
-            flow.detectNote = (data["message"] as? String) ?? "No plot found. Draw the crop by hand."
-            return
-        }
-        cal.crop = crop
-        cal.exclude = ((data["exclude"] as? [Any]) ?? []).compactMap { numbers($0) }.filter { $0.count == 4 }
-        notes.append("Crop \(Int(crop[2] - crop[0])) × \(Int(crop[3] - crop[1])) px, \(cal.exclude.count) exclusion\(cal.exclude.count == 1 ? "" : "s").")
-        if let legend = data["legend"] as? [String: Any], let p0 = numbers(legend["p0"]), let p1 = numbers(legend["p1"]) {
-            cal.colormap = .init(preset: nil, legend: .init(frame: (legend["frame"] as? NSNumber)?.intValue ?? flow.frameIndex,
-                                                         p0: p0, p1: p1, halfWidth: (legend["half_width"] as? NSNumber)?.intValue))
-            notes.append("Colour map sampled from the legend; set the value range to its end labels.")
-        } else {
-            notes.append("No legend bar found: the colour map preset stays.")
-        }
-        if data["ground_visible"] as? Bool == true && cal.axes.up == "+z" {
-            cal.ground.track = true
-            notes.append("Ground in view: tracking it.")
-        }
-        flow.calibration = cal
-        flow.detectNote = notes.joined(separator: " ")
     }
 
     func checkFlowFrame() {
@@ -293,7 +286,10 @@ extension AppState {
         if let data = try? Data(contentsOf: folder.appendingPathComponent("state.json")),
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String],
            let path = obj["source"], !path.isEmpty, FileManager.default.fileExists(atPath: path) {
-            Task { await flow.open(URL(fileURLWithPath: path)) }
+            Task {
+                await flow.open(URL(fileURLWithPath: path))
+                autoDetectFlow(apply: false)  // the saved setup stays; this is for showing the legend and triad
+            }
         }
         if let job = jobs.jobs.first(where: { $0.command == "flow-reconstruct" && $0.status == .succeeded }) {
             loadFlowVolume(from: job)
