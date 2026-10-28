@@ -60,3 +60,30 @@ def airfoil_naca(ctx: JobContext) -> dict:
     code = str(ctx.params.get("code", "")).strip()
     sec = section(f"NACA {code.upper().removeprefix('NACA').strip()}", naca(code))
     return sec.as_dict()
+
+
+@command("wing-panel")
+def wing_panel(ctx: JobContext) -> dict:
+    """Inviscid panel solution for a multi-element wing over a list of angles.
+    The app runs its own copy of this live; this is the reference."""
+    import numpy as np
+
+    from ..wing.panel import Solver
+
+    elements = ctx.params.get("elements")
+    if not isinstance(elements, list) or not elements:
+        raise EngineError("params.elements must be a list of point lists (Selig order, in the wing's frame)")
+    try:
+        xy = [np.asarray(e, float) for e in elements]
+    except (TypeError, ValueError) as exc:
+        raise EngineError("params.elements must hold [x, y] pairs") from exc
+    if any(a.ndim != 2 or a.shape[1] != 2 or len(a) < 6 for a in xy):
+        raise EngineError("each element needs at least six [x, y] points")
+    alphas = ctx.params.get("alphas", [0.0])
+    solver = Solver(xy, ctx.params.get("ref_chord"))
+    out = []
+    for a in alphas:
+        r = solver.solve(float(a))
+        out.append({"alpha": r.alpha_deg, "cl": r.cl, "cd": r.cd, "cm": r.cm, "cl_total": r.cl_total,
+                    "cm_total": r.cm_total, "cp": [c.tolist() for c in r.cp]})
+    return {"ref_chord": solver.ref_chord, "ref_point": solver.ref_point.tolist(), "results": out}

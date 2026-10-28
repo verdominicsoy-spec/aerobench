@@ -204,17 +204,31 @@ def normalise(xy: np.ndarray, n: int = POINTS) -> tuple[np.ndarray, float]:
     if chord <= 0:
         raise EngineError("the leading and trailing edges coincide")
     angle = np.arctan2(te[1] - le[1], te[0] - le[0])
+    fine = np.array(splev(np.linspace(max(u_le - 0.05, 0), min(u_le + 0.05, 1), 2001), tck)).T
+    xmin = fine[:, 0].min()
+    standard = abs(angle) < np.radians(2) and abs(le[1]) < 0.02 * chord and abs(te[1]) < 0.02 * chord
+    if standard:
+        # Already chord along x near y = 0: keep the file's own chord line,
+        # which is what its published polars are measured from, and only
+        # remove the x offset and scale. (The point furthest from the
+        # trailing edge is a little off the nominal nose of a cambered
+        # section; de-rotating to it shifts every angle of attack by about a
+        # tenth of a degree.)
+        angle, origin, chord = 0.0, np.array([xmin, 0.0]), te[0] - xmin
+    else:
+        origin = le
     rot = np.array([[np.cos(-angle), -np.sin(-angle)], [np.sin(-angle), np.cos(-angle)]])
 
     def place(p):  # (n, 2) points to the section frame
-        return ((np.asarray(p) - le) @ rot.T) / chord
+        return ((np.asarray(p) - origin) @ rot.T) / chord
 
     half = (n + 1) // 2
     s = 0.5 * (1 - np.cos(np.linspace(0, np.pi, half)))
     first = place(np.array(splev(u_le * s, tck)).T)  # TE (u=0) to LE
     second = place(np.array(splev(u_le + (1 - u_le) * s, tck)).T)  # LE to TE (u=1)
     out = np.vstack([first, second[1:]])
-    out[half - 1] = [0.0, 0.0]
+    if not standard:
+        out[half - 1] = [0.0, 0.0]
     # Upper surface first: in Selig order the first half lies above the second.
     xs = np.linspace(0.05, 0.95, 19)
     up = np.interp(xs, out[:half][::-1, 0], out[:half][::-1, 1])

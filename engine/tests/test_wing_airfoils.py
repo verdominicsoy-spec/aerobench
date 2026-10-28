@@ -67,12 +67,23 @@ def test_selig_and_lednicer_are_told_apart():
 
 
 def test_normalising_undoes_scale_rotation_offset_and_order():
-    base, _ = normalise(naca4("4415"))
+    base, _ = normalise(naca4("0012"))
     a = np.radians(8)
     rot = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
-    moved = (naca4("4415") * 0.3) @ rot.T + [1.2, -0.4]
+    moved = (naca4("0012") * 0.3) @ rot.T + [1.2, -0.4]
     again, _ = normalise(moved[::-1])  # lower surface first, too
     assert np.allclose(again, base, atol=2e-4)
+
+
+def test_a_section_already_in_standard_form_keeps_its_chord_line():
+    """Published polars use the file's chord line: re-panelling must not tilt
+    a cambered section (lift would move by 2 pi times the tilt)."""
+    from aeroengine.wing.panel import Solver
+
+    raw = naca4("2412")
+    again, _ = normalise(raw)
+    # The re-panelling spline rounds the nose a touch: 0.26%, about 0.006 degrees.
+    assert Solver([again]).solve(0).cl_total == pytest.approx(Solver([raw]).solve(0).cl_total, rel=5e-3)
 
 
 def test_not_an_airfoil():
