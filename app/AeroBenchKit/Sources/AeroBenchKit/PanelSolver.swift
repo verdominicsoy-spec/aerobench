@@ -82,9 +82,9 @@ public final class PanelSolver: @unchecked Sendable {
         }
         sharp = sharpFlags
 
-        var nn = __CLPK_integer(n), lda = __CLPK_integer(n), info = __CLPK_integer(0)
+        var rows = __CLPK_integer(n), cols = __CLPK_integer(n), lda = __CLPK_integer(n), info = __CLPK_integer(0)
         var piv = [__CLPK_integer](repeating: 0, count: n)
-        dgetrf_(&nn, &nn, &a, &lda, &piv, &info)
+        dgetrf_(&rows, &cols, &a, &lda, &piv, &info)
         guard info == 0 else { return nil }
         factors = a
         pivots = piv
