@@ -5,7 +5,7 @@ Flow Field Viewer and Lap Sim. SwiftUI front end, Python compute engine. The
 full brief is in [docs/AeroBench_spec.pdf](docs/AeroBench_spec.pdf), and every
 judgement call made while building it is in [docs/DECISIONS.md](docs/DECISIONS.md).
 
-**Status:** Phases 0–3 built (foundations, Lap Sim, CAD Viewer, Flow Field Viewer). Phase 4, Wing Lab, in progress: library, canvas, three solvers and SU2 runs are in; the optimiser is next.
+**Status:** Phases 0–3 built (foundations, Lap Sim, CAD Viewer, Flow Field Viewer). Phase 4, Wing Lab, in progress: library, canvas, three solvers, SU2 runs and the optimiser are in; validation runs are next.
 
 ## Layout
 
@@ -273,6 +273,18 @@ shown as not converged, not as results.
 Cl–Cd, transition points), and the CFD run (Cl and Cd per element, surface
 Cp, convergence). *Show Flow Field* opens the run's flow.vtu in Finder for
 ParaView.
+
+**Optimise** (inspector): tick the angles, gaps and overlaps to search and
+give each a range, pick an objective (most downforce, best L/D, most
+downforce under a Cd cap, least drag for a downforce target) and TPE or
+CMA-ES, and start. Every trial is one RANS run with the model and mesh set
+under Solvers; *Settings* sets how many run at once (each on the per-job
+cores). Wings that break the minimum gap or the rules box are skipped
+without a run; failed or unconverged runs are recorded as failed and the
+study carries on. The *Study* results tab has a sortable table of trials,
+the best so far, and Cl against Cd with the Pareto front; click a trial to
+put its wing on the canvas. Studies are saved in the project
+(`wing/studies/`), so stopping is safe and *Resume Study* carries on.
 
 **Into the Lap Sim**: with the span and a 2D-to-3D factor (your estimate),
 the wing's ClA = −Cl × span × total chord × factor (positive for downforce)

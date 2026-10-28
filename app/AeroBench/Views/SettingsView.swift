@@ -45,10 +45,13 @@ struct SettingsView: View {
             Section {
                 Stepper("Max parallel jobs: \(settings.maxParallelJobs)", value: $settings.maxParallelJobs, in: 1...16)
                 Stepper("Cores per job: \(settings.coresPerJob)", value: $settings.coresPerJob, in: 1...max(1, totalCores))
+                Stepper("Wing optimiser trials at once: \(settings.parallelTrials)", value: $settings.parallelTrials, in: 1...16)
             } header: {
                 Text("Compute")
             } footer: {
-                Text("Up to \(settings.maxParallelJobs * settings.coresPerJob) of \(totalCores) cores. Leave room for the Parallels VM.")
+                Text("Up to \(settings.maxParallelJobs * settings.coresPerJob) of \(totalCores) cores. Leave room for the Parallels VM. "
+                     + "A wing optimisation runs its trials at once on \(settings.coresPerJob) cores each, "
+                     + "\(settings.parallelTrials * settings.coresPerJob) in all.")
             }
         }
         .formStyle(.grouped)

@@ -396,6 +396,7 @@ struct WingResultsPane: View {
             case .pressure: CpPlot()
             case .polar: PolarPlots()
             case .cfd: CFDResults()
+            case .study: StudyResults()
             }
         }
     }
@@ -666,6 +667,7 @@ struct WingInspector: View {
             }
 
             solversSection(lab)
+            optimiseSection(lab)
             previewSection(lab)
             lapSimSection(lab)
 
@@ -783,6 +785,81 @@ struct WingInspector: View {
         }
     }
 
+    @ViewBuilder private func optimiseSection(_ lab: WingLabModel) -> some View {
+        let running = lab.optimiseJob.map { !$0.status.isFinished } ?? false
+        Section {
+            ForEach(Array(lab.wing.elements.enumerated()), id: \.element.id) { i, _ in
+                HStack {
+                    Text(WingIssue.label(i)).frame(width: 50, alignment: .leading)
+                    ForEach(WingLabModel.DesignVariable.Kind.allCases, id: \.self) { kind in
+                        if kind == .angle || i > 0 {
+                            Toggle(kind.rawValue.capitalized, isOn: Binding(
+                                get: { lab.variable(kind, of: i) != nil }, set: { _ in lab.toggleVariable(kind, of: i) }))
+                                .toggleStyle(.checkbox)
+                        }
+                    }
+                }
+                .disabled(running)
+            }
+            ForEach(lab.optimise.variables) { v in
+                HStack {
+                    Text("\(WingIssue.label(v.element)) \(v.kind.rawValue)").font(.caption).frame(width: 110, alignment: .leading)
+                    TextField("from", value: Binding(get: { v.low }, set: { lab.setBounds(of: v.id, low: $0) }),
+                              format: .number.precision(.fractionLength(0...2)))
+                        .multilineTextAlignment(.trailing)
+                    Text("to").foregroundStyle(.secondary)
+                    TextField("to", value: Binding(get: { v.high }, set: { lab.setBounds(of: v.id, high: $0) }),
+                              format: .number.precision(.fractionLength(0...2)))
+                        .multilineTextAlignment(.trailing)
+                    Text(v.unit).foregroundStyle(.secondary).frame(width: 26, alignment: .leading)
+                }
+                .disabled(running)
+            }
+            Picker("Objective", selection: Binding(get: { lab.optimise.objective }, set: { lab.optimise.objective = $0 })) {
+                ForEach(WingLabModel.Objective.allCases) { Text($0.title).tag($0) }
+            }
+            .disabled(running)
+            if lab.optimise.objective == .maxClCdCap {
+                NumberField(label: "Cd cap", value: Binding(get: { lab.optimise.cdCap }, set: { lab.optimise.cdCap = $0 }))
+            }
+            if lab.optimise.objective == .minCdClTarget {
+                NumberField(label: "Downforce Cl target", value: Binding(get: { lab.optimise.clTarget }, set: { lab.optimise.clTarget = $0 }))
+            }
+            Picker("Search", selection: Binding(get: { lab.optimise.sampler }, set: { lab.optimise.sampler = $0 })) {
+                Text("TPE (default)").tag("tpe")
+                Text("CMA-ES").tag("cmaes")
+            }
+            .disabled(running)
+            Stepper("Trials: \(lab.optimise.trials)", value: Binding(get: { lab.optimise.trials }, set: { lab.optimise.trials = $0 }),
+                    in: 2...2000, step: 10)
+            LabeledContent("Study") {
+                TextField("name", text: Binding(get: { lab.optimise.studyName }, set: { lab.optimise.studyName = $0 }))
+                    .multilineTextAlignment(.trailing)
+                    .onSubmit { lab.reloadStudy(project: app.project?.url) }
+            }
+            .disabled(running)
+            Text("\(app.settings.parallelTrials) trials at a time on \(app.settings.coresPerJob) cores each (Settings). Each trial is one RANS run with the model and mesh above.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let problem = lab.optimiseProblem {
+                Text(problem).font(.caption).foregroundStyle(.orange)
+            }
+            HStack {
+                let resume = lab.study.map { $0.study == WingLabModel.studyFile(project: app.project?.url ?? URL(fileURLWithPath: "/"), name: lab.optimise.studyName).deletingPathExtension().lastPathComponent } ?? false
+                Button(resume ? "Resume Study" : "Start Study") { app.runWingOptimise() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(running || lab.optimiseProblem != nil || app.project == nil)
+                if app.project == nil {
+                    Text("Save the project first: studies live in it.").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if let job = lab.optimiseJob { JobInlineStatus(job: job) }
+        } header: {
+            Text("Optimise")
+        } footer: {
+            Text("Tick the angles, gaps and overlaps to search, and their ranges. Wings that break the minimum gap or the rules box are never run. Trials whose mesh fails or whose run diverges or does not converge are recorded as failed and the study carries on. Stopping is safe: Resume picks up where it left off.")
+        }
+    }
+
     @ViewBuilder private func su2Install(_ lab: WingLabModel) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("SU2 is built on your Mac from its source, once: 10 to 20 minutes. It needs Xcode's command line tools (xcode-select --install). With Open MPI (brew install open-mpi) first, it can use several cores.")
@@ -834,5 +911,162 @@ struct WingInspector: View {
         } footer: {
             Text("ClA = −Cl × span × total chord × factor (positive for downforce). A finite wing makes less than the 2D section: endplates help; around 0.7–0.9 is typical, but it is your estimate. Inviscid Cl is optimistic; viscous solvers come next.")
         }
+    }
+}
+
+/// The optimiser's trials: a sortable table, the best so far, and Cl against
+/// Cd with the Pareto front. Clicking a trial puts its wing on the canvas.
+struct StudyResults: View {
+    @Environment(AppState.self) private var app
+    @State private var order = [KeyPathComparator(\Row.number)]
+    @State private var selection: Int?
+
+    struct Row: Identifiable {
+        let id: Int
+        let number: Int
+        let state: String
+        let load: Double
+        let cd: Double
+        let ld: Double
+        let value: Double
+        let design: String
+        let note: String
+    }
+
+    var body: some View {
+        let lab = app.wingLab
+        if let study = lab.study {
+            VStack(alignment: .leading, spacing: 6) {
+                header(study, lab)
+                HSplitView {
+                    table(study, lab).frame(minWidth: 380)
+                    VStack(spacing: 8) {
+                        bestSoFar(study)
+                        scatter(study, lab)
+                    }
+                    .frame(minWidth: 260)
+                }
+            }
+            .padding(8)
+        } else if let job = lab.optimiseJob, !job.status.isFinished {
+            VStack {
+                ProgressView(value: job.progress, total: 100)
+                Text(job.progressMessage).font(.caption)
+            }
+            .padding()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            Text("Set up a study under Optimise and start it.").foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder private func header(_ s: WingStudy, _ lab: WingLabModel) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("\(s.study): \(s.objectiveName)").bold()
+            Text("\(s.complete + s.failed) of \(s.target) run · \(s.failed) failed · \((s.invalid ?? 0)) invalid wings skipped")
+                .font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            if let b = s.bestTrial, let v = b.value {
+                Text(String(format: "best: trial %ld, %.4g", b.number, v)).font(.caption.monospacedDigit())
+                Button("Load Best") { lab.load(trial: b) }.font(.caption)
+            }
+        }
+    }
+
+    private func rows(_ s: WingStudy) -> [Row] {
+        s.trials.filter { $0.state != "invalid" }.map { t in
+            let design = s.spec.variables.map { v -> String in
+                guard let x = t.params[v.name] else { return "" }
+                return v.kind == "angle" ? String(format: "%@ %.1f°", short(v), x) : String(format: "%@ %.1f mm", short(v), x * 1000)
+            }.joined(separator: "  ")
+            let load = t.load ?? -.infinity, cd = t.cd ?? .infinity
+            return Row(id: t.number, number: t.number, state: t.state == "complete" && t.feasible == false ? "over limit" : t.state,
+                       load: load, cd: cd, ld: load.isFinite && cd.isFinite ? load / cd : -.infinity,
+                       value: t.value ?? (s.direction == "minimize" ? .infinity : -.infinity), design: design,
+                       note: t.reason ?? "")
+        }
+    }
+
+    private func short(_ v: WingStudy.Variable) -> String {
+        "\(v.kind == "angle" ? "α" : v.kind == "gap" ? "gap" : "ovl")\(v.element)"
+    }
+
+    private func fmt(_ x: Double, _ f: String) -> String { x.isFinite ? String(format: f, x) : "–" }
+
+    @ViewBuilder private func table(_ s: WingStudy, _ lab: WingLabModel) -> some View {
+        Table(rows(s).sorted(using: order), selection: $selection, sortOrder: $order) {
+            TableColumn("#", value: \.number) { Text("\($0.number)").monospacedDigit() }.width(32)
+            TableColumn("State", value: \.state) { r in
+                Text(r.state).foregroundStyle(r.state == "complete" ? Color.primary : r.state == "fail" ? Color.red : Color.secondary)
+                    .help(r.note)
+            }
+            .width(70)
+            TableColumn("−Cl", value: \.load) { Text(fmt($0.load, "%.3f")).monospacedDigit() }.width(54)
+            TableColumn("Cd", value: \.cd) { Text(fmt($0.cd, "%.4f")).monospacedDigit() }.width(54)
+            TableColumn("L/D", value: \.ld) { Text(fmt($0.ld, "%.1f")).monospacedDigit() }.width(44)
+            TableColumn("Score", value: \.value) { Text(fmt($0.value, "%.4g")).monospacedDigit() }.width(54)
+            TableColumn("Design", value: \.design) { r in
+                Text(r.design.isEmpty ? r.note : r.design).font(.caption).help(r.note)
+            }
+        }
+        .onChange(of: selection) { _, n in
+            if let n, let t = s.trials.first(where: { $0.number == n }) { lab.load(trial: t) }
+        }
+    }
+
+    @ViewBuilder private func bestSoFar(_ s: WingStudy) -> some View {
+        let best = s.bestSoFar
+        let all = s.results
+        Chart {
+            ForEach(all) { t in
+                PointMark(x: .value("Trial", t.number), y: .value("Score", t.value ?? 0)).symbolSize(12).foregroundStyle(.gray)
+            }
+            ForEach(Array(best.enumerated()), id: \.offset) { _, b in
+                LineMark(x: .value("Trial", b.trial), y: .value("Score", b.value)).interpolationMethod(.stepEnd)
+            }
+        }
+        .chartXAxisLabel("Trial").chartYAxisLabel("Best so far")
+        .chartYScale(domain: .automatic(includesZero: false))
+    }
+
+    @ViewBuilder private func scatter(_ s: WingStudy, _ lab: WingLabModel) -> some View {
+        let ran = s.trials.filter { $0.isResult && $0.load != nil && $0.cd != nil }
+        let front = s.paretoFront
+        Chart {
+            ForEach(ran) { t in
+                PointMark(x: .value("Cd", t.cd!), y: .value("−Cl", t.load!))
+                    .symbolSize(t.number == lab.selectedTrial ? 80 : 20)
+                    .foregroundStyle(t.number == lab.selectedTrial ? Color.accentColor : t.feasible == false ? Color.orange : Color.gray)
+            }
+            ForEach(front) { t in
+                LineMark(x: .value("Cd", t.cd!), y: .value("−Cl", t.load!), series: .value("", "front"))
+                    .foregroundStyle(.green)
+            }
+        }
+        .chartXAxisLabel("Cd").chartYAxisLabel("Downforce Cl (lift upright)")
+        .chartXScale(domain: .automatic(includesZero: false)).chartYScale(domain: .automatic(includesZero: false))
+        .chartOverlay { proxy in
+            GeometryReader { geo in
+                Rectangle().fill(.clear).contentShape(Rectangle())
+                    .onTapGesture { location in
+                        guard let frame = proxy.plotFrame else { return }
+                        let origin = geo[frame].origin
+                        let p = CGPoint(x: location.x - origin.x, y: location.y - origin.y)
+                        let nearest = ran.min { a, b in
+                            dist(proxy, p, a) < dist(proxy, p, b)
+                        }
+                        if let t = nearest, dist(proxy, p, t) < 20 {
+                            selection = t.number
+                        }
+                    }
+            }
+        }
+        .help("Green: the Pareto front, trials nothing else beats on both downforce and drag. Click a point to load it.")
+    }
+
+    private func dist(_ proxy: ChartProxy, _ p: CGPoint, _ t: WingStudy.Trial) -> Double {
+        guard let q = proxy.position(for: (t.cd!, t.load!)) else { return .infinity }
+        return hypot(q.x - p.x, q.y - p.y)
     }
 }

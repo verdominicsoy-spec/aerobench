@@ -164,3 +164,61 @@ final class WingRansResultTests: XCTestCase {
         XCTAssertEqual(r.liftToDrag, 2.1 / 0.031, accuracy: 1e-9)
     }
 }
+
+final class WingStudyTests: XCTestCase {
+    /// The engine's optimiser places wings with its own copy of the geometry
+    /// rules; these numbers come from it (tests/test_wing_optimise.py's starter wing).
+    func testGeometryMatchesTheEngine() {
+        let s = Airfoil.naca4("4412")!
+        var w = Wing(elements: [
+            WingElement(airfoil: s, chord: 0.30, angle: 3, leadingEdge: .zero, inverted: true),
+            WingElement(airfoil: s, chord: 0.14, angle: 25, leadingEdge: SIMD2(0.27, 0.025), inverted: true),
+        ])
+        w.setGap(0.012, of: 1)
+        XCTAssertEqual(w.elements[1].leadingEdge.x, 0.26931802154426326, accuracy: 1e-10)
+        XCTAssertEqual(w.elements[1].leadingEdge.y, 0.027569751457336252, accuracy: 1e-10)
+        XCTAssertEqual(w.overlap(of: 1)!, 0.029608180138330043, accuracy: 1e-10)
+    }
+
+    private let export = #"""
+    {"study": "s", "objective": "max_cl", "objective_name": "Most downforce (lift, upright)", "direction": "maximize",
+     "spec": {"variables": [{"element": 1, "kind": "angle", "low": 15, "high": 60}, {"element": 1, "kind": "gap", "low": 0.003, "high": 0.02}], "objective": "max_cl", "cd_cap": null, "cl_target": null, "sampler": "tpe"},
+     "info": null,
+     "trials": [
+      {"number": 0, "state": "complete", "value": 2.25, "params": {"angle_1": 25.0, "gap_1": 0.012}, "cl": -2.25, "cd": 0.05, "cm": -0.2, "load": 2.25, "element_cl": [-1.35, -0.9], "feasible": true, "converged": true, "reason": null, "placement": [{"angle": 3.0, "leading_edge": [0.0, 0.0]}, {"angle": 25.0, "leading_edge": [0.2693, 0.0276]}], "gaps": [0.012], "overlaps": [0.0296], "seconds": 0.0, "iterations": null, "cells": 1},
+      {"number": 1, "state": "complete", "value": 1.7, "params": {"angle_1": 33.8, "gap_1": 0.0152}, "cl": -1.7, "cd": 0.04, "cm": -0.2, "load": 1.7, "element_cl": [-1.02, -0.68], "feasible": true, "converged": true, "reason": null, "placement": [{"angle": 3.0, "leading_edge": [0.0, 0.0]}, {"angle": 33.8, "leading_edge": [0.2693, 0.0270]}], "gaps": [0.0152], "overlaps": [0.0296], "seconds": 0.0, "iterations": null, "cells": 1},
+      {"number": 2, "state": "fail", "value": null, "params": {"angle_1": 15.0, "gap_1": 0.0081}, "cl": null, "cd": null, "cm": null, "load": null, "element_cl": null, "feasible": null, "converged": null, "reason": "SU2 diverged at every CFL tried", "placement": null, "gaps": null, "overlaps": null, "seconds": 0.0, "iterations": null, "cells": null},
+      {"number": 3, "state": "complete", "value": 2.4, "params": {"angle_1": 29.0, "gap_1": 0.011}, "cl": -2.4, "cd": 0.06, "cm": -0.2, "load": 2.4, "element_cl": [-1.4, -1.0], "feasible": true, "converged": true, "reason": null, "placement": null, "gaps": null, "overlaps": null, "seconds": 0.0, "iterations": null, "cells": 1},
+      {"number": 4, "state": "complete", "value": 1.6, "params": {"angle_1": 40.0, "gap_1": 0.018}, "cl": -1.6, "cd": 0.065, "cm": -0.2, "load": 1.6, "element_cl": [-1.0, -0.6], "feasible": true, "converged": true, "reason": null, "placement": null, "gaps": null, "overlaps": null, "seconds": 0.0, "iterations": null, "cells": 1}],
+     "best": 3, "complete": 4, "failed": 1, "invalid": 0, "target": 5}
+    """#
+
+    func testDecodesTheEngineExport() throws {
+        let s = try WingStudy.decode(exportFile: Data(export.utf8))
+        XCTAssertEqual(s.trials.count, 5)
+        XCTAssertEqual(s.trials[0].params["angle_1"], 25)  // keys kept as the engine wrote them
+        XCTAssertEqual(s.spec.variables.map(\.name), ["angle_1", "gap_1"])
+        XCTAssertEqual(s.bestTrial?.number, 3)
+        XCTAssertEqual(s.trials[2].reason, "SU2 diverged at every CFL tried")
+        XCTAssertEqual(s.trials[0].elementCl?.count, 2)
+    }
+
+    func testBestSoFarAndParetoFront() throws {
+        let s = try WingStudy.decode(exportFile: Data(export.utf8))
+        XCTAssertEqual(s.bestSoFar.map { $0.trial }, [0, 1, 3, 4])
+        XCTAssertEqual(s.bestSoFar.map { $0.value }, [2.25, 2.25, 2.4, 2.4])
+        // Trial 4 is beaten by 0 on both counts; 1 has the least drag, 3 the most downforce.
+        XCTAssertEqual(s.paretoFront.map(\.number), [1, 0, 3])
+    }
+
+    func testLoadingATrialOntoTheCanvas() throws {
+        let s = try WingStudy.decode(exportFile: Data(export.utf8))
+        let a = Airfoil.naca4("4412")!
+        let w = Wing(elements: [WingElement(airfoil: a, chord: 0.3), WingElement(airfoil: a, chord: 0.14)])
+        let loaded = try XCTUnwrap(w.applying(s.trials[1]))
+        XCTAssertEqual(loaded.elements[1].angle, 33.8)
+        XCTAssertEqual(loaded.elements[1].leadingEdge, SIMD2(0.2693, 0.0270))
+        XCTAssertNil(w.applying(s.trials[3]))  // no placement recorded
+        XCTAssertNil(Wing(elements: [w.elements[0]]).applying(s.trials[1]))  // different element count
+    }
+}

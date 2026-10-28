@@ -102,19 +102,91 @@ extension AppState {
             .object(["coords": points(e.placed()), "unit": points(e.airfoil.coords), "angle": .double(e.angle),
                      "inverted": .bool(e.inverted), "chord": .double(e.chord)])
         })
-        let params: [String: JSONValue] = [
-            "elements": elements, "speed": .double(wing.speed), "rho": .double(wing.rho), "mu": .double(wing.mu),
-            "alpha": .double(wing.alpha), "ref_chord": .double(wing.refChord),
-            "model": .string(lab.turbulenceModel.rawValue), "mesh": .string(lab.meshLevel),
-            "transition": lab.predictTransition ? .string("auto") : .array(wing.elements.map { _ in .array([.double(0), .double(0)]) }),
-            "turbulence_intensity": .double(lab.turbulenceIntensity / 100), "n_crit": .double(lab.nCrit),
-        ]
+        var params = ransParams()
+        params["elements"] = elements
         lab.ransResult = nil
         lab.resultsTab = .cfd
         lab.ransJob = jobs.submit(command: "wing-rans", params: params, in: jobsRoot) { [weak self] item in
             guard let self, item.status == .succeeded, let text = item.resultText else { return }
             self.wingLab.ransResult = try? WingRansResult.decode(resultFile: Data(text.utf8))
             self.wingLab.ransFolder = item.workdir
+        }
+    }
+
+    /// Flow and solver settings shared by a RANS run and every optimiser trial.
+    private func ransParams() -> [String: JSONValue] {
+        let lab = wingLab
+        let wing = lab.wing
+        return [
+            "speed": .double(wing.speed), "rho": .double(wing.rho), "mu": .double(wing.mu),
+            "alpha": .double(wing.alpha), "ref_chord": .double(wing.refChord),
+            "model": .string(lab.turbulenceModel.rawValue), "mesh": .string(lab.meshLevel),
+            "transition": lab.predictTransition ? .string("auto") : .array(wing.elements.map { _ in .array([.double(0), .double(0)]) }),
+            "turbulence_intensity": .double(lab.turbulenceIntensity / 100), "n_crit": .double(lab.nCrit),
+        ]
+    }
+
+    /// Starts the optimiser, or resumes the study of the same name: the
+    /// engine picks up where the study file left off.
+    func runWingOptimise() {
+        let lab = wingLab
+        let wing = lab.wing
+        guard let project else {
+            show("Save the project first", WingLabError("Studies are stored in the project, so they can be resumed."))
+            return
+        }
+        if let problem = lab.optimiseProblem {
+            show("The study cannot start", WingLabError(problem))
+            return
+        }
+        saveProject()
+        func pair(_ p: SIMD2<Double>) -> JSONValue { .array([.double(p.x), .double(p.y)]) }
+        let setup = lab.optimise
+        var params = ransParams()
+        params["elements"] = .array(wing.elements.map { e in
+            .object(["unit": .array(e.airfoil.coords.map(pair)), "chord": .double(e.chord), "angle": .double(e.angle),
+                     "leading_edge": pair(e.leadingEdge), "inverted": .bool(e.inverted)])
+        })
+        params["min_gap"] = .double(wing.minGap)
+        if let b = wing.rulesBox {
+            params["rules_box"] = .array([.double(b.minX), .double(b.minY), .double(b.maxX), .double(b.maxY)])
+        }
+        params["variables"] = .array(setup.variables.map { v in
+            .object(["element": .int(v.element), "kind": .string(v.kind.rawValue),
+                     "low": .double(v.low * v.engineScale), "high": .double(v.high * v.engineScale)])
+        })
+        params["objective"] = .string(setup.objective.rawValue)
+        params["cd_cap"] = .double(setup.cdCap)
+        params["cl_target"] = .double(setup.clTarget)
+        params["sampler"] = .string(setup.sampler)
+        params["trials"] = .int(setup.trials)
+        params["parallel"] = .int(settings.parallelTrials)
+        let file = WingLabModel.studyFile(project: project.url, name: setup.studyName)
+        params["storage"] = .string(file.path)
+        params["name"] = .string(file.deletingPathExtension().lastPathComponent)
+        lab.resultsTab = .study
+        let job = jobs.submit(command: "wing-optimise", params: params, in: jobsRoot) { [weak self] item in
+            guard let self else { return }
+            if item.status == .succeeded, let text = item.resultText, let s = try? WingStudy.decode(resultFile: Data(text.utf8)) {
+                self.wingLab.study = s
+            } else {
+                self.wingLab.reloadStudy(project: self.project?.url)
+            }
+        }
+        lab.optimiseJob = job
+        // The engine rewrites the export after every trial; follow it.
+        let export = file.deletingPathExtension().appendingPathExtension("json")
+        Task { @MainActor [weak self] in
+            var seen: Date?
+            while !job.status.isFinished {
+                try? await Task.sleep(for: .seconds(2))
+                let date = (try? FileManager.default.attributesOfItem(atPath: export.path)[.modificationDate]) as? Date
+                guard let self, let date, date != seen else { continue }
+                seen = date
+                if let data = try? Data(contentsOf: export), let s = try? WingStudy.decode(exportFile: data) {
+                    self.wingLab.study = s
+                }
+            }
         }
     }
 
@@ -133,4 +205,10 @@ extension AppState {
         lapSim.carB = b
         lapSim.compare = true
     }
+}
+
+struct WingLabError: LocalizedError {
+    let message: String
+    init(_ message: String) { self.message = message }
+    var errorDescription: String? { message }
 }

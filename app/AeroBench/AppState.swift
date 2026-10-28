@@ -137,6 +137,7 @@ final class AppState {
         if project?.isDirty == true { saveProject() }
         project = nil
         pingJob = nil
+        wingLab.study = nil
         jobs.loadHistory(from: jobsRoot)
         showLatestLapSim()
     }
@@ -158,6 +159,8 @@ final class AppState {
         pingJob = nil
         lapSim = LapSimSetup.load(fromProject: url) ?? LapSimSetup()
         wingLab.reset(to: WingLabModel.load(fromProject: url) ?? WingLabModel.starter)
+        wingLab.optimise = WingLabModel.loadOptimise(fromProject: url) ?? .init()
+        wingLab.reloadStudy(project: url)
         project?.isDirty = false
         recentProjects.removeAll { $0.standardizedFileURL == url.standardizedFileURL }
         recentProjects.insert(url, at: 0)

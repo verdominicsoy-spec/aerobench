@@ -9,6 +9,7 @@ final class AppSettings {
         static let su2Path = "su2Path"
         static let maxParallelJobs = "maxParallelJobs"
         static let coresPerJob = "coresPerJob"
+        static let parallelTrials = "parallelTrials"
     }
 
     private let defaults = UserDefaults.standard
@@ -19,6 +20,8 @@ final class AppSettings {
     var su2Path: String { didSet { defaults.set(su2Path, forKey: Key.su2Path) } }
     var maxParallelJobs: Int { didSet { defaults.set(maxParallelJobs, forKey: Key.maxParallelJobs) } }
     var coresPerJob: Int { didSet { defaults.set(coresPerJob, forKey: Key.coresPerJob) } }
+    /// Wing Lab optimiser: trials run at once, each on coresPerJob cores.
+    var parallelTrials: Int { didSet { defaults.set(parallelTrials, forKey: Key.parallelTrials) } }
 
     init() {
         let defaults = UserDefaults.standard
@@ -28,6 +31,8 @@ final class AppSettings {
         maxParallelJobs = parallel > 0 ? parallel : 2
         let cores = defaults.integer(forKey: Key.coresPerJob)
         coresPerJob = cores > 0 ? cores : 4
+        let trials = defaults.integer(forKey: Key.parallelTrials)
+        parallelTrials = trials > 0 ? trials : 1
     }
 
     var engineDirectory: URL? {

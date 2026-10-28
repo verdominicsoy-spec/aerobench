@@ -552,3 +552,46 @@ engine finds it there. A GitHub workflow builds it on a Mac the same way and
 runs a two-element wing whenever the script changes. Linux CI takes SU2 from
 conda-forge. gmsh's Linux wheel needs a few X/GL libraries even headless;
 macOS has them.
+
+**The optimiser runs in the engine, with the wing geometry in Python too.**
+Each trial has to build its wing from design values, so placing elements,
+gap, overlap and the validity checks exist in both Swift (the canvas) and
+Python (the trials), with a Swift test pinning the Python numbers. The app
+does not re-derive a trial's wing: the engine records every element's angle
+and leading edge, and loading a trial puts exactly those on the canvas.
+
+**Turning an element keeps the slots behind it.** Design angles turn each
+element about its leading edge; then every flap goes back to the gap and
+overlap it had as drawn (or to its design values), so a flap angle variable
+does not drag the slot shut. Gap and overlap are solved together (Newton on
+the flap's leading edge): setting them one after the other does not settle,
+because the gap's direction depends on where the nearest point is.
+
+**Invalid wings are scored, not failed.** The spec lists geometric
+validity, minimum gap and the rules box as constraints. A wing that breaks
+one is never meshed or run. Optuna's TPE learns nothing from a failed trial,
+and in testing it spent 21 of 30 trials in the corner where the flap hits
+the main element. So such a wing is told to the sampler as scoring far below
+anything real (it learns to stay away), shown as "invalid" (never as a
+result), and does not use up the trial budget; if 5 × the trial count of
+them (at least 50) pile up in one session the study stops and says the
+bounds hold almost no valid wing. Failed meshes, divergence and unconverged
+runs are failed trials with their reason, as the spec says, and the study
+carries on.
+
+**Objectives with constraints use a penalty.** "Most downforce under a Cd
+cap" and "least drag for a downforce target" subtract (or add) 10 per unit
+of relative violation: 10% over the cap costs 1.0 in Cl. That works the same
+for TPE and CMA-ES (which has no constraint support); trials over the limit
+are marked and never picked as best. Downforce is −Cl for an inverted wing,
+so "most downforce" is the same objective either way up.
+
+**Parallel trials and resuming.** Trials run in threads, each launching its
+own SU2 on the per-job core count, as many at once as Settings says (the
+spec's example is 4 trials on 4 cores each). TPE uses its constant-liar
+option so parallel trials do not all pick the same point. The study is an
+Optuna SQLite file in the project (wing/studies/<name>.db); after every trial
+the engine also writes <name>.json, which the app follows while the study
+runs and reads when the project opens. Trials an interrupted session cut off
+are marked interrupted, queued again and not counted. Restarting a study
+with different variables or a different objective is refused.

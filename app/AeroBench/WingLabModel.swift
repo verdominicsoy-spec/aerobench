@@ -53,6 +53,7 @@ final class WingLabModel {
         case pressure = "Pressure"
         case polar = "Polar"
         case cfd = "CFD"
+        case study = "Study"
 
         var id: String { rawValue }
     }
@@ -99,6 +100,110 @@ final class WingLabModel {
     var ransResult: WingRansResult?
     var ransFolder: URL?
     var su2Job: JobItem?
+
+    // Optimisation
+    struct DesignVariable: Codable, Equatable, Identifiable {
+        enum Kind: String, Codable, CaseIterable { case angle, gap, overlap }
+        var element: Int
+        var kind: Kind
+        var low: Double  // degrees, or mm for gap and overlap
+        var high: Double
+
+        var id: String { "\(kind.rawValue)_\(element)" }
+        var unit: String { kind == .angle ? "°" : "mm" }
+        /// In the engine's units: degrees, or metres.
+        var engineScale: Double { kind == .angle ? 1 : 0.001 }
+    }
+
+    enum Objective: String, Codable, CaseIterable, Identifiable {
+        case maxCl = "max_cl"
+        case maxLD = "max_ld"
+        case maxClCdCap = "max_cl_cd_cap"
+        case minCdClTarget = "min_cd_cl_target"
+
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .maxCl: "Most downforce"
+            case .maxLD: "Best L/D"
+            case .maxClCdCap: "Most downforce, Cd capped"
+            case .minCdClTarget: "Least drag for a downforce"
+            }
+        }
+    }
+
+    struct OptimiseSetup: Codable, Equatable {
+        var variables: [DesignVariable] = []
+        var objective: Objective = .maxCl
+        var cdCap = 0.1
+        var clTarget = 2.0  // downforce Cl (lift when upright)
+        var sampler = "tpe"
+        var trials = 40
+        var studyName = "study-1"
+    }
+
+    var optimise = OptimiseSetup() {
+        didSet { if optimise != oldValue { onChange?() } }
+    }
+    var study: WingStudy?
+    var optimiseJob: JobItem?
+    var selectedTrial: Int?
+
+    func variable(_ kind: DesignVariable.Kind, of element: Int) -> DesignVariable? {
+        optimise.variables.first { $0.kind == kind && $0.element == element }
+    }
+
+    /// Ticks or unticks a design variable; new ones get bounds around the
+    /// current value.
+    func toggleVariable(_ kind: DesignVariable.Kind, of element: Int) {
+        if let i = optimise.variables.firstIndex(where: { $0.kind == kind && $0.element == element }) {
+            optimise.variables.remove(at: i)
+            return
+        }
+        let v: DesignVariable
+        switch kind {
+        case .angle:
+            let a = wing.elements[element].angle
+            v = DesignVariable(element: element, kind: .angle, low: (a - 5).rounded(), high: (a + 5).rounded())
+        case .gap:
+            let g = (wing.gap(of: element) ?? 0.01) * 1000
+            v = DesignVariable(element: element, kind: .gap, low: max(wing.minGap * 1000, (g * 0.5).rounded()),
+                               high: max((g * 1.5).rounded(), wing.minGap * 1000 + 5))
+        case .overlap:
+            let o = (wing.overlap(of: element) ?? 0) * 1000
+            v = DesignVariable(element: element, kind: .overlap, low: (o - 10).rounded(), high: (o + 10).rounded())
+        }
+        optimise.variables.append(v)
+        optimise.variables.sort { ($0.element, $0.kind.rawValue) < ($1.element, $1.kind.rawValue) }
+    }
+
+    func setBounds(of id: String, low: Double? = nil, high: Double? = nil) {
+        guard let i = optimise.variables.firstIndex(where: { $0.id == id }) else { return }
+        if let low { optimise.variables[i].low = low }
+        if let high { optimise.variables[i].high = high }
+    }
+
+    /// Why the study cannot start, or nil.
+    var optimiseProblem: String? {
+        let vars = optimise.variables
+        if vars.isEmpty { return "Tick at least one design variable." }
+        if let v = vars.first(where: { $0.element >= wing.elements.count || ($0.kind != .angle && $0.element == 0) }) {
+            return "\(v.id) refers to an element that is not there any more."
+        }
+        if let v = vars.first(where: { !($0.high > $0.low) }) { return "\(v.id): the upper bound must be above the lower." }
+        if let v = vars.first(where: { $0.kind == .gap && $0.low < 0 }) { return "\(v.id): a gap cannot be negative." }
+        if optimise.objective == .maxClCdCap && !(optimise.cdCap > 0) { return "Set a Cd cap above zero." }
+        if optimise.objective == .minCdClTarget && !(optimise.clTarget > 0) { return "Set a downforce target above zero." }
+        if optimise.studyName.trimmingCharacters(in: .whitespaces).isEmpty { return "Name the study." }
+        return nil
+    }
+
+    /// Puts a trial's wing on the canvas (undoable).
+    func load(trial: WingStudy.Trial) {
+        guard let w = wing.applying(trial) else { return }
+        edit { $0 = w }
+        selectedTrial = trial.number
+    }
 
     // The preview
     private(set) var preview: PanelSolution?
@@ -260,6 +365,31 @@ final class WingLabModel {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(wing).write(to: folder.appendingPathComponent("wing.json"), options: .atomic)
+        try encoder.encode(optimise).write(to: folder.appendingPathComponent("optimise.json"), options: .atomic)
+    }
+
+    static func loadOptimise(fromProject project: URL) -> OptimiseSetup? {
+        let url = ProjectStore.toolURL(for: project, tool: "wing").appendingPathComponent("optimise.json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(OptimiseSetup.self, from: data)
+    }
+
+    /// Studies live in the project: <project>/wing/studies/<name>.db (Optuna)
+    /// and <name>.json (the engine's export after every trial).
+    static func studyFile(project: URL, name: String) -> URL {
+        let safe = name.trimmingCharacters(in: .whitespaces).map { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" ? $0 : "_" }
+        return ProjectStore.toolURL(for: project, tool: "wing").appendingPathComponent("studies")
+            .appendingPathComponent(String(safe)).appendingPathExtension("db")
+    }
+
+    /// Reads the study's export, if there is one.
+    func reloadStudy(project: URL?) {
+        guard let project else {
+            study = nil
+            return
+        }
+        let url = Self.studyFile(project: project, name: optimise.studyName).deletingPathExtension().appendingPathExtension("json")
+        study = (try? Data(contentsOf: url)).flatMap { try? WingStudy.decode(exportFile: $0) }
     }
 
     /// A starting point: an inverted two-element NACA wing, so the canvas is
