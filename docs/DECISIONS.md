@@ -667,3 +667,19 @@ SU2's screen output, at half the tolerance for a margin, 20 iterations after
 each file write (every 250 iterations), and stops the run when it passes.
 The history is then judged as before; the flow and surface files are at most
 250 iterations older than the forces, which by then move less than 1e-4.
+
+**Runs that never settle steer the sampler too.** In the overnight test
+study every failed trial had a flap angle above about 35°: the flap
+separates, steady RANS never settles, and each such run burned its full
+iteration budget (13 to 16 minutes) while TPE, which learns nothing from a
+failed trial, kept proposing more. An unconverged run is now told to the
+sampler as half the spread of the real results below the worst of them
+(once there are two real results to measure by), so it learns to stay away;
+it is still shown as failed, never as a result. Diverged runs and failed
+meshes stay plain failures, since those can happen to a good wing.
+
+**A resumed study does not replay its proposals.** With a fixed seed, every
+session started the sampler from the same state, so after a resume it
+proposed the designs it had already run (the test study ran one design three
+times). The seed moves on by the number of trials already in the study.
+Studies the app starts have no fixed seed.

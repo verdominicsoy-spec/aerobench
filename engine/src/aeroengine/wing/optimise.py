@@ -192,7 +192,7 @@ def run(base: Wing, spec: Spec, evaluate: Evaluate, storage: Path, name: str, wo
                     attrs["feasible"] = feasible
                     state = optuna.trial.TrialState.COMPLETE
                 else:
-                    attrs["reason"] = f"not converged: {res.get('reason')}"
+                    attrs.update(reason=f"not converged: {res.get('reason')}", unsettled=True)
         except EngineError as exc:
             attrs["reason"] = exc.msg + (f": {exc.detail.splitlines()[-1]}" if exc.detail else "")
         except Exception as exc:  # noqa: BLE001 - one bad trial must not end an overnight study
@@ -204,6 +204,18 @@ def run(base: Wing, spec: Spec, evaluate: Evaluate, storage: Path, name: str, wo
         if stop.is_set() and state is optuna.trial.TrialState.FAIL and not attrs.get("invalid"):
             return  # cut off by a cancel: left running, re-queued when the study resumes
         with lock:
+            if attrs.get("unsettled"):
+                # A run that never settles is nearly always separated flow: a
+                # poor wing. Once there are two real results to measure by, it
+                # is told to the sampler as half their spread below the worst
+                # (a failed trial would teach it nothing); shown as failed,
+                # never as a result.
+                real = [t.value for t in study.get_trials(deepcopy=False, states=(optuna.trial.TrialState.COMPLETE,))
+                        if not t.user_attrs.get("invalid") and not t.user_attrs.get("unsettled")]
+                if len(real) >= 2:
+                    worst, best = (min(real), max(real)) if spec.direction == "maximize" else (max(real), min(real))
+                    state = optuna.trial.TrialState.COMPLETE
+                    value = worst - 0.5 * (best - worst)
             for k, v in attrs.items():
                 trial.set_user_attr(k, v)
             study.tell(trial, value, state=state)
@@ -211,8 +223,9 @@ def run(base: Wing, spec: Spec, evaluate: Evaluate, storage: Path, name: str, wo
             _export(study, spec, export)
         if attrs.get("invalid"):
             return  # no log line or progress for a wing that was never run
-        what = f"{value:.4g}" if value is not None else f"failed ({attrs.get('reason', '')})"
-        log(f"trial {trial.number}: {what}", level="info" if value is not None else "warning")
+        ok = value is not None and not attrs.get("unsettled")
+        what = f"{value:.4g}" if ok else f"failed ({attrs.get('reason', '')})"
+        log(f"trial {trial.number}: {what}", level="info" if ok else "warning")
         progress(100 * done / spec.trials, f"{done} of {spec.trials} trials")
 
     invalid_before = counts()[1]
@@ -282,8 +295,8 @@ def summary(study: optuna.Study, spec: Spec) -> dict:
     trials = []
     for t in study.get_trials(deepcopy=False):
         a = t.user_attrs
-        state = "invalid" if a.get("invalid") else t.state.name.lower()
-        trials.append({"number": t.number, "state": state, "value": None if state == "invalid" else t.value,
+        state = "invalid" if a.get("invalid") else "fail" if a.get("unsettled") else t.state.name.lower()
+        trials.append({"number": t.number, "state": state, "value": t.value if state == "complete" else None,
                        "params": t.params,
                        **{k: a.get(k) for k in ("cl", "cd", "cm", "load", "element_cl", "feasible", "converged",
                                                 "reason", "placement", "gaps", "overlaps", "seconds", "iterations",

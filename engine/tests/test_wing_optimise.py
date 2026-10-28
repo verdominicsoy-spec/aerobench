@@ -125,7 +125,7 @@ def test_failures_are_recorded_and_the_study_carries_on(tmp_path):
     spec = optimise.Spec([Variable(1, "angle", 15, 40)], trials=12, seed=2)
     evaluate, _ = _fake(fail_every=4)
     out = optimise.run(_starter(), spec, evaluate, tmp_path / "s.db", "s", tmp_path / "w")
-    states = [t["state"] for t in out["trials"]]
+    states = [t["state"] for t in out["trials"] if t["state"] != "invalid"]  # invalid wings are never run
     assert len(states) == 12 and out["failed"] >= 4
     reasons = {t["reason"] for t in out["trials"] if t["state"] == "fail"}
     assert any("diverged" in r for r in reasons) and any("not converged" in r for r in reasons)
@@ -197,3 +197,34 @@ def test_a_resumed_seeded_study_does_not_replay_its_proposals(tmp_path):
         out = optimise.run(_starter(), spec, evaluate, tmp_path / "s.db", "s", tmp_path / "w")
     points = [tuple(round(v, 9) for v in t["params"].values()) for t in out["trials"] if t["state"] != "invalid"]
     assert len(points) == len(set(points))
+
+
+def test_unsettled_runs_are_failed_but_steer_the_sampler(tmp_path):
+    spec = optimise.Spec([Variable(1, "angle", 15, 45)], trials=10, seed=3)
+    evaluate, _ = _fake()
+
+    def separating(wing, folder):
+        res = evaluate(wing, folder)
+        if wing.elements[1].angle > 34:  # the flap separates: the run never settles
+            res.update(converged=False, reason="Cl still moving")
+        return res
+
+    out = optimise.run(_starter(), spec, separating, tmp_path / "s.db", "s", tmp_path / "w")
+    bad = [t for t in out["trials"] if t["params"]["angle_1"] > 34 and t["state"] != "invalid"]
+    assert bad and all(t["state"] == "fail" and t["value"] is None and "not converged" in t["reason"] for t in bad)
+    assert out["complete"] + out["failed"] == 10 and out["trials"][out["best"]]["params"]["angle_1"] <= 34
+    # The sampler saw each as worse than every real result before it (and
+    # nothing until there were two to measure by).
+    study = optuna.load_study(study_name="s", storage=f"sqlite:///{tmp_path / 's.db'}")
+    told = 0
+    for t in study.trials:
+        if not t.user_attrs.get("unsettled"):
+            continue
+        before = [o.value for o in study.trials[:t.number] if o.state.name == "COMPLETE"
+                  and not o.user_attrs.get("unsettled") and not o.user_attrs.get("invalid")]
+        if len(before) < 2:
+            assert t.value is None
+        else:
+            told += 1
+            assert t.value < min(before)
+    assert told
