@@ -167,7 +167,7 @@ struct FlowQuickSetupPanel: View {
             Text("4  Size")
         } footer: {
             Text(right == "y"
-                 ? "Find a frame where you can see something whose width you know (the track, between the tyre centres, or a wing's span), press Measure and drag across it. The bigger it looks, the better. Its middle is at y = 0 if it is centred on the car."
+                 ? "Find a frame where you can see something whose width you know (the track, between the tyre centres, or a wing's span), press Measure and drag across it. It has to be cut by the plane in that frame (the cut geometry shows white). The bigger it looks, the better. Its middle is at y = 0 if it is centred on the car."
                  : "Find a frame where you can see something whose length you know (the wheelbase, between the axles, say), press Measure and drag across it, then type where its middle is along \(right).")
         }
     }
