@@ -19,4 +19,4 @@ def command(name: str) -> Callable[[CommandFn], CommandFn]:
 
 
 # Import modules for their registration side effect.
-from . import cadcheck, dummy, flow, lapsim, ping, tessellate  # noqa: E402,F401
+from . import cadcheck, dummy, flow, lapsim, ping, tessellate, wing  # noqa: E402,F401
