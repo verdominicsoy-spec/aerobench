@@ -375,7 +375,10 @@ def test_detected_calibration_reconstructs(tmp_path):
             "colormap": {"legend": {k: found["legend"][k] for k in ("frame", "p0", "p1", "half_width")}},
             "ground": {"track": True}}
     auto["spatial"] = {"mode": "points", "frames": cal["spatial"]["frames"][:1]}
-    vol, _ = reconstruct(tmp_path / "s.mp4", Calibration(auto))
+    vol, summary = reconstruct(tmp_path / "s.mp4", Calibration(auto))
+    # The sampled legend has to match the plot's colours closely, not just
+    # within the rejection threshold (decoders differ a little).
+    assert summary["median_dE"] < 3
     assert _max_error(vol) <= 0.04 * RANGE
 
 
@@ -449,3 +452,24 @@ def test_camera_planes_need_tracking():
     with pytest.raises(EngineError, match="ground tracking"):
         Calibration({"crop": [0, 0, 100, 100], "spatial": {"mode": "size", "width": 1},
                      "planes": {"mode": "camera", "start": 0, "view_angle": 30}})
+
+
+@pytest.mark.parametrize("bands, worst", [(16, 9.0), (32, 2.0), (None, 4.5)])
+def test_legend_sampling_reaches_the_map_ends(bands, worst):
+    """A banded legend shows band-centre colours, but the field is drawn out
+    to the map's end colours (clipped values); sampling extends half a band
+    beyond the last centres. Without that the red end of a 16-band STAR map is
+    22 dE off, past the 12 dE rejection threshold. A smooth legend's ends are
+    its own."""
+    cmap = colormap.preset("star_blue_yellow_red")
+    width = 320
+    t = (np.arange(width) + 0.5) / width
+    shown = t if bands is None else (np.floor(t * bands) + 0.5) / bands
+    strip = cmap[np.round(shown * (len(cmap) - 1)).astype(int)]
+    img = np.full((40, width + 40, 3), 255, np.uint8)
+    img[10:30, 20:20 + width] = (strip * 255).round().astype(np.uint8)
+    prof = colormap.sample_legend(img, [20.5, 20], [20 + width - 0.5, 20], half_width=4)
+    ends = (np.array([[prof[0], prof[-1]]]) * 255).round().astype(np.uint8)
+    low = colormap.lab_distance(ends, cmap[0] * 255)[0, 0]
+    high = colormap.lab_distance(ends, cmap[-1] * 255)[0, 1]
+    assert max(low, high) < worst, (low, high)

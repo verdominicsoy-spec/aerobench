@@ -75,10 +75,48 @@ def preset(name: str, n: int = 256) -> np.ndarray:
     return PRESETS[name](np.linspace(0, 1, n))
 
 
+def _flat_run(prof: np.ndarray, start: int, tol: float = 0.016) -> int:
+    """End (exclusive) of the stretch from `start` whose colour stays within
+    `tol` of its first pixel."""
+    i = start + 1
+    while i < len(prof) and np.linalg.norm(prof[i] - prof[start]) < tol:
+        i += 1
+    return i
+
+
+def _end_band(prof: np.ndarray) -> tuple[float, np.ndarray] | None:
+    """If the legend is banded at prof[0]'s end, where its colour map really
+    ends: a banded legend shows each band's centre colour, so the map's end
+    is half a band beyond the first band's centre. None for a smooth end."""
+    n = len(prof)
+    a1 = _flat_run(prof, 0)
+    # Skip a blurred boundary of a pixel or two before the next band.
+    b0 = a1
+    while b0 < min(a1 + 3, n - 1) and np.linalg.norm(prof[b0 + 1] - prof[b0]) > 0.008:
+        b0 += 1
+    b1 = _flat_run(prof, b0)
+    w0, w1 = a1, b1 - b0
+    if w1 < 3 or w0 < 2 or w1 > 0.2 * n:
+        return None
+    c0, c1 = np.median(prof[:a1], axis=0), np.median(prof[b0:b1], axis=0)
+    if np.linalg.norm(c1 - c0) < 0.04:  # no real step: a smooth end
+        return None
+    # The first band may be cut short by where the line starts; the second
+    # is whole, so it gives the band width.
+    centre0, centre1 = a1 - w1 / 2, (b0 + b1) / 2
+    if centre0 < 0 or not 0.5 * w1 <= w0 <= 1.5 * w1:
+        return None
+    end = c0 + (c0 - c1) * (centre0 + 0.5) / (centre1 - centre0)
+    return centre0, np.clip(end, 0, 1)
+
+
 def sample_legend(frame_rgb: np.ndarray, p0, p1, half_width: int = 3, smooth: float = 0.03) -> np.ndarray:
     """Colours along a line drawn on a legend, p0 at the low end. Averaged
     across the bar and smoothed along it, which turns a stepped (banded)
-    legend into the continuous map the field is drawn with."""
+    legend into the continuous map the field is drawn with. A banded legend
+    shows each band's centre colour, never the map's end colours (where
+    clipped values are drawn), so at a banded end the colour carries on half
+    a band beyond the last band's centre."""
     h, w = frame_rgb.shape[:2]
     p0, p1 = np.asarray(p0, float), np.asarray(p1, float)
     length = float(np.linalg.norm(p1 - p0))
@@ -95,8 +133,34 @@ def sample_legend(frame_rgb: np.ndarray, p0, p1, half_width: int = 3, smooth: fl
         yi = np.clip(np.round(pts[:, 1]).astype(int), 0, h - 1)
         samples.append(frame_rgb[yi, xi].astype(float) / 255)
     prof = np.mean(samples, axis=0)
+    # Video compression blurs colour over a couple of pixels, so the last
+    # pixels at each end mix with whatever is beyond the bar (and a line drawn
+    # a little long reaches into it). Carry the colour's trend from just
+    # inside out to each end instead.
+    edge = min(max(3, int(round(0.01 * n))), n // 10)
+    if edge > 0 and n > edge + 4:
+        for ramp in (prof, prof[::-1]):  # views: writes go to prof
+            base = ramp[edge]
+            slope = (ramp[edge] - ramp[edge + 3]) / 3
+            ramp[:edge] = np.clip(base + slope * np.arange(edge, 0, -1)[:, None], 0, 1)
+    ends = [_end_band(prof), _end_band(prof[::-1])]
     window = max(int(round(smooth * n)), 1)
-    return uniform_filter1d(prof, size=window, axis=0, mode="nearest")
+    # Pad each end with the profile's own trend (odd reflection) so the
+    # smoothing does not pull the end colours towards the middle.
+    pad = min(window, n - 1)
+    padded = np.vstack([2 * prof[0] - prof[pad:0:-1], prof, 2 * prof[-1] - prof[-2:-pad - 2:-1]])
+    out = uniform_filter1d(padded, size=window, axis=0, mode="nearest")[pad:pad + n]
+    out = np.clip(out, 0, 1)
+    for side, found in enumerate(ends):
+        if found is None:
+            continue
+        centre, colour = found
+        k = int(round(centre))
+        ramp = out if side == 0 else out[::-1]  # a view: writes go to out
+        if k >= 1:
+            w = np.linspace(0, 1, k + 1)[:, None]
+            ramp[: k + 1] = (1 - w) * colour + w * ramp[k]
+    return out
 
 
 class ColorLUT:

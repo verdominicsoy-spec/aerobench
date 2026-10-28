@@ -269,9 +269,10 @@ smoothing turns the steps back into the continuous map. Detecting band edges
 was tried and is unreliable through H.264.
 
 **No automatic lighting correction.** STAR lights the plane, so the field's
-colours are not exactly the legend's. On the real video the plane sits about
-3.5 ΔE (median) from the sampled legend, freestream (Cp0 = 1) reads 0.984,
-and a lit corner a little lower. A fitted per-channel gain and offset only cut
+colours are not exactly the legend's. On the real video the plane sat about
+3.5 ΔE (median) from the sampled legend, freestream (Cp0 = 1) read 0.984,
+and a lit corner a little lower. (Most of that turned out to be the legend
+sampling, not lighting; see "Legend ends" below: now 1.4 ΔE and 0.996.) A fitted per-channel gain and offset only cut
 the median to 2.1 ΔE and made the lit corner worse, so it was left out. The
 capture guide says to turn lighting off.
 
@@ -408,4 +409,19 @@ its right). It is now a real camera: planes recede towards -x. Its far end
 holds the body and the narrowest wake at about 4 mm a pixel, so that case is
 held to 5% of the range at its worst cell (99.9% within 1.6%); the front
 view, which has the old geometry the right way round, is now the default.
+
+**Legend ends.** The macOS CI run caught a marginal fit: an auto-detected
+legend line runs to the bar's last pixel, where H.264's colour blur mixes in
+the background, and the old sampler held the last 3 px flat, smoothed with the
+ends pulled towards the middle, and stopped at a banded legend's last band
+centre. Free stream (always drawn in the map's end colour, being clipped)
+then sat 12-13 ΔE from the sampled end, at the rejection threshold, and one
+decoder's rounding emptied 40% of the volume. Now: the last few pixels carry
+the colour's trend from just inside out to the end; smoothing pads with the
+profile's own trend; and where the two bands at an end are flat and about
+the same width, the colour carries on half a band past the last centre
+(detecting every band edge stays unreliable through H.264, the two end bands
+are enough). A 32-band STAR map's ends go from 11.6 to 1.2 ΔE off, a 16-band
+one from 22.5 to 8.2, a smooth one from 9.1 to 3.7. On the real video the
+median fit goes from 3.4 to 1.4 ΔE and free stream reads 0.996.
 
