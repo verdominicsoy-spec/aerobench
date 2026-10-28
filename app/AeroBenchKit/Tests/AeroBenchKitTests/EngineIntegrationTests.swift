@@ -182,6 +182,24 @@ final class EngineIntegrationTests: XCTestCase {
         XCTAssertEqual(slice.height, vol.nz)
     }
 
+    /// The engine finds the crop and the legend bar on the demo sweep.
+    func testFlowDetect() async throws {
+        let demo = try makeJob(JobSpec(command: "flow-demo", params: ["frames": .int(21)]))
+        guard case .succeeded = await demo.run(onEvent: { _ in }) else { return XCTFail("demo failed") }
+        let detect = try makeJob(JobSpec(command: "flow-detect", params: [
+            "source": .string(demo.workdir.appendingPathComponent("demo.mp4").path),
+            "calibration": try FlowCalibration().jsonValue(),
+        ]))
+        let outcome = await detect.run(onEvent: { _ in })
+        guard case .succeeded(let url) = outcome else { return XCTFail("\(outcome)") }
+        let result = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let data = try XCTUnwrap(result["data"] as? [String: Any])
+        XCTAssertEqual((data["crop"] as? [Any])?.count, 4)
+        let legend = try XCTUnwrap(data["legend"] as? [String: Any])
+        XCTAssertNotNil(legend["p0"])
+        XCTAssertEqual(data["ground_visible"] as? Bool, true)
+    }
+
     func testGeometryCheckOfTheSampleSTEP() async throws {
         let step = ModelLoaderTests.samples.appendingPathComponent("sample_car.step")
         let job = try makeJob(JobSpec(command: "cad-check", params: ["path": .string(step.path), "preset": .string("coarse")]))

@@ -180,6 +180,10 @@ def world_grid(cal: Calibration, frames: list[int], width: int) -> tuple[np.ndar
         width = max(int(round((yhi - ylo) / cell)) + 1, 16)
     y = np.linspace(ylo, yhi, width)
     dy = y[1] - y[0]
+    if cal.track_ground and cal.window is None:
+        # The crop reaches below the ground so it can be tracked; nothing
+        # there is fluid, so do not spend cells on it.
+        zlo = max(zlo, cal.ground_level - 4 * dy)
     z = np.arange(zlo, zhi + dy / 2, dy)
     return y, z
 
@@ -310,6 +314,7 @@ def reconstruct(source_path: Path, cal: Calibration, progress: Callable[[float, 
     frames = cal.frames(source.count)
     lut = build_lut(cal, source)
     ground = None
+    cal.frame_size = source.size
     if cal.track_ground:
         report(2, "tracking the ground line")
         ground = track_ground(source, cal, frames)
@@ -318,6 +323,8 @@ def reconstruct(source_path: Path, cal: Calibration, progress: Callable[[float, 
     values = np.full((len(frames), len(h), len(v)), np.nan, np.float32)
     solid = np.zeros(values.shape, bool)
     pos = np.array([cal.plane_x(f, frames[0], frames[-1]) for f in frames])
+    if ground is not None and cal.plane_mode != "camera":
+        ground["implied_camera"] = cal.implied_camera(frames, pos, source.size)
     stats = []
     for n, (i, frame) in enumerate(source.frames(frames)):
         k = frames.index(i)
@@ -379,8 +386,12 @@ def preview(source_path: Path, cal: Calibration, frame_index: int) -> tuple[np.n
     source = FrameSource(source_path)
     frames = cal.frames(source.count)
     lut = build_lut(cal, source)
+    cal.frame_size = source.size
     if cal.track_ground:
         stats_ground = track_ground(source, cal, frames, samples=25)
+        if cal.plane_mode != "camera":
+            pos = np.array([cal.plane_x(f, frames[0], frames[-1]) for f in frames])
+            stats_ground["implied_camera"] = cal.implied_camera(frames, pos, source.size)
     y, z = world_grid(cal, frames, cal.working_width)
     excl = _exclusion_mask(cal, source.size)
     values, _, stats = _invert_slice(source.frame(frame_index), cal, cal.scale_at(frame_index), y, z, lut, excl)

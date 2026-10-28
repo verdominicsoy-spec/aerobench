@@ -20,9 +20,11 @@ BODY = (0.4, 0.25, 0.05, 0.15)  # x end, |y| half width, z bottom, z top
 WAKE_Y = 0.08  # the wake sits off the centreline so a mirrored axis would show
 
 # How each synthetic view is laid out: world axis to the right and up in the
-# frames, the sweep axis, and its range.
+# frames, the sweep axis, and its range from the plane nearest the camera to
+# the farthest. A real camera is right-handed: it looks along -(right x up),
+# so with +y right and +z up the planes recede towards -x.
 VIEWS = {
-    "rear": {"right": "+y", "up": "+z", "sweep": "x", "range": (X0, X1), "h": (-Y_HALF, Y_HALF), "s0": 600.0},
+    "rear": {"right": "+y", "up": "+z", "sweep": "x", "range": (X1, X0), "h": (-Y_HALF, Y_HALF), "s0": 600.0},
     "front": {"right": "-y", "up": "+z", "sweep": "x", "range": (X0, X1), "h": (-Y_HALF, Y_HALF), "s0": 600.0},
     "side": {"right": "+x", "up": "+z", "sweep": "y", "range": (-Y_HALF, Y_HALF), "h": (X0, X1), "s0": 400.0},
 }
@@ -52,7 +54,7 @@ def wake_volume(level: float, n: int = 4001) -> float:
 class Camera:
     """u = cu + s h, v = cv - s z, with s fixed or pinhole-shrinking along the sweep."""
 
-    view: str = "rear"
+    view: str = "front"
     width: int = 960
     height: int = 540
     perspective: bool = False
@@ -64,7 +66,7 @@ class Camera:
 
     def scale(self, t: float) -> float:
         s0, start = self.spec["s0"], self.spec["range"][0]
-        return s0 * self.distance / (self.distance + t - start) if self.perspective else s0
+        return s0 * self.distance / (self.distance + abs(t - start)) if self.perspective else s0
 
     def centre(self, t: float) -> tuple[float, float]:
         s = self.scale(t)
@@ -106,7 +108,7 @@ def render(t: float, cam: Camera, rgb: np.ndarray, vmin: float, vmax: float) -> 
 
 
 def make_sweep(out: Path, frames: int = 121, perspective: bool = False, cmap: str = "star_blue_yellow_red",
-               crf: int = 18, fps: int = 30, view: str = "rear") -> dict:
+               crf: int = 18, fps: int = 30, view: str = "front") -> dict:
     """Writes an H.264 mp4 and returns a calibration that is correct for it."""
     try:
         import imageio_ffmpeg

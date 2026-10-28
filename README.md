@@ -157,16 +157,21 @@ stepping through the flow, such as a STAR-CCM+ plane sweep.
 **Calibrate** (left panel, top to bottom), drawing on the frame on the right:
 
 1. Open the video (mp4/mov) or a folder of frames, or drop the video on the window.
-2. Draw the crop around the plot region, and exclusion boxes over the legend,
-   axis triad and any labels.
+2. *Auto-detect* (or draw by hand): it looks at frames across the sweep and
+   finds the plot region with a strip of ground below it, boxes over
+   everything that stays put while the flow changes (legend, labels, axis
+   triad), the legend's colour bar, and whether the ground is in view (then
+   ground tracking is switched on). Check the boxes on the frame afterwards.
 3. Pick the colour map, or *Sample the legend* and drag along the colour bar
-   from its low end to its high end.
+   from its low end to its high end (Auto-detect does this when it finds the
+   bar).
 4. Enter the value range (the legend's ends, e.g. −1 and 1).
 5. Scale. First say which world axis points right and which up in the
    frames, off STAR's axis triad: a rear view is +y / +z, a front view
    −y / +z, a side view +x / +z (or −x). The third axis is the one the planes
    step along, and the volume always comes out in world x, y, z. Then click
-   two points whose positions you know on one frame.
+   two points whose positions you know on one frame (or, with *Crop size*,
+   the width the crop spans; the height follows, as pixels are square).
    For a perspective camera (later planes look smaller, the ground line
    creeps up the screen), tick *Track the ground line*: the engine finds the
    ground in every frame, fits a pinhole camera to it and pins z = 0 there,
@@ -175,7 +180,14 @@ stepping through the flow, such as a STAR-CCM+ plane sweep.
    fixes sideways drift). Without tracking, calibrate the first and last
    frames. Optionally limit the grid to a window around the region of interest.
 6. Plane positions along the sweep axis at the first and last frame (even
-   spacing), or a CSV of one per frame in mm. Frame range and stride.
+   spacing), a CSV of one per frame in mm, or *from the camera's view angle*:
+   with ground tracking each frame's scale gives its plane's distance from
+   the camera, and STAR's view angle turns that into metres, so only the
+   first plane's position is needed. Frame range and stride.
+   With ground tracking the result also says what view angle your plane
+   positions imply. If it does not match STAR's, the spacing is wrong and the
+   volume is stretched or squashed along the sweep; it also warns when the
+   positions run towards the camera (the wrong way round).
 7. Mask colours (white geometry and background by default), colour-distance
    threshold, median filter, and detail: *Low*, *Medium* or *High* make the
    grid follow the video's own pixels (about 1.5 px a cell) up to 8, 30 or

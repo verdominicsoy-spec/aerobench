@@ -75,6 +75,11 @@ public struct FlowCalibration: Codable, Equatable, Sendable {
         public var firstFrame = 0
         public var lastFrame: Int?
         public var stride = 1
+        /// Mode "camera": the camera's view angle in degrees, and whether it
+        /// spans the frame's height or width. Positions then follow from the
+        /// tracked ground line's scale, starting at `start`.
+        public var viewAngle: Double?
+        public var viewAngleAxis: String?
 
         public init() {}
 
@@ -87,6 +92,8 @@ public struct FlowCalibration: Codable, Equatable, Sendable {
             firstFrame = try c.decodeIfPresent(Int.self, forKey: .firstFrame) ?? 0
             lastFrame = try c.decodeIfPresent(Int.self, forKey: .lastFrame)
             stride = try c.decodeIfPresent(Int.self, forKey: .stride) ?? 1
+            viewAngle = try c.decodeIfPresent(Double.self, forKey: .viewAngle)
+            viewAngleAxis = try c.decodeIfPresent(String.self, forKey: .viewAngleAxis)
         }
     }
 
@@ -230,10 +237,14 @@ public struct FlowCalibration: Codable, Equatable, Sendable {
                 out.append("Use two different frames for the perspective calibration.")
             }
         default:
-            if (spatial.width ?? 0) <= 0 || (spatial.height ?? 0) <= 0 { out.append("Enter the plane width and height.") }
+            if (spatial.width ?? 0) <= 0 { out.append("Enter the width the crop spans.") }
         }
         if planes.mode == "linear" && planes.start == planes.end { out.append("Plane start and end positions must differ.") }
         if planes.mode == "csv" && (planes.positions?.count ?? 0) < 2 { out.append("Import a CSV of plane positions.") }
+        if planes.mode == "camera" {
+            if !ground.track { out.append("Plane positions from the camera need ground tracking.") }
+            if !(1...170).contains(planes.viewAngle ?? 0) { out.append("Enter the camera's view angle, 1 to 170 degrees.") }
+        }
         return out
     }
 }

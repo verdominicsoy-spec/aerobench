@@ -375,3 +375,37 @@ readers).
 (finer gains nothing, the colours blend over a pixel or two), made coarser
 only if the grid would exceed the voxel budget: 8, 30 or 100 million voxels
 (0.03, 0.12, 0.4 GB as float32).
+
+**What can be automatic, and what cannot.** Within a plane the aspect ratio
+is never a free choice: pixels are square, so every mode now uses one scale
+(crop size takes the width and the height follows; a height that disagrees
+by more than 2% is an error rather than a stretched volume). The crop,
+exclusions and legend bar are found automatically (`flow-detect`): overlays
+are the pixels with sharp edges that do not change across 24 frames spread
+over the sweep (anything over half the frame is a fixed camera's ground line
+or plot border and is kept), and the plot is wherever the colour map's
+colours appear outside them. The legend bar is the line in an overlay whose
+colours run steadily (correlation 0.95) through 90% of the map. On the real
+STAR video this finds the legend and its labels, the axis triad, the plot
+down to the ground and the bar to within a pixel of a hand-drawn one, in
+about 6 s.
+
+Absolute size cannot come from pixels: something of known size has to be
+in the picture or the camera has to be known. So one frame is still
+clicked. The length along the sweep is different: a pinhole camera's scale
+is focal length / distance, and ground tracking measures every frame's
+scale, so 1/scale against plane position is a straight line whose slope is
+the focal length. With linear or CSV positions the engine reports the view
+angle that implies, to compare with STAR's. Given the view angle instead,
+the positions follow from the first one. Whether STAR's view angle is
+measured across the height or the width I could not confirm, so the user
+chooses. The camera looks along -(right x up), so the engine also knows
+which way the planes recede and flags positions entered the wrong way round;
+the STAR video's triad (x towards the viewer) agrees.
+
+The synthetic rear view was mirrored (x grew away from a camera with +y to
+its right). It is now a real camera: planes recede towards -x. Its far end
+holds the body and the narrowest wake at about 4 mm a pixel, so that case is
+held to 5% of the range at its worst cell (99.9% within 1.6%); the front
+view, which has the old geometry the right way round, is now the default.
+

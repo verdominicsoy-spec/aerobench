@@ -53,6 +53,23 @@ final class FlowCalibrationTests: XCTestCase {
         XCTAssertNil(old.detail)
     }
 
+    func testCameraPlanesNeedTrackingAndAnAngle() throws {
+        var cal = FlowCalibration()
+        cal.crop = [0, 0, 10, 10]
+        cal.spatial.mode = "size"
+        cal.spatial.width = 1
+        XCTAssertTrue(cal.problems.isEmpty, "\(cal.problems)")  // no height needed: pixels are square
+        cal.planes.mode = "camera"
+        XCTAssertTrue(cal.problems.contains { $0.contains("ground tracking") })
+        XCTAssertTrue(cal.problems.contains { $0.contains("view angle") })
+        cal.ground.track = true
+        cal.planes.viewAngle = 30
+        XCTAssertTrue(cal.problems.isEmpty, "\(cal.problems)")
+        let text = String(decoding: try FlowCalibration.encoder().encode(cal), as: UTF8.self)
+        XCTAssertTrue(text.contains("\"view_angle\" : 30"), text)
+        XCTAssertEqual(try FlowCalibration.decoder().decode(FlowCalibration.self, from: Data(text.utf8)), cal)
+    }
+
     func testAxisProblems() {
         var cal = FlowCalibration()
         cal.axes = .init(right: "+z", up: "-z")

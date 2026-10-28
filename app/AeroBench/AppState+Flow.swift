@@ -16,9 +16,8 @@ extension AppState {
     }
 
     /// A synthetic sweep with a known answer and a matching calibration, to
-    /// try the tool without real data.
-    /// A synthetic sweep with a known answer: view is rear, front or side.
-    func runFlowDemo(view: String = "rear") {
+    /// try the tool without real data: view is front, rear or side.
+    func runFlowDemo(view: String = "front") {
         flow.loadError = nil
         let params: [String: JSONValue] = ["frames": .int(121), "perspective": .bool(true), "view": .string(view)]
         _ = jobs.submit(command: "flow-demo", params: params, in: jobsRoot) { [weak self] item in
@@ -34,6 +33,50 @@ extension AppState {
             }
             Task { await self.flow.open(item.workdir.appendingPathComponent("demo.mp4")) }
         }
+    }
+
+    /// Finds the crop, the overlays to exclude, the legend bar and the ground
+    /// in the engine, and fills them into the calibration.
+    func autoDetectFlow() {
+        guard let source = flow.sourceURL else { return }
+        do {
+            let params: [String: JSONValue] = ["source": .string(source.path), "calibration": try flow.calibration.jsonValue()]
+            flow.detectNote = nil
+            flow.detectJob = jobs.submit(command: "flow-detect", params: params, in: jobsRoot) { [weak self] item in
+                guard let self, item.status == .succeeded, let text = item.resultText,
+                      let obj = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+                      let data = obj["data"] as? [String: Any] else { return }
+                self.applyDetection(data)
+            }
+        } catch {
+            show("Could not start the detection", error)
+        }
+    }
+
+    private func applyDetection(_ data: [String: Any]) {
+        func numbers(_ value: Any?) -> [Double]? { (value as? [Any])?.compactMap { ($0 as? NSNumber)?.doubleValue } }
+        var cal = flow.calibration
+        var notes: [String] = []
+        guard data["found"] as? Bool == true, let crop = numbers(data["crop"]), crop.count == 4 else {
+            flow.detectNote = (data["message"] as? String) ?? "No plot found. Draw the crop by hand."
+            return
+        }
+        cal.crop = crop
+        cal.exclude = ((data["exclude"] as? [Any]) ?? []).compactMap { numbers($0) }.filter { $0.count == 4 }
+        notes.append("Crop \(Int(crop[2] - crop[0])) × \(Int(crop[3] - crop[1])) px, \(cal.exclude.count) exclusion\(cal.exclude.count == 1 ? "" : "s").")
+        if let legend = data["legend"] as? [String: Any], let p0 = numbers(legend["p0"]), let p1 = numbers(legend["p1"]) {
+            cal.colormap = .init(preset: nil, legend: .init(frame: (legend["frame"] as? NSNumber)?.intValue ?? flow.frameIndex,
+                                                         p0: p0, p1: p1, halfWidth: (legend["half_width"] as? NSNumber)?.intValue))
+            notes.append("Colour map sampled from the legend; set the value range to its end labels.")
+        } else {
+            notes.append("No legend bar found: the colour map preset stays.")
+        }
+        if data["ground_visible"] as? Bool == true && cal.axes.up == "+z" {
+            cal.ground.track = true
+            notes.append("Ground in view: tracking it.")
+        }
+        flow.calibration = cal
+        flow.detectNote = notes.joined(separator: " ")
     }
 
     func checkFlowFrame() {
@@ -63,7 +106,11 @@ extension AppState {
         do {
             let calibration = try flow.calibration.jsonValue()
             let params: [String: JSONValue] = ["source": .string(source.path), "calibration": calibration]
+            flow.reconstructStats = [:]
             flow.reconstructJob = jobs.submit(command: "flow-reconstruct", params: params, in: jobsRoot) { [weak self] item in
+                if let text = item.resultText, let obj = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] {
+                    self?.flow.reconstructStats = obj["data"] as? [String: Any] ?? [:]
+                }
                 self?.loadFlowVolume(from: item)
             }
         } catch {

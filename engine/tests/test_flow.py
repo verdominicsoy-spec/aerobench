@@ -282,13 +282,16 @@ def _max_error(vol: Volume) -> float:
     return float(np.nanmax(np.abs(rec - np.clip(truth[ok], -1, 1))))
 
 
-@pytest.mark.parametrize("view", ["front", "side"])
-def test_other_perpendicular_views(tmp_path, view):
+# The rear view looks along -x, so the body and the narrowest wake are at the
+# far, smallest end of the sweep (about 4 mm a pixel): the steepest part of the
+# wake core blurs there, though 99.9% of cells stay within 1.6%.
+@pytest.mark.parametrize("view, tolerance", [("rear", 0.05), ("side", 0.03)])
+def test_other_perpendicular_views(tmp_path, view, tolerance):
     cal = synthetic.make_sweep(tmp_path / "v.mp4", frames=61, view=view, perspective=True)
     vol, _ = reconstruct(tmp_path / "v.mp4", Calibration(cal))
     assert vol.sweep_axis == ("y" if view == "side" else "x")
     assert np.all(np.diff(vol.x) > 0) and np.all(np.diff(vol.y) > 0) and np.all(np.diff(vol.z) > 0)
-    assert _max_error(vol) <= 0.03 * RANGE
+    assert _max_error(vol) <= tolerance * RANGE
 
 
 def test_ground_tracking_needs_one_frame_and_beats_a_misclicked_second(tmp_path):
@@ -340,3 +343,109 @@ def test_detail_sets_the_cell_size(tmp_path):
     assert s_high["cell_mm"] == pytest.approx(2.5, rel=0.05)
     assert s_low["cell_mm"] >= s_high["cell_mm"]
     assert low.values.size <= 8_000_000 * 1.05
+
+
+# Detection, square pixels, plane positions from the camera -------------------
+
+@pytest.mark.parametrize("perspective", [True, False])
+def test_detect_finds_the_calibration_a_person_would_draw(tmp_path, perspective):
+    from aeroengine.flow.detect import detect
+    from aeroengine.flow.reconstruct import FrameSource
+
+    cal = synthetic.make_sweep(tmp_path / "s.mp4", frames=41, perspective=perspective)
+    found = detect(FrameSource(tmp_path / "s.mp4"), {})
+    assert found["found"] and found["ground_visible"]
+    # The plot region, and a strip below the ground for tracking.
+    assert np.allclose(found["crop"], cal["crop"], atol=6)
+    # The legend sits outside the plot here, so nothing needs excluding...
+    assert found["exclude"] == []
+    # ...but its bar is found, low end first.
+    legend = found["legend"]
+    assert legend["p0"][0] == pytest.approx(630, abs=2) and legend["p1"][0] == pytest.approx(930, abs=2)
+    assert legend["p0"][1] == pytest.approx(legend["p1"][1])
+
+
+def test_detected_calibration_reconstructs(tmp_path):
+    from aeroengine.flow.detect import detect
+    from aeroengine.flow.reconstruct import FrameSource
+
+    cal = synthetic.make_sweep(tmp_path / "s.mp4", frames=41, perspective=True)
+    found = detect(FrameSource(tmp_path / "s.mp4"), {})
+    auto = {**cal, "crop": found["crop"], "exclude": found["exclude"],
+            "colormap": {"legend": {k: found["legend"][k] for k in ("frame", "p0", "p1", "half_width")}},
+            "ground": {"track": True}}
+    auto["spatial"] = {"mode": "points", "frames": cal["spatial"]["frames"][:1]}
+    vol, _ = reconstruct(tmp_path / "s.mp4", Calibration(auto))
+    assert _max_error(vol) <= 0.04 * RANGE
+
+
+def test_detect_excludes_an_overlay_on_the_flow(tmp_path):
+    from aeroengine.flow.detect import detect
+    from aeroengine.flow.reconstruct import FrameSource
+
+    cal = synthetic.make_sweep(tmp_path / "s.mp4", frames=31, perspective=True)
+    # Burn a static label into the middle of the plot, as STAR does with titles.
+    import cv2
+
+    src = FrameSource(tmp_path / "s.mp4")
+    out = tmp_path / "frames"
+    out.mkdir()
+    for i, f in src.frames(list(range(src.count))):
+        f = f.copy()
+        f[100:130, 300:420] = 255
+        cv2.putText(f, "Cp0", (310, 125), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 0), 2)
+        cv2.imwrite(str(out / f"{i:04d}.png"), f[:, :, ::-1])
+    found = detect(FrameSource(out), {})
+    assert any(x0 <= 300 and y0 <= 100 and x1 >= 420 and y1 >= 130 for x0, y0, x1, y1 in found["exclude"])
+    assert np.allclose(found["crop"], cal["crop"], atol=6)
+
+
+def test_crop_size_keeps_pixels_square(tmp_path):
+    base = {"crop": [0, 0, 200, 100], "planes": {"start": 0, "end": 1}}
+    cal = Calibration({**base, "spatial": {"mode": "size", "width": 2.0}})
+    s = cal.scale_at(0)
+    assert s.sx == s.sy == pytest.approx(100)
+    Calibration({**base, "spatial": {"mode": "size", "width": 2.0, "height": 1.0}})  # agrees
+    with pytest.raises(EngineError, match="1000 mm tall"):
+        Calibration({**base, "spatial": {"mode": "size", "width": 2.0, "height": 1.5}})
+
+
+# The synthetic perspective camera: focal length s0 * distance = 900 px on a
+# 540 px tall frame.
+SYNTH_VIEW_ANGLE = float(np.degrees(2 * np.arctan(270 / 900)))
+
+
+def test_reconstruct_reports_the_implied_camera(tmp_path):
+    cal = synthetic.make_sweep(tmp_path / "p.mp4", frames=41, perspective=True)
+    cal["ground"] = {"track": True}
+    cal["spatial"]["frames"] = cal["spatial"]["frames"][:1]
+    _, summary = reconstruct(tmp_path / "p.mp4", Calibration(cal))
+    cam = summary["ground"]["implied_camera"]
+    assert cam["view_angle_vertical_deg"] == pytest.approx(SYNTH_VIEW_ANGLE, abs=0.5)
+    assert cam["distance_to_first_plane_m"] == pytest.approx(1.5, rel=0.03)
+    assert cam["planes_run_away_from_camera"]
+    # Plane positions entered the wrong way round show up.
+    cal["planes"]["start"], cal["planes"]["end"] = cal["planes"]["end"], cal["planes"]["start"]
+    _, summary = reconstruct(tmp_path / "p.mp4", Calibration(cal))
+    assert not summary["ground"]["implied_camera"]["planes_run_away_from_camera"]
+
+
+def test_plane_positions_from_the_camera(tmp_path):
+    cal = synthetic.make_sweep(tmp_path / "p.mp4", frames=41, perspective=True)
+    truth_start, truth_end = cal["planes"]["start"], cal["planes"]["end"]
+    cal["ground"] = {"track": True}
+    cal["spatial"]["frames"] = cal["spatial"]["frames"][:1]
+    cal["planes"] = {"mode": "camera", "start": truth_start, "view_angle": SYNTH_VIEW_ANGLE}
+    vol, _ = reconstruct(tmp_path / "p.mp4", Calibration(cal))
+    # The far end hangs on the ground line's few pixels below the horizon
+    # there (about 80 px), so allow 2% of the sweep.
+    span = abs(truth_end - truth_start)
+    assert vol.x[0] == pytest.approx(min(truth_start, truth_end), abs=0.02 * span)
+    assert vol.x[-1] == pytest.approx(max(truth_start, truth_end), abs=0.02 * span)
+    assert _max_error(vol) <= 0.04 * RANGE
+
+
+def test_camera_planes_need_tracking():
+    with pytest.raises(EngineError, match="ground tracking"):
+        Calibration({"crop": [0, 0, 100, 100], "spatial": {"mode": "size", "width": 1},
+                     "planes": {"mode": "camera", "start": 0, "view_angle": 30}})

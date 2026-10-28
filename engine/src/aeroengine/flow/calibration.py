@@ -110,6 +110,7 @@ class Calibration:
             raise EngineError("ground tracking needs +z pointing up in the frames", "for top views, calibrate two frames instead")
         self.ground_fit: tuple[float, float, float, int] | None = None  # (vh, K, a, direction) set by reconstruct
         self.ground_rows: dict[int, float] | None = None  # constant ground (no perspective): frame -> row
+        self.frame_size: tuple[int, int] | None = None  # set by reconstruct, for plane positions from the camera
         self.detail = data.get("detail")
         if self.detail is not None and self.detail not in DETAIL_CAPS:
             raise EngineError("detail must be low, medium or high")
@@ -144,13 +145,22 @@ class Calibration:
                 raise EngineError("the two perspective calibration frames must be different frames")
             self.scales.sort(key=lambda fs: fs[0])
         elif mode == "size":
-            w, h = _num(sp, "width", "spatial"), _num(sp, "height", "spatial")
-            if w <= 0 or h <= 0:
-                raise EngineError("spatial width and height must be positive")
+            # Pixels are square, so the crop's width sets one scale for both
+            # directions. A height that disagrees would stretch the result.
+            w = _num(sp, "width", "spatial")
+            if w <= 0:
+                raise EngineError("spatial width must be positive")
             oy, oz = _pair(sp.get("origin", [0, 0]), "spatial.origin") * [self.right[0], self.up[0]]  # crop bottom-left
             x0, y0, x1, y1 = self.crop
-            sx, sy = (x1 - x0) / w, (y1 - y0) / h
-            self.scales.append((0, FrameScale(sx, sy, x0 - sx * oy, y1 + sy * oz)))
+            s = (x1 - x0) / w
+            if sp.get("height") is not None:
+                h = _num(sp, "height", "spatial")
+                implied = (y1 - y0) / s
+                if h <= 0 or abs(h - implied) > 0.02 * implied:
+                    raise EngineError(
+                        f"a crop {x1 - x0} x {y1 - y0} px that is {w * 1000:.0f} mm wide is {implied * 1000:.0f} mm tall, "
+                        f"not {h * 1000:.0f} mm", "pixels are square: leave the height out, or redraw the crop")
+            self.scales.append((0, FrameScale(s, s, x0 - s * oy, y1 + s * oz)))
         else:
             raise EngineError(f"unknown spatial mode '{mode}'", "expected points or size")
 
@@ -203,13 +213,26 @@ class Calibration:
             self.x_start, self.x_end = _num(pl, "start", "planes"), _num(pl, "end", "planes")
             if self.x_start == self.x_end:
                 raise EngineError("planes.start and planes.end must differ")
+        elif self.plane_mode == "camera":
+            # Positions from the tracked ground: a pinhole camera's scale is
+            # focal length / distance, so with the view angle (the focal
+            # length in pixels) each frame's scale gives its plane's distance.
+            self.x_start = _num(pl, "start", "planes")
+            self.view_angle = _num(pl, "view_angle", "planes")
+            self.view_angle_axis = pl.get("view_angle_axis", "vertical")
+            if not 1 <= self.view_angle <= 170:
+                raise EngineError("planes.view_angle must be between 1 and 170 degrees")
+            if self.view_angle_axis not in ("vertical", "horizontal"):
+                raise EngineError("planes.view_angle_axis must be vertical or horizontal")
+            if not self.track_ground:
+                raise EngineError("plane positions from the camera need ground tracking")
         elif self.plane_mode == "csv":
             pos = pl.get("positions")
             if not isinstance(pos, list) or len(pos) < 2:
                 raise EngineError("planes.positions needs one x per frame")
             self.positions = np.asarray(pos, float)
         else:
-            raise EngineError(f"unknown planes mode '{self.plane_mode}'", "expected linear or csv")
+            raise EngineError(f"unknown planes mode '{self.plane_mode}'", "expected linear, csv or camera")
 
     def frames(self, frame_count: int) -> list[int]:
         last = frame_count - 1 if self.last_frame is None else min(int(self.last_frame), frame_count - 1)
@@ -220,7 +243,47 @@ class Calibration:
             raise EngineError("fewer than two frames selected", f"first {self.first_frame}, last {last}, stride {self.stride}")
         return out
 
+    @property
+    def away(self) -> int:
+        """+1 if the sweep coordinate grows away from the camera. The camera
+        looks along -(right x up) in a right-handed frame."""
+        vec = {"x": np.array([1, 0, 0]), "y": np.array([0, 1, 0]), "z": np.array([0, 0, 1])}
+        back = np.cross(self.right[0] * vec[self.right[1]], self.up[0] * vec[self.up[1]])
+        return int(-back @ vec[self.sweep_axis])
+
+    def focal_px(self, frame_size: tuple[int, int]) -> float:
+        """Focal length in pixels from the camera mode's view angle."""
+        w, h = frame_size
+        span = h if self.view_angle_axis == "vertical" else w
+        return (span / 2) / np.tan(np.radians(self.view_angle) / 2)
+
     def plane_x(self, frame: int, first: int, last: int) -> float:
         if self.plane_mode == "csv":
             return float(self.positions[frame])
+        if self.plane_mode == "camera":
+            if self.ground_fit is None:
+                raise EngineError("plane positions from the camera need a perspective camera",
+                         "the ground line did not move, so the camera is parallel: enter the plane positions")
+            f = self.focal_px(self.frame_size)
+            return self.x_start + self.away * f * (1 / self.scale_at(frame).sx - 1 / self.scale_at(first).sx)
         return self.x_start + (self.x_end - self.x_start) * (frame - first) / (last - first)
+
+    def implied_camera(self, frames: list[int], positions: np.ndarray, frame_size: tuple[int, int]) -> dict | None:
+        """What the plane positions and the tracked scale say about the
+        camera: its view angle and distance to the first plane. A check on
+        the plane positions, to compare with the view angle set in STAR."""
+        if self.ground_fit is None:
+            return None
+        inv = np.array([1 / self.scale_at(f).sx for f in frames])
+        if np.ptp(inv) <= 0 or np.ptp(positions) <= 0:
+            return None
+        slope = np.polyfit(inv, positions, 1)[0]  # metres of sweep per (metres per pixel) = focal length, signed
+        w, h = frame_size
+        f = abs(slope)
+        return {
+            "focal_px": float(f),
+            "view_angle_vertical_deg": float(np.degrees(2 * np.arctan(h / 2 / f))),
+            "view_angle_horizontal_deg": float(np.degrees(2 * np.arctan(w / 2 / f))),
+            "distance_to_first_plane_m": float(f * inv[0]),
+            "planes_run_away_from_camera": bool(np.sign(slope) == self.away),
+        }

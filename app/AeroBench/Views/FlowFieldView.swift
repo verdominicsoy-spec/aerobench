@@ -63,8 +63,8 @@ struct FlowCalibrationPanel: View {
                 HStack {
                     Button("Open Video…") { app.openFlowSourcePanel() }
                     Menu("Demo Sweep") {
-                        Button("Rear View") { app.runFlowDemo(view: "rear") }
                         Button("Front View") { app.runFlowDemo(view: "front") }
+                        Button("Rear View") { app.runFlowDemo(view: "rear") }
                         Button("Side View") { app.runFlowDemo(view: "side") }
                     }
                     .fixedSize()
@@ -83,8 +83,17 @@ struct FlowCalibrationPanel: View {
 
             Section {
                 HStack {
+                    Button("Auto-detect") { app.autoDetectFlow() }
+                        .disabled(flow.sourceURL == nil || isRunning(flow.detectJob))
+                        .help("Finds the plot, the legend, labels and axis triad to exclude, the legend bar and the ground, from frames across the sweep")
                     Button(cal.crop == nil ? "Draw Crop" : "Redraw Crop") { flow.tool = .crop }
                     Button("Add Exclusion") { flow.tool = .exclude }
+                }
+                if let job = flow.detectJob, !job.status.isFinished || job.status == .failed {
+                    JobInlineStatus(job: job)
+                }
+                if let note = flow.detectNote {
+                    Text(note).font(.caption).foregroundStyle(.secondary)
                 }
                 ForEach(Array(cal.exclude.enumerated()), id: \.offset) { i, r in
                     HStack {
@@ -96,7 +105,7 @@ struct FlowCalibrationPanel: View {
             } header: {
                 Text("1  Crop and exclusions")
             } footer: {
-                Text("Crop to the plot region. Exclude anything drawn over it: the legend, the axis triad, labels.")
+                Text("Crop to the plot region. Exclude anything drawn over it: the legend, the axis triad, labels. Auto-detect does all of this; check the boxes on the frame afterwards.")
             }
 
             Section("2  Colour map") {
@@ -163,8 +172,14 @@ struct FlowCalibrationPanel: View {
                             }
                         }))
                 } else {
-                    NumberField(label: "Crop width", unit: "mm", value: mm({ cal.spatial.width ?? 1 }, { flow.calibration.spatial.width = $0 }))
-                    NumberField(label: "Crop height", unit: "mm", value: mm({ cal.spatial.height ?? 1 }, { flow.calibration.spatial.height = $0 }))
+                    NumberField(label: "Crop width", unit: "mm", value: mm({ cal.spatial.width ?? 1 }, { v in
+                        flow.calibration.spatial.width = v
+                        flow.calibration.spatial.height = nil  // pixels are square: the height follows
+                    }))
+                    if let crop = cal.crop, let width = cal.spatial.width, width > 0, crop[2] > crop[0] {
+                        LabeledContent("Crop height", value: "\(Int((width * (crop[3] - crop[1]) / (crop[2] - crop[0]) * 1000).rounded())) mm")
+                            .help("Pixels are square, so the height follows from the width")
+                    }
                     NumberField(label: "Bottom-left \(cal.axes.rightLetter)", unit: "mm", value: mm({ cal.spatial.origin?.first ?? 0 }, { v in
                         var o = flow.calibration.spatial.origin ?? [0, 0]; o[0] = v; flow.calibration.spatial.origin = o }))
                     NumberField(label: "Bottom-left \(cal.axes.upLetter)", unit: "mm", value: mm({ cal.spatial.origin?.last ?? 0 }, { v in
@@ -195,10 +210,22 @@ struct FlowCalibrationPanel: View {
                 Picker("Spacing", selection: $flow.calibration.planes.mode) {
                     Text("Even, start to end").tag("linear")
                     Text("From CSV, one per frame").tag("csv")
+                    Text("From the camera's view angle").tag("camera")
                 }
                 if cal.planes.mode == "linear" {
                     NumberField(label: "\(cal.axes.sweepLetter) at first frame", unit: "mm", value: mm({ cal.planes.start }, { flow.calibration.planes.start = $0 }))
                     NumberField(label: "\(cal.axes.sweepLetter) at last frame", unit: "mm", value: mm({ cal.planes.end }, { flow.calibration.planes.end = $0 }))
+                } else if cal.planes.mode == "camera" {
+                    NumberField(label: "\(cal.axes.sweepLetter) at first frame", unit: "mm", value: mm({ cal.planes.start }, { flow.calibration.planes.start = $0 }))
+                    NumberField(label: "View angle", unit: "°", value: Binding(get: { cal.planes.viewAngle ?? 30 },
+                                                                            set: { flow.calibration.planes.viewAngle = $0 }))
+                    Picker("Angle spans the frame's", selection: Binding(get: { cal.planes.viewAngleAxis ?? "vertical" },
+                                                                         set: { flow.calibration.planes.viewAngleAxis = $0 })) {
+                        Text("Height").tag("vertical")
+                        Text("Width").tag("horizontal")
+                    }
+                    Text("Each frame's scale, from the tracked ground line, gives its plane's distance from the camera; the view angle turns that into metres. Read the angle off STAR's view settings. Needs ground tracking and the whole frame as recorded (not cropped or zoomed).")
+                        .font(.caption).foregroundStyle(.secondary)
                 } else {
                     HStack {
                         Text("\(cal.planes.positions?.count ?? 0) positions")
@@ -262,6 +289,9 @@ struct FlowCalibrationPanel: View {
                 if let job = flow.reconstructJob {
                     JobInlineStatus(job: job)
                 }
+                if let ground = flow.reconstructStats["ground"] as? [String: Any] {
+                    ImpliedCameraNote(ground: ground, sweep: cal.axes.sweepLetter)
+                }
                 HStack {
                     Button("Save Calibration…") { app.saveFlowCalibrationAs() }
                     Button("Load…") { app.loadFlowCalibration() }
@@ -272,6 +302,31 @@ struct FlowCalibrationPanel: View {
     }
 
     private func isRunning(_ job: JobItem?) -> Bool { job.map { !$0.status.isFinished } ?? false }
+}
+
+/// What the plane positions say about the camera, from the tracked ground
+/// line: a view angle to compare with STAR's. Positions spaced wrongly would
+/// stretch or squash the volume along the sweep.
+struct ImpliedCameraNote: View {
+    let ground: [String: Any]
+    let sweep: String
+
+    var body: some View {
+        if let cam = ground["implied_camera"] as? [String: Any],
+           let vertical = cam["view_angle_vertical_deg"] as? Double,
+           let horizontal = cam["view_angle_horizontal_deg"] as? Double,
+           let distance = cam["distance_to_first_plane_m"] as? Double {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("These plane positions mean a camera view angle of \(vertical, format: .number.precision(.fractionLength(1)))° across the height (\(horizontal, format: .number.precision(.fractionLength(1)))° across the width), \(distance, format: .number.precision(.fractionLength(2))) m from the first plane. If STAR's view angle differs, the planes are spaced wrongly and the volume is stretched or squashed along \(sweep).")
+                if cam["planes_run_away_from_camera"] as? Bool == false {
+                    Text("The positions run towards the camera, but the planes get smaller, so they move away: swap the first and last positions, or check the axes.")
+                        .foregroundStyle(.orange)
+                }
+            }
+            .font(.caption)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
 }
 
 struct NumberField: View {
@@ -420,6 +475,9 @@ struct FlowFramePane: View {
                            let resid = ground["residual_median_px"] as? Double {
                             let camera = ground["camera"] as? String == "pinhole" ? "perspective camera" : "fixed camera"
                             Text("Ground line found, \(camera), fit within \(resid, format: .number.precision(.fractionLength(1))) px")
+                        }
+                        if let ground = flow.previewStats["ground"] as? [String: Any] {
+                            ImpliedCameraNote(ground: ground, sweep: app.flow.calibration.axes.sweepLetter)
                         }
                         Text("Grey is empty. A median distance under about 5 ΔE means the colour map fits well; much higher, check the colour map and lighting.")
                             .font(.caption).foregroundStyle(.secondary)

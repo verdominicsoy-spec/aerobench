@@ -33,7 +33,7 @@ def flow_demo(ctx: JobContext) -> dict:
 
     perspective = bool(ctx.params.get("perspective", True))
     frames = int(ctx.params.get("frames", 121))
-    view = ctx.params.get("view", "rear")
+    view = ctx.params.get("view", "front")
     if view not in VIEWS:
         raise EngineError(f"view must be one of {', '.join(VIEWS)}")
     ctx.emit.progress(5, "rendering and encoding demo sweep")
@@ -41,6 +41,21 @@ def flow_demo(ctx: JobContext) -> dict:
     (ctx.workdir / "demo_calibration.json").write_text(json.dumps(cal, indent=2))
     return {"video": "demo.mp4", "calibration": "demo_calibration.json", "frames": frames, "perspective": perspective,
             "view": view}
+
+
+@command("flow-detect")
+def flow_detect(ctx: JobContext) -> dict:
+    """Finds the crop, the overlays to exclude, the legend bar and whether the
+    ground is in view, so the calibration starts filled in."""
+    from ..flow.detect import detect
+    from ..flow.reconstruct import FrameSource
+
+    source = FrameSource(_path(ctx, "source"))
+    partial = ctx.params.get("calibration") or {}
+    if not isinstance(partial, dict):
+        raise EngineError("params.calibration must be an object")
+    ctx.emit.progress(5, "reading frames across the sweep")
+    return detect(source, partial)
 
 
 @command("flow-preview")

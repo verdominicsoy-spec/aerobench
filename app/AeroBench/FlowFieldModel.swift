@@ -50,6 +50,10 @@ final class FlowFieldModel {
     var tool: FrameTool = .none
     var loadError: String?
 
+    // Finding the crop, overlays and legend automatically
+    var detectJob: JobItem?
+    var detectNote: String?
+
     // Checking one frame
     var previewJob: JobItem?
     var previewImage: CGImage?
@@ -57,6 +61,8 @@ final class FlowFieldModel {
 
     // Reconstruction and exploring
     var reconstructJob: JobItem?
+    /// The engine's summary of the last reconstruction (ground fit, implied camera).
+    var reconstructStats: [String: Any] = [:]
     private(set) var volume: FlowVolume?
     private(set) var volumeFolder: URL?
     var isoLevels: [IsoLevel] = []
