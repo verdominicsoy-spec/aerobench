@@ -254,7 +254,7 @@ def su2_install(ctx: JobContext) -> dict:
     proc = subprocess.Popen(["bash", str(script)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                             errors="replace", env=ctx.thread_env())
     tail: list[str] = []
-    steps = {"Getting SU2": 5, "Getting the build tools": 10, "Configuring": 15, "Building": 25, "Done": 100}
+    steps = {"Getting SU2": 5, "Getting MEL and Eigen": 8, "Getting the build tools": 10, "Configuring": 15, "Building": 25, "Done": 100}
     for line in proc.stdout:  # type: ignore[union-attr]
         line = line.rstrip()
         tail = (tail + [line])[-30:]

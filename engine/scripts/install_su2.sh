@@ -37,13 +37,31 @@ MPI=disabled
 if command -v mpicc >/dev/null && command -v mpicxx >/dev/null; then MPI=enabled; fi
 
 # SU2's own meson.py wrapper clones every bundled library as a git
-# submodule, Eigen from gitlab.com included, which refuses anonymous clones
-# from some networks. None of them are needed here (they serve automatic
-# differentiation, CoolProp and Mutation++, all off), so build with meson
-# and ninja from a private Python environment instead.
+# submodule. Only two are needed with autodiff, CoolProp and Mutation++ off:
+# MEL (GitHub) and Eigen (gitlab.com, which refuses anonymous clones from
+# some networks, hence the fallbacks).
+say "Getting MEL and Eigen"
+git submodule update --init --depth 1 externals/mel || git submodule update --init externals/mel
+if [ ! -f externals/eigen/Eigen/Dense ]; then
+  rm -rf externals/eigen && mkdir -p externals/eigen
+  if curl -fsSL "https://gitlab.com/libeigen/eigen/-/archive/3.4/eigen-3.4.tar.gz" | tar xz --strip-components=1 -C externals/eigen \
+     && [ -f externals/eigen/Eigen/Dense ]; then
+    echo "Eigen 3.4 from the GitLab archive"
+  elif rm -rf externals/eigen && git submodule update --init externals/eigen && [ -f externals/eigen/Eigen/Dense ]; then
+    echo "Eigen from its git repository"
+  elif command -v brew >/dev/null && (brew install eigen@3 || brew install eigen) \
+       && EIGEN="$( (brew --prefix eigen@3 || brew --prefix eigen) 2>/dev/null)/include/eigen3" && [ -f "$EIGEN/Eigen/Dense" ]; then
+    rm -rf externals/eigen && ln -s "$EIGEN" externals/eigen
+    echo "Eigen from Homebrew ($EIGEN)"
+  else
+    echo "Could not get Eigen (gitlab.com unreachable and no Homebrew)."; exit 1
+  fi
+fi
+touch su2preconfig.timestamp  # what SU2's preconfigure.py leaves once its submodules are in
+
 say "Getting the build tools (meson, ninja)"
 TOOLS="$HERE/build/su2-tools"
-[ -x "$TOOLS/bin/meson" ] || { "$PY" -m venv "$TOOLS" && "$TOOLS/bin/pip" install -q "meson>=1.3,<2" ninja; }
+[ -x "$TOOLS/bin/meson" ] || { "$PY" -m venv "$TOOLS" && "$TOOLS/bin/pip" install -q "meson>=1.8.2,<2" ninja; }
 export PATH="$TOOLS/bin:$PATH"
 
 say "Configuring (MPI $MPI)"
