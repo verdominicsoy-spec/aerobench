@@ -650,3 +650,20 @@ runners while Open MPI chose a one-sided component for MPI_Win_create. The
 engine now keeps Open MPI off UCX and the other cluster network transports
 (uct, ofi, usnic) when it runs SU2 under mpirun; a user's own OMPI_MCA
 settings still win.
+
+**Wall layers fan round every sharp convex corner.** The 30P30N slat has a
+cusp and its main element a stepped cove; gmsh's boundary layer field fanned
+only at trailing edges and failed ("Edge not recovered") at the other
+corners. Any node where the outline turns outward by more than 60° now gets
+a fan. Library sections are smooth, so their meshes do not change. Coves are
+still the mesher's weak spot: the 30P30N meshes as three elements, but its
+slat alone and its main element with the flap did not, so sections with
+coves and cusps may need a retry or a coarser level.
+
+**SU2 stops when the answer is in.** SU2 ran on towards a residual of 1e-12
+long after lift and drag had settled (on NACA 0012 at 10° they held from
+iteration 2,262 of 3,790). The engine applies its own convergence test to
+SU2's screen output, at half the tolerance for a margin, 20 iterations after
+each file write (every 250 iterations), and stops the run when it passes.
+The history is then judged as before; the flow and surface files are at most
+250 iterations older than the forces, which by then move less than 1e-4.
