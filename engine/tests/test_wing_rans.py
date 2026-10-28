@@ -163,3 +163,33 @@ def test_convex_corners_get_fans():
     # A smooth section has none away from its trailing edge.
     sec = naca4("4412")
     assert all(k in (0, len(sec) - 1) for k in _convex_corners(sec, closed=False))
+
+
+def test_run_stops_once_converged(tmp_path):
+    """A stand-in SU2 that would run for 100,000 iterations: lift and drag
+    settle and the residual falls, so the engine stops it at the first
+    check after a file write."""
+    import stat
+    import sys
+
+    from aeroengine.wing import su2 as m
+
+    fake = tmp_path / "SU2_CFD"
+    fake.write_text(f"""#!{sys.executable}
+import math, sys, time
+with open("history.csv", "w") as h:
+    h.write('"Inner_Iter","rms[P]","CL","CD"\\n')
+    for it in range(100000):
+        rms, cl, cd = -2 - it / 50, 1.2 + 0.3 * math.exp(-it / 5), 0.02 + 0.01 * math.exp(-it / 5)
+        h.write(f"{{it}},{{rms}},{{cl}},{{cd}}\\n"); h.flush()
+        print(f"|{{it:>12}}|{{rms:>12.6f}}|{{cl:>12.6f}}|{{cd:>12.6f}}|", flush=True)
+        if it % 50 == 0:
+            time.sleep(0.01)
+""")
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    case = Case(speed=20, rho=1.2, mu=1.8e-5, alpha_deg=5, ref_chord=0.4, ref_point=(0.1, 0), walls=[],
+                iterations=100000)
+    out = m.run(case, tmp_path / "m.su2", tmp_path, fake, cores=1)
+    assert out["converged"] and out["stopped_early"]
+    assert out["iterations"] < m.WRITE_EVERY + m.STOP_AFTER_WRITE + 50  # the first check after a write, plus lines in flight
+    assert out["cl"] == pytest.approx(1.2, abs=1e-6)

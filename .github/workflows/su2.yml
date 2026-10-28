@@ -1,11 +1,13 @@
 name: SU2 on a Mac
 
 # Builds SU2 the way a user's Mac does (engine/scripts/install_su2.sh) and
-# runs a Wing Lab RANS case with it. Only when the script changes, or by hand.
+# runs a Wing Lab RANS case with it. Only when the script or the SU2 runner
+# changes, or by hand.
 on:
   push:
     paths:
       - engine/scripts/install_su2.sh
+      - engine/src/aeroengine/wing/su2.py
       - .github/workflows/su2.yml
   workflow_dispatch:
 

@@ -15,7 +15,7 @@ import csv
 import os
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
@@ -142,7 +142,7 @@ HISTORY_OUTPUT= ( ITER, RMS_RES, AERO_COEFF, AERO_COEFF_SURF )
 CONV_FILENAME= history
 OUTPUT_FILES= ( RESTART, PARAVIEW, SURFACE_CSV )
 VOLUME_OUTPUT= ( COORDINATES, SOLUTION, PRIMITIVE )  % Cp and y+ in flow.vtu
-OUTPUT_WRT_FREQ= {case.iterations}
+OUTPUT_WRT_FREQ= {min(case.iterations, WRITE_EVERY)}
 VOLUME_FILENAME= flow
 SURFACE_FILENAME= surface
 RESTART_FILENAME= restart.dat
@@ -195,6 +195,15 @@ def judge(history: dict[str, np.ndarray], case: Case) -> dict:
         reason = "; ".join(parts)
     return {"converged": bool(ok), "residual_drop": drop, "cl_change": dcl, "cd_change": dcd, "reason": reason}
 
+
+# SU2 runs on towards a residual of 1e-12 long after lift and drag have
+# settled (on NACA 0012 at 10 degrees they held still from iteration 2,262
+# of 3,790). The engine watches the run and stops it once the convergence
+# test passes, at half the tolerance to leave a margin; the flow and surface
+# files are written every WRITE_EVERY iterations, so they are at most that
+# many iterations older than the forces.
+WRITE_EVERY = 250
+STOP_AFTER_WRITE = 20  # iterations after a write before stopping, so the files are complete
 
 CFL_STEPS = (25.0, 10.0, 4.0)  # tried in turn when SU2 diverges
 FALLBACK = ("fds", 10.0)  # last resort: the more dissipative scheme, flagged in the result
@@ -258,35 +267,47 @@ def _run_once(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
     proc = subprocess.Popen(cmd, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                             env=env, errors="replace")
     tail: list[str] = []
+    screen: dict[str, list[float]] = {"rms[P]": [], "CL": [], "CD": []}
+    strict = replace(case, tolerance=case.tolerance / 2)
+    stopped = False
     try:
         for line in proc.stdout:  # type: ignore[union-attr]
             log.write(line)
             tail = (tail + [line.rstrip()])[-40:]
             parts = line.split("|")
-            if len(parts) > 3:
+            if len(parts) > 4:
                 try:
                     it = int(parts[1].strip())
-                    report(10 + 85 * min(it / case.iterations, 1), f"iteration {it}")
+                    vals = [float(parts[k]) for k in (2, 3, 4)]
                 except ValueError:
-                    pass
+                    continue
+                report(10 + 85 * min(it / case.iterations, 1), f"iteration {it}")
+                for key, v in zip(screen, vals):
+                    screen[key].append(v)
+                if it % WRITE_EVERY == STOP_AFTER_WRITE and len(screen["CL"]) > case.window:
+                    if judge({k: np.array(v) for k, v in screen.items()}, strict)["converged"]:
+                        stopped = True
+                        report(95, f"converged at iteration {it}")
+                        proc.terminate()
+                        break
         proc.wait()
     finally:
         log.close()
         if proc.poll() is None:
             proc.kill()
     history_file = workdir / "history.csv"
-    if proc.returncode != 0 and any("has diverged" in line for line in tail):
+    if not stopped and proc.returncode != 0 and any("has diverged" in line for line in tail):
         last = 0
         for line in tail:
             parts = line.split("|")
             if len(parts) > 3 and parts[1].strip().isdigit():
                 last = int(parts[1])
         raise Diverged(last)
-    if proc.returncode != 0 or not history_file.exists():
+    if (proc.returncode != 0 and not stopped) or not history_file.exists():
         raise EngineError(f"SU2 stopped with exit code {proc.returncode}", "\n".join(tail[-12:]))
     hist = read_history(history_file)
     verdict = judge(hist, case)
-    out = {"iterations": int(len(hist["CL"])), "model": case.model, **verdict,
+    out = {"iterations": int(len(hist["CL"])), "model": case.model, **verdict, "stopped_early": stopped,
            "cl": float(hist["CL"][-1]), "cd": float(hist["CD"][-1]),
            "cm": float(hist["CMz"][-1]) if "CMz" in hist else None, "elements": []}
     for wall in case.walls:
