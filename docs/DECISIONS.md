@@ -683,3 +683,20 @@ session started the sampler from the same state, so after a resume it
 proposed the designs it had already run (the test study ran one design three
 times). The seed moves on by the number of trials already in the study.
 Studies the app starts have no fixed seed.
+
+**Acceptance: a two-variable study on a two-element wing.** NACA 4412 main
+(300 mm, 3°) and flap (140 mm), inverted, 15 m/s, Spalart–Allmaras, medium
+mesh; flap angle 15–45° and gap 6–25 mm, most downforce, TPE, 30 trials one
+at a time on 4 cores. It ran from 21:02 to 02:54 (5.3 hours of trials). The
+cloud container it ran in restarted three times and it was stopped once on
+purpose; each time it resumed from its file, re-ran the trial that was cut
+off, and carried on. On a Mac nothing restarts it, so it would have run
+straight through. Result: 22 converged trials, 8 failed, 7 invalid wings
+skipped without a run. Every failed trial had a flap angle of 29° or more
+(the flap separates and steady RANS does not settle). The best, flap at
+26.9° with a 9.1 mm gap, gave −Cl 1.977 against 1.883 as drawn (+5%), with
+Cd 0.0406 against 0.0363; tighter gaps put the flap within the 5 mm minimum
+of the main element, so the optimum sits against that constraint. The study
+found three faults on the way, all fixed: invalid wings using up the trial
+budget, a resumed seeded study replaying its proposals, and the sampler
+learning nothing from runs that never settle.
