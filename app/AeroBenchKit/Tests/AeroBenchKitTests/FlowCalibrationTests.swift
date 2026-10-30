@@ -140,6 +140,22 @@ final class FlowVolumeCutTests: XCTestCase {
                           vmin: 0, vmax: 2, colormap: [SIMD3(0, 0, 0), SIMD3(0.5, 0.5, 0.5), SIMD3(1, 1, 1)], values: values)
     }
 
+    func testProbeValuesAndLines() throws {
+        let v = volume()
+        XCTAssertEqual(v.value(at: SIMD3(0.12, 0.04, 0.0)), 1)  // nearest plane x = 0.1
+        XCTAssertEqual(v.value(at: SIMD3(0.3, 0.0, 0.05)), 2)
+        XCTAssertNil(v.value(at: SIMD3(0.7, 0.0, 0.0)))  // past the last plane
+        XCTAssertNil(v.value(at: SIMD3(0.0, 0.4, 0.0)))
+        // A side-profile image: left edge is x = 0, top edge z = 0.05.
+        let p = v.slicePoint(.side, 1, fx: 1, fy: 0)
+        XCTAssertEqual(p.x, 0.4, accuracy: 1e-12)
+        XCTAssertEqual(p.z, 0.05, accuracy: 1e-12)
+        XCTAssertEqual(v.slicePoint(.side, 1, fx: 0, fy: 1).x, 0, accuracy: 1e-12)
+        let line = v.profile(from: SIMD3(0, 0, 0), to: SIMD3(0.4, 0, 0), samples: 5)
+        for (got, want) in zip(line.map(\.distance), [0, 0.1, 0.2, 0.3, 0.4]) { XCTAssertEqual(got, want, accuracy: 1e-12) }
+        XCTAssertEqual(line.map(\.value), [0, 1, 1, 2, 2])  // 0.2 is nearer 0.1 than 0.4
+    }
+
     func testCutAxesAndCounts() {
         let v = volume()
         XCTAssertEqual(v.axes(.captured).normal, 0)

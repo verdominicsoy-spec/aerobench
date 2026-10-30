@@ -226,6 +226,9 @@ also saved with the project in `flow/`.
 colours), isosurfaces (several at once, colours from the colour map, with
 opacity), a value window that shows voxels between two values, and a slice
 scrubber with the original frame beside the reconstructed plane, in mm.
+Under the slice, hover for the value at a point (with its x, y, z in mm),
+or drag across it to draw a line and plot Cp0 along it, for example behind a
+wing at a given height; the line stays put as you scrub through slices.
 Export isosurfaces as .glb or .obj (mm), the volume as .npz or .vti
 (ParaView), and the slice on screen as a PNG with its scale bar and Cp0
 colour bar for slides.

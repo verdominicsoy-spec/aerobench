@@ -1,6 +1,7 @@
 import AeroBench3D
 import AeroBenchKit
 import AppKit
+import Charts
 import SwiftUI
 
 struct FlowFieldView: View {
@@ -869,6 +870,16 @@ struct SliceCompare: View {
     var body: some View {
         let flow = app.flow
         HStack(spacing: 12) {
+            slices(flow)
+            if flow.probeLine != nil {
+                ProbeChart().frame(minWidth: 220, idealWidth: 280, maxWidth: 360)
+            }
+        }
+        .padding(8)
+    }
+
+    @ViewBuilder private func slices(_ flow: FlowFieldModel) -> some View {
+        HStack(spacing: 12) {
             if let v = flow.volume, flow.sliceCut != .captured {
                 lengthways(v, flow)
             } else {
@@ -897,6 +908,7 @@ struct SliceCompare: View {
                             .overlay(alignment: .bottomLeading) { axisLabel("\(v.right.letter) \(Int(left * 1000))") }
                             .overlay(alignment: .bottomTrailing) { axisLabel("\(v.right.letter) \(Int(rightEnd * 1000)) mm") }
                             .overlay(alignment: .topLeading) { axisLabel("\(v.up.letter) \(Int(top * 1000)) mm") }
+                            .overlay { ProbeLayer() }
                     }
                 } else {
                     Text("Reconstructed").font(.caption).bold()
@@ -905,7 +917,6 @@ struct SliceCompare: View {
             }
             }
         }
-        .padding(8)
     }
 
     /// A side profile or a cut from above: no video frame to compare with,
@@ -925,6 +936,7 @@ struct SliceCompare: View {
                     .overlay(alignment: .bottomLeading) { axisLabel("\(v.axisLetter(a.across)) \(Int(across.lowerBound * 1000))") }
                     .overlay(alignment: .bottomTrailing) { axisLabel("\(v.axisLetter(a.across)) \(Int(across.upperBound * 1000)) mm") }
                     .overlay(alignment: .topLeading) { axisLabel("\(v.axisLetter(a.up)) \(Int(upward.upperBound * 1000)) mm") }
+                    .overlay { ProbeLayer() }
             } else {
                 Rectangle().fill(.quaternary)
             }
@@ -1053,5 +1065,101 @@ struct SliceExportView: View {
         guard v > 0 else { return 0.1 }
         let p = pow(10, floor(log10(v)))
         return [5.0, 2.0, 1.0].map { $0 * p }.first { $0 <= v } ?? p
+    }
+}
+
+/// Over a slice image: the value under the pointer, and a line drawn by
+/// dragging whose values ProbeChart plots.
+struct ProbeLayer: View {
+    @Environment(AppState.self) private var app
+    @State private var hover: CGPoint?
+
+    var body: some View {
+        let flow = app.flow
+        GeometryReader { geo in
+            let size = geo.size
+            ZStack(alignment: .topLeading) {
+                if let line = flow.probeLine {
+                    Path { path in
+                        path.move(to: CGPoint(x: line.start.x * size.width, y: line.start.y * size.height))
+                        path.addLine(to: CGPoint(x: line.end.x * size.width, y: line.end.y * size.height))
+                    }
+                    .stroke(Color.white, style: StrokeStyle(lineWidth: 3))
+                    Path { path in
+                        path.move(to: CGPoint(x: line.start.x * size.width, y: line.start.y * size.height))
+                        path.addLine(to: CGPoint(x: line.end.x * size.width, y: line.end.y * size.height))
+                    }
+                    .stroke(Color.black, style: StrokeStyle(lineWidth: 1.2, dash: [4, 2]))
+                }
+                if let h = hover, let v = flow.volume {
+                    let f = Self.fraction(h, size)
+                    let p = v.slicePoint(flow.sliceCut, flow.sliceIndex, fx: f.x, fy: f.y)
+                    let text = v.value(at: p).map { String(format: "Cp0 %.2f", $0) } ?? "no flow"
+                    Text("\(text) at \(Int((p.x * 1000).rounded())), \(Int((p.y * 1000).rounded())), \(Int((p.z * 1000).rounded())) mm")
+                        .font(.caption2.monospacedDigit())
+                        .padding(2)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 3))
+                        .offset(x: min(h.x + 10, max(size.width - 190, 0)), y: max(h.y - 22, 0))
+                        .allowsHitTesting(false)
+                }
+            }
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .contentShape(Rectangle())
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let p): hover = p
+                case .ended: hover = nil
+                }
+            }
+            .gesture(DragGesture(minimumDistance: 3).onChanged { d in
+                flow.probeLine = (Self.fraction(d.startLocation, size), Self.fraction(d.location, size))
+                hover = d.location
+            })
+        }
+        .help("Hover for the value at a point; drag to draw a line and plot Cp0 along it")
+    }
+
+    private static func fraction(_ p: CGPoint, _ size: CGSize) -> CGPoint {
+        CGPoint(x: min(max(p.x / max(size.width, 1), 0), 1), y: min(max(p.y / max(size.height, 1), 0), 1))
+    }
+}
+
+/// Cp0 along the probe line on the slice on show.
+struct ProbeChart: View {
+    @Environment(AppState.self) private var app
+
+    private struct Point: Identifiable {
+        let id: Int
+        let mm: Double
+        let value: Double
+    }
+
+    var body: some View {
+        let flow = app.flow
+        let profile = flow.probeProfile
+        let points = profile.enumerated().compactMap { k, p in p.value.map { Point(id: k, mm: p.distance * 1000, value: Double($0)) } }
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Cp0 along the line").font(.caption).bold()
+                Spacer()
+                Button("Clear") { flow.probeLine = nil }.buttonStyle(.link).font(.caption)
+            }
+            if points.isEmpty {
+                Text("No flow along this line.").font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Chart(points) { p in
+                    LineMark(x: .value("Along the line (mm)", p.mm), y: .value("Cp0", p.value))
+                        .interpolationMethod(.stepCenter)
+                }
+                .chartXAxisLabel("Along the line (mm)")
+                .chartYAxisLabel("Cp0")
+                .chartYScale(domain: .automatic(includesZero: false))
+                if let lo = points.min(by: { $0.value < $1.value }) {
+                    Text(String(format: "Lowest %.2f at %.0f mm; %d of %d samples have flow", lo.value, lo.mm, points.count, profile.count))
+                        .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                }
+            }
+        }
     }
 }

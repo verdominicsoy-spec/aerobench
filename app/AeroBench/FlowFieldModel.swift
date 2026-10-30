@@ -89,10 +89,22 @@ final class FlowFieldModel {
     var sliceCut: FlowVolume.Cut = .captured {
         didSet {
             guard sliceCut != oldValue, let volume else { return }
+            probeLine = nil
             sliceIndex = volume.sliceCount(sliceCut) / 2  // the middle: for a side profile, the centreline if the grid is symmetric
         }
     }
     var sliceIn3D = true { didSet { updateSlice() } }
+    /// A line drawn on the slice, as fractions of its image (across from the
+    /// left, down from the top), so it stays put while scrubbing through slices.
+    var probeLine: (start: CGPoint, end: CGPoint)?
+
+    /// Values along the probe line on the slice on show, distance in metres.
+    var probeProfile: [(distance: Double, value: Float?)] {
+        guard let volume, let line = probeLine else { return [] }
+        let a = volume.slicePoint(sliceCut, sliceIndex, fx: line.start.x, fy: line.start.y)
+        let b = volume.slicePoint(sliceCut, sliceIndex, fx: line.end.x, fy: line.end.y)
+        return volume.profile(from: a, to: b)
+    }
     private(set) var sliceImage: CGImage?
     private(set) var sliceFrameImage: CGImage?
 

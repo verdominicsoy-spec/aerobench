@@ -267,6 +267,53 @@ public struct FlowVolume: Sendable {
                        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     }
 
+    // MARK: Probes
+
+    /// A point on a cut's image, given as fractions across from the left and
+    /// down from the top, in the world (metres).
+    public func slicePoint(_ cut: Cut, _ i: Int, fx: Double, fy: Double) -> SIMD3<Double> {
+        let f = sliceFrame(cut, i)
+        return f.center + (fx - 0.5) * f.right + (0.5 - fy) * f.up
+    }
+
+    /// The value of the voxel nearest a point; nil outside the grid (by more
+    /// than half a cell) or where there is no flow.
+    public func value(at p: SIMD3<Double>) -> Float? {
+        var index = [0, 0, 0]
+        for axis in 0..<3 {
+            guard let n = Self.nearest(coordinates(axis), p[axis]) else { return nil }
+            index[axis] = n
+        }
+        let v = value(index[0], index[1], index[2])
+        return v.isNaN ? nil : v
+    }
+
+    /// Values along a straight line, evenly spaced, with the distance from
+    /// its start (metres).
+    public func profile(from a: SIMD3<Double>, to b: SIMD3<Double>, samples: Int = 200) -> [(distance: Double, value: Float?)] {
+        let n = Swift.max(samples, 2)
+        let length = simd_length(b - a)
+        return (0..<n).map { k in
+            let t = Double(k) / Double(n - 1)
+            return (t * length, value(at: a + t * (b - a)))
+        }
+    }
+
+    /// Index of the coordinate nearest v in an ascending list, or nil when v
+    /// is more than half a spacing beyond either end.
+    static func nearest(_ c: [Double], _ v: Double) -> Int? {
+        guard let first = c.first, let last = c.last else { return nil }
+        if c.count == 1 { return 0 }
+        let lowPad = (c[1] - c[0]) / 2, highPad = (last - c[c.count - 2]) / 2
+        guard v >= first - lowPad - 1e-12, v <= last + highPad + 1e-12 else { return nil }
+        var lo = 0, hi = c.count - 1
+        while hi - lo > 1 {
+            let mid = (lo + hi) / 2
+            if c[mid] <= v { lo = mid } else { hi = mid }
+        }
+        return abs(c[lo] - v) <= abs(c[hi] - v) ? lo : hi
+    }
+
     /// Voxel centres with lo <= value <= hi, thinned evenly to at most maxPoints.
     public func windowPoints(lo: Double, hi: Double, maxPoints: Int = 250_000) -> (positions: [SIMD3<Float>], colors: [SIMD4<Float>]) {
         let flo = Float(lo), fhi = Float(hi)
