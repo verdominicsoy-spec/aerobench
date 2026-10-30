@@ -735,3 +735,30 @@ single wing swept towards stall, not the optimiser (each trial has its own
 mesh, so there is no neighbouring solution to start from), and an FS wing
 works below stall. If polars to maximum lift are wanted, it is a small
 addition (restart SU2 from the previous angle's solution on the same mesh).
+
+**A quick mesh level, about 1½ minutes for a multi-element wing.** Asked
+for: a multi-element run in about two minutes. Measured on the two-element
+starter wing (NACA 4412 main and flap, 15 m/s, Spalart–Allmaras, 4 cores):
+
+| Level | Time | Cells | Cl | Cd |
+| --- | --- | --- | --- | --- |
+| quick | 97 s | 31,240 | −1.8891 | 0.03668 |
+| coarse | 206 s | 31,240 | −1.8882 | 0.03671 |
+| medium (default) | 401 s | 55,710 | −1.8834 | 0.03629 |
+
+Quick uses the coarse cells but a looser convergence test (lift and drag
+still to 0.1% over 100 iterations, the residual down 3 orders), which halves
+the iterations; it lands within 0.3% of medium on lift and 1.1% on drag. A
+coarser quick mesh tried first took 75 s but read lift 1.7% high, so the time
+is better spent on cells than saved. The 97 s includes sampling the flow
+field for the app.
+
+**The flow field view.** The engine resamples SU2's solution onto a
+640-wide grid around the wing, linearly on SU2's own cells (its quads split
+into triangles), so values are never interpolated across an element or a
+slot, and blanks the inside of each element. It holds Cp, speed over the
+free stream, total pressure Cp0 = Cp + (V/V∞)² − 1 (incompressible; zero in
+the free stream, negative where energy is lost) and the eddy viscosity
+ratio, plus streamlines seeded upstream and just behind each trailing edge,
+traced both ways so slot flow and any recirculation show. About 5 seconds a
+run, 3 to 4 MB per run.
