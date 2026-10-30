@@ -826,6 +826,9 @@ struct WingInspector: View {
                     Button("Points as CSV…") { app.exportWingCSV() }
                 }
                 Text("In mm, in the wing's frame, ready for CATIA.").font(.caption).foregroundStyle(.secondary)
+                Button("Report as PDF…") { app.exportWingReport() }
+                Text("One page: the wing, the conditions, every solver's latest answer, Cp, the polar and the flow field.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

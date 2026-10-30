@@ -1,5 +1,6 @@
 import AeroBenchKit
 import AppKit
+import SwiftUI
 import UniformTypeIdentifiers
 
 /// Wing Lab actions: the airfoil library, export, and the Lap Sim link.
@@ -75,6 +76,35 @@ extension AppState {
         } catch {
             show("Could not export the elements", error)
         }
+    }
+
+    /// One A4 PDF page with the wing, its conditions and every solver's latest answer.
+    func exportWingReport() {
+        let lab = wingLab
+        guard !lab.wing.elements.isEmpty else { return }
+        let field = lab.ransField
+        let scalar = field?.scalars.first { $0.key == lab.fieldScalar } ?? field?.scalars.first
+        let title = project.map { "\($0.url.deletingPathExtension().lastPathComponent): wing" } ?? "Wing"
+        let page = WingReportView(title: title, wing: lab.wing, preview: lab.preview, estimate: lab.estimate,
+                                  rans: lab.ransResult, field: field, fieldScalar: scalar,
+                                  fieldImage: scalar.flatMap { lab.fieldImage($0.key) })
+        let panel = NSSavePanel()
+        panel.title = "Export Wing Report"
+        panel.nameFieldStringValue = "wing_report.pdf"
+        panel.allowedContentTypes = [.pdf]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let renderer = ImageRenderer(content: page)
+        var ok = false
+        renderer.render { size, draw in
+            var box = CGRect(origin: .zero, size: size)
+            guard let pdf = CGContext(url as CFURL, mediaBox: &box, nil) else { return }
+            pdf.beginPDFPage(nil)
+            draw(pdf)
+            pdf.endPDFPage()
+            pdf.closePDF()
+            ok = true
+        }
+        if !ok { show("Could not export the report", WingLabError("The PDF could not be written to \(url.path).")) }
     }
 
     func exportWingCSV() {

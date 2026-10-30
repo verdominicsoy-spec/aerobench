@@ -324,6 +324,9 @@ the one it replaces.
 
 **Export**: each element as a .dat, or all points as CSV, in mm in the wing's
 frame, for CATIA.
+*Report as PDF* makes one A4 page for a design review: the wing, its
+conditions, every solver's latest answer (with ClA and CdA on the car), Cp,
+the estimate polar and the RANS flow field.
 
 ## The engine on its own
 
