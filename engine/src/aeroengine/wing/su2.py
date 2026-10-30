@@ -223,7 +223,7 @@ def run(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int = 1,
         plan.append(FALLBACK)
     for scheme, cfl in plan:
         try:
-            out = _run_once(replace(case, cfl=cfl, scheme=scheme), mesh, workdir, su2, cores, progress, env)
+            out = _start(replace(case, cfl=cfl, scheme=scheme), mesh, workdir, su2, cores, progress, env)
             out["cfl"] = cfl
             out["scheme"] = scheme
             out["attempts"] = attempts + [{"cfl": cfl, "scheme": scheme, "outcome": "finished"}]
@@ -235,6 +235,32 @@ def run(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int = 1,
     raise EngineError("SU2 diverged at every CFL tried",
                       "; ".join(f"{a['scheme'].upper()} CFL {a['cfl']:g}: {a['outcome']}" for a in attempts)
                       + ". Check the mesh: a finer level, or a wider slot.")
+
+
+STARTUP_RETRIES = 2
+
+
+def _start(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
+           progress: Callable[[float, str], None] | None, env: dict | None) -> dict:
+    """One attempt, started again if Open MPI crashes while SU2 is still
+    setting up: on GitHub's Linux runners it sometimes segfaults choosing a
+    one-sided component for MPI_Win_create, before a single iteration, and
+    the next start goes through. Nothing is lost by trying again."""
+    for k in range(STARTUP_RETRIES + 1):
+        try:
+            return _run_once(case, mesh, workdir, su2, cores, progress, env)
+        except StartupCrash as exc:
+            if k == STARTUP_RETRIES:
+                raise EngineError("SU2 crashed while starting, every time", exc.detail) from None
+            if progress:
+                progress(10, "SU2 crashed while starting; starting it again")
+    raise AssertionError("unreachable")
+
+
+class StartupCrash(Exception):
+    def __init__(self, detail: str) -> None:
+        super().__init__("SU2 crashed while starting")
+        self.detail = detail
 
 
 class Diverged(Exception):
@@ -303,6 +329,9 @@ def _run_once(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
             if len(parts) > 3 and parts[1].strip().isdigit():
                 last = int(parts[1])
         raise Diverged(last)
+    if proc.returncode != 0 and not stopped and not screen["CL"] and any(
+            k in line for line in tail for k in ("MPI_Win_create", "ompi_osc", "MPI_Init")):
+        raise StartupCrash("\n".join(tail[-12:]))
     if (proc.returncode != 0 and not stopped) or not history_file.exists():
         raise EngineError(f"SU2 stopped with exit code {proc.returncode}", "\n".join(tail[-12:]))
     hist = read_history(history_file)

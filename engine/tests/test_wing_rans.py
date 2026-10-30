@@ -150,6 +150,11 @@ def test_wing_rans_end_to_end(tmp_path):
     assert sum(e["cl"] for e in data["elements"]) == pytest.approx(data["cl"], rel=1e-6)
     assert data["cl"] > 1.0  # a deflected flap, upright: plenty of lift
     assert len(data["surface"]) == 2 and len(data["surface"][1]["cp"]) > 50
+    # The flow field for the app, sampled from this run.
+    assert data["field_view"] == "field.json"
+    head = json.loads((tmp_path / "w" / "field.json").read_text())
+    assert [s["key"] for s in head["scalars"]][:3] == ["cp", "speed", "cp0"] and head["streamlines"]
+    assert (tmp_path / "w" / "field.bin").stat().st_size == 4 * head["nx"] * head["ny"] * len(head["scalars"])
     assert 0 < data["transition"][0][0] < 1  # predicted, not left at the default
     assert not (tmp_path / "w" / "mesh").exists()  # the mesh is not kept unless asked
 
@@ -194,3 +199,34 @@ with open("history.csv", "w") as h:
     # Stopped within a couple of checks of the window filling, not at 100,000 (plus lines in flight).
     assert out["iterations"] < case.window + 2 * m.WRITE_EVERY + m.STOP_AFTER_WRITE + 50
     assert out["cl"] == pytest.approx(1.2, abs=1e-6)
+
+
+def test_a_crash_while_starting_is_retried(tmp_path):
+    """Open MPI sometimes segfaults setting up, before any iteration: the
+    run starts SU2 again rather than failing."""
+    import stat
+    import sys
+
+    from aeroengine.wing import su2 as m
+
+    fake = tmp_path / "SU2_CFD"
+    fake.write_text(f"""#!{sys.executable}
+import math, os, sys
+flag = "started_once"
+if not os.path.exists(flag):
+    open(flag, "w").close()
+    print("[runner:01] [ 3] libmpi.so.40(ompi_osc_base_select+0x11a)", flush=True)
+    print("[runner:01] [ 5] libmpi.so.40(MPI_Win_create+0xd3)", flush=True)
+    sys.exit(139)
+with open("history.csv", "w") as h:
+    h.write('"Inner_Iter","rms[P]","CL","CD"\\n')
+    for it in range(400):
+        rms, cl, cd = -2 - it / 50, 1.2 + 0.3 * math.exp(-it / 5), 0.02 + 0.01 * math.exp(-it / 5)
+        h.write(f"{{it}},{{rms}},{{cl}},{{cd}}\\n"); h.flush()
+        print(f"|{{it:>12}}|{{rms:>12.6f}}|{{cl:>12.6f}}|{{cd:>12.6f}}|", flush=True)
+""")
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    case = Case(speed=20, rho=1.2, mu=1.8e-5, alpha_deg=5, ref_chord=0.4, ref_point=(0.1, 0), walls=[], iterations=400)
+    out = m.run(case, tmp_path / "m.su2", tmp_path, fake, cores=1)
+    assert (tmp_path / "started_once").exists(), out
+    assert out["converged"], out

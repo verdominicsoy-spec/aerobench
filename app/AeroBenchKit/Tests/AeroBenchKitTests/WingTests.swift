@@ -226,8 +226,10 @@ final class WingStudyTests: XCTestCase {
 final class WingFieldTests: XCTestCase {
     /// 3 x 2 grid over x 0..3, y 0..2, one scalar: bottom row 0, 1, 2; top row NaN, 4, 5.
     private func field() throws -> WingField {
-        let json = #"{"nx": 3, "ny": 2, "window": [0, 0, 3, 2], "v_inf": 1.0, "streamlines": [[[0, 0.5], [3, 0.5]]],
-        "scalars": [{"key": "cp", "name": "Cp", "min": 0, "max": 5, "range": [0, 5], "colormap": [[0, 0, 0], [1, 1, 1]]}]}"#
+        let json = #"""
+        {"nx": 3, "ny": 2, "window": [0, 0, 3, 2], "v_inf": 1.0, "streamlines": [[[0, 0.5], [3, 0.5]]],
+         "scalars": [{"key": "cp", "name": "Cp", "min": 0, "max": 5, "range": [0, 5], "colormap": [[0, 0, 0], [1, 1, 1]]}]}
+        """#
         var bin = Data()
         for v: Float in [0, 1, 2, .nan, 4, 5] { withUnsafeBytes(of: v.bitPattern.littleEndian) { bin.append(contentsOf: $0) } }
         return try WingField(json: Data(json.utf8), binary: bin)
