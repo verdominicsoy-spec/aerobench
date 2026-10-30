@@ -10,20 +10,30 @@ struct WingLabView: View {
     var body: some View {
         let lab = app.wingLab
         HSplitView {
-            AirfoilLibraryPanel()
-                .frame(minWidth: 240, idealWidth: 280, maxWidth: 380)
+            if lab.showLibrary {
+                AirfoilLibraryPanel()
+                    .frame(minWidth: 240, idealWidth: 280, maxWidth: 380)
+            }
             VSplitView {
                 WingCanvas()
-                    .frame(minHeight: 280, maxHeight: .infinity)
+                    .frame(minHeight: 240, maxHeight: .infinity)
                 WingResultsPane()
-                    .frame(minHeight: 170, idealHeight: 240)
+                    .frame(minHeight: 220, idealHeight: 300)
             }
-            .frame(minWidth: 420, maxWidth: .infinity)
-            WingInspector()
-                .frame(minWidth: 290, idealWidth: 330, maxWidth: 420)
+            .frame(minWidth: 440, maxWidth: .infinity)
+            if lab.showInspector {
+                WingInspector()
+                    .frame(minWidth: 320, idealWidth: 350, maxWidth: 440)
+            }
         }
         .toolbar {
+            ToolbarItemGroup(placement: .navigation) {
+                Button { lab.showLibrary.toggle() } label: { Label("Library", systemImage: "sidebar.left") }
+                    .help(lab.showLibrary ? "Hide the airfoil library" : "Show the airfoil library")
+            }
             ToolbarItemGroup {
+                Button { lab.showInspector.toggle() } label: { Label("Inspector", systemImage: "sidebar.right") }
+                    .help(lab.showInspector ? "Hide the inspector" : "Show the inspector")
                 Button { lab.undo() } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
                     .keyboardShortcut("z")
                     .disabled(lab.undoStack.isEmpty)
@@ -252,6 +262,10 @@ struct WingCanvas: View {
                     .contentShape(Rectangle())
                     .gesture(dragGesture(m, lab))
                     .onTapGesture(coordinateSpace: .local) { point in
+                        if lab.replayIndex != nil {  // a click ends a time-lapse: back to the wing as drawn
+                            lab.stopReplay()
+                            return
+                        }
                         lab.selection = lab.element(at: m.world(point))
                     }
                     .focusable()
@@ -291,6 +305,21 @@ struct WingCanvas: View {
                 Button("Fit") { zoom = 1; pan = .zero }
             }
             .buttonStyle(.borderless)
+            if let t = lab.replayTrial, let i = lab.replayIndex {
+                HStack(spacing: 8) {
+                    Text("TIME-LAPSE").font(.caption2.bold()).foregroundStyle(.orange)
+                    Text("trial \(t.number) (\(i + 1) of \(lab.replayOrder.count))").font(.caption.monospacedDigit())
+                    if t.state == "fail" {
+                        Text(t.reason ?? "failed").font(.caption).foregroundStyle(.red).lineLimit(1)
+                    } else if let load = t.load {
+                        Text(String(format: "downforce Cl %.3f", load)).font(.caption.monospacedDigit())
+                    }
+                    if let best = lab.replayBestSoFar {
+                        Text(String(format: "best so far %.4g", best)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                    Text("dashed: the wing as drawn").font(.caption2).foregroundStyle(.secondary)
+                }
+            }
             if let error = lab.previewError {
                 Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
             }
@@ -305,6 +334,10 @@ struct WingCanvas: View {
     }
 
     private func draw(_ ctx: GraphicsContext, _ m: WingMapping, _ lab: WingLabModel) {
+        if let replay = lab.replayWing {
+            drawReplay(ctx, m, lab, replay)
+            return
+        }
         let wing = lab.wing
         let flagged = Set(wing.issues.filter { $0.kind != .outsideRules }.flatMap(\.elements))
         let outside = Set(wing.issues.filter { $0.kind == .outsideRules }.flatMap(\.elements))
@@ -344,6 +377,28 @@ struct WingCanvas: View {
                 ctx.stroke(Path(ellipseIn: CGRect(x: te.x - 7, y: te.y - 7, width: 14, height: 14)), with: .color(.accentColor), lineWidth: 2)
                 ctx.fill(Path(CGRect(x: beyond.x - 6, y: beyond.y - 6, width: 12, height: 12)), with: .color(.accentColor))
             }
+        }
+    }
+
+    /// A time-lapse frame: the trial's wing, over the current wing as a dashed ghost.
+    private func drawReplay(_ ctx: GraphicsContext, _ m: WingMapping, _ lab: WingLabModel, _ replay: Wing) {
+        func outline(_ e: WingElement) -> Path {
+            var path = Path()
+            for (k, p) in e.placed().enumerated() {
+                if k == 0 { path.move(to: m.view(p)) } else { path.addLine(to: m.view(p)) }
+            }
+            path.closeSubpath()
+            return path
+        }
+        for e in lab.wing.elements {
+            ctx.stroke(outline(e), with: .color(.secondary.opacity(0.6)), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+        }
+        let failed = lab.replayTrial?.state == "fail"
+        let colour: Color = failed ? .red : .orange
+        for e in replay.elements {
+            let path = outline(e)
+            ctx.fill(path, with: .color(colour.opacity(0.3)))
+            ctx.stroke(path, with: .color(colour), lineWidth: 1.6)
         }
     }
 
@@ -415,12 +470,14 @@ struct WingResultsPane: View {
     var body: some View {
         @Bindable var lab = app.wingLab
         VStack(alignment: .leading, spacing: 0) {
+            ResultsSummary()
+            Divider()
             Picker("Results", selection: $lab.resultsTab) {
                 ForEach(WingLabModel.ResultsTab.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 300)
+            .fixedSize()
             .padding([.top, .horizontal], 8)
             switch lab.resultsTab {
             case .pressure: CpPlot()
@@ -569,6 +626,7 @@ struct CFDResults: View {
                     .buttonStyle(.link).font(.caption)
                 }
                 .frame(width: 260, alignment: .leading)
+                .scrollableColumn()
                 VStack(alignment: .leading, spacing: 4) {
                     Picker("View", selection: Binding(get: { lab.cfdView }, set: { lab.cfdView = $0 })) {
                         ForEach(WingLabModel.CFDView.allCases) { Text($0.rawValue).tag($0) }
@@ -867,16 +925,18 @@ struct WingInspector: View {
                 .disabled(running)
             }
             ForEach(lab.optimise.variables) { v in
-                HStack {
-                    Text("\(WingIssue.label(v.element)) \(v.kind.rawValue)").font(.caption).frame(width: 110, alignment: .leading)
-                    TextField("from", value: Binding(get: { v.low }, set: { lab.setBounds(of: v.id, low: $0) }),
-                              format: .number.precision(.fractionLength(0...2)))
-                        .multilineTextAlignment(.trailing)
-                    Text("to").foregroundStyle(.secondary)
-                    TextField("to", value: Binding(get: { v.high }, set: { lab.setBounds(of: v.id, high: $0) }),
-                              format: .number.precision(.fractionLength(0...2)))
-                        .multilineTextAlignment(.trailing)
-                    Text(v.unit).foregroundStyle(.secondary).frame(width: 26, alignment: .leading)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(WingIssue.label(v.element)) \(v.kind.rawValue)").font(.caption)
+                    HStack {
+                        TextField("from", value: Binding(get: { v.low }, set: { lab.setBounds(of: v.id, low: $0) }),
+                                  format: .number.precision(.fractionLength(0...2)))
+                            .multilineTextAlignment(.trailing)
+                        Text("to").foregroundStyle(.secondary)
+                        TextField("to", value: Binding(get: { v.high }, set: { lab.setBounds(of: v.id, high: $0) }),
+                                  format: .number.precision(.fractionLength(0...2)))
+                            .multilineTextAlignment(.trailing)
+                        Text(v.unit).foregroundStyle(.secondary).fixedSize()
+                    }
                 }
                 .disabled(running)
             }
@@ -1055,13 +1115,24 @@ struct StudyResults: View {
         if let study = lab.study {
             VStack(alignment: .leading, spacing: 6) {
                 header(study, lab)
-                HSplitView {
-                    table(study, lab).frame(minWidth: 380)
-                    VStack(spacing: 8) {
-                        bestSoFar(study)
-                        scatter(study, lab)
+                ViewThatFits(in: .horizontal) {
+                    HSplitView {
+                        table(study, lab).frame(minWidth: 380)
+                        VStack(spacing: 8) {
+                            bestSoFar(study, lab)
+                            scatter(study, lab)
+                        }
+                        .frame(minWidth: 260)
                     }
-                    .frame(minWidth: 260)
+                    .frame(minWidth: 660)
+                    VSplitView {
+                        table(study, lab).frame(minHeight: 140)
+                        HStack(spacing: 8) {
+                            bestSoFar(study, lab)
+                            scatter(study, lab)
+                        }
+                        .frame(minHeight: 160)
+                    }
                 }
             }
             .padding(8)
@@ -1091,6 +1162,40 @@ struct StudyResults: View {
                 Button("Load Best") { lab.load(trial: b) }.font(.caption)
             }
         }
+        timeLapse(lab)
+    }
+
+    /// Plays the study back on the canvas: each trial's wing in the order it ran.
+    @ViewBuilder private func timeLapse(_ lab: WingLabModel) -> some View {
+        let count = lab.replayOrder.count
+        HStack(spacing: 8) {
+            Text("Time-lapse").font(.caption).bold()
+            Button {
+                if lab.replayPlaying { lab.pauseReplay() } else { lab.playReplay() }
+            } label: {
+                Image(systemName: lab.replayPlaying ? "pause.fill" : "play.fill")
+            }
+            .disabled(count < 2)
+            .help("Plays the trials in the order they ran: the canvas shows each one's wing, the charts fill in")
+            Slider(value: Binding(get: { Double(lab.replayIndex ?? 0) },
+                                  set: { lab.pauseReplay(); lab.replayIndex = Int($0.rounded()) }),
+                   in: 0...Double(max(count - 1, 1)))
+                .disabled(count < 2)
+                .frame(minWidth: 120)
+            Picker("Speed", selection: Binding(get: { lab.replaySpeed }, set: { lab.replaySpeed = $0 })) {
+                Text("2/s").tag(2.0)
+                Text("8/s").tag(8.0)
+                Text("30/s").tag(30.0)
+            }
+            .labelsHidden()
+            .fixedSize()
+            if lab.replayIndex != nil {
+                Button("Stop") { lab.stopReplay() }
+                    .help("Back to the wing as drawn")
+            }
+        }
+        .font(.caption)
+        .controlSize(.small)
     }
 
     /// The best estimate designs run again with RANS: does RANS agree on the order?
@@ -1167,9 +1272,11 @@ struct StudyResults: View {
         }
     }
 
-    @ViewBuilder private func bestSoFar(_ s: WingStudy) -> some View {
-        let best = s.bestSoFar
-        let all = s.results
+    @ViewBuilder private func bestSoFar(_ s: WingStudy, _ lab: WingLabModel) -> some View {
+        // During a time-lapse, only what had run by then.
+        let upTo = lab.replayTrial?.number ?? Int.max
+        let best = s.bestSoFar.filter { $0.trial <= upTo }
+        let all = s.results.filter { $0.number <= upTo }
         Chart {
             ForEach(all) { t in
                 PointMark(x: .value("Trial", t.number), y: .value("Score", t.value ?? 0)).symbolSize(12).foregroundStyle(.gray)
@@ -1177,19 +1284,26 @@ struct StudyResults: View {
             ForEach(Array(best.enumerated()), id: \.offset) { _, b in
                 LineMark(x: .value("Trial", b.trial), y: .value("Score", b.value)).interpolationMethod(.stepEnd)
             }
+            if let t = lab.replayTrial {
+                RuleMark(x: .value("Trial", t.number)).foregroundStyle(Color.orange.opacity(0.7))
+            }
         }
+        .chartXScale(domain: 0...max(s.trials.last?.number ?? 1, 1))
         .chartXAxisLabel("Trial").chartYAxisLabel("Best so far")
         .chartYScale(domain: .automatic(includesZero: false))
     }
 
     @ViewBuilder private func scatter(_ s: WingStudy, _ lab: WingLabModel) -> some View {
-        let ran = s.trials.filter { $0.isResult && $0.load != nil && $0.cd != nil }
-        let front = s.paretoFront
+        let upTo = lab.replayTrial?.number ?? Int.max
+        let ran = s.trials.filter { $0.isResult && $0.load != nil && $0.cd != nil && $0.number <= upTo }
+        let front = s.paretoFront.filter { $0.number <= upTo }
+        let current = lab.replayTrial?.number ?? lab.selectedTrial
         Chart {
             ForEach(ran) { t in
                 PointMark(x: .value("Cd", t.cd!), y: .value("−Cl", t.load!))
-                    .symbolSize(t.number == lab.selectedTrial ? 80 : 20)
-                    .foregroundStyle(t.number == lab.selectedTrial ? Color.accentColor : t.feasible == false ? Color.orange : Color.gray)
+                    .symbolSize(t.number == current ? 80 : 20)
+                    .foregroundStyle(t.number == current ? (lab.replayTrial != nil ? Color.orange : Color.accentColor)
+                                     : t.feasible == false ? Color.orange.opacity(0.5) : Color.gray)
             }
             ForEach(front) { t in
                 LineMark(x: .value("Cd", t.cd!), y: .value("−Cl", t.load!), series: .value("", "front"))
@@ -1397,6 +1511,10 @@ struct EstimateResults: View {
                         Label("NeuralFoil is unsure of one or more sections here: check with RANS.", systemImage: "exclamationmark.triangle")
                             .font(.caption).foregroundStyle(.orange)
                     }
+                    if here.separating == true {
+                        Label("The last element is past its stall angle here: on the real wing it would separate. Check with RANS.", systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    }
                     Text("Panel method and NeuralFoil: lift within about 2% of RANS on a main-and-flap wing until the flap nears separation, drag about 10% high. For trends and screening; RANS CFD for numbers to keep.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     Button("Use for the Lap Sim") {
@@ -1406,6 +1524,7 @@ struct EstimateResults: View {
                     .buttonStyle(.link).font(.caption)
                 }
                 .frame(width: 290, alignment: .leading)
+                .scrollableColumn()
                 chart("Cl", est.rows.map { ($0.alpha, $0.cl, $0.trusted) }, mark: here.alpha)
                 chart("Cd", est.rows.map { ($0.alpha, $0.cd, $0.trusted) }, mark: here.alpha)
             }
@@ -1435,5 +1554,68 @@ struct EstimateResults: View {
         }
         .chartXAxisLabel("Wing angle (°)").chartYAxisLabel(name)
         .chartYScale(domain: .automatic(includesZero: false))
+    }
+}
+
+/// One line across the top of the results: the latest answer from each
+/// solver for the wing on the canvas, and what it means on the car. Click a
+/// card for its tab.
+struct ResultsSummary: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        let lab = app.wingLab
+        let wing = lab.wing
+        let estimate = lab.estimate?.row(nearest: wing.alpha)
+        let rans = lab.ransResult
+        // On the car: CFD when it converged, else the estimate.
+        let forCar: (cl: Double, cd: Double, from: String)? = rans.flatMap { $0.converged ? ($0.cl, $0.cd, "CFD") : nil }
+            ?? estimate.map { ($0.cl, $0.cd, "estimate") }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                card("Inviscid preview", tab: .pressure,
+                     lines: lab.preview.map { [String(format: "Cl %.3f", $0.clTotal), "no drag"] } ?? ["—"], lab: lab)
+                card("Quick estimate", tab: .estimate,
+                     lines: estimate.map { [String(format: "Cl %.3f  Cd %.4f", $0.cl, $0.cd),
+                                            String(format: "L/D %.1f", abs($0.cl) / max($0.cd, 1e-9)) + ($0.separating == true ? "  separating" : "")] }
+                        ?? ["not run"], warn: estimate.map { !$0.trusted || $0.separating == true } ?? false, lab: lab)
+                card("RANS CFD", tab: .cfd,
+                     lines: rans.map { [String(format: "Cl %.3f  Cd %.4f", $0.cl, $0.cd),
+                                        ($0.converged ? String(format: "L/D %.1f", abs($0.cl) / max($0.cd, 1e-9)) : "not converged") + ", \($0.meshLevel)"] }
+                        ?? ["not run"], warn: rans.map { !$0.converged } ?? false, lab: lab)
+                if let c = forCar {
+                    let car = wing.carContribution(cl: c.cl, cd: c.cd)
+                    card("On the car (\(c.from))", tab: nil,
+                         lines: [String(format: "ClA %.3f m²  CdA %.3f m²", car.cla, car.cda),
+                                 String(format: "span %.0f mm, 3D factor %.2f", wing.span * 1000, wing.factor3D)], lab: lab)
+                }
+                if let s = lab.study, let b = s.bestTrial, let v = b.value {
+                    card("Study best", tab: .study, lines: [String(format: "trial %ld: %.4g", b.number, v),
+                                                            "\(s.complete + s.failed) of \(s.target) run"], lab: lab)
+                }
+            }
+            .padding(8)
+        }
+    }
+
+    private func card(_ title: String, tab: WingLabModel.ResultsTab?, lines: [String], warn: Bool = false, lab: WingLabModel) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption2.bold()).foregroundStyle(warn ? Color.orange : Color.secondary)
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                Text(line).font(.caption.monospacedDigit()).lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 6).fill(lab.resultsTab == tab ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.08)))
+        .contentShape(Rectangle())
+        .onTapGesture { if let tab { lab.resultsTab = tab } }
+    }
+}
+
+extension View {
+    /// A fixed-width column of numbers that scrolls when the pane is too short, instead of clipping.
+    func scrollableColumn() -> some View {
+        ScrollView(.vertical) { self }.scrollIndicators(.automatic)
     }
 }

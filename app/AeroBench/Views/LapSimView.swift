@@ -64,6 +64,8 @@ struct LapSimSetupView: View {
 
             Section("Track") {
                 Picker("Track", selection: $app.lapSim.track.kind) {
+                    Text("FSG Hockenheim, trackdrive (309 m)").tag(LapSimTrackKind.fsg)
+                    Text("FSI Varano, trackdrive (218 m)").tag(LapSimTrackKind.fsi)
                     Text("Test track (synthetic)").tag(LapSimTrackKind.testTrack)
                     Text("Skidpad").tag(LapSimTrackKind.skidpad)
                     Text("Acceleration").tag(LapSimTrackKind.acceleration)
@@ -73,6 +75,9 @@ struct LapSimSetupView: View {
                 case .testTrack:
                     Text("Closed loop of about 381 m with a 12.4 m tightest radius. For checking the sim, not a real event.")
                         .font(.caption).foregroundStyle(.secondary)
+                case .fsg, .fsi:
+                    Text("A real event layout: the driverless trackdrive course from AMZ's fssim simulator (MIT licence), cone lines turned into a centreline. Shorter than an endurance lap, so compare cars on it rather than predicting event times.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 case .skidpad:
                     NumberRow(label: "Centreline radius", unit: "m", value: $app.lapSim.track.skidpadRadius,
                               isDefault: setup.track.skidpadRadius == LapSimTrack.defaultSkidpadRadius)

@@ -157,6 +157,10 @@ def read_points(path: Path, scale: float = 1.0) -> tuple[np.ndarray, np.ndarray]
     return np.array(xs), np.array(ys)
 
 
+# Real event layouts in data/tracks (see its README for sources and licences).
+EVENT_TRACKS = {"fsg_2019": "FSG Hockenheim (trackdrive)", "fsi_2019": "FSI Varano (trackdrive)"}
+
+
 def resolve(spec: Any, ds: float = DEFAULT_DS) -> Track:
     """Builds a track from the job's track object."""
     if not isinstance(spec, dict):
@@ -168,8 +172,15 @@ def resolve(spec: Any, ds: float = DEFAULT_DS) -> Track:
         return acceleration(float(spec.get("length", ACCEL_LENGTH)), ds)
     if kind == "test_track":
         return test_track(ds)
+    if kind in EVENT_TRACKS:
+        path = Path(__file__).resolve().parents[4] / "data" / "tracks" / f"{kind}.csv"
+        if not path.is_file():
+            raise EngineError(f"missing {path}")
+        x, y = read_points(path)
+        return from_points(x, y, True, ds, 0.05, name=EVENT_TRACKS[kind])
     if kind is not None:
-        raise EngineError(f"unknown built-in track '{kind}'", "expected skidpad, acceleration or test_track")
+        raise EngineError(f"unknown built-in track '{kind}'",
+                          "expected skidpad, acceleration, test_track, " + ", ".join(EVENT_TRACKS))
     if "csv" in spec:
         path = Path(spec["csv"]).expanduser()
         x, y = read_points(path, float(spec.get("scale", 1.0)))

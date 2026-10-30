@@ -239,6 +239,67 @@ final class WingLabModel {
     var optimiseJob: JobItem?
     var selectedTrial: Int?
 
+    // Panels (kept per Mac)
+    var showLibrary = UserDefaults.standard.object(forKey: "wingShowLibrary") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(showLibrary, forKey: "wingShowLibrary") }
+    }
+    var showInspector = UserDefaults.standard.object(forKey: "wingShowInspector") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(showInspector, forKey: "wingShowInspector") }
+    }
+
+    // Time-lapse of a study: its trials in the order they ran, on the canvas.
+    var replayIndex: Int?
+    var replayPlaying = false
+    var replaySpeed = 8.0  // trials a second
+    @ObservationIgnored private var replayTask: Task<Void, Never>?
+
+    /// Trials that ran (or tried to), in order, with the wing each one had.
+    var replayOrder: [WingStudy.Trial] {
+        (study?.trials ?? []).filter { ($0.state == "complete" || $0.state == "fail") && $0.placement != nil }
+    }
+    var replayTrial: WingStudy.Trial? {
+        guard let i = replayIndex else { return nil }
+        let order = replayOrder
+        return order.indices.contains(i) ? order[i] : nil
+    }
+    /// The canvas wing during a time-lapse.
+    var replayWing: Wing? { replayTrial.flatMap { wing.applying($0) } }
+
+    /// The best value among the trials up to the one on show.
+    var replayBestSoFar: Double? {
+        guard let s = study, let t = replayTrial else { return nil }
+        let upTo = s.bestSoFar.filter { $0.trial <= t.number }
+        return upTo.last?.value
+    }
+
+    func playReplay() {
+        if replayIndex == nil || replayIndex == replayOrder.count - 1 { replayIndex = 0 }
+        replayPlaying = true
+        resultsTab = .study
+        replayTask?.cancel()
+        replayTask = Task { @MainActor [weak self] in
+            while let self, self.replayPlaying, !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1 / max(self.replaySpeed, 0.5)))
+                guard self.replayPlaying, let i = self.replayIndex else { return }
+                if i + 1 >= self.replayOrder.count {
+                    self.replayPlaying = false
+                    return
+                }
+                self.replayIndex = i + 1
+            }
+        }
+    }
+
+    func pauseReplay() {
+        replayPlaying = false
+        replayTask?.cancel()
+    }
+
+    func stopReplay() {
+        pauseReplay()
+        replayIndex = nil
+    }
+
     func variable(_ kind: DesignVariable.Kind, of element: Int) -> DesignVariable? {
         optimise.variables.first { $0.kind == kind && $0.element == element }
     }

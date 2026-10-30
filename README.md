@@ -81,7 +81,9 @@ AEROBENCH_ENGINE="$PWD/../../engine" swift test
 
 ## Lap Sim
 
-Quasi-steady point-mass lap sim. Pick a track (built-in test track, skidpad,
+Quasi-steady point-mass lap sim. Pick a track (real event layouts: FSG
+Hockenheim and FSI Varano trackdrive, from AMZ's MIT-licensed fssim, see
+data/tracks; or the built-in test track, skidpad,
 75 m acceleration run, or an imported centreline CSV), set car A and
 optionally car B, and Run (⌘R). Results show lap time, endurance time and
 energy, a speed trace, a track map coloured by speed, the B minus A time
@@ -235,7 +237,7 @@ data.
 A multi-element wing in its own plane (not placed on the car), analysed by
 the solver that suits the question.
 
-**Library** (left). The NACA 4 and 5-digit set is always there; *Download the
+**Library** (left; the toolbar's sidebar buttons hide or show it and the inspector). The NACA 4 and 5-digit set is always there; *Download the
 Library* fetches the UIUC database (about 1,600 sections, not shipped with
 AeroBench since UIUC gives no licence to redistribute it). Search, filter by
 family, source, thickness and camber, star favourites, and *Import .dat…*
@@ -272,7 +274,7 @@ on NACA 0012 at Re 6 million that matches Ladson's lift within 2% and drag
 within about 15% up to 10° (docs/DECISIONS.md has the numbers). Runs that do
 not converge are shown as not converged, not as results.
 
-**Results** (under the canvas): inviscid Cp, the quick viscous polar (Cl–α,
+**Results** (under the canvas; a strip across the top shows the latest preview, estimate and CFD numbers side by side and what the wing adds to the car, click one for its tab): inviscid Cp, the quick viscous polar (Cl–α,
 Cl–Cd, transition points), and the CFD run (Cl and Cd per element,
 convergence, surface Cp, and the flow field: pressure, speed, total pressure
 Cp0 or eddy viscosity over the plane with streamlines, and the value under
@@ -297,7 +299,7 @@ cores). Wings that break the minimum gap or the rules box are skipped
 without a run; failed or unconverged runs are recorded as failed and the
 study carries on. The *Study* results tab has a sortable table of trials,
 the best so far, and Cl against Cd with the Pareto front; click a trial to
-put its wing on the canvas. Studies are saved in the project
+put its wing on the canvas; *Time-lapse* plays the trials back in the order they ran, each one's wing on the canvas over the drawn one as the charts fill in. Studies are saved in the project
 (`wing/studies/`), so stopping is safe and *Resume Study* carries on.
 
 **Into the Lap Sim**: with the span and a 2D-to-3D factor (your estimate),

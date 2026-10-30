@@ -121,6 +121,9 @@ public struct WingEstimate: Codable, Equatable, Sendable {
         public var trusted: Bool
         /// It has an element behind it, so it was held below its stall onset.
         public var heldBelowStall: Bool
+        /// The angle of its maximum lift alone, and whether (as the last element) it is past it, less a margin.
+        public var stallAngle: Double?
+        public var pastStall: Bool?
     }
 
     public struct Row: Codable, Equatable, Sendable, Identifiable {
@@ -128,6 +131,8 @@ public struct WingEstimate: Codable, Equatable, Sendable {
         public var cl: Double
         public var cd: Double
         public var trusted: Bool
+        /// The last element is past its stall angle: it would separate.
+        public var separating: Bool?
         public var elements: [Element]
 
         public var id: Double { alpha }

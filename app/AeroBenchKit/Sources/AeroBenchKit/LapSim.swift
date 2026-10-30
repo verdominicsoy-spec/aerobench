@@ -66,6 +66,8 @@ public struct CarParameters: Codable, Equatable, Sendable {
 
 public enum LapSimTrackKind: String, Codable, CaseIterable, Sendable {
     case testTrack = "test_track"
+    case fsg = "fsg_2019"
+    case fsi = "fsi_2019"
     case skidpad
     case acceleration
     case csv
@@ -118,6 +120,8 @@ public struct LapSimTrack: Codable, Equatable, Sendable {
             return .object(["builtin": .string("acceleration"), "length": .double(accelerationLength)])
         case .testTrack:
             return .object(["builtin": .string("test_track")])
+        case .fsg, .fsi:
+            return .object(["builtin": .string(kind.rawValue)])
         case .csv:
             var obj: [String: JSONValue] = [
                 "csv": .string(csvURL(lapsimFolder: lapsimFolder)?.path ?? ""),

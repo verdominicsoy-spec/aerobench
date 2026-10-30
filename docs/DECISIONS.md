@@ -847,3 +847,28 @@ estimate optimises angles well and gaps and overlaps poorly; the app says so
 when a gap or overlap is ticked, and the RANS check or a RANS study is the
 answer for those. Studies record their solver and cannot be resumed with
 another.
+
+**Real tracks in the Lap Sim.** Asked for: actual tracks. Event layouts for
+Formula Student are rarely published; the open ones found are the driverless
+trackdrive layouts in AMZ's fssim simulator (MIT licence, ETH Zurich's team,
+2019): Formula Student Germany at Hockenheim (309 m) and Italy at Varano (218
+m), as left and right cone lines. engine/scripts/make_tracks.py turns them
+into centrelines (each left cone's midpoint with its nearest right cone) in
+data/tracks, with the licence beside them; they load like an imported CSV
+(spline-smoothed). Tightest centreline radii are 3.2 m and 4.2 m, in line
+with the rules' 9 m minimum outside hairpin diameter. They are trackdrive
+courses, shorter than an endurance lap, so they compare cars rather than
+predict event times.
+
+**Wing Lab layout.** The results tabs were squeezed into a fixed 300-point
+picker (five tabs did not fit), the numbers columns clipped when the results
+pane was short, and the Study tab needed about 640 points side by side. The
+picker now takes its own width, number columns scroll, the Study tab stacks
+its table over its charts when narrow, and the inspector is at least 320
+points wide. The library and the inspector can be hidden from the toolbar
+(remembered per Mac). A summary strip across the top of the results shows the
+latest preview, estimate and CFD numbers side by side and what the wing adds
+to the car (from CFD when it converged, else the estimate). A study's
+time-lapse plays its trials back in the order they ran, each trial's wing on
+the canvas over a dashed outline of the drawn wing, with the charts filled in
+up to that trial; a click on the canvas ends it.
