@@ -240,24 +240,29 @@ def run(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int = 1,
                       + ". Check the mesh: a finer level, or a wider slot.")
 
 
-STARTUP_RETRIES = 2
 RESTART_COPY = "start.dat"  # the solution a restarted run begins from, copied into its folder
 
 
 def _start(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
            progress: Callable[[float, str], None] | None, env: dict | None) -> dict:
-    """One attempt, started again if Open MPI crashes while SU2 is still
-    setting up: on GitHub's Linux runners it sometimes segfaults choosing a
-    one-sided component for MPI_Win_create, before a single iteration, and
-    the next start goes through. Nothing is lost by trying again."""
-    for k in range(STARTUP_RETRIES + 1):
+    """One attempt, started again more cautiously if Open MPI crashes while
+    SU2 is still setting up. On some of GitHub's Linux runners Open MPI
+    segfaults choosing a one-sided component for MPI_Win_create, before a
+    single iteration, every time on that machine. So the second start names
+    the component (rdma) instead of letting Open MPI choose, and the third
+    runs SU2 as one process without mpirun. Nothing is lost by trying again;
+    where the first start works (as it does on a Mac) nothing changes."""
+    base = dict(env or os.environ)
+    ladder = [(cores, base), (cores, {**base, "OMPI_MCA_osc": "rdma"}), (1, {**base, "OMPI_MCA_osc": "rdma"})]
+    for k, (n, e) in enumerate(ladder):
         try:
-            return _run_once(case, mesh, workdir, su2, cores, progress, env)
+            return _run_once(case, mesh, workdir, su2, n, progress, e)
         except StartupCrash as exc:
-            if k == STARTUP_RETRIES:
+            if k == len(ladder) - 1:
                 raise EngineError("SU2 crashed while starting, every time", exc.detail) from None
             if progress:
-                progress(10, "SU2 crashed while starting; starting it again")
+                progress(10, "SU2 crashed while starting; starting it again"
+                         + (" on one core" if ladder[k + 1][0] == 1 and n > 1 else ""))
     raise AssertionError("unreachable")
 
 

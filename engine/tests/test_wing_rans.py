@@ -290,3 +290,21 @@ def test_a_restart_is_copied_in_under_a_short_name(monkeypatch, tmp_path):
         m._run_once(case, work / "m.su2", work, tmp_path / "SU2_CFD", 1, None, None)
     assert "SOLUTION_FILENAME= start.dat" in seen["cfg"] and "RESTART_SOL= YES" in seen["cfg"]
     assert (work / "start.dat").read_text() == "solution"
+
+
+def test_startup_crashes_escalate_to_a_named_component_then_one_core(monkeypatch, tmp_path):
+    from aeroengine.wing import su2 as m
+
+    tried = []
+
+    def crash(case, mesh, workdir, su2, cores, progress, env):
+        tried.append((cores, env.get("OMPI_MCA_osc")))
+        if len(tried) < 3:
+            raise m.StartupCrash("ompi_osc_base_select")
+        return {"converged": True}
+
+    monkeypatch.setattr(m, "_run_once", crash)
+    monkeypatch.delenv("OMPI_MCA_osc", raising=False)
+    case = Case(speed=20, rho=1.2, mu=1.8e-5, alpha_deg=5, ref_chord=0.4, ref_point=(0.1, 0), walls=[])
+    assert m._start(case, tmp_path / "m.su2", tmp_path, tmp_path / "SU2_CFD", 4, None, None)["converged"]
+    assert tried == [(4, None), (4, "rdma"), (1, "rdma")]
