@@ -124,7 +124,7 @@ struct AirfoilLibraryPanel: View {
             Text("The UIUC airfoil database (about 1,600 sections) is downloaded to your Mac, not shipped with AeroBench. NACA 4 and 5-digit sections are always there.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Button("Download the Library") { app.downloadAirfoils() }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(S37ButtonStyle(kind: .prominent))
             Button("NACA Sections Only") { app.buildAirfoilIndex() }
             if let error = lab.libraryError {
                 Text(error).font(.caption2).foregroundStyle(.secondary)
@@ -957,7 +957,7 @@ struct WingInspector: View {
         let haveSU2 = app.settings.su2Executable != nil
         if !haveSU2 { su2Install(lab) }
         Button("Run CFD") { app.runWingRANS() }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(S37ButtonStyle(kind: .prominent))
             .disabled(!haveSU2 || lab.wing.elements.isEmpty || !lab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty
                       || (lab.ransJob.map { !$0.status.isFinished } ?? false))
         if !lab.wing.issues.filter({ $0.kind != .outsideRules }).isEmpty {
@@ -1070,7 +1070,7 @@ struct WingInspector: View {
             HStack {
                 let resume = lab.study.map { $0.study == WingLabModel.studyFile(project: app.project?.url ?? URL(fileURLWithPath: "/"), name: lab.optimise.studyName).deletingPathExtension().lastPathComponent } ?? false
                 Button(resume ? "Resume Study" : "Start Study") { app.runWingOptimise() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(S37ButtonStyle(kind: .prominent))
                     .disabled(running || lab.optimiseProblem != nil || app.project == nil
                               || (lab.optimise.needsSU2 && app.settings.su2Executable == nil))
                 if app.project == nil {
@@ -1101,7 +1101,7 @@ struct WingInspector: View {
             }
         } else {
             Button("Run the Estimate") { app.runWingEstimate() }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(S37ButtonStyle(kind: .prominent))
                 .disabled(lab.wing.elements.isEmpty || (lab.estimateJob.map { !$0.status.isFinished } ?? false)
                           || !lab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty)
         }

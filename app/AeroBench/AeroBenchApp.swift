@@ -9,17 +9,23 @@ struct AeroBenchApp: App {
             ContentView()
                 .environment(app)
                 .frame(minWidth: 900, minHeight: 560)
+                .preferredColorScheme(.dark)  // sage37 ships dark
+                .tint(S37.C.sage)
         }
         .commands { AeroBenchCommands(app: app) }
 
         Window("Solver Accuracy", id: "accuracy") {
             AccuracyHelpView()
+                .preferredColorScheme(.dark)
+                .tint(S37.C.sage)
         }
         .defaultSize(width: 640, height: 720)
 
         Settings {
             SettingsView()
                 .environment(app)
+                .preferredColorScheme(.dark)
+                .tint(S37.C.sage)
         }
     }
 }

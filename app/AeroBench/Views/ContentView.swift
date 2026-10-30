@@ -29,6 +29,9 @@ struct ContentView: View {
                 }
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 210)
+            // sage37: the sidebar is a solid surface column, not translucent.
+            .scrollContentBackground(.hidden)
+            .background(S37.C.surface)
         } detail: {
             switch selection ?? .project {
             case .project:
@@ -103,7 +106,7 @@ struct EngineSetupView: View {
                 Text("AeroBench sets up its engine with uv, which is not installed. Install it with Homebrew (brew install uv) and reopen AeroBench, or let AeroBench install it from astral.sh.")
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
-                    Button("Install uv") { app.installUVAndSetUp() }.buttonStyle(.borderedProminent)
+                    Button("Install uv") { app.installUVAndSetUp() }.buttonStyle(S37ButtonStyle(kind: .prominent))
                     Button("Later") { app.engineSetup = nil }
                 }
             case .failed(let why):
@@ -113,7 +116,7 @@ struct EngineSetupView: View {
                     Button("Try Again") {
                         if let source = BundledEngine.source() { app.runEngineSetup(source: source, home: BundledEngine.home) }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(S37ButtonStyle(kind: .prominent))
                     Button("Close") { app.engineSetup = nil }
                 }
             case .done, nil:

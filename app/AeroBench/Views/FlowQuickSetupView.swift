@@ -219,7 +219,7 @@ struct FlowQuickSetupPanel: View {
                     .help("Runs one plane and shows it under the frame, to check before building")
                 Button("Build 3D") { app.reconstructFlow() }
                     .keyboardShortcut("r")
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(S37ButtonStyle(kind: .prominent))
                     .disabled(!ready || isRunning(flow.reconstructJob))
             }
             if let job = flow.reconstructJob {

@@ -967,3 +967,13 @@ doubles as the spar-box limit. Both are applied before angles and gaps, so
 the slot is set on the reshaped section. Trials store only the two numbers;
 the app reshapes the section itself with the same formula
 (Airfoil.reshaped) to draw a trial or apply it.
+
+**sage37, lightly.** The tools are dense working screens (canvas,
+inspector, charts), so the full sage37 treatment (refracting glass panes
+over a bloom, the dock, Fraunces titles) was left out as more than a quick
+check needs. What came across: the app is dark, sage is the accent (sidebar
+selection, toggles, sliders, charts' default series), the sidebar is a solid
+surface column, and the primary action in each panel is sage37's prominent
+capsule button. Colours, radii and the press spring are the design system's
+tokens (app/AeroBench/Sage37.swift). The glassout console for SU2 and
+optimiser output is not built; the Jobs log stays a plain list.
