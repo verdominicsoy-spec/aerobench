@@ -111,6 +111,14 @@ final class WingLabModel {
     var estimateStep = 1.0
     var estimate: WingEstimate?
     var estimateJob: JobItem?
+    /// Re-run the estimate through the warm engine on every change to the wing.
+    var liveEstimate = UserDefaults.standard.bool(forKey: "wingLiveEstimate") {
+        didSet { UserDefaults.standard.set(liveEstimate, forKey: "wingLiveEstimate") }
+    }
+    var liveStatus: String?  // loading, or why the last live estimate failed
+    @ObservationIgnored var warmEngine: WarmEngine?
+    @ObservationIgnored var liveBusy = false
+    @ObservationIgnored var liveDirty = false
     var estimateAngles: [Double] { WingSweep.angles(from: estimateFrom, to: estimateTo, step: estimateStep, limit: 61) }
 
     // RANS sweep of the wing angle: on the quick mesh within 5 minutes, or

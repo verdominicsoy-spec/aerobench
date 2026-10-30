@@ -872,3 +872,40 @@ to the car (from CFD when it converged, else the estimate). A study's
 time-lapse plays its trials back in the order they ran, each trial's wing on
 the canvas over a dashed outline of the drawn wing, with the charts filled in
 up to that trial; a click on the canvas ends it.
+
+## Backlog picks
+
+Dominic's picks from the improvement list, with his note that AeroBench is a
+lightweight sanity check before hours in STAR-CCM+, not an industry tool. So
+each item is the smallest thing that does the job.
+
+**Multi-core SU2 from the app.** An app opened from Finder gets a bare PATH
+(/usr/bin:/bin:/usr/sbin:/sbin), so the engine never found Homebrew's
+mpirun and every CFD run from the app used one core even with Open MPI
+installed. The engine's PATH now has /opt/homebrew/bin and /usr/local/bin
+appended (anything already on it wins). The SU2 installer also installs
+Open MPI with Homebrew when mpicc is missing; AEROBENCH_NO_MPI skips that.
+
+**Polars through stall.** The quick sweep (5 minutes, middle angle first,
+alternating outwards) suits a few angles around the design point. Near
+maximum lift a run started from rest often never settles, so a second sweep
+order runs the lowest angle from rest and each next angle from the solution
+of the one below, on the chosen mesh, with no time limit.
+
+**Slice export, gain map, accuracy page.** The flow viewer saves the slice on
+show as a PNG with a scale bar and the Cp0 colour bar. The Lap Sim already
+plotted speed for A and B and the time delta along the lap; what it lacked
+was where on the track the time goes, so a track map is coloured by the
+slope of the delta (smoothed over about 5 m, colour range from the 95th
+percentile so one spike does not wash out the rest). Help → How Accurate Is
+Each Solver? puts the validation numbers in the app.
+
+**Live estimates (a warm engine).** Every engine job is a fresh Python
+process, and loading NeuralFoil takes 5 to 7 s, while the estimate itself
+then takes about 30 ms for 19 angles. `aeroengine serve` stays running and
+answers JSON-lines requests on stdin (only the estimate for now), and the
+app keeps one when *Live while editing* is on, sending at most one request
+at a time and the latest wing when it returns, so a drag is followed at
+about 30 updates a second. A request-reply process was preferred to a
+local HTTP server: nothing listens on a port, and it exits by itself when
+the app goes away and its stdin closes.

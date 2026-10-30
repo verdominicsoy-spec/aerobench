@@ -1,5 +1,8 @@
 """Entry point: aeroengine <command> --input job.json --workdir <job folder>
 
+aeroengine serve stays running and answers quick requests on stdin
+(serve.py).
+
 Exit codes: 0 done, 1 failed (an error event was emitted), 2 bad usage,
 143 cancelled by SIGTERM.
 """
@@ -70,6 +73,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "list":
         emit.emit({"type": "commands", "names": sorted(COMMANDS)})
         return EXIT_OK
+    if args.command == "serve":
+        from .serve import serve
+
+        return serve(emit, sys.stdin)
     fn = COMMANDS.get(args.command)
     if fn is None:
         emit.error(f"unknown command '{args.command}'", f"available: {', '.join(sorted(COMMANDS))}")

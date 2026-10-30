@@ -201,7 +201,7 @@ public final class EngineProcess: @unchecked Sendable {
 }
 
 /// Splits a byte stream into newline-terminated lines.
-private final class LineBuffer: @unchecked Sendable {
+final class LineBuffer: @unchecked Sendable {
     // Only touched from one handle's readabilityHandler, which runs serially.
     private var pending = Data()
 

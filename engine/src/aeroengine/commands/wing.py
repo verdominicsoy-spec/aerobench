@@ -143,14 +143,18 @@ def wing_rans(ctx: JobContext) -> dict:
 def wing_estimate(ctx: JobContext) -> dict:
     """Multi-element lift and drag in about a second: the panel method for
     how the elements load each other, NeuralFoil per element (wing/estimate.py)."""
+    ctx.emit.progress(10, "estimating")
+    return estimate_from_params(ctx.params)
+
+
+def estimate_from_params(p: dict) -> dict:
+    """wing-estimate's work, shared with aeroengine serve."""
     from ..wing.estimate import estimate
 
-    p = ctx.params
     raw = p.get("elements")
     if not isinstance(raw, list) or not raw:
         raise EngineError("params.elements must list the elements: coords (placed, m), unit, chord, angle, inverted")
     alphas = [float(a) for a in p.get("alphas", [p.get("alpha", 0.0)])]
-    ctx.emit.progress(10, f"{len(raw)} elements at {len(alphas)} angle(s)")
     return estimate(raw, alphas, float(p.get("speed", 15)), float(p.get("rho", 1.225)), float(p.get("mu", 1.81e-5)),
                     float(p.get("n_crit", 9.0)), p.get("ref_chord"))
 

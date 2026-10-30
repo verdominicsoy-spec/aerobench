@@ -216,8 +216,18 @@ extension AppState {
     /// Quick estimate in seconds: the panel method and NeuralFoil, over the angle range.
     func runWingEstimate() {
         let lab = wingLab
+        guard !lab.wing.elements.isEmpty else { return }
+        lab.estimate = nil
+        lab.resultsTab = .estimate
+        lab.estimateJob = jobs.submit(command: "wing-estimate", params: estimateParams(), in: jobsRoot) { [weak self] item in
+            guard let self, item.status == .succeeded, let text = item.resultText else { return }
+            self.wingLab.estimate = try? WingEstimate.decode(resultFile: Data(text.utf8))
+        }
+    }
+
+    private func estimateParams() -> [String: JSONValue] {
+        let lab = wingLab
         let wing = lab.wing
-        guard !wing.elements.isEmpty else { return }
         func points(_ p: [SIMD2<Double>]) -> JSONValue { .array(p.map { .array([.double($0.x), .double($0.y)]) }) }
         var params = ransParams()
         params["elements"] = .array(wing.elements.map { e in
@@ -227,11 +237,54 @@ extension AppState {
         var angles = lab.estimateAngles
         if !angles.contains(where: { abs($0 - wing.alpha) < 1e-9 }) { angles = (angles + [wing.alpha]).sorted() }
         params["alphas"] = .array(angles.map { .double($0) })
-        lab.estimate = nil
-        lab.resultsTab = .estimate
-        lab.estimateJob = jobs.submit(command: "wing-estimate", params: params, in: jobsRoot) { [weak self] item in
-            guard let self, item.status == .succeeded, let text = item.resultText else { return }
-            self.wingLab.estimate = try? WingEstimate.decode(resultFile: Data(text.utf8))
+        return params
+    }
+
+    /// Live estimate: the same estimate through the warm engine (about 30 ms
+    /// once loaded), at most one request at a time; changes made while one
+    /// runs are picked up by the next, so dragging shows the latest wing.
+    func scheduleLiveEstimate() {
+        let lab = wingLab
+        guard lab.liveEstimate, !lab.wing.elements.isEmpty,
+              lab.wing.issues.allSatisfy({ $0.kind == .outsideRules }) else { return }
+        if lab.liveBusy {
+            lab.liveDirty = true
+            return
+        }
+        guard let executable = settings.engineExecutable else {
+            lab.liveStatus = "Set the engine folder in Settings"
+            return
+        }
+        if lab.warmEngine == nil { lab.warmEngine = WarmEngine(executableURL: executable) }
+        guard let engine = lab.warmEngine else { return }
+        lab.liveBusy = true
+        if lab.estimate == nil { lab.liveStatus = "Loading the engine (a few seconds, once)" }
+        Task { @MainActor in
+            repeat {
+                lab.liveDirty = false
+                let params = JSONValue.object(estimateParams())
+                do {
+                    let data = try await engine.request("wing-estimate", params: params)
+                    lab.estimate = try WingEstimate.decode(resultFile: data)
+                    lab.liveStatus = nil
+                } catch {
+                    lab.liveStatus = error.localizedDescription
+                }
+            } while lab.liveDirty && lab.liveEstimate
+            lab.liveBusy = false
+        }
+    }
+
+    func setLiveEstimate(_ on: Bool) {
+        let lab = wingLab
+        lab.liveEstimate = on
+        if on {
+            lab.resultsTab = .estimate
+            scheduleLiveEstimate()
+        } else {
+            lab.warmEngine?.stop()
+            lab.warmEngine = nil
+            lab.liveStatus = nil
         }
     }
 

@@ -51,7 +51,10 @@ final class AppState {
         jobs.loadHistory(from: jobsRoot)
         showLatestLapSim()
         flow.onCalibrationChange = { [weak self] in self?.project?.isDirty = true }
-        wingLab.onChange = { [weak self] in self?.project?.isDirty = true }
+        wingLab.onChange = { [weak self] in
+            self?.project?.isDirty = true
+            self?.scheduleLiveEstimate()
+        }
         terminationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in

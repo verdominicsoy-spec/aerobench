@@ -1009,15 +1009,25 @@ struct WingInspector: View {
     }
 
     @ViewBuilder private func quickEstimateControls(_ lab: WingLabModel) -> some View {
-        NumberField(label: "From", unit: "°", value: Binding(get: { lab.estimateFrom }, set: { lab.estimateFrom = $0 }))
-        NumberField(label: "To", unit: "°", value: Binding(get: { lab.estimateTo }, set: { lab.estimateTo = $0 }))
-        NumberField(label: "Step", unit: "°", value: Binding(get: { lab.estimateStep }, set: { lab.estimateStep = max($0, 0.25) }))
+        NumberField(label: "From", unit: "°", value: Binding(get: { lab.estimateFrom }, set: { lab.estimateFrom = $0; app.scheduleLiveEstimate() }))
+        NumberField(label: "To", unit: "°", value: Binding(get: { lab.estimateTo }, set: { lab.estimateTo = $0; app.scheduleLiveEstimate() }))
+        NumberField(label: "Step", unit: "°", value: Binding(get: { lab.estimateStep }, set: { lab.estimateStep = max($0, 0.25); app.scheduleLiveEstimate() }))
         Text("Wing angles \(lab.estimateAngles.first.map { String(format: "%g", $0) } ?? "")° to \(lab.estimateAngles.last.map { String(format: "%g", $0) } ?? "")°, \(lab.estimateAngles.count) of them, and the wing's own.")
             .font(.caption).foregroundStyle(.secondary)
-        Button("Run the Estimate") { app.runWingEstimate() }
-            .buttonStyle(.borderedProminent)
-            .disabled(lab.wing.elements.isEmpty || (lab.estimateJob.map { !$0.status.isFinished } ?? false)
-                      || !lab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty)
+        Toggle("Live while editing", isOn: Binding(get: { lab.liveEstimate }, set: { app.setLiveEstimate($0) }))
+            .help("Keeps the engine loaded and re-runs the estimate on every change, about 30 ms each")
+        if lab.liveEstimate {
+            if let status = lab.liveStatus {
+                Text(status).font(.caption).foregroundStyle(.secondary)
+            } else if !lab.wing.issues.allSatisfy({ $0.kind == .outsideRules }) {
+                Text("Paused: elements overlap or are too close").font(.caption).foregroundStyle(.secondary)
+            }
+        } else {
+            Button("Run the Estimate") { app.runWingEstimate() }
+                .buttonStyle(.borderedProminent)
+                .disabled(lab.wing.elements.isEmpty || (lab.estimateJob.map { !$0.status.isFinished } ?? false)
+                          || !lab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty)
+        }
         if let job = lab.estimateJob, !job.status.isFinished || job.status == .failed {
             JobInlineStatus(job: job)
         }

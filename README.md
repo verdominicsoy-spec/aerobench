@@ -267,6 +267,10 @@ undo and redo.
 | Quick estimate (panel method + NeuralFoil) | every element together, Cl and Cd against the wing angle: lift within about 2% of RANS on a main-and-flap wing until the flap nears separation, drag about 10% high; not for slats | seconds |
 | RANS CFD (SU2) | the real thing: slot flow, separation, gap effects; Spalart–Allmaras, SST, or SST with Langtry–Menter transition | minutes |
 
+The quick estimate's *Live while editing* keeps the engine loaded (a few
+seconds, once) and re-runs the estimate on every change, so the Estimate tab
+follows an element as you drag it.
+
 *Help → How Accurate Is Each Solver?* (or the ? in the Wing Lab toolbar)
 puts the same comparison in the app with the validation numbers.
 
