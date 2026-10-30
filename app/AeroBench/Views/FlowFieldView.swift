@@ -356,7 +356,8 @@ struct NumberField: View {
                     .labelsHidden()
                     .multilineTextAlignment(.trailing)
                     .frame(width: 90)
-                Text(unit).foregroundStyle(.secondary).frame(width: 30, alignment: .leading)
+                // At least 30 wide so short units line up, wider rather than wrapping (kg/m³).
+                Text(unit).foregroundStyle(.secondary).lineLimit(1).fixedSize().frame(minWidth: 30, alignment: .leading)
             }
         }
     }

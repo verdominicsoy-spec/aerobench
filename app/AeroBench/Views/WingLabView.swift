@@ -897,10 +897,9 @@ struct WingInspector: View {
     @ViewBuilder private func solversSection(_ lab: WingLabModel) -> some View {
         let wing = lab.wing
         Section {
-            Picker("Solver", selection: Binding(get: { lab.solver }, set: { lab.solver = $0 })) {
+            FittingPicker(title: "Solver", selection: Binding(get: { lab.solver }, set: { lab.solver = $0 })) {
                 ForEach(WingLabModel.Solver.allCases) { Text($0.rawValue).tag($0) }
             }
-            .pickerStyle(.segmented)
             Text(lab.solver.purpose).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             NumberField(label: "Speed", unit: "m/s", value: Binding(get: { wing.speed }, set: { v in lab.edit { $0.speed = max(v, 0.1) } }))
             NumberField(label: "Air density", unit: "kg/m³", value: Binding(get: { wing.rho }, set: { v in lab.edit { $0.rho = max(v, 0.01) } }))
@@ -1119,11 +1118,10 @@ struct WingInspector: View {
     @ViewBuilder private func ransSweepControls(_ lab: WingLabModel) -> some View {
         Toggle("Sweep the wing angle", isOn: Binding(get: { lab.sweepOn }, set: { lab.sweepOn = $0 }))
         if lab.sweepOn {
-            Picker("Sweep", selection: Binding(get: { lab.sweepRising }, set: { lab.sweepRising = $0 })) {
+            FittingPicker(title: "Sweep", selection: Binding(get: { lab.sweepRising }, set: { lab.sweepRising = $0 })) {
                 Text("Quick, within 5 min").tag(false)
                 Text("Through stall").tag(true)
             }
-            .pickerStyle(.segmented)
             NumberField(label: "From", unit: "°", value: Binding(get: { lab.sweepFrom }, set: { lab.sweepFrom = $0 }))
             NumberField(label: "To", unit: "°", value: Binding(get: { lab.sweepTo }, set: { lab.sweepTo = $0 }))
             NumberField(label: "Step", unit: "°", value: Binding(get: { lab.sweepStep }, set: { lab.sweepStep = max($0, 0.5) }))
@@ -1750,5 +1748,24 @@ extension View {
     /// A fixed-width column of numbers that scrolls when the pane is too short, instead of clipping.
     func scrollableColumn() -> some View {
         ScrollView(.vertical) { self }.scrollIndicators(.automatic)
+    }
+}
+
+/// A segmented picker while all its options fit at full width, a menu when
+/// the pane is too narrow, so no option is ever cut off.
+struct FittingPicker<Value: Hashable, Content: View>: View {
+    let title: String
+    @Binding var selection: Value
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            Picker(title, selection: $selection, content: content)
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            Picker(title, selection: $selection, content: content)
+                .pickerStyle(.menu)
+        }
     }
 }
