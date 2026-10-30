@@ -226,6 +226,9 @@ also saved with the project in `flow/`.
 colours), isosurfaces (several at once, colours from the colour map, with
 opacity), a value window that shows voxels between two values, and a slice
 scrubber with the original frame beside the reconstructed plane, in mm.
+*Car* shows the model open in the CAD Viewer inside the field, translucent,
+in its own coordinates (they match the field when STAR used the CAD frame;
+an offset in mm moves it if not), so isosurfaces and slices sit on the car.
 Under the slice, hover for the value at a point (with its x, y, z in mm),
 or drag across it to draw a line and plot Cp0 along it, for example behind a
 wing at a given height; the line stays put as you scrub through slices.

@@ -77,6 +77,13 @@ final class FlowFieldModel {
     /// The no-fluid region (geometry), meshed by the engine on request.
     var objectOn = false
     var objectOpacity = 1.0
+    /// The car from the CAD Viewer, drawn in the same frame as the volume
+    /// (both in metres), nudged by an offset in mm if the frames differ.
+    var cadOn = false
+    var cadOpacity = 0.4
+    var cadOffset = SIMD3<Double>(repeating: 0)
+    var cadModel: Model3D?
+    var cadHidden: Set<Int> = []
     var objectIgnoreBelowGround = true
     var objectModel: Model3D?
     var objectComputing = false
@@ -274,6 +281,17 @@ final class FlowFieldModel {
                 mesh.colors = Array(repeating: grey, count: mesh.positions.count)
                 meshes.append(mesh)
                 children.append(ModelNode(name: "Object", transform: inst.world, mesh: meshes.count - 1))
+            }
+        }
+        if cadOn, let car = cadModel {
+            let grey = SIMD4<Float>(0.55, 0.6, 0.68, Float(cadOpacity))
+            var shift = matrix_identity_float4x4
+            shift.columns.3 = SIMD4<Float>(SIMD3<Float>(cadOffset / 1000), 1)
+            for inst in car.instances(hidden: cadHidden) {
+                var mesh = car.meshes[inst.node.mesh!]
+                mesh.colors = Array(repeating: grey, count: mesh.positions.count)
+                meshes.append(mesh)
+                children.append(ModelNode(name: "Car", transform: shift * inst.world, mesh: meshes.count - 1))
             }
         }
         for iso in isoLevels where iso.visible {

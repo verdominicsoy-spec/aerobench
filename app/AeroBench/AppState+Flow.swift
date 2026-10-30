@@ -159,6 +159,22 @@ extension AppState {
         computeFlowObject()
     }
 
+    /// The model open in the CAD Viewer, inside the field (hidden parts stay hidden).
+    func setFlowCAD(_ on: Bool) {
+        flow.objectError = nil
+        if on {
+            guard let model = cad.model else {
+                flow.cadOn = false
+                flow.objectError = "Open the car in the CAD Viewer first; it is shown here as it is there."
+                return
+            }
+            flow.cadModel = model
+            flow.cadHidden = cad.hidden
+        }
+        flow.cadOn = on
+        flow.updateIsosurfaces()
+    }
+
     func computeFlowObject() {
         guard let folder = flow.volumeFolder else { return }
         flow.objectComputing = true

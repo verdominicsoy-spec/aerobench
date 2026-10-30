@@ -773,6 +773,33 @@ struct FlowExplorePanel: View {
                     Text("The space with no fluid: wherever the video showed a mask colour (white geometry by default). Volumes reconstructed before this was added need reconstructing again.")
                 }
 
+                Section {
+                    Toggle("Show the car from the CAD Viewer", isOn: Binding(get: { flow.cadOn }, set: { app.setFlowCAD($0) }))
+                    if flow.cadOn {
+                        LabeledContent("Opacity") {
+                            Slider(value: $flow.cadOpacity, in: 0.1...1, onEditingChanged: { editing in
+                                if !editing { flow.updateIsosurfaces() }
+                            })
+                        }
+                        HStack {
+                            Text("Offset (mm)")
+                            ForEach(0..<3, id: \.self) { axis in
+                                TextField(["x", "y", "z"][axis], value: Binding(get: { flow.cadOffset[axis] }, set: {
+                                    flow.cadOffset[axis] = $0
+                                    flow.updateIsosurfaces()
+                                }), format: .number.precision(.fractionLength(0...1)))
+                                .frame(width: 60)
+                            }
+                        }
+                        Button("Take Again from the CAD Viewer") { app.setFlowCAD(true) }
+                            .help("After hiding parts or opening another model there")
+                    }
+                } header: {
+                    Text("Car")
+                } footer: {
+                    Text("The model open in the CAD Viewer, in its own coordinates, which match the field when STAR used the CAD frame. If the car sits in the wrong place, the offset moves it.")
+                }
+
                 Section("Value window") {
                     Toggle("Show voxels between", isOn: $flow.windowOn)
                     if flow.windowOn {
