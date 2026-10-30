@@ -272,9 +272,12 @@ within about 15% up to 10° (docs/DECISIONS.md has the numbers). Runs that do
 not converge are shown as not converged, not as results.
 
 **Results** (under the canvas): inviscid Cp, the quick viscous polar (Cl–α,
-Cl–Cd, transition points), and the CFD run (Cl and Cd per element, surface
-Cp, convergence). *Show Flow Field* opens the run's flow.vtu in Finder for
-ParaView.
+Cl–Cd, transition points), and the CFD run (Cl and Cd per element,
+convergence, surface Cp, and the flow field: pressure, speed, total pressure
+Cp0 or eddy viscosity over the plane with streamlines, and the value under
+the pointer). *Show Flow Field* still opens the run's flow.vtu in Finder for
+ParaView. Pick the *Quick* mesh for a multi-element answer in about two
+minutes, converged to three figures; medium is the validated default.
 
 **Optimise** (inspector): tick the angles, gaps and overlaps to search and
 give each a range, pick an objective (most downforce, best L/D, most
