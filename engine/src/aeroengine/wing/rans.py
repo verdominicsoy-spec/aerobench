@@ -15,7 +15,7 @@ from .mesh import Settings, build
 from .viscous import polar, reynolds
 
 MESH_LEVELS = {  # surface and wake spacing scale, wall layer growth
-    "quick": (2.2, 1.2),
+    "quick": (1.6, 1.2),
     "coarse": (1.6, 1.2),
     "medium": (1.0, 1.15),
     "fine": (0.6, 1.1),
