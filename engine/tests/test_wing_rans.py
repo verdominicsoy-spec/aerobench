@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+from pathlib import Path
 import subprocess
 
 import numpy as np
@@ -261,3 +262,31 @@ def test_sweep_chains_restarts_and_keeps_to_its_time_limit(monkeypatch, tmp_path
     assert [r["alpha"] for r in out["rows"]] == [-2.0, 0.0, 2.0, 4.0] and out["skipped"] == [-4.0]
     # Iterations are capped by the time left at the slowest rate seen (0.1 s each).
     assert calls[1]["iterations"] == 1200 and calls[4]["iterations"] == 300
+
+
+def test_a_restart_is_copied_in_under_a_short_name(monkeypatch, tmp_path):
+    """SU2 aborts on a long solution path, so the engine copies the solution
+    into the run folder and names it there."""
+    from aeroengine.wing import su2 as m
+
+    deep = tmp_path / ("a" * 60) / ("b" * 60)
+    deep.mkdir(parents=True)
+    (deep / "restart.dat").write_text("solution")
+    seen = {}
+
+    class Done(Exception):
+        pass
+
+    def stop_at_popen(cmd, cwd, **kw):
+        seen["cfg"] = (Path(cwd) / "su2.cfg").read_text()
+        raise Done
+
+    monkeypatch.setattr(m.subprocess, "Popen", stop_at_popen)
+    case = Case(speed=20, rho=1.2, mu=1.8e-5, alpha_deg=5, ref_chord=0.4, ref_point=(0.1, 0), walls=[],
+                restart=str(deep / "restart.dat"))
+    work = tmp_path / "w"
+    work.mkdir()
+    with pytest.raises(Done):
+        m._run_once(case, work / "m.su2", work, tmp_path / "SU2_CFD", 1, None, None)
+    assert "SOLUTION_FILENAME= start.dat" in seen["cfg"] and "RESTART_SOL= YES" in seen["cfg"]
+    assert (work / "start.dat").read_text() == "solution"

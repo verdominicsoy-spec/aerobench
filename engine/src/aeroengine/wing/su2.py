@@ -241,6 +241,7 @@ def run(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int = 1,
 
 
 STARTUP_RETRIES = 2
+RESTART_COPY = "start.dat"  # the solution a restarted run begins from, copied into its folder
 
 
 def _start(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
@@ -277,6 +278,12 @@ def _run_once(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
     report = progress or (lambda pct, msg: None)
     for stale in ("history.csv", "surface.csv", "flow.vtu", "restart.dat"):
         (workdir / stale).unlink(missing_ok=True)
+    if case.restart and Path(case.restart).name != RESTART_COPY:
+        # SU2 keeps the solution file's name in a fixed-size buffer and
+        # aborts ("buffer overflow detected") on a long path: copy it here
+        # under a short name.
+        shutil.copyfile(case.restart, workdir / RESTART_COPY)
+        case = replace(case, restart=RESTART_COPY)
     rel = mesh.resolve().relative_to(workdir.resolve()) if mesh.resolve().is_relative_to(workdir.resolve()) else mesh.resolve()
     (workdir / "su2.cfg").write_text(config(case, str(rel)))
     cmd = [str(su2), "su2.cfg"]
