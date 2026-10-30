@@ -32,8 +32,10 @@ public final class WarmEngine: @unchecked Sendable {
     }
 
     /// Sends one request and returns its reply line, which decodes like a
-    /// job's result file (the answer is under "data").
-    public func request(_ command: String, params: JSONValue) async throws -> Data {
+    /// job's result file (the answer is under "data"). Fails if no reply
+    /// comes within `timeout` seconds (the first request loads NeuralFoil,
+    /// several seconds), so a stuck engine never leaves a caller waiting.
+    public func request(_ command: String, params: JSONValue, timeout: TimeInterval = 60) async throws -> Data {
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Data, Error>) in
             lock.lock()
             do {
@@ -43,6 +45,9 @@ public final class WarmEngine: @unchecked Sendable {
                 let line = try JSONEncoder().encode(Request(id: id, command: command, params: params)) + Data([0x0A])
                 pending[id] = c
                 lock.unlock()
+                DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [weak self] in
+                    self?.take(id)?.resume(throwing: Failure(message: "The engine did not answer within \(Int(timeout)) s", detail: nil))
+                }
                 do {
                     try handle.write(contentsOf: line)
                 } catch {

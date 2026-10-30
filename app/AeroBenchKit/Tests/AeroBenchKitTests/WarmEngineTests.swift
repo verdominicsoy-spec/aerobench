@@ -13,7 +13,8 @@ final class WarmEngineTests: XCTestCase {
         if let dir { try? FileManager.default.removeItem(at: dir) }
     }
 
-    /// A stand-in server: ready, then a reply per line, an error for "fail",
+    /// A stand-in server: ready, then a reply per line with the request's
+    /// id (as the real one does) and its own count, an error for "fail",
     /// and it exits on "quit".
     private func fakeEngine() throws -> URL {
         let url = dir.appendingPathComponent("aeroengine")
@@ -22,10 +23,11 @@ final class WarmEngineTests: XCTestCase {
         echo '{"type":"ready"}'
         n=0
         while read -r line; do
+          id=$(echo "$line" | sed -E 's/.*"id":([0-9]+).*/\\1/')
           case "$line" in
             *quit*) exit 3 ;;
-            *fail*) echo "{\\"type\\":\\"reply\\",\\"id\\":$n,\\"error\\":\\"no good\\"}" ;;
-            *) echo "{\\"type\\":\\"log\\",\\"msg\\":\\"working\\"}"; echo "{\\"type\\":\\"reply\\",\\"id\\":$n,\\"data\\":{\\"n\\":$n}}" ;;
+            *fail*) echo "{\\"type\\":\\"reply\\",\\"id\\":$id,\\"error\\":\\"no good\\"}" ;;
+            *) echo "{\\"type\\":\\"log\\",\\"msg\\":\\"working\\"}"; echo "{\\"type\\":\\"reply\\",\\"id\\":$id,\\"data\\":{\\"n\\":$n}}" ;;
           esac
           n=$((n+1))
         done
@@ -59,6 +61,20 @@ final class WarmEngineTests: XCTestCase {
         // The next request starts it again (a fresh server counts from 0).
         let data = try await engine.request("go", params: .null)
         XCTAssertEqual(try JSONDecoder().decode(Answer.self, from: data).data["n"], 0)
+    }
+
+    func testARequestWithNoReplyTimesOut() async throws {
+        let url = dir.appendingPathComponent("silent")
+        try "#!/bin/sh\nwhile read -r line; do :; done\n".write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        let engine = WarmEngine(executableURL: url)
+        defer { engine.stop() }
+        do {
+            _ = try await engine.request("go", params: .null, timeout: 1)
+            XCTFail("expected a timeout")
+        } catch let e as WarmEngine.Failure {
+            XCTAssertTrue(e.message.contains("did not answer"), e.message)
+        }
     }
 
     func testMissingEngine() async {
