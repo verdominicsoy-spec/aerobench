@@ -12,6 +12,11 @@ struct AeroBenchApp: App {
         }
         .commands { AeroBenchCommands(app: app) }
 
+        Window("Solver Accuracy", id: "accuracy") {
+            AccuracyHelpView()
+        }
+        .defaultSize(width: 640, height: 720)
+
         Settings {
             SettingsView()
                 .environment(app)
@@ -21,6 +26,7 @@ struct AeroBenchApp: App {
 
 struct AeroBenchCommands: Commands {
     let app: AppState
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
@@ -43,6 +49,9 @@ struct AeroBenchCommands: Commands {
             Button("Save Project") { app.saveProject() }
                 .keyboardShortcut("s")
                 .disabled(app.project == nil)
+        }
+        CommandGroup(after: .help) {
+            Button("How Accurate Is Each Solver?") { openWindow(id: "accuracy") }
         }
     }
 }

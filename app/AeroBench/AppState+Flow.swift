@@ -1,5 +1,6 @@
 import AeroBenchKit
 import AppKit
+import SwiftUI
 import UniformTypeIdentifiers
 
 /// Flow Field Viewer actions: opening sources, running engine jobs, export.
@@ -259,6 +260,32 @@ extension AppState {
                 self?.saveCopy(of: item.workdir.appendingPathComponent(glb ? "iso.glb" : "iso.obj"),
                                suggested: glb ? "cp0_isosurfaces.glb" : "cp0_isosurfaces_mm.obj")
             }
+        }
+    }
+
+    /// The slice on show (as captured, side profile or from above) as a PNG,
+    /// with its position, extents, a scale bar and the colour bar.
+    func exportSliceImage() {
+        guard let volume = flow.volume, let slice = flow.sliceImage else { return }
+        let cut = flow.sliceCut
+        let a = volume.axes(cut)
+        let position = volume.slicePosition(cut, flow.sliceIndex)
+        let renderer = ImageRenderer(content: SliceExportView(volume: volume, slice: slice, cut: cut, position: position, axes: a))
+        renderer.scale = 2
+        guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+              let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {
+            show("Could not export the slice", FlowError.source("The slice could not be drawn."))
+            return
+        }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        let name = cut == .captured ? "plane" : (cut == .side ? "side" : "top")
+        panel.nameFieldStringValue = "cp0_\(name)_\(volume.axisLetter(a.normal))\(Int((position * 1000).rounded()))mm.png"
+        guard panel.runModal() == .OK, let dest = panel.url else { return }
+        do {
+            try png.write(to: dest, options: .atomic)
+        } catch {
+            show("Could not export the slice", error)
         }
     }
 

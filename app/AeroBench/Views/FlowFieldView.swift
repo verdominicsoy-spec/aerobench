@@ -799,6 +799,9 @@ struct FlowExplorePanel: View {
 
                 Section("Export") {
                     HStack {
+                        Button("Slice as PNG…") { app.exportSliceImage() }
+                            .disabled(flow.sliceImage == nil)
+                            .help("The slice on show, with its position, extents, a scale bar and the colour bar")
                         Button("Isosurfaces .glb") { app.exportFlow(.isoGLB) }
                         Button(".obj (mm)") { app.exportFlow(.isoOBJ) }
                     }
@@ -982,5 +985,73 @@ struct VideoTiming: View {
             fps = typed?.typedFps
             duration = typed?.typedDuration
         }
+    }
+}
+
+/// A slice drawn for export: title, the slice to scale with its extents, a
+/// scale bar and the colour bar.
+struct SliceExportView: View {
+    let volume: FlowVolume
+    let slice: CGImage
+    let cut: FlowVolume.Cut
+    let position: Double
+    let axes: (normal: Int, across: Int, up: Int)
+
+    var body: some View {
+        let across = volume.range(axes.across), upward = volume.range(axes.up)
+        let w = across.upperBound - across.lowerBound, h = max(upward.upperBound - upward.lowerBound, 1e-9)
+        // Captured planes keep the video's orientation; lengthways cuts run positive.
+        let flipAcross = cut == .captured && volume.right.sign < 0
+        let flipUp = cut == .captured && volume.up.sign < 0
+        let width = 1100.0, height = width * h / max(w, 1e-9)
+        let bar = Self.niceLength(w / 5)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Cp0, \(cut.rawValue.lowercased()), \(volume.axisLetter(axes.normal)) = \(Int((position * 1000).rounded())) mm")
+                .font(.system(size: 18, weight: .semibold))
+            Image(decorative: slice, scale: 1)
+                .resizable()
+                .interpolation(.none)
+                .frame(width: width, height: height)
+                .background(Color.gray.opacity(0.25))
+            HStack {
+                Text("\(volume.axisLetter(axes.across)) \(Int(((flipAcross ? across.upperBound : across.lowerBound) * 1000).rounded())) mm")
+                Spacer()
+                Text("\(volume.axisLetter(axes.across)) \(Int(((flipAcross ? across.lowerBound : across.upperBound) * 1000).rounded())) mm")
+            }
+            .font(.system(size: 12).monospacedDigit())
+            .frame(width: width)
+            Text("up: \(volume.axisLetter(axes.up)) from \(Int(((flipUp ? upward.upperBound : upward.lowerBound) * 1000).rounded())) to \(Int(((flipUp ? upward.lowerBound : upward.upperBound) * 1000).rounded())) mm")
+                .font(.system(size: 12).monospacedDigit())
+            HStack(alignment: .center, spacing: 24) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Rectangle().fill(Color.black).frame(width: width * bar / w, height: 4)
+                    Text(bar >= 1 ? String(format: "%g m", bar) : String(format: "%g mm", bar * 1000)).font(.system(size: 12))
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    LinearGradient(colors: volume.colormap.map { Color(red: Double($0.x), green: Double($0.y), blue: Double($0.z)) },
+                                   startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 320, height: 12)
+                    HStack {
+                        Text(String(format: "%.2f", volume.vmin))
+                        Spacer()
+                        Text("Cp0")
+                        Spacer()
+                        Text(String(format: "%.2f", volume.vmax))
+                    }
+                    .font(.system(size: 12).monospacedDigit())
+                    .frame(width: 320)
+                }
+            }
+        }
+        .padding(24)
+        .background(Color.white)
+        .foregroundStyle(Color.black)
+    }
+
+    /// 1, 2 or 5 times a power of ten, at most `v`.
+    static func niceLength(_ v: Double) -> Double {
+        guard v > 0 else { return 0.1 }
+        let p = pow(10, floor(log10(v)))
+        return [5.0, 2.0, 1.0].map { $0 * p }.first { $0 <= v } ?? p
     }
 }

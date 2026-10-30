@@ -86,7 +86,8 @@ Hockenheim and FSI Varano trackdrive, from AMZ's MIT-licensed fssim, see
 data/tracks; or the built-in test track, skidpad,
 75 m acceleration run, or an imported centreline CSV), set car A and
 optionally car B, and Run (⌘R). Results show lap time, endurance time and
-energy, a speed trace, a track map coloured by speed, the B minus A time
+energy, a speed trace, a track map coloured by speed, a track map coloured
+by where B gains (green) or loses (red) time on A, the B minus A time
 delta, and dt/dClA, dt/dCdA with the ClA-for-CdA exchange rate.
 
 The car values shipped are **placeholder estimates**, marked "est." until you
@@ -225,8 +226,9 @@ also saved with the project in `flow/`.
 colours), isosurfaces (several at once, colours from the colour map, with
 opacity), a value window that shows voxels between two values, and a slice
 scrubber with the original frame beside the reconstructed plane, in mm.
-Export isosurfaces as .glb or .obj (mm) and the volume as .npz or .vti
-(ParaView).
+Export isosurfaces as .glb or .obj (mm), the volume as .npz or .vti
+(ParaView), and the slice on screen as a PNG with its scale bar and Cp0
+colour bar for slides.
 
 *Demo Sweep* generates a synthetic perspective sweep (rear, front or side
 view) with a known answer and its calibration, to try the tool without real
@@ -264,6 +266,9 @@ undo and redo.
 | Quick viscous (NeuralFoil) | choosing sections: a whole polar with drag and where the boundary layer turns turbulent, one element in isolation | seconds |
 | Quick estimate (panel method + NeuralFoil) | every element together, Cl and Cd against the wing angle: lift within about 2% of RANS on a main-and-flap wing until the flap nears separation, drag about 10% high; not for slats | seconds |
 | RANS CFD (SU2) | the real thing: slot flow, separation, gap effects; Spalart–Allmaras, SST, or SST with Langtry–Menter transition | minutes |
+
+*Help → How Accurate Is Each Solver?* (or the ? in the Wing Lab toolbar)
+puts the same comparison in the app with the validation numbers.
 
 The RANS mesh is zoned by the flow: structured quad wall layers on every
 element (y+ about 1), finer flow-aligned wall cells where the quick viscous

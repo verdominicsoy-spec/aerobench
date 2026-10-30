@@ -268,6 +268,11 @@ struct LapSimResultsView: View {
                         }
                         TrackMap(output: output, points: mapConfig == "B" && output.result.b != nil ? output.mapB : output.mapA)
                     }
+                    if !output.gain.isEmpty {
+                        chartBox("Where B gains and loses on A") {
+                            GainMap(output: output)
+                        }
+                    }
                     if !output.delta.isEmpty {
                         chartBox("Time delta, B minus A") {
                             Chart {
@@ -457,5 +462,44 @@ struct NamedConfig: Identifiable {
         var out = [NamedConfig(id: "A", config: result.a)]
         if let b = result.b { out.append(NamedConfig(id: "B", config: b)) }
         return out
+    }
+}
+
+/// The track coloured by how fast B gains (green) or loses (red) time on A.
+struct GainMap: View {
+    let output: LapSimOutput
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            Chart(output.gain) { p in
+                PointMark(x: .value("x", p.x), y: .value("y", p.y))
+                    .symbolSize(12)
+                    .foregroundStyle(color(p.rate))
+            }
+            .chartXScale(domain: output.xDomain)
+            .chartYScale(domain: output.yDomain)
+            .chartXAxisLabel("x (m)")
+            .chartYAxisLabel("y (m)")
+            .aspectRatio(1, contentMode: .fit)
+            .frame(maxHeight: 420)
+            HStack(spacing: 6) {
+                Text(String(format: "B gains %.3f s/100 m", output.gainLimit))
+                LinearGradient(colors: [color(-output.gainLimit), color(0), color(output.gainLimit)], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 160, height: 8)
+                    .clipShape(Capsule())
+                Text(String(format: "B loses %.3f s/100 m", output.gainLimit))
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    /// Green where B gains, grey where they match, red where B loses.
+    private func color(_ rate: Double) -> Color {
+        let f = min(max(rate / output.gainLimit, -1), 1)
+        let grey = 0.6
+        return f < 0
+            ? Color(red: grey * (1 + f), green: grey + (0.75 - grey) * -f, blue: grey * (1 + f))
+            : Color(red: grey + (0.85 - grey) * f, green: grey * (1 - f), blue: grey * (1 - f))
     }
 }

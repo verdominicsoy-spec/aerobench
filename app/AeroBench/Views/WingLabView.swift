@@ -6,6 +6,7 @@ import simd
 
 struct WingLabView: View {
     @Environment(AppState.self) private var app
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         let lab = app.wingLab
@@ -32,6 +33,8 @@ struct WingLabView: View {
                     .help(lab.showLibrary ? "Hide the airfoil library" : "Show the airfoil library")
             }
             ToolbarItemGroup {
+                Button { openWindow(id: "accuracy") } label: { Label("Accuracy", systemImage: "questionmark.circle") }
+                    .help("How far to trust each solver")
                 Button { lab.showInspector.toggle() } label: { Label("Inspector", systemImage: "sidebar.right") }
                     .help(lab.showInspector ? "Hide the inspector" : "Show the inspector")
                 Button { lab.undo() } label: { Label("Undo", systemImage: "arrow.uturn.backward") }

@@ -29,6 +29,16 @@ struct LapSimOutput {
     let mapA: [MapPoint]
     let mapB: [MapPoint]
     let delta: [DeltaPoint]
+    /// Where on the track B gains or loses on A: seconds per 100 m, negative where B gains.
+    let gain: [GainPoint]
+    let gainLimit: Double
+
+    struct GainPoint: Identifiable {
+        let id: Int
+        let x: Double
+        let y: Double
+        let rate: Double  // s per 100 m
+    }
     let xDomain: ClosedRange<Double>
     let yDomain: ClosedRange<Double>
     let kmhRange: ClosedRange<Double>
@@ -58,6 +68,27 @@ struct LapSimOutput {
         mapA = map(result.a)
         mapB = map(result.b)
         delta = result.deltaT.map { dt in idx.map { DeltaPoint(id: $0, s: track.s[$0], dt: dt[$0]) } } ?? []
+        // Slope of the time delta along the lap, smoothed over about 5 m so one
+        // step's noise does not paint the map.
+        if let dt = result.deltaT, dt.count == track.s.count, dt.count > 2 {
+            let n = dt.count
+            let ds = max((track.s.last ?? 1) / Double(n - 1), 1e-6)
+            let reach = max(Int((2.5 / ds).rounded()), 1)
+            var points: [GainPoint] = []
+            for i in idx {
+                let a = max(i - reach, 0), b = min(i + reach, n - 1)
+                let span = track.s[b] - track.s[a]
+                guard span > 0 else { continue }
+                points.append(GainPoint(id: i, x: track.x[i], y: track.y[i], rate: (dt[b] - dt[a]) / span * 100))
+            }
+            gain = points
+            // Symmetric colour range from the 95th percentile, so one spike does not wash out the rest.
+            let mags = points.map { abs($0.rate) }.sorted()
+            gainLimit = max(mags.isEmpty ? 0.01 : mags[min(Int(Double(mags.count) * 0.95), mags.count - 1)], 1e-4)
+        } else {
+            gain = []
+            gainLimit = 1
+        }
 
         // Square domains so the map keeps its true shape.
         let (x0, x1) = (track.x.min() ?? 0, track.x.max() ?? 1)
