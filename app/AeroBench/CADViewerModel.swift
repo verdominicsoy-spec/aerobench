@@ -1,5 +1,6 @@
 import AeroBench3D
 import AeroBenchKit
+import CoreGraphics
 import CryptoKit
 import Foundation
 import Observation

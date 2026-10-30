@@ -613,7 +613,6 @@ struct CFDResults: View {
     struct Point: Identifiable {
         let id: Int
         let element: String
-        let design: String
         let x: Double
         let minusCp: Double
     }
@@ -745,6 +744,7 @@ struct CpPlot: View {
     struct Point: Identifiable {
         let id: Int
         let element: String
+        let design: String
         let x: Double
         let minusCp: Double
     }
@@ -757,16 +757,22 @@ struct CpPlot: View {
             if points.isEmpty {
                 Rectangle().fill(.quaternary)
             } else {
-                Chart(points) { p in
-                    LineMark(x: .value("x (mm)", p.x), y: .value("−Cp", p.minusCp), series: .value("Series", "\(p.design) \(p.element)"))
-                        .foregroundStyle(by: .value("Element", p.element))
-                        .lineStyle(by: .value("Design", p.design))
-                }
-                .chartLineStyleScale(["B": StrokeStyle(lineWidth: 1.2), "A": StrokeStyle(lineWidth: 1, dash: [4, 3])])
-                .chartXAxisLabel("x (mm)")
+                Chart(points) { p in mark(p) }
+                    .chartLineStyleScale(domain: ["B", "A"], range: Self.lineStyles)
+                    .chartXAxisLabel("x (mm)")
             }
         }
         .padding(8)
+    }
+
+    /// The wing being edited solid, the pinned design A dashed.
+    private static let lineStyles = [StrokeStyle(lineWidth: 1.2), StrokeStyle(lineWidth: 1, dash: [4, 3])]
+
+    private func mark(_ p: Point) -> some ChartContent {
+        let series: String = p.design + " " + p.element
+        return LineMark(x: .value("x (mm)", p.x), y: .value("−Cp", p.minusCp), series: .value("Series", series))
+            .foregroundStyle(by: .value("Element", p.element))
+            .lineStyle(by: .value("Design", p.design))
     }
 
     private func makePoints(_ lab: WingLabModel) -> [Point] {
