@@ -726,3 +726,12 @@ solution (the usual remedy is to start from the 16° solution), and the slat
 and main-element wakes may need longer or finer refinement at high angles.
 Maximum lift of a high-lift section is beyond this set-up for now; for an FS
 wing, which works below its stall, the attached range is what matters.
+
+**Review of Phase 4 (Dominic).** The flow-zoned SU2 mesh stands in for the
+trimmed/polyhedral split: accuracy is what matters, not the cell shape.
+Single-element drag reading 5–15% high is acceptable for now. Starting
+high-angle runs from a lower-angle solution is not built: it would help a
+single wing swept towards stall, not the optimiser (each trial has its own
+mesh, so there is no neighbouring solution to start from), and an FS wing
+works below stall. If polars to maximum lift are wanted, it is a small
+addition (restart SU2 from the previous angle's solution on the same mesh).
