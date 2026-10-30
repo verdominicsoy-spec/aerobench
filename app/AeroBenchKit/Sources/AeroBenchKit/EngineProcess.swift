@@ -35,8 +35,22 @@ public final class EngineProcess: @unchecked Sendable {
         process.currentDirectoryURL = workdir
         var env = ProcessInfo.processInfo.environment
         env["PYTHONUNBUFFERED"] = "1"
+        env["PATH"] = Self.toolPath(env["PATH"])
         env.merge(environment) { _, new in new }
         process.environment = env
+    }
+
+    /// An app opened from Finder gets a bare PATH (/usr/bin:/bin:...), so the
+    /// engine could not find Homebrew's tools: mpirun for running SU2 on
+    /// several cores, and brew itself when installing SU2. Homebrew's folders
+    /// go on the end, so anything already there wins.
+    public static func toolPath(_ path: String?) -> String {
+        var parts = (path ?? "").split(separator: ":").map(String.init).filter { !$0.isEmpty }
+        if parts.isEmpty { parts = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"] }
+        for extra in ["/opt/homebrew/bin", "/usr/local/bin"] where !parts.contains(extra) {
+            parts.append(extra)
+        }
+        return parts.joined(separator: ":")
     }
 
     public var processIdentifier: Int32 { process.processIdentifier }

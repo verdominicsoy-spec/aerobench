@@ -162,6 +162,8 @@ def wing_sweep(ctx: JobContext) -> dict:
     from ..wing import rans
 
     p = {"mesh": "quick", **ctx.params}
+    if p.get("order") == "rising":
+        ctx.emit.log(f"polar through stall on the {p['mesh']} mesh: each angle from the one below, no time limit")
     return rans.sweep(p, ctx.workdir, ctx.mesh_dir / "wing.su2", p.get("su2") or ctx.options.su2_path,
                       ctx.options.cores, ctx.thread_env(), ctx.emit.progress, ctx.emit.log)
 
@@ -254,7 +256,7 @@ def su2_install(ctx: JobContext) -> dict:
     proc = subprocess.Popen(["bash", str(script)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                             errors="replace", env=ctx.thread_env())
     tail: list[str] = []
-    steps = {"Getting SU2": 5, "Getting MEL and Eigen": 8, "Getting the build tools": 10, "Configuring": 15, "Building": 25, "Done": 100}
+    steps = {"Getting SU2": 5, "Getting Open MPI": 6, "Getting MEL and Eigen": 8, "Getting the build tools": 10, "Configuring": 15, "Building": 25, "Done": 100}
     for line in proc.stdout:  # type: ignore[union-attr]
         line = line.rstrip()
         tail = (tail + [line])[-30:]

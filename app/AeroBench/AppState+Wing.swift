@@ -247,7 +247,7 @@ extension AppState {
             .object(["coords": points(e.placed()), "unit": points(e.airfoil.coords), "angle": .double(e.angle),
                      "inverted": .bool(e.inverted), "chord": .double(e.chord)])
         })
-        params["mesh"] = .string("quick")
+        params["mesh"] = .string(lab.sweepRising ? lab.meshLevel : "quick")
         lab.ransResult = nil
         lab.ransField = nil
         lab.resultsTab = .cfd
@@ -262,7 +262,8 @@ extension AppState {
             return
         }
         params["alphas"] = .array(lab.sweepAngles.map { .double($0) })
-        params["time_limit"] = .double(300)
+        params["time_limit"] = .double(lab.sweepRising ? 0 : 300)
+        if lab.sweepRising { params["order"] = .string("rising") }
         lab.sweep = nil
         lab.sweepRow = nil
         lab.sweepJob = jobs.submit(command: "wing-sweep", params: params, in: jobsRoot) { [weak self] item in

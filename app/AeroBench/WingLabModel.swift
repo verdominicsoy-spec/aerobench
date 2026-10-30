@@ -113,8 +113,10 @@ final class WingLabModel {
     var estimateJob: JobItem?
     var estimateAngles: [Double] { WingSweep.angles(from: estimateFrom, to: estimateTo, step: estimateStep, limit: 61) }
 
-    // RANS sweep of the wing angle on the quick mesh, within a time limit
+    // RANS sweep of the wing angle: on the quick mesh within 5 minutes, or
+    // through stall (each angle from the one below, the chosen mesh, no limit)
     var sweepOn = false
+    var sweepRising = false
     var sweepFrom = -2.0  // three angles fit in 5 minutes on 4 cores for a two-element wing
     var sweepTo = 2.0
     var sweepStep = 2.0

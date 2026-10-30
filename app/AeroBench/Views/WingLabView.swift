@@ -1021,12 +1021,19 @@ struct WingInspector: View {
     }
 
     @ViewBuilder private func ransSweepControls(_ lab: WingLabModel) -> some View {
-        Toggle("Sweep the wing angle (quick mesh, within 5 min)", isOn: Binding(get: { lab.sweepOn }, set: { lab.sweepOn = $0 }))
+        Toggle("Sweep the wing angle", isOn: Binding(get: { lab.sweepOn }, set: { lab.sweepOn = $0 }))
         if lab.sweepOn {
+            Picker("Sweep", selection: Binding(get: { lab.sweepRising }, set: { lab.sweepRising = $0 })) {
+                Text("Quick, within 5 min").tag(false)
+                Text("Through stall").tag(true)
+            }
+            .pickerStyle(.segmented)
             NumberField(label: "From", unit: "°", value: Binding(get: { lab.sweepFrom }, set: { lab.sweepFrom = $0 }))
             NumberField(label: "To", unit: "°", value: Binding(get: { lab.sweepTo }, set: { lab.sweepTo = $0 }))
             NumberField(label: "Step", unit: "°", value: Binding(get: { lab.sweepStep }, set: { lab.sweepStep = max($0, 0.5) }))
-            Text("\(lab.sweepAngles.map { String(format: "%g°", $0) }.joined(separator: ", ")). One mesh; the middle angle from rest, the rest each from its neighbour. Never past 5 minutes: angles there is no time for are skipped and listed. About three angles fit on 4 cores.")
+            Text("\(lab.sweepAngles.map { String(format: "%g°", $0) }.joined(separator: ", ")). " + (lab.sweepRising
+                 ? "On the \(lab.meshLevel) mesh: the lowest angle from rest, each next from the one below, so angles near maximum lift start from an attached flow. No time limit: several minutes an angle."
+                 : "Quick mesh; the middle angle from rest, the rest each from its neighbour. Never past 5 minutes: angles there is no time for are skipped and listed. About three angles fit on 4 cores."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Button("Run the Sweep") { app.runWingQuickEstimate() }
                 .disabled(app.settings.su2Executable == nil || (lab.sweepJob.map { !$0.status.isFinished } ?? false)
@@ -1441,7 +1448,7 @@ struct SweepStrip: View {
         let rows = Array(sweep.rows.enumerated())
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Sweep, quick mesh").font(.caption).bold()
+                Text(sweep.timeLimit == 0 ? "Polar through stall" : "Sweep, quick mesh").font(.caption).bold()
                 Picker("Angle", selection: Binding(get: { lab.sweepRow ?? 0 }, set: { lab.showSweepRow($0) })) {
                     ForEach(rows, id: \.offset) { i, r in Text(String(format: "%g°", r.alpha ?? 0)).tag(i) }
                 }

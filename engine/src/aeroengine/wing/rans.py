@@ -172,15 +172,20 @@ def sweep(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     alphas = sorted({float(a) for a in p.get("alphas", [])})
     if not alphas:
         raise EngineError("params.alphas must list the wing angles")
-    limit = float(p.get("time_limit", 300))
+    limit = float(p.get("time_limit") or float("inf"))  # 0 or none: no limit
     max_iterations = int(p.get("iterations", 4000))
-    mid = min(range(len(alphas)), key=lambda k: abs(alphas[k] - 0.5 * (alphas[0] + alphas[-1])))
-    order = [(alphas[mid], None)]
-    for step in range(1, len(alphas)):
-        if mid + step < len(alphas):
-            order.append((alphas[mid + step], alphas[mid + step - 1]))
-        if mid - step >= 0:
-            order.append((alphas[mid - step], alphas[mid - step + 1]))
+    if p.get("order") == "rising":
+        # A polar through stall: the lowest angle from rest, each next from the
+        # one below, so the angles near maximum lift start from an attached flow.
+        order = [(alphas[0], None)] + [(alphas[k], alphas[k - 1]) for k in range(1, len(alphas))]
+    else:
+        mid = min(range(len(alphas)), key=lambda k: abs(alphas[k] - 0.5 * (alphas[0] + alphas[-1])))
+        order = [(alphas[mid], None)]
+        for step in range(1, len(alphas)):
+            if mid + step < len(alphas):
+                order.append((alphas[mid + step], alphas[mid + step - 1]))
+            if mid - step >= 0:
+                order.append((alphas[mid - step], alphas[mid - step + 1]))
     start = time.time()
     done: dict[float, dict] = {}
     solutions: dict[float, Path] = {}
@@ -231,4 +236,5 @@ def sweep(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
         log(f"{a:g}°: Cl {r['cl']:.4f}, Cd {r['cd']:.5f}{'' if r['converged'] else ' (not converged)'}, {seconds:.0f} s"
             + (f", from {near:g}°" if restart is not None else ", from rest"))
     rows = [done[a] for a in alphas if a in done]
-    return {"rows": rows, "skipped": skipped, "seconds": round(time.time() - start, 1), "time_limit": limit}
+    return {"rows": rows, "skipped": skipped, "seconds": round(time.time() - start, 1),
+            "time_limit": limit if limit != float("inf") else 0.0}

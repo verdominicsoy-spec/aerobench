@@ -33,6 +33,12 @@ if [ ! -d "$SRC/.git" ]; then
 fi
 cd "$SRC"
 
+# Open MPI lets SU2 run on several cores. With Homebrew it is one command,
+# so get it unless it is already there (or AEROBENCH_NO_MPI is set).
+if ! command -v mpicc >/dev/null && command -v brew >/dev/null && [ -z "${AEROBENCH_NO_MPI:-}" ]; then
+  say "Getting Open MPI"
+  brew install open-mpi || echo "Open MPI did not install: SU2 will run on one core"
+fi
 MPI=disabled
 if command -v mpicc >/dev/null && command -v mpicxx >/dev/null; then MPI=enabled; fi
 

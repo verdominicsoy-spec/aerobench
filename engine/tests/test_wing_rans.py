@@ -308,3 +308,21 @@ def test_startup_crashes_escalate_to_a_named_component_then_one_core(monkeypatch
     case = Case(speed=20, rho=1.2, mu=1.8e-5, alpha_deg=5, ref_chord=0.4, ref_point=(0.1, 0), walls=[])
     assert m._start(case, tmp_path / "m.su2", tmp_path, tmp_path / "SU2_CFD", 4, None, None)["converged"]
     assert tried == [(4, None), (4, "rdma"), (1, "rdma")]
+
+
+def test_a_rising_sweep_climbs_without_a_time_limit(monkeypatch, tmp_path):
+    from aeroengine.wing import rans
+
+    calls = []
+
+    def fake_solve(p, workdir, mesh_file, su2_hint, cores, env, progress, log, field=True, mesh_ready=None, restart=None):
+        calls.append((p["alpha"], restart.parent.name if restart else None))
+        (workdir / "restart.dat").write_text("x")
+        return {"alpha": p["alpha"], "cl": 1.0, "cd": 0.01, "converged": True, "iterations": 100,
+                "mesh": {"cells": 1}, "transition": [[0.0, 0.0]]}
+
+    monkeypatch.setattr(rans, "solve", fake_solve)
+    out = rans.sweep({"alphas": [8, 0, 4, 12, 16], "order": "rising", "time_limit": 0}, tmp_path, tmp_path / "m.su2",
+                     None, 1, None, lambda *a: None, lambda *a, **k: None)
+    assert calls == [(0.0, None), (4.0, "a0"), (8.0, "a4"), (12.0, "a8"), (16.0, "a12")]
+    assert out["skipped"] == [] and out["time_limit"] == 0.0
