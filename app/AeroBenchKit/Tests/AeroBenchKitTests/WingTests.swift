@@ -311,3 +311,28 @@ final class WingStudyCheckTests: XCTestCase {
         XCTAssertNil(s.checks?[2].value)
     }
 }
+
+final class LibraryPolarsTests: XCTestCase {
+    func testDecodesAndSortsHighestFirst() throws {
+        let json = """
+        {"re": 300000.0, "n_crit": 9.0, "alphas": [-4, 24], "rows": {
+          "naca/0012": {"cl_max": 1.19, "alpha_cl_max": 13, "ld_max": 52.3, "alpha_ld_max": 6, "cl_at_ld_max": 0.71, "cd_min": 0.0078, "trusted": true},
+          "naca/4412": {"cl_max": 1.44, "alpha_cl_max": 17, "ld_max": 91.2, "alpha_ld_max": 7, "cl_at_ld_max": 1.2, "cd_min": 0.0085, "trusted": true},
+          "naca/6412": {"cl_max": 1.60, "alpha_cl_max": 10, "ld_max": 96.8, "alpha_ld_max": 7, "cl_at_ld_max": 1.42, "cd_min": 0.0099, "trusted": false}}}
+        """
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("polars-\(UUID().uuidString).json")
+        try json.write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let polars = try XCTUnwrap(AirfoilLibrary.Polars.load(url))
+        XCTAssertEqual(polars.re, 3e5)
+        XCTAssertEqual(polars.rows["naca/4412"]?.alphaClMax, 17)
+        XCTAssertEqual(polars.rows["naca/6412"]?.trusted, false)
+
+        let library = ["0012", "2412", "4412", "6412"].compactMap { Airfoil.naca4($0) }
+        XCTAssertEqual(library.count, 4)
+        XCTAssertEqual(AirfoilLibrary.sorted(library, by: .clMax, polars: polars).map(\.key),
+                       ["naca/6412", "naca/4412", "naca/0012", "naca/2412"])  // no polar for 2412: last
+        XCTAssertEqual(AirfoilLibrary.sorted(library, by: .name, polars: polars).map(\.key), library.map(\.key))
+        XCTAssertEqual(AirfoilLibrary.sorted(library, by: .ldMax, polars: nil).map(\.key), library.map(\.key))
+    }
+}

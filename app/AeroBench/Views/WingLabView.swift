@@ -78,7 +78,7 @@ struct AirfoilLibraryPanel: View {
                 Divider()
                 let shown = lab.shown
                 List(shown) { airfoil in
-                    AirfoilRow(airfoil: airfoil, favourite: lab.favourites.contains(airfoil.key)) {
+                    AirfoilRow(airfoil: airfoil, favourite: lab.favourites.contains(airfoil.key), polar: lab.libraryPolars?.rows[airfoil.key]) {
                         if lab.favourites.contains(airfoil.key) { lab.favourites.remove(airfoil.key) } else { lab.favourites.insert(airfoil.key) }
                     } add: {
                         lab.add(airfoil)
@@ -157,8 +157,34 @@ struct AirfoilLibraryPanel: View {
             RangeRow(label: "Camber", range: lab.filter.camber, bounds: -0.05...0.15)
             Toggle("Favourites only", isOn: lab.filter.favouritesOnly)
                 .font(.caption)
+            polarControls(lab.wrappedValue)
         }
         .padding(8)
+    }
+
+    @ViewBuilder private func polarControls(_ lab: WingLabModel) -> some View {
+        HStack {
+            Picker("Sort", selection: Binding(get: { lab.librarySort }, set: { lab.librarySort = $0 })) {
+                ForEach(AirfoilLibrary.Sort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .disabled(lab.libraryPolars == nil)
+            .frame(maxWidth: 150)
+            Spacer()
+            let re = lab.libraryRe
+            Button(lab.libraryPolars == nil ? "Compute Polars" : "Recompute") { app.computeLibraryPolars() }
+                .disabled(lab.polarsJob.map { !$0.status.isFinished } ?? false)
+                .help(String(format: "NeuralFoil for every section at Re %.2g (the main element's), a few seconds", re))
+        }
+        .font(.caption)
+        .controlSize(.small)
+        if let p = lab.libraryPolars {
+            let stale = abs(p.re - lab.libraryRe) / p.re > 0.2
+            Text(String(format: "Polars at Re %.2g%@", p.re, stale ? ", the main element is now at a different Re" : ""))
+                .font(.caption2).foregroundStyle(stale ? Color.orange : Color.secondary)
+        }
+        if let job = lab.polarsJob, !job.status.isFinished || job.status == .failed {
+            JobInlineStatus(job: job)
+        }
     }
 }
 
@@ -184,6 +210,7 @@ struct RangeRow: View {
 struct AirfoilRow: View {
     let airfoil: Airfoil
     let favourite: Bool
+    var polar: AirfoilLibrary.Polars.Summary?
     let toggleFavourite: () -> Void
     let add: () -> Void
 
@@ -196,6 +223,11 @@ struct AirfoilRow: View {
                 Text(String(format: "t %.1f%%  c %.1f%%", airfoil.thickness * 100, airfoil.camber * 100)
                      + (airfoil.teThickness > 0.002 ? String(format: "  TE %.1f%%", airfoil.teThickness * 100) : ""))
                     .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                if let p = polar {
+                    Text(String(format: "Cl max %.2f at %.0f°  L/D %.0f", p.clMax, p.alphaClMax, p.ldMax) + (p.trusted ? "" : " ?"))
+                        .font(.caption2.monospacedDigit()).foregroundStyle(p.trusted ? Color.secondary : Color.orange)
+                        .help(p.trusted ? "NeuralFoil, this section alone" : "NeuralFoil is unsure here, or maximum lift is past 24°")
+                }
             }
             Spacer()
             Button(action: toggleFavourite) { Image(systemName: favourite ? "star.fill" : "star") }

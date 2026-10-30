@@ -909,3 +909,13 @@ at a time and the latest wing when it returns, so a drag is followed at
 about 30 updates a second. A request-reply process was preferred to a
 local HTTP server: nothing listens on a port, and it exits by itself when
 the app goes away and its stdin closes.
+
+**Compare, report, library polars.** Compare pins a design as A with the
+results it had and draws it dashed beside the wing being edited; there is no
+second editable wing, which keeps the model to one wing plus a snapshot.
+The report is one A4 PDF drawn by SwiftUI (ImageRenderer), not an HTML or
+LaTeX pipeline. Library polars were asked for as precomputed at Formula
+Student Reynolds numbers; NeuralFoil takes about 2 ms a section, so instead
+of fixed tables the whole library is computed on demand at the main
+element's Reynolds number, and a note turns orange when the wing has moved
+more than 20% away from it.

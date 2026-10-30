@@ -33,6 +33,21 @@ def airfoil_index(ctx: JobContext) -> dict:
     return build_index(_root(ctx), progress=lambda pct, msg: ctx.emit.progress(pct, msg))
 
 
+@command("airfoil-polars")
+def airfoil_polars(ctx: JobContext) -> dict:
+    """Every library section's maximum lift and best L/D at one Reynolds
+    number (NeuralFoil), saved beside the index as polars.json."""
+    from ..wing import library_polars
+    from ..wing.airfoils import data_dir
+
+    re = float(ctx.params.get("re", 3e5))
+    if not 1e4 <= re <= 1e7:
+        raise EngineError(f"Reynolds number {re:.3g} is outside 1e4 to 1e7")
+    ctx.emit.progress(1, f"polars at Re {re:.3g}")
+    return library_polars.build((_root(ctx) or data_dir()) / "airfoils", re, float(ctx.params.get("n_crit", 9.0)),
+                                progress=lambda pct, msg: ctx.emit.progress(pct, msg))
+
+
 @command("airfoil-import")
 def airfoil_import(ctx: JobContext) -> dict:
     """Adds .dat files (Selig or Lednicer) to My Airfoils."""

@@ -50,6 +50,54 @@ public enum AirfoilLibrary {
         return out
     }
 
+    /// polars.json beside the index: each section's maximum lift and best
+    /// L/D at one Reynolds number (the engine's airfoil-polars).
+    public struct Polars: Codable, Equatable, Sendable {
+        public struct Summary: Codable, Equatable, Sendable {
+            public var clMax: Double
+            public var alphaClMax: Double
+            public var ldMax: Double
+            public var alphaLdMax: Double
+            public var clAtLdMax: Double
+            public var cdMin: Double
+            public var trusted: Bool
+        }
+
+        public var re: Double
+        public var nCrit: Double
+        public var rows: [String: Summary]
+
+        public static func url(engineDirectory: URL) -> URL {
+            indexURL(engineDirectory: engineDirectory).deletingLastPathComponent().appendingPathComponent("polars.json")
+        }
+
+        public static func load(_ url: URL) -> Polars? {
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            let d = JSONDecoder()
+            d.keyDecodingStrategy = .convertFromSnakeCase
+            return try? d.decode(Polars.self, from: data)
+        }
+    }
+
+    public enum Sort: String, CaseIterable, Sendable {
+        case name = "Name"
+        case clMax = "Cl max"
+        case ldMax = "Best L/D"
+    }
+
+    /// Highest first for the polar sorts; sections without a polar go last.
+    public static func sorted(_ airfoils: [Airfoil], by sort: Sort, polars: Polars?) -> [Airfoil] {
+        guard sort != .name, let rows = polars?.rows else { return airfoils }
+        func value(_ a: Airfoil) -> Double {
+            guard let r = rows[a.key] else { return -.infinity }
+            return sort == .clMax ? r.clMax : r.ldMax
+        }
+        return airfoils.enumerated().sorted { l, r in
+            let a = value(l.element), b = value(r.element)
+            return a != b ? a > b : l.offset < r.offset
+        }.map(\.element)
+    }
+
     /// Filters for the library panel.
     public struct Filter: Equatable, Sendable {
         public var text = ""

@@ -14,6 +14,18 @@ extension AppState {
     }
 
     /// Builds the index from what is on disk: the NACA set at least.
+    /// Every section's maximum lift and best L/D at the main element's
+    /// Reynolds number: a few seconds for the whole library.
+    func computeLibraryPolars() {
+        let re = wingLab.libraryRe
+        wingLab.polarsJob = jobs.submit(command: "airfoil-polars", params: ["re": .double(re), "n_crit": .double(wingLab.nCrit)],
+                                        in: jobsRoot) { [weak self] item in
+            guard let self, item.status == .succeeded, let dir = self.settings.engineDirectory else { return }
+            self.wingLab.libraryPolars = AirfoilLibrary.Polars.load(AirfoilLibrary.Polars.url(engineDirectory: dir))
+            if self.wingLab.librarySort == .name { self.wingLab.librarySort = .clMax }
+        }
+    }
+
     func buildAirfoilIndex() {
         wingLab.libraryJob = jobs.submit(command: "airfoil-index", in: jobsRoot) { [weak self] item in
             guard let self, item.status == .succeeded else { return }

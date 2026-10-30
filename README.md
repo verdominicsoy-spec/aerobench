@@ -245,7 +245,12 @@ AeroBench since UIUC gives no licence to redistribute it). Search, filter by
 family, source, thickness and camber, star favourites, and *Import .dat…*
 your own (Selig or Lednicer) into My Airfoils. Every section is normalised to
 unit chord with the leading edge at the origin and its trailing edge
-thickness recorded.
+thickness recorded. *Compute Polars* runs NeuralFoil on every section at the
+main element's Reynolds number (a few seconds for the whole library), shows
+each one's maximum lift and best L/D in the list, and sorts by either; a
+question mark marks a section where NeuralFoil is unsure or maximum lift is
+past 24°. They are for each section alone, saved as
+data/airfoils/polars.json.
 
 **Canvas** (middle). Drag a section onto the canvas to add an element, or onto
 an element to swap its shape and keep its chord, angle and place. Drag an

@@ -378,9 +378,18 @@ final class WingLabModel {
         didSet { UserDefaults.standard.set(Array(hidden), forKey: "wingHidden") }
     }
     var showHidden = false
+    var libraryPolars: AirfoilLibrary.Polars?
+    var librarySort = AirfoilLibrary.Sort.name
+    var polarsJob: JobItem?
+    /// The Reynolds number to compute the library's polars at: the main element's.
+    var libraryRe: Double {
+        let chord = wing.elements.first?.chord ?? 0.3
+        return (wing.reynolds(chord: chord) / 1e4).rounded() * 1e4
+    }
 
     var shown: [Airfoil] {
-        library.filter { filter.matches($0, favourites: favourites) && (showHidden || !hidden.contains($0.key)) }
+        AirfoilLibrary.sorted(library.filter { filter.matches($0, favourites: favourites) && (showHidden || !hidden.contains($0.key)) },
+                              by: librarySort, polars: libraryPolars)
     }
 
     // MARK: Editing with undo
@@ -518,6 +527,7 @@ final class WingLabModel {
         do {
             library = try AirfoilLibrary.load(url)
             libraryError = nil
+            libraryPolars = AirfoilLibrary.Polars.load(AirfoilLibrary.Polars.url(engineDirectory: dir))
         } catch {
             library = []
             libraryError = error.localizedDescription
