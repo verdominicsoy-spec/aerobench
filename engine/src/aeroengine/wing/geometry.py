@@ -149,9 +149,10 @@ def inside(p: np.ndarray, poly: np.ndarray) -> bool:
 
 @dataclass
 class Variable:
-    """One design variable: an element's angle (degrees), gap or overlap (m)."""
+    """One design variable: an element's angle (degrees), gap or overlap (m),
+    or its shape: camber added (fraction of chord) and thickness (scale)."""
     element: int
-    kind: str  # "angle", "gap" or "overlap"
+    kind: str  # "angle", "gap", "overlap", "camber" or "thickness"
     low: float
     high: float
     name: str = field(init=False)
@@ -160,14 +161,45 @@ class Variable:
         self.name = f"{self.kind}_{self.element}"
 
 
+def reshape(unit: np.ndarray, camber: float = 0.0, thickness: float = 1.0) -> np.ndarray:
+    """A section (Selig order, unit chord) with camber added and its
+    thickness scaled. The camber goes on as a parabola, `camber` of the
+    chord at mid-chord and nothing at either end, so the chord line stays
+    put; the thickness about the camber line is multiplied by `thickness`.
+    Two numbers per element: enough to let the optimiser reshape a section
+    without a full shape parameterisation."""
+    if camber == 0.0 and thickness == 1.0:
+        return unit
+    i = int(np.argmin(unit[:, 0]))
+    upper, lower = unit[: i + 1][::-1], unit[i:]  # both leading edge to trailing edge
+
+    def at(surface: np.ndarray, x: np.ndarray) -> np.ndarray:
+        order = np.argsort(surface[:, 0], kind="stable")
+        return np.interp(x, surface[order, 0], surface[order, 1])
+
+    def moved(points: np.ndarray, other: np.ndarray) -> np.ndarray:
+        x, y = points[:, 0], points[:, 1]
+        mean = 0.5 * (y + at(other, x))
+        return np.column_stack([x, mean + camber * 4 * x * (1 - x) + thickness * (y - mean)])
+
+    new_upper, new_lower = moved(upper, lower), moved(lower, upper)
+    return np.vstack([new_upper[::-1], new_lower[1:]])
+
+
+SHAPE_KINDS = ("camber", "thickness")
+
+
 def apply(base: Wing, values: dict[str, float]) -> Wing:
-    """The base wing with design values applied. Angles turn each element
-    about its leading edge; then, element by element from the front, each
-    flap's gap and overlap go to the design value, or back to what the base
-    wing had, so turning an element does not drag the slot with it."""
+    """The base wing with design values applied. Shapes change first; angles
+    turn each element about its leading edge; then, element by element from
+    the front, each flap's gap and overlap go to the design value, or back
+    to what the base wing had, so turning an element does not drag the slot
+    with it."""
     w = base.copy()
     targets = [(base.gap(i), base.overlap(i)) if i else (0.0, 0.0) for i in range(len(base.elements))]
     for i, e in enumerate(w.elements):
+        if f"camber_{i}" in values or f"thickness_{i}" in values:
+            e.unit = reshape(e.unit, values.get(f"camber_{i}", 0.0), values.get(f"thickness_{i}", 1.0))
         e.angle = values.get(f"angle_{i}", e.angle)
     # Start each flap where it sat relative to the trailing edge in front,
     # turned with the main element, so the slot solve begins close.

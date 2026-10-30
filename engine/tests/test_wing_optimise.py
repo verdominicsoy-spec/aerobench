@@ -255,3 +255,44 @@ def test_the_best_designs_are_checked_with_another_solver(tmp_path):
     with pytest.raises(EngineError, match="another solver"):
         optimise.run(_starter(), optimise.Spec(spec.variables, trials=25, solver="rans"), evaluate, tmp_path / "s.db", "s",
                      tmp_path / "w")
+
+
+def test_reshaping_a_section():
+    from aeroengine.wing.geometry import reshape
+
+    s = naca4("0012")
+    assert reshape(s) is s
+    cambered = reshape(s, camber=0.02)
+    i = int(np.argmin(s[:, 0]))
+    up, lo = cambered[: i + 1][::-1], cambered[i:]
+    x = np.linspace(0.05, 0.95, 19)
+    mean = 0.5 * (np.interp(x, up[:, 0], up[:, 1]) + np.interp(x, lo[:, 0], lo[:, 1]))
+    assert mean == pytest.approx(0.02 * 4 * x * (1 - x), abs=2e-4)  # the camber added, the thickness kept
+    assert np.interp(0.3, up[:, 0], up[:, 1]) - np.interp(0.3, lo[:, 0], lo[:, 1]) == pytest.approx(0.12, abs=0.002)
+    thin = reshape(naca4("2412"), thickness=0.75)
+    t = lambda p, k: np.interp(0.3, p[: k + 1][::-1, 0], p[: k + 1][::-1, 1]) - np.interp(0.3, p[k:, 0], p[k:, 1])
+    k = int(np.argmin(thin[:, 0]))
+    assert t(thin, k) == pytest.approx(0.75 * t(naca4("2412"), k), rel=0.01)
+    assert thin.shape == s.shape and thin[k] == pytest.approx(s[k])  # same points, leading edge in place
+
+
+def test_shape_variables_with_the_quick_estimate(tmp_path):
+    """More camber on the flap means more downforce until it separates: the
+    estimate-driven search finds it, and the trial's wing carries the shape."""
+    from aeroengine.wing.estimate import estimate
+
+    def evaluate(wing, folder):
+        els = [{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "chord": e.chord, "angle": e.angle,
+                "inverted": e.inverted} for e in wing.elements]
+        r = estimate(els, [0.0], 15.0)["rows"][0]
+        return {"cl": r["cl"], "cd": r["cd"], "cm": 0.0, "converged": not r["separating"], "reason": "separating",
+                "elements": r["elements"]}
+
+    spec = optimise.Spec([Variable(1, "camber", 0.0, 0.03), Variable(1, "thickness", 0.8, 1.2)],
+                         trials=16, seed=5, solver="estimate")
+    out = optimise.run(_starter(), spec, evaluate, tmp_path / "s.db", "s", tmp_path / "work")
+    assert out["trials"][0]["params"] == {"camber_1": 0.0, "thickness_1": 1.0}
+    best = out["trials"][out["best"]]
+    assert best["params"]["camber_1"] > 0.01 and best["load"] > out["trials"][0]["load"]
+    with pytest.raises(EngineError, match="above zero"):
+        optimise.Spec([Variable(1, "thickness", 0.0, 1.2)])

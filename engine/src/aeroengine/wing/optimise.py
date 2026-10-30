@@ -65,8 +65,10 @@ class Spec:
         if not self.variables:
             raise EngineError("tick at least one design variable")
         for v in self.variables:
-            if v.kind not in ("angle", "gap", "overlap"):
+            if v.kind not in ("angle", "gap", "overlap", "camber", "thickness"):
                 raise EngineError(f"unknown design variable '{v.kind}'")
+            if v.kind == "thickness" and v.low <= 0:
+                raise EngineError(f"{v.name}: the thickness scale must stay above zero")
             if not v.high > v.low:
                 raise EngineError(f"{v.name}: the upper bound must be above the lower")
             if v.kind == "gap" and v.low < 0:
@@ -285,8 +287,10 @@ def _current(base: Wing, variables: list[Variable]) -> dict[str, float]:
             out[v.name] = base.elements[v.element].angle
         elif v.kind == "gap":
             out[v.name] = base.gap(v.element)
-        else:
+        elif v.kind == "overlap":
             out[v.name] = base.overlap(v.element)
+        else:  # the drawn shape: no camber added, thickness as it is
+            out[v.name] = 0.0 if v.kind == "camber" else 1.0
     return out
 
 

@@ -940,3 +940,30 @@ copies them to Application Support on first launch and runs `uv sync
 Updates keep the environment, the airfoil library and SU2. Signing is ad hoc
 by default; a Developer ID signature and notarisation need Dominic's Apple
 account, so the script takes an identity rather than assuming one.
+
+**The estimate and the gap.** Against the 27 distinct RANS trials of the
+overnight study, the estimate's lift error is not a function of gap: it is
+within about 1% everywhere except where RANS's flap separated (a steep flap
+with a wide gap, -7% and -11.5%), and the trial where the estimate was low
+(+3.8%) had the narrowest gap and the steepest attached flap. What the gap
+changes is where the flap separates. So the separation line moves with the
+gap: 1.5 degrees further out per 1% of the front element's chord the gap is
+below 4.75%, held at the ends of the fitted range (2.6 to 6.9%). It splits
+all 27 trials the same way RANS did, including the 8 that never settled,
+and any gain from 1.0 to 3.0 degrees per 1% would too. On the overnight
+problem the estimate optimiser now picks a 27.7 degree flap and a 12 mm gap
+on three seeds (before: 27.4 degrees and 15 mm). RANS at that design gives
+Cl 1.891, against about 1.87 for the old pick and 1.977 for RANS's own best
+(26.9 degrees, 9.1 mm): from 5.4% short to 4.4% short. The rest is the lift
+a well-set slot adds before anything separates, which the estimate still
+does not model. It is fitted on one main-and-flap wing, so it is a better
+default, not a validated slot model.
+
+**Shape variables.** Phase 5 in the spec asks for about 12 shape parameters
+per element. For a quick check two were judged enough: camber added as a
+parabola (zero at both ends, so the chord, leading edge and gap geometry
+stay put) and a thickness scale about the camber line, whose lower bound
+doubles as the spar-box limit. Both are applied before angles and gaps, so
+the slot is set on the reshaped section. Trials store only the two numbers;
+the app reshapes the section itself with the same formula
+(Airfoil.reshaped) to draw a trial or apply it.

@@ -23,20 +23,47 @@ overnight two-element study that line split RANS cleanly: every trial that
 converged had the flap at most 14.6 degrees in place, every one that never
 settled at least 16.5, with the flap alone stalling at 15.
 
-What it misses: the slot's effect on the boundary layers beyond that (a
-narrow slot can be worse than either element alone). RANS gets those; this
-is for trends and screening."""
+The gap moves that line. A narrower slot feeds the flap's boundary layer
+and keeps it attached to a steeper angle: on the overnight study the flap
+stayed attached at 14.6 degrees in place with the gap 3% of the main chord,
+and separated from about 13.2 degrees at 5.7 to 6.6%. So the separation line
+sits 1.5 degrees further out for each 1% the gap closes below 4.75% of the
+chord in front (and further in above it). Every one of the 19 distinct
+converged trials falls on the right side of it; the gain could be anywhere
+from 1.0 to 3.0 degrees per 1% and still split them, so the line is not
+balanced on a knife edge. It is fitted on one main-and-flap wing over gaps
+of 2.6 to 6.9% of the main chord and is held at its ends outside that.
+
+What it misses: the slot's effect on lift before separation (it ranks gaps
+by whether the flap stays attached, not by the extra lift a good slot
+gives), and a slot so narrow it chokes. RANS gets those; this is for trends
+and screening."""
 
 from __future__ import annotations
 
 import numpy as np
 
 from ..job import EngineError
+from .geometry import closest
 from .panel import Solver
 from .viscous import polar, reynolds
 
 
 STALL_MARGIN = 2.0  # degrees: the last element counts as separating this far short of its stall angle
+# The slot moves that line: degrees per 1% of the front element's chord the
+# gap is below SLOT_REF, within the gaps it was fitted on (overnight study).
+SLOT_GAIN = 1.5
+SLOT_REF = 4.75
+SLOT_FITTED = (2.6, 6.9)
+
+
+def separation_angle(stall: float, gap_ratio: float | None, stall_margin: float = STALL_MARGIN) -> float:
+    """The in-place angle past which the last element separates; gap_ratio is
+    its gap over the chord of the element in front (None for a single element)."""
+    if gap_ratio is None:
+        return stall - stall_margin
+    g = min(max(gap_ratio * 100, SLOT_FITTED[0]), SLOT_FITTED[1])
+    return stall - stall_margin + SLOT_GAIN * (SLOT_REF - g)
 
 
 def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float = 1.225, mu: float = 1.81e-5,
@@ -105,6 +132,14 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
             ratios.append(nf / iso if abs(iso) > 0.05 else 1.0)
         scale.append(ratios)
 
+    # The last element's gap: from the trailing edge in front (the midpoint of
+    # the first and last points, Selig order) to its surface.
+    gap_ratio = None
+    if len(placed) > 1:
+        te = (placed[-2][0] + placed[-2][-1]) / 2
+        gap_ratio = closest(te, placed[-1])[1] / chords[-2]
+    limit = separation_angle(stall[-1], gap_ratio, stall_margin)
+
     rows = []
     for k, a in enumerate(alphas):
         els = []
@@ -118,10 +153,11 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
                         "held_below_stall": scale[i][k] is not None and v["alpha"] < e_angle(elements[i], effective[k][i]) - 1e-9,
                         "transition_suction": v["transition_suction"], "transition_pressure": v["transition_pressure"],
                         "confidence": v["confidence"], "trusted": v["trusted"], "stall_angle": stall[i],
-                        # The last element has nothing behind it: past the angle of its
-                        # maximum lift alone, it separates on the real wing (every
-                        # overnight RANS trial with the flap there failed to settle).
-                        "past_stall": scale[i][k] is None and e_angle(elements[i], effective[k][i]) > stall[i] - stall_margin})
+                        # The last element has nothing behind it: past its separation
+                        # angle (its stall alone, moved by the slot) it separates on the
+                        # real wing, as every overnight RANS trial there did.
+                        "past_stall": scale[i][k] is None and e_angle(elements[i], effective[k][i]) > limit,
+                        **({"separation_angle": limit, "gap_ratio": gap_ratio} if scale[i][k] is None else {})})
         rows.append({"alpha": float(a), "cl": sum(x["cl"] for x in els), "cd": sum(x["cd"] for x in els),
                      "trusted": all(x["trusted"] for x in els), "separating": any(x["past_stall"] for x in els),
                      "elements": els})

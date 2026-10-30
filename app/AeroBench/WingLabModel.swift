@@ -179,16 +179,33 @@ final class WingLabModel {
 
     // Optimisation
     struct DesignVariable: Codable, Equatable, Identifiable {
-        enum Kind: String, Codable, CaseIterable { case angle, gap, overlap }
+        enum Kind: String, Codable, CaseIterable {
+            case angle, gap, overlap, camber, thickness
+            static let placement: [Kind] = [.angle, .gap, .overlap]
+            static let shape: [Kind] = [.camber, .thickness]
+        }
         var element: Int
         var kind: Kind
-        var low: Double  // degrees, or mm for gap and overlap
+        var low: Double  // degrees, mm for gap and overlap, % for camber added and thickness
         var high: Double
 
         var id: String { "\(kind.rawValue)_\(element)" }
-        var unit: String { kind == .angle ? "°" : "mm" }
-        /// In the engine's units: degrees, or metres.
-        var engineScale: Double { kind == .angle ? 1 : 0.001 }
+        var unit: String {
+            switch kind {
+            case .angle: "°"
+            case .gap, .overlap: "mm"
+            case .camber: "% chord"
+            case .thickness: "% as drawn"
+            }
+        }
+        /// In the engine's units: degrees, metres, or fractions.
+        var engineScale: Double {
+            switch kind {
+            case .angle: 1
+            case .gap, .overlap: 0.001
+            case .camber, .thickness: 0.01
+            }
+        }
     }
 
     enum Objective: String, Codable, CaseIterable, Identifiable {
@@ -333,6 +350,10 @@ final class WingLabModel {
         case .overlap:
             let o = (wing.overlap(of: element) ?? 0) * 1000
             v = DesignVariable(element: element, kind: .overlap, low: (o - 10).rounded(), high: (o + 10).rounded())
+        case .camber:
+            v = DesignVariable(element: element, kind: .camber, low: 0, high: 3)
+        case .thickness:
+            v = DesignVariable(element: element, kind: .thickness, low: 80, high: 120)
         }
         optimise.variables.append(v)
         optimise.variables.sort { ($0.element, $0.kind.rawValue) < ($1.element, $1.kind.rawValue) }
@@ -348,11 +369,14 @@ final class WingLabModel {
     var optimiseProblem: String? {
         let vars = optimise.variables
         if vars.isEmpty { return "Tick at least one design variable." }
-        if let v = vars.first(where: { $0.element >= wing.elements.count || ($0.kind != .angle && $0.element == 0) }) {
+        if let v = vars.first(where: { $0.element >= wing.elements.count || (($0.kind == .gap || $0.kind == .overlap) && $0.element == 0) }) {
             return "\(v.id) refers to an element that is not there any more."
         }
         if let v = vars.first(where: { !($0.high > $0.low) }) { return "\(v.id): the upper bound must be above the lower." }
         if let v = vars.first(where: { $0.kind == .gap && $0.low < 0 }) { return "\(v.id): a gap cannot be negative." }
+        if let v = vars.first(where: { $0.kind == .thickness && $0.low <= 0 }) {
+            return "\(v.id): the thickness must stay above 0% (its lower bound is the structural limit)."
+        }
         if optimise.objective == .maxClCdCap && !(optimise.cdCap > 0) { return "Set a Cd cap above zero." }
         if optimise.objective == .minCdClTarget && !(optimise.clTarget > 0) { return "Set a downforce target above zero." }
         if optimise.studyName.trimmingCharacters(in: .whitespaces).isEmpty { return "Name the study." }

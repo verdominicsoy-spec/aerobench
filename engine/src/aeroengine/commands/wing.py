@@ -210,7 +210,7 @@ def wing_optimise(ctx: JobContext) -> dict:
     except (KeyError, TypeError, ValueError) as exc:
         raise EngineError(f"bad wing or design variables: {exc}") from None
     for v in variables:
-        if not 0 <= v.element < len(base.elements) or (v.kind != "angle" and v.element == 0):
+        if not 0 <= v.element < len(base.elements) or (v.kind in ("gap", "overlap") and v.element == 0):
             raise EngineError(f"{v.name}: no such element (gap and overlap belong to flaps)")
     spec = optimise.Spec(variables, objective=str(p.get("objective", "max_cl")), cd_cap=p.get("cd_cap"),
                          cl_target=p.get("cl_target"), sampler=str(p.get("sampler", "tpe")),
@@ -244,8 +244,8 @@ def wing_optimise(ctx: JobContext) -> dict:
         reason = None
         if r["separating"]:
             # Treated like a RANS run that never settles: failed, and the sampler steers away.
-            reason = (f"the last element is {last['effective_angle']:.1f} degrees in place, past its stall angle "
-                      f"({last['stall_angle']:.0f}): it would separate")
+            reason = (f"the last element is {last['effective_angle']:.1f} degrees in place, past where it separates "
+                      f"({last['separation_angle']:.1f}, from its stall angle of {last['stall_angle']:.0f} and its gap)")
         return {"cl": r["cl"], "cd": r["cd"], "cm": sum(e["cm"] for e in r["elements"]), "converged": not r["separating"],
                 "reason": reason, "elements": [{"cl": e["cl"]} for e in r["elements"]]}
 

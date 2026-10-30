@@ -326,6 +326,13 @@ about 1½ minutes, converged to three figures (medium is the validated
 default), and *Sweep the wing angle* runs the quick mesh over several
 angles within 5 minutes.
 
+Each element's *shape* can be searched too: *Camber* adds camber (a
+parabola, most at mid-chord, none at the ends, in % of chord) and
+*Thickness* scales the thickness about the camber line (in % of the section
+as drawn; its lower bound is the structural limit). A trial's reshaped
+sections show on the canvas, and applying it puts them on the wing as new
+sections.
+
 **Removing things**: select an element and press Delete (or right-click it)
 to take it off the wing. Right-click a section in the library to delete it
 from My Airfoils (your imports) or to hide a built-in one.
@@ -334,9 +341,9 @@ from My Airfoils (your imports) or to hide a built-in one.
 give each a range, pick an objective (most downforce, best L/D, most
 downforce under a Cd cap, least drag for a downforce target) and TPE or
 CMA-ES, and start. Each trial is a quick estimate by default (a few hundred
-in about a minute; it finds element angles well but barely sees the gap,
-so check the best few with RANS or run the study with RANS for gaps and
-overlaps), or a RANS run with the model and mesh set under Solvers; *Settings* sets how many run at once (each on the per-job
+in about a minute; it finds element angles well and sees the gap only
+through when the flap separates, so check the best few with RANS or run the
+study with RANS for gaps and overlaps), or a RANS run with the model and mesh set under Solvers; *Settings* sets how many run at once (each on the per-job
 cores). Wings that break the minimum gap or the rules box are skipped
 without a run; failed or unconverged runs are recorded as failed and the
 study carries on. The *Study* results tab has a sortable table of trials,

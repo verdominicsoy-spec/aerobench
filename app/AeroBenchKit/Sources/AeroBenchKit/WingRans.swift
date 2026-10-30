@@ -124,6 +124,10 @@ public struct WingEstimate: Codable, Equatable, Sendable {
         /// The angle of its maximum lift alone, and whether (as the last element) it is past it, less a margin.
         public var stallAngle: Double?
         public var pastStall: Bool?
+        /// The last element: the in-place angle past which it separates (its
+        /// stall angle alone, moved by its slot), and its gap over the chord in front.
+        public var separationAngle: Double?
+        public var gapRatio: Double?
     }
 
     public struct Row: Codable, Equatable, Sendable, Identifiable {

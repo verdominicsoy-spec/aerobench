@@ -48,3 +48,23 @@ def test_a_flap_past_its_stall_angle_is_separating():
     # Every overnight RANS trial with the flap past 29 degrees failed to settle.
     steep = estimate(_elements(apply(w, {"angle_1": 31.0})), [0.0], 15.0)["rows"][0]
     assert steep["separating"] and steep["elements"][1]["past_stall"]
+
+
+def test_a_narrow_slot_keeps_the_flap_attached_further():
+    """The overnight study: at 26.9 degrees the flap stayed attached in RANS
+    with a 9.1 mm gap, and separated at 27.8 degrees with 17.2 mm."""
+    from aeroengine.wing.estimate import SLOT_FITTED, separation_angle
+    from aeroengine.wing.geometry import apply
+
+    assert separation_angle(15.0, None) == 13.0
+    assert separation_angle(15.0, 0.0475) == pytest.approx(13.0)
+    assert separation_angle(15.0, 0.03) > separation_angle(15.0, 0.06)
+    # Held at the ends of the gaps it was fitted on.
+    assert separation_angle(15.0, 0.001) == separation_angle(15.0, SLOT_FITTED[0] / 100)
+    assert separation_angle(15.0, 0.2) == separation_angle(15.0, SLOT_FITTED[1] / 100)
+
+    w = _starter()
+    narrow = estimate(_elements(apply(w, {"angle_1": 26.9, "gap_1": 0.0091})), [0.0], 15.0)["rows"][0]
+    wide = estimate(_elements(apply(w, {"angle_1": 27.8, "gap_1": 0.0172})), [0.0], 15.0)["rows"][0]
+    assert narrow["elements"][1]["gap_ratio"] == pytest.approx(0.0091 / 0.3, rel=0.02)
+    assert not narrow["separating"] and wide["separating"]

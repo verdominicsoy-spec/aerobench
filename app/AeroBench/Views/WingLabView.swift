@@ -976,18 +976,26 @@ struct WingInspector: View {
         }
     }
 
+    private func variableToggle(_ lab: WingLabModel, _ kind: WingLabModel.DesignVariable.Kind, _ i: Int) -> some View {
+        Toggle(kind.rawValue.capitalized, isOn: Binding(
+            get: { lab.variable(kind, of: i) != nil }, set: { _ in lab.toggleVariable(kind, of: i) }))
+            .toggleStyle(.checkbox)
+    }
+
     @ViewBuilder private func optimiseSection(_ lab: WingLabModel) -> some View {
         let running = lab.optimiseJob.map { !$0.status.isFinished } ?? false
         Section {
             ForEach(Array(lab.wing.elements.enumerated()), id: \.element.id) { i, _ in
-                HStack {
-                    Text(WingIssue.label(i)).frame(width: 50, alignment: .leading)
-                    ForEach(WingLabModel.DesignVariable.Kind.allCases, id: \.self) { kind in
-                        if kind == .angle || i > 0 {
-                            Toggle(kind.rawValue.capitalized, isOn: Binding(
-                                get: { lab.variable(kind, of: i) != nil }, set: { _ in lab.toggleVariable(kind, of: i) }))
-                                .toggleStyle(.checkbox)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(WingIssue.label(i)).frame(width: 50, alignment: .leading)
+                        ForEach(WingLabModel.DesignVariable.Kind.placement, id: \.self) { kind in
+                            if kind == .angle || i > 0 { variableToggle(lab, kind, i) }
                         }
+                    }
+                    HStack {
+                        Text("shape").font(.caption).foregroundStyle(.secondary).frame(width: 50, alignment: .trailing)
+                        ForEach(WingLabModel.DesignVariable.Kind.shape, id: \.self) { kind in variableToggle(lab, kind, i) }
                     }
                 }
                 .disabled(running)
@@ -1027,9 +1035,13 @@ struct WingInspector: View {
                 Stepper(lab.optimise.checkBest == 0 ? "Check the best with RANS: off" : "Check the best \(lab.optimise.checkBest) with RANS CFD",
                         value: Binding(get: { lab.optimise.checkBest }, set: { lab.optimise.checkBest = $0 }), in: 0...10)
                     .disabled(running)
-                if lab.optimise.variables.contains(where: { $0.kind != .angle }) {
-                    Text("The quick estimate barely sees the gap and overlap: it leaves out the slot flow that sets the best gap (RANS put 6% more downforce at a 9 mm gap than at 15 mm; the estimate saw 0.3%). It finds angles well. For gaps and overlaps, check the best with RANS or run the study with RANS.")
+                if lab.optimise.variables.contains(where: { $0.kind == .gap || $0.kind == .overlap }) {
+                    Text("The quick estimate sees the gap only through when the flap separates (a narrower slot keeps it attached to a steeper angle, fitted on one main-and-flap wing), not through the extra lift a good slot gives. It finds angles well; for gaps and overlaps, check the best with RANS.")
                         .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                }
+                if lab.optimise.variables.contains(where: { $0.kind == .camber || $0.kind == .thickness }) {
+                    Text("Shape: camber added at mid-chord (0 at the ends) and thickness scaled about the camber line. The thickness's lower bound is the structural limit. The estimate is NeuralFoil per section, so check the best with RANS.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
             Picker("Search", selection: Binding(get: { lab.optimise.sampler }, set: { lab.optimise.sampler = $0 })) {
@@ -1597,7 +1609,8 @@ struct EstimateResults: View {
                             .font(.caption).foregroundStyle(.orange)
                     }
                     if here.separating == true {
-                        Label("The last element is past its stall angle here: on the real wing it would separate. Check with RANS.", systemImage: "exclamationmark.triangle")
+                        Label(here.elements.last?.separationAngle.map { String(format: "The last element is %.1f° in place, past where it separates (%.1f°, from its stall angle and its gap): on the real wing it would. Check with RANS.", here.elements.last?.effectiveAngle ?? 0, $0) }
+                              ?? "The last element is past its stall angle here: on the real wing it would separate. Check with RANS.", systemImage: "exclamationmark.triangle")
                             .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                     }
                     Text("Panel method and NeuralFoil: lift within about 2% of RANS on a main-and-flap wing until the flap nears separation, drag about 10% high. For trends and screening; RANS CFD for numbers to keep.")

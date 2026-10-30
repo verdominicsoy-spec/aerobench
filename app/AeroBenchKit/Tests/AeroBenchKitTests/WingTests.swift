@@ -290,6 +290,15 @@ final class WingEstimateTests: XCTestCase {
         XCTAssertEqual(e.rows[0].elements[0].clInviscidOwn, -2.409)
         XCTAssertEqual(e.row(nearest: 0.4)?.alpha, 0)
         XCTAssertEqual(e.refChord, 0.44)
+        XCTAssertNil(e.rows[0].elements[0].separationAngle)
+    }
+
+    func testDecodesTheLastElementsSeparationLine() throws {
+        let el = #"{"cl": -0.4, "cd": 0.01, "cm": -0.1, "cl_own": -1.2, "cd_own": 0.03, "cl_inviscid_own": -1.5, "effective_angle": 14.6, "upwash": -12.3, "transition_suction": 0.05, "transition_pressure": 0.6, "confidence": 0.99, "trusted": true, "held_below_stall": false, "stall_angle": 15.0, "past_stall": false, "separation_angle": 15.59, "gap_ratio": 0.0303}"#
+        let json = #"{"data": {"ref_chord": 0.44, "re": [304000], "rows": [{"alpha": 0.0, "cl": -1.9, "cd": 0.04, "trusted": true, "separating": false, "elements": [\#(el)]}]}}"#
+        let last = try XCTUnwrap(WingEstimate.decode(resultFile: Data(json.utf8)).rows.first?.elements.first)
+        XCTAssertEqual(last.separationAngle, 15.59)
+        XCTAssertEqual(last.gapRatio, 0.0303)
     }
 }
 
@@ -334,5 +343,39 @@ final class LibraryPolarsTests: XCTestCase {
                        ["naca/6412", "naca/4412", "naca/0012", "naca/2412"])  // no polar for 2412: last
         XCTAssertEqual(AirfoilLibrary.sorted(library, by: .name, polars: polars).map(\.key), library.map(\.key))
         XCTAssertEqual(AirfoilLibrary.sorted(library, by: .ldMax, polars: nil).map(\.key), library.map(\.key))
+    }
+}
+
+final class AirfoilReshapeTests: XCTestCase {
+    /// y on the upper and lower surfaces at x, by straight lines between points.
+    private func surfaces(_ a: Airfoil, at x: Double) -> (upper: Double, lower: Double) {
+        let i = a.coords.indices.min { a.coords[$0].x < a.coords[$1].x }!
+        func at(_ s: [SIMD2<Double>]) -> Double {
+            let s = s.sorted { $0.x < $1.x }
+            let k = s.firstIndex { $0.x >= x }!
+            let p = s[k - 1], q = s[k]
+            return p.y + (q.y - p.y) * (x - p.x) / (q.x - p.x)
+        }
+        return (at(Array(a.coords[...i])), at(Array(a.coords[i...])))
+    }
+
+    func testCamberAndThicknessAsTheEngineDoes() throws {
+        let base = try XCTUnwrap(Airfoil.naca4("0012"))
+        XCTAssertEqual(base.reshaped(camber: 0, thickness: 1), base)
+        let cambered = base.reshaped(camber: 0.02, thickness: 1)
+        let mid = surfaces(cambered, at: 0.5)
+        XCTAssertEqual((mid.upper + mid.lower) / 2, 0.02, accuracy: 3e-4)
+        XCTAssertEqual(mid.upper - mid.lower, surfaces(base, at: 0.5).upper - surfaces(base, at: 0.5).lower, accuracy: 3e-4)
+        let thin = base.reshaped(camber: 0, thickness: 0.75)
+        XCTAssertEqual(surfaces(thin, at: 0.3).upper - surfaces(thin, at: 0.3).lower, 0.75 * 0.12, accuracy: 0.002)
+        XCTAssertEqual(thin.coords.count, base.coords.count)
+        XCTAssertTrue(thin.key.hasPrefix("shaped/"))
+
+        let wing = Wing(elements: [WingElement(airfoil: base, chord: 0.3), WingElement(airfoil: base, chord: 0.14)])
+        let trial = WingStudy.Trial(number: 3, state: "complete", value: 1, params: ["camber_1": 0.02, "angle_1": 20],
+                                    placement: [.init(angle: 0, leadingEdge: [0, 0]), .init(angle: 20, leadingEdge: [0.28, 0.02])])
+        let shaped = try XCTUnwrap(wing.applying(trial))
+        XCTAssertEqual(shaped.elements[0].airfoil, base)
+        XCTAssertEqual(shaped.elements[1].airfoil, cambered)
     }
 }

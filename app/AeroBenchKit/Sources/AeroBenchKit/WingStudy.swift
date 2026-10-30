@@ -163,15 +163,54 @@ public struct WingStudy: Codable, Equatable, Sendable {
 }
 
 extension Wing {
-    /// This wing with a trial's angles and leading edges: what the optimiser
-    /// ran. Nil if the trial has no placement or the element count differs.
+    /// This wing with a trial's shapes, angles and leading edges: what the
+    /// optimiser ran. Nil if the trial has no placement or the element count differs.
     public func applying(_ trial: WingStudy.Trial) -> Wing? {
         guard let placement = trial.placement, placement.count == elements.count else { return nil }
         var w = self
         for (i, p) in placement.enumerated() where p.leadingEdge.count == 2 {
+            let camber = trial.params["camber_\(i)"], thickness = trial.params["thickness_\(i)"]
+            if camber != nil || thickness != nil {
+                w.elements[i].airfoil = w.elements[i].airfoil.reshaped(camber: camber ?? 0, thickness: thickness ?? 1)
+            }
             w.elements[i].angle = p.angle
             w.elements[i].leadingEdge = SIMD2(p.leadingEdge[0], p.leadingEdge[1])
         }
         return w
+    }
+}
+
+extension Airfoil {
+    /// The engine's reshape (geometry.py): camber added as a parabola,
+    /// `camber` of the chord at mid-chord and none at either end, and the
+    /// thickness about the camber line scaled by `thickness`.
+    public func reshaped(camber: Double, thickness: Double) -> Airfoil {
+        guard camber != 0 || thickness != 1, coords.count > 4,
+              let i = coords.indices.min(by: { coords[$0].x < coords[$1].x }) else { return self }
+        let upper = Array(coords[...i].reversed()), lower = Array(coords[i...])
+
+        func at(_ surface: [SIMD2<Double>], _ x: Double) -> Double {
+            let s = surface.sorted { $0.x < $1.x }
+            guard let first = s.first, let last = s.last else { return 0 }
+            if x <= first.x { return first.y }
+            if x >= last.x { return last.y }
+            var k = 1
+            while k < s.count - 1 && s[k].x < x { k += 1 }
+            let a = s[k - 1], b = s[k]
+            return b.x > a.x ? a.y + (b.y - a.y) * (x - a.x) / (b.x - a.x) : a.y
+        }
+        func moved(_ points: [SIMD2<Double>], _ other: [SIMD2<Double>]) -> [SIMD2<Double>] {
+            points.map { p in
+                let mean = 0.5 * (p.y + at(other, p.x))
+                return SIMD2(p.x, mean + camber * 4 * p.x * (1 - p.x) + thickness * (p.y - mean))
+            }
+        }
+        var out = self
+        out.coords = Array(moved(upper, lower).reversed()) + Array(moved(lower, upper).dropFirst())
+        out.name = String(format: "%@ (camber %+.1f%%, thickness %.0f%%)", name, camber * 100, thickness * 100)
+        out.key = key.hasPrefix("shaped/") ? key : "shaped/" + key
+        out.camber += camber
+        out.thickness *= thickness
+        return out
     }
 }
