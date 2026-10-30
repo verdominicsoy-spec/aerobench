@@ -33,6 +33,17 @@ struct WingLabView: View {
                     .help(lab.showLibrary ? "Hide the airfoil library" : "Show the airfoil library")
             }
             ToolbarItemGroup {
+                Menu {
+                    Button(lab.pinned == nil ? "Pin This Wing as A" : "Pin This Wing as A Instead") { lab.pinCurrent() }
+                        .disabled(lab.wing.elements.isEmpty)
+                    Button("Swap A and This Wing") { lab.swapWithPinned() }
+                        .disabled(lab.pinned == nil)
+                    Button("Clear A") { lab.pinned = nil }
+                        .disabled(lab.pinned == nil)
+                } label: {
+                    Label("Compare", systemImage: lab.pinned == nil ? "pin" : "pin.fill")
+                }
+                .help("Pin a design as A to compare the wing you edit against it")
                 Button { openWindow(id: "accuracy") } label: { Label("Accuracy", systemImage: "questionmark.circle") }
                     .help("How far to trust each solver")
                 Button { lab.showInspector.toggle() } label: { Label("Inspector", systemImage: "sidebar.right") }
@@ -323,6 +334,9 @@ struct WingCanvas: View {
                     Text("dashed: the wing as drawn").font(.caption2).foregroundStyle(.secondary)
                 }
             }
+            if lab.pinned != nil, lab.replayIndex == nil {
+                Text("Dashed purple: A, the pinned design. The wing you edit is B.").font(.caption2).foregroundStyle(.purple)
+            }
             if let error = lab.previewError {
                 Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
             }
@@ -340,6 +354,13 @@ struct WingCanvas: View {
         if let replay = lab.replayWing {
             drawReplay(ctx, m, lab, replay)
             return
+        }
+        if let a = lab.pinned {
+            for e in a.wing.elements {
+                let path = Self.outline(e, m)
+                ctx.fill(path, with: .color(.purple.opacity(0.08)))
+                ctx.stroke(path, with: .color(.purple.opacity(0.8)), style: StrokeStyle(lineWidth: 1.2, dash: [5, 3]))
+            }
         }
         let wing = lab.wing
         let flagged = Set(wing.issues.filter { $0.kind != .outsideRules }.flatMap(\.elements))
@@ -384,15 +405,17 @@ struct WingCanvas: View {
     }
 
     /// A time-lapse frame: the trial's wing, over the current wing as a dashed ghost.
-    private func drawReplay(_ ctx: GraphicsContext, _ m: WingMapping, _ lab: WingLabModel, _ replay: Wing) {
-        func outline(_ e: WingElement) -> Path {
-            var path = Path()
-            for (k, p) in e.placed().enumerated() {
-                if k == 0 { path.move(to: m.view(p)) } else { path.addLine(to: m.view(p)) }
-            }
-            path.closeSubpath()
-            return path
+    private static func outline(_ e: WingElement, _ m: WingMapping) -> Path {
+        var path = Path()
+        for (k, p) in e.placed().enumerated() {
+            if k == 0 { path.move(to: m.view(p)) } else { path.addLine(to: m.view(p)) }
         }
+        path.closeSubpath()
+        return path
+    }
+
+    private func drawReplay(_ ctx: GraphicsContext, _ m: WingMapping, _ lab: WingLabModel, _ replay: Wing) {
+        func outline(_ e: WingElement) -> Path { Self.outline(e, m) }
         for e in lab.wing.elements {
             ctx.stroke(outline(e), with: .color(.secondary.opacity(0.6)), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
         }
@@ -558,6 +581,7 @@ struct CFDResults: View {
     struct Point: Identifiable {
         let id: Int
         let element: String
+        let design: String
         let x: Double
         let minusCp: Double
     }
@@ -702,10 +726,11 @@ struct CpPlot: View {
                 Rectangle().fill(.quaternary)
             } else {
                 Chart(points) { p in
-                    LineMark(x: .value("x (mm)", p.x), y: .value("−Cp", p.minusCp))
+                    LineMark(x: .value("x (mm)", p.x), y: .value("−Cp", p.minusCp), series: .value("Series", "\(p.design) \(p.element)"))
                         .foregroundStyle(by: .value("Element", p.element))
-                        .lineStyle(StrokeStyle(lineWidth: 1.2))
+                        .lineStyle(by: .value("Design", p.design))
                 }
+                .chartLineStyleScale(["B": StrokeStyle(lineWidth: 1.2), "A": StrokeStyle(lineWidth: 1, dash: [4, 3])])
                 .chartXAxisLabel("x (mm)")
             }
         }
@@ -713,20 +738,25 @@ struct CpPlot: View {
     }
 
     private func makePoints(_ lab: WingLabModel) -> [Point] {
-        guard let r = lab.preview, r.cp.count == lab.wing.elements.count else { return [] }
         var out: [Point] = []
-        var id = 0
-        for (i, e) in lab.wing.elements.enumerated() {
+        // A (pinned) first, dashed, so the wing being edited draws on top.
+        if let a = lab.pinned, let r = a.preview { add(a.wing, r, "A", to: &out) }
+        if let r = lab.preview { add(lab.wing, r, "B", to: &out) }
+        // With nothing pinned there is only one design: no legend entry for it.
+        return out
+    }
+
+    private func add(_ wing: Wing, _ r: PanelSolution, _ design: String, to out: inout [Point]) {
+        guard r.cp.count == wing.elements.count else { return }
+        for (i, e) in wing.elements.enumerated() {
             let pts = e.placed()
-            let name = "\(WingIssue.label(i)) upper" , lower = "\(WingIssue.label(i)) lower"
+            let name = "\(WingIssue.label(i)) upper", lower = "\(WingIssue.label(i)) lower"
             let half = (pts.count - 1) / 2
-            for k in pts.indices {
+            for k in pts.indices where k < r.cp[i].count {
                 // The two surfaces as separate series so the line does not wrap round the nose.
-                out.append(Point(id: id, element: k <= half ? name : lower, x: pts[k].x * 1000, minusCp: -r.cp[i][k]))
-                id += 1
+                out.append(Point(id: out.count, element: k <= half ? name : lower, design: design, x: pts[k].x * 1000, minusCp: -r.cp[i][k]))
             }
         }
-        return out
     }
 }
 
@@ -1545,8 +1575,9 @@ struct EstimateResults: View {
                 }
                 .frame(width: 290, alignment: .leading)
                 .scrollableColumn()
-                chart("Cl", est.rows.map { ($0.alpha, $0.cl, $0.trusted) }, mark: here.alpha)
-                chart("Cd", est.rows.map { ($0.alpha, $0.cd, $0.trusted) }, mark: here.alpha)
+                let a = lab.pinned?.estimate?.rows
+                chart("Cl", est.rows.map { ($0.alpha, $0.cl, $0.trusted) }, mark: here.alpha, pinned: a?.map { ($0.alpha, $0.cl) })
+                chart("Cd", est.rows.map { ($0.alpha, $0.cd, $0.trusted) }, mark: here.alpha, pinned: a?.map { ($0.alpha, $0.cd) })
             }
             .padding(8)
         } else if let job = lab.estimateJob, !job.status.isFinished {
@@ -1562,10 +1593,15 @@ struct EstimateResults: View {
         }
     }
 
-    private func chart(_ name: String, _ points: [(Double, Double, Bool)], mark: Double) -> some View {
+    private func chart(_ name: String, _ points: [(Double, Double, Bool)], mark: Double, pinned: [(Double, Double)]?) -> some View {
         Chart {
+            ForEach(Array((pinned ?? []).enumerated()), id: \.offset) { _, p in
+                LineMark(x: .value("α", p.0), y: .value(name, p.1), series: .value("Design", "A"))
+                    .foregroundStyle(.purple.opacity(0.8))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            }
             ForEach(Array(points.enumerated()), id: \.offset) { _, p in
-                LineMark(x: .value("α", p.0), y: .value(name, p.1))
+                LineMark(x: .value("α", p.0), y: .value(name, p.1), series: .value("Design", "B"))
                 PointMark(x: .value("α", p.0), y: .value(name, p.1))
                     .symbolSize(p.2 ? 16 : 24)
                     .foregroundStyle(p.2 ? Color.accentColor : Color.orange)
@@ -1609,6 +1645,9 @@ struct ResultsSummary: View {
                          lines: [String(format: "ClA %.3f m²  CdA %.3f m²", car.cla, car.cda),
                                  String(format: "span %.0f mm, 3D factor %.2f", wing.span * 1000, wing.factor3D)], lab: lab)
                 }
+                if let a = lab.pinned {
+                    card("A, pinned", tab: nil, lines: pinnedLines(a, estimate: estimate, lab: lab), lab: lab)
+                }
                 if let s = lab.study, let b = s.bestTrial, let v = b.value {
                     card("Study best", tab: .study, lines: [String(format: "trial %ld: %.4g", b.number, v),
                                                             "\(s.complete + s.failed) of \(s.target) run"], lab: lab)
@@ -1616,6 +1655,26 @@ struct ResultsSummary: View {
             }
             .padding(8)
         }
+    }
+
+    /// A's numbers and this wing's difference from them, from the best
+    /// solver both have: CFD, then the estimate, then the inviscid preview.
+    private func pinnedLines(_ a: WingLabModel.Pinned, estimate: WingEstimate.Row?, lab: WingLabModel) -> [String] {
+        func diff(_ name: String, _ a: (Double, Double), _ b: (Double, Double)) -> [String] {
+            [String(format: "Cl %.3f  Cd %.4f (%@)", a.0, a.1, name),
+             String(format: "this wing: ΔCl %+.3f (%+.1f%%)  ΔCd %+.4f", b.0 - a.0, (b.0 - a.0) / max(abs(a.0), 1e-9) * 100, b.1 - a.1)]
+        }
+        if let ar = a.rans, ar.converged, let br = lab.ransResult, br.converged {
+            return diff("CFD", (ar.cl, ar.cd), (br.cl, br.cd))
+        }
+        if let ae = a.estimate?.row(nearest: a.wing.alpha), let be = estimate {
+            return diff("estimate", (ae.cl, ae.cd), (be.cl, be.cd))
+        }
+        if let ap = a.preview, let bp = lab.preview {
+            return [String(format: "Cl %.3f (preview)", ap.clTotal),
+                    String(format: "this wing: ΔCl %+.3f (%+.1f%%)", bp.clTotal - ap.clTotal, (bp.clTotal - ap.clTotal) / max(abs(ap.clTotal), 1e-9) * 100)]
+        }
+        return ["no results to compare"]
     }
 
     private func card(_ title: String, tab: WingLabModel.ResultsTab?, lines: [String], warn: Bool = false, lab: WingLabModel) -> some View {

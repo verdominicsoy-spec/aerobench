@@ -271,6 +271,12 @@ The quick estimate's *Live while editing* keeps the engine loaded (a few
 seconds, once) and re-runs the estimate on every change, so the Estimate tab
 follows an element as you drag it.
 
+**Compare** (pin in the toolbar): pin the wing as A, then keep editing. A
+stays on the canvas as a dashed purple outline, its Cp and estimate curves
+are drawn dashed beside the current wing's, and the results strip shows A's
+numbers and the difference from the best solver both have (CFD, else the
+estimate, else the preview). *Swap* puts A back on the canvas (undoable).
+
 *Help → How Accurate Is Each Solver?* (or the ? in the Wing Lab toolbar)
 puts the same comparison in the app with the validation numbers.
 

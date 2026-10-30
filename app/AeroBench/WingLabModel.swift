@@ -436,6 +436,34 @@ final class WingLabModel {
         recompute()
     }
 
+    // MARK: Compare
+
+    /// A design pinned as A, shown beside the wing on the canvas (B), with
+    /// the results it had when pinned.
+    struct Pinned {
+        var wing: Wing
+        var preview: PanelSolution?
+        var estimate: WingEstimate?
+        var rans: WingRansResult?
+    }
+
+    var pinned: Pinned?
+
+    private var current: Pinned { Pinned(wing: wing, preview: preview, estimate: estimate, rans: ransResult) }
+
+    func pinCurrent() { pinned = current }
+
+    /// A onto the canvas and the canvas wing into A; undo restores the wing.
+    func swapWithPinned() {
+        guard let a = pinned else { return }
+        pinned = current
+        edit { $0 = a.wing }
+        estimate = a.estimate
+        ransResult = a.rans
+        ransField = nil
+        sweep = nil
+    }
+
     // MARK: Elements
 
     /// Adds a section as the next element, behind the last one (or as the
