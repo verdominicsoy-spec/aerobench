@@ -50,10 +50,11 @@ def flow_detect(ctx: JobContext) -> dict:
     from ..flow.detect import detect
     from ..flow.reconstruct import FrameSource
 
-    source = FrameSource(_path(ctx, "source"))
     partial = ctx.params.get("calibration") or {}
     if not isinstance(partial, dict):
         raise EngineError("params.calibration must be an object")
+    video = partial.get("video") or {}
+    source = FrameSource(_path(ctx, "source"), video.get("fps"), video.get("frames"))
     ctx.emit.progress(5, "reading frames across the sweep")
     return detect(source, partial)
 

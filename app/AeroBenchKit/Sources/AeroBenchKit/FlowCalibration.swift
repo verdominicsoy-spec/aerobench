@@ -158,6 +158,25 @@ public struct FlowCalibration: Codable, Equatable, Sendable {
     public var detail: String?
     /// The quick setup's measurement (the engine ignores it; it sets `spatial`).
     public var measure: Measure?
+    /// The video's timing. fps and frames are what the app used (detected,
+    /// or from the typed values) and the engine picks frames by them, so the
+    /// two agree on which frame is which; typed values override a video that
+    /// reports its frame rate or length wrong.
+    public var video: Video?
+
+    public struct Video: Codable, Equatable, Sendable {
+        public var fps: Double?
+        public var frames: Int?
+        public var typedFps: Double?
+        public var typedDuration: Double?
+
+        public init(fps: Double? = nil, frames: Int? = nil, typedFps: Double? = nil, typedDuration: Double? = nil) {
+            self.fps = fps
+            self.frames = frames
+            self.typedFps = typedFps
+            self.typedDuration = typedDuration
+        }
+    }
 
     public init() {}
 
@@ -183,6 +202,7 @@ public struct FlowCalibration: Codable, Equatable, Sendable {
         ground = try c.decodeIfPresent(Ground.self, forKey: .ground) ?? d.ground
         detail = try c.decodeIfPresent(String.self, forKey: .detail)
         measure = try c.decodeIfPresent(Measure.self, forKey: .measure)
+        video = try c.decodeIfPresent(Video.self, forKey: .video)
     }
 
     public static let presets = ["star_blue_yellow_red", "viridis", "jet", "rainbow"]

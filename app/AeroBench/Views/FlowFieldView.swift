@@ -90,6 +90,7 @@ struct FlowCalibrationPanel: View {
                 if flow.frameCount > 0 {
                     LabeledContent("Frames", value: "\(flow.frameCount), \(Int(flow.frameSize.width)) × \(Int(flow.frameSize.height))")
                 }
+                if flow.isVideo { VideoTiming() }
                 DisclosureGroup("Capture guide") { CaptureGuide() }
             } header: {
                 Text("Source")
@@ -690,6 +691,14 @@ struct FlowExploreView: View {
                 HStack(spacing: 8) {
                     ForEach(StandardView.allCases) { v in Button(v.title) { app.flow.viewer.look(from: v) } }
                     Button("Fit") { app.flow.viewer.fitAll() }
+                    Divider().frame(height: 14)
+                    Button("Side Profile") {
+                        app.flow.sliceCut = .side
+                        app.flow.sliceIn3D = true
+                        app.flow.viewer.look(from: .left)
+                    }
+                    .help("Looks at the model from the side and cuts the field lengthways, upright, through the middle")
+                    .disabled(app.flow.volume == nil)
                     Spacer()
                 }
                 .controlSize(.small)
@@ -776,9 +785,15 @@ struct FlowExplorePanel: View {
                 }
 
                 Section("Slice") {
+                    Picker("Cut", selection: $flow.sliceCut) {
+                        ForEach(FlowVolume.Cut.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    let n = v.sliceCount(flow.sliceCut), normal = v.axes(flow.sliceCut).normal
                     Slider(value: Binding(get: { Double(flow.sliceIndex) }, set: { flow.sliceIndex = Int($0.rounded()) }),
-                           in: 0...Double(max(v.planeCount - 1, 1)))
-                    LabeledContent("Plane", value: "\(flow.sliceIndex + 1) of \(v.planeCount), \(v.sweepLetter) = \(String(format: "%.0f", v.planePosition(flow.sliceIndex) * 1000)) mm")
+                           in: 0...Double(max(n - 1, 1)))
+                    LabeledContent(flow.sliceCut == .captured ? "Plane" : "Cut at",
+                                   value: "\(flow.sliceIndex + 1) of \(n), \(v.axisLetter(normal)) = \(String(format: "%.0f", v.slicePosition(flow.sliceCut, flow.sliceIndex) * 1000)) mm")
                     Toggle("Show the slice in 3D", isOn: $flow.sliceIn3D)
                 }
 
@@ -851,6 +866,9 @@ struct SliceCompare: View {
     var body: some View {
         let flow = app.flow
         HStack(spacing: 12) {
+            if let v = flow.volume, flow.sliceCut != .captured {
+                lengthways(v, flow)
+            } else {
             VStack(alignment: .leading, spacing: 4) {
                 Text(flow.volume.map { "Video frame \($0.frames[safe: flow.sliceIndex] ?? 0)" } ?? "Video frame").font(.caption).bold()
                 if let image = flow.sliceFrameImage {
@@ -882,8 +900,33 @@ struct SliceCompare: View {
                     Rectangle().fill(.quaternary)
                 }
             }
+            }
         }
         .padding(8)
+    }
+
+    /// A side profile or a cut from above: no video frame to compare with,
+    /// so the cut takes the whole width, along the sweep left to right.
+    @ViewBuilder private func lengthways(_ v: FlowVolume, _ flow: FlowFieldModel) -> some View {
+        let a = v.axes(flow.sliceCut)
+        let across = v.range(a.across), upward = v.range(a.up)
+        VStack(alignment: .leading, spacing: 4) {
+            Text("\(flow.sliceCut.rawValue), \(v.axisLetter(a.normal)) = \(String(format: "%.0f", v.slicePosition(flow.sliceCut, flow.sliceIndex) * 1000)) mm")
+                .font(.caption).bold()
+            if let slice = flow.sliceImage {
+                Image(decorative: slice, scale: 1)
+                    .resizable()
+                    .interpolation(.none)
+                    .aspectRatio((across.upperBound - across.lowerBound) / max(upward.upperBound - upward.lowerBound, 1e-9), contentMode: .fit)
+                    .background(Color.gray.opacity(0.3))
+                    .overlay(alignment: .bottomLeading) { axisLabel("\(v.axisLetter(a.across)) \(Int(across.lowerBound * 1000))") }
+                    .overlay(alignment: .bottomTrailing) { axisLabel("\(v.axisLetter(a.across)) \(Int(across.upperBound * 1000)) mm") }
+                    .overlay(alignment: .topLeading) { axisLabel("\(v.axisLetter(a.up)) \(Int(upward.upperBound * 1000)) mm") }
+            } else {
+                Rectangle().fill(.quaternary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func axisLabel(_ text: String) -> some View {
@@ -891,5 +934,53 @@ struct SliceCompare: View {
             .font(.caption2.monospacedDigit())
             .padding(2)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 3))
+    }
+}
+
+/// The video's frame rate and length: as it reports them, or typed in when
+/// it reports them wrong. Frame numbers follow whichever is used, in the app
+/// and in the engine alike.
+struct VideoTiming: View {
+    @Environment(AppState.self) private var app
+    @State private var fps: Double?
+    @State private var duration: Double?
+
+    var body: some View {
+        let flow = app.flow
+        let typed = flow.calibration.video
+        DisclosureGroup("Video timing") {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(String(format: "The video reports %@ fps and %@ s; using %.3f fps, %ld frames.",
+                            flow.detectedFps.map { String(format: "%.3f", $0) } ?? "no",
+                            flow.detectedDuration.map { String(format: "%.2f", $0) } ?? "no",
+                            flow.calibration.video?.fps ?? 0, flow.frameCount))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                LabeledContent("Frame rate") {
+                    TextField("as reported", value: $fps, format: .number.precision(.fractionLength(0...3)))
+                        .multilineTextAlignment(.trailing).frame(width: 90)
+                    Text("fps").foregroundStyle(.secondary)
+                }
+                LabeledContent("Length") {
+                    TextField("as reported", value: $duration, format: .number.precision(.fractionLength(0...3)))
+                        .multilineTextAlignment(.trailing).frame(width: 90)
+                    Text("s").foregroundStyle(.secondary)
+                }
+                HStack {
+                    Button("Apply") { Task { await flow.setVideoTiming(fps: fps, duration: duration) } }
+                    Button("As reported") {
+                        fps = nil
+                        duration = nil
+                        Task { await flow.setVideoTiming(fps: nil, duration: nil) }
+                    }
+                    .disabled(typed?.typedFps == nil && typed?.typedDuration == nil)
+                }
+                Text("Type these when the export's frame rate or length is wrong (STAR-CCM+ shows both in its animation export settings). Frame numbers follow the new timing, so set it before picking calibration frames.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .onAppear {
+            fps = typed?.typedFps
+            duration = typed?.typedDuration
+        }
     }
 }

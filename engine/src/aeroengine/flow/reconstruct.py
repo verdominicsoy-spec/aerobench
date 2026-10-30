@@ -36,11 +36,17 @@ def _capture(path: Path) -> "cv2.VideoCapture":
 
 
 class FrameSource:
-    """A video file or a folder of images, read as RGB uint8."""
+    """A video file or a folder of images, read as RGB uint8.
 
-    def __init__(self, path: Path | str) -> None:
+    With fps (and optionally the frame count) given, a video's frame i is
+    whichever frame is showing at (i + 1/2) / fps seconds, as the app shows
+    it; that keeps the two in step when the video's own frame rate is wrong
+    or varies. Without, frames are counted as they decode."""
+
+    def __init__(self, path: Path | str, fps: float | None = None, frames: int | None = None) -> None:
         path = Path(path)
         self.path = path
+        self.fps = fps
         if path.is_dir():
             self.images = sorted(p for p in path.iterdir() if p.suffix.lower() in IMAGE_EXTS)
             if not self.images:
@@ -54,8 +60,14 @@ class FrameSource:
             if not cap.isOpened():
                 raise EngineError(f"could not open video {path.name}")
             self.count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            self.native_fps = float(cap.get(cv2.CAP_PROP_FPS)) or None
             self.size = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
             cap.release()
+            if fps:
+                if frames:
+                    self.count = int(frames)
+                elif self.native_fps:
+                    self.count = max(int(round(self.count / self.native_fps * fps)), 2)
             if self.count < 2:
                 raise EngineError(f"{path.name} has fewer than two frames")
         else:
@@ -72,6 +84,9 @@ class FrameSource:
             for i in indices:
                 yield i, self._image(i)
             return
+        if self.fps:
+            yield from self._by_time(indices)
+            return
         wanted = set(indices)
         cap = _capture(self.path)
         i = 0
@@ -86,6 +101,32 @@ class FrameSource:
                 break
             i += 1
         cap.release()
+
+    def _by_time(self, indices: list[int]) -> Iterator[tuple[int, np.ndarray]]:
+        """Frame i is the last frame whose timestamp is at or before
+        (i + 1/2) / fps: the one on screen at that moment."""
+        cap = _capture(self.path)
+        current, pending = None, None  # the last frame taken, and the time of one grabbed but not yet taken
+        try:
+            for i in sorted(set(indices)):
+                t = (i + 0.5) / self.fps * 1000.0
+                while True:
+                    if pending is None:
+                        if not cap.grab():
+                            break
+                        pending = cap.get(cv2.CAP_PROP_POS_MSEC)
+                    if pending <= t or current is None:
+                        ok, frame = cap.retrieve()
+                        if not ok:
+                            break
+                        current, pending = frame, None
+                        continue
+                    break
+                if current is None:
+                    return
+                yield i, current[:, :, ::-1]
+        finally:
+            cap.release()
 
     def frame(self, index: int) -> np.ndarray:
         for _, f in self.frames([index]):
@@ -429,7 +470,7 @@ def _invert_slice(frame: np.ndarray, cal: Calibration, s, y: np.ndarray, z: np.n
 
 def reconstruct(source_path: Path, cal: Calibration, progress: Callable[[float, str], None] | None = None) -> tuple[Volume, dict]:
     report = progress or (lambda pct, msg: None)
-    source = FrameSource(source_path)
+    source = FrameSource(source_path, cal.video_fps, cal.video_frames)
     frames = cal.frames(source.count)
     lut = build_lut(cal, source)
     ground = None
@@ -509,7 +550,7 @@ def _trim(values: np.ndarray, solid: np.ndarray, y: np.ndarray, z: np.ndarray, m
 
 def preview(source_path: Path, cal: Calibration, frame_index: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict, np.ndarray]:
     """One plane, for checking a calibration before a full run."""
-    source = FrameSource(source_path)
+    source = FrameSource(source_path, cal.video_fps, cal.video_frames)
     frames = cal.frames(source.count)
     lut = build_lut(cal, source)
     cal.frame_size = source.size

@@ -43,6 +43,10 @@ final class FlowFieldModel {
     private(set) var sourceURL: URL?
     @ObservationIgnored private(set) var grabber: FrameGrabber?
     private(set) var frameCount = 0
+    /// What the video says about its timing, for the source panel.
+    private(set) var detectedFps: Double?
+    private(set) var detectedDuration: Double?
+    private(set) var isVideo = false
     private(set) var frameSize = CGSize.zero
     var frameIndex = 0
     private(set) var frameImage: CGImage?
@@ -81,6 +85,13 @@ final class FlowFieldModel {
     var windowLo = -1.0
     var windowHi = 0.0
     var sliceIndex = 0 { didSet { updateSlice() } }
+    /// Across the sweep (as captured), a side profile, or from above.
+    var sliceCut: FlowVolume.Cut = .captured {
+        didSet {
+            guard sliceCut != oldValue, let volume else { return }
+            sliceIndex = volume.sliceCount(sliceCut) / 2  // the middle: for a side profile, the centreline if the grid is symmetric
+        }
+    }
     var sliceIn3D = true { didSet { updateSlice() } }
     private(set) var sliceImage: CGImage?
     private(set) var sliceFrameImage: CGImage?
@@ -98,11 +109,19 @@ final class FlowFieldModel {
     func open(_ url: URL) async {
         loadError = nil
         do {
-            let g = try await FrameGrabber(url: url)
+            let typed = calibration.video
+            let g = try await FrameGrabber(url: url, fps: typed?.typedFps, duration: typed?.typedDuration)
             grabber = g
             sourceURL = url
             frameCount = g.frameCount
             frameSize = g.size
+            detectedFps = g.detectedFps
+            detectedDuration = g.detectedDuration
+            isVideo = g.isVideo
+            // The engine picks frames by the same rate and count, so both agree on frame i.
+            calibration.video = g.isVideo
+                ? .init(fps: g.fps, frames: g.frameCount, typedFps: typed?.typedFps, typedDuration: typed?.typedDuration)
+                : nil
             calibration.sourceSize = [Int(g.size.width), Int(g.size.height)]
             if calibration.planes.lastFrame == nil || (calibration.planes.lastFrame ?? 0) >= g.frameCount {
                 calibration.planes.lastFrame = g.frameCount - 1
@@ -112,6 +131,17 @@ final class FlowFieldModel {
         } catch {
             loadError = error.localizedDescription
         }
+    }
+
+    /// Overrides the video's frame rate and length (nil: as the video says)
+    /// and reopens it, so frame numbers follow the typed timing.
+    func setVideoTiming(fps: Double?, duration: Double?) async {
+        guard let url = sourceURL else { return }
+        var v = calibration.video ?? .init()
+        v.typedFps = (fps ?? 0) > 0 ? fps : nil
+        v.typedDuration = (duration ?? 0) > 0 ? duration : nil
+        calibration.video = v
+        await open(url)
     }
 
     func showFrame(_ index: Int) async {
@@ -215,6 +245,7 @@ final class FlowFieldModel {
         viewer.show(nil, resetCamera: false)
         viewer.setFrame(volume.bounds)
         viewer.look(from: .iso)
+        sliceCut = .captured
         sliceIndex = volume.planeCount / 2
         updateWindow()
         mode = .explore
@@ -261,14 +292,18 @@ final class FlowFieldModel {
     func refreshWindow() { updateWindow() }
 
     private func updateSlice() {
-        guard let volume, (0..<volume.planeCount).contains(sliceIndex) else {
+        guard let volume, (0..<volume.sliceCount(sliceCut)).contains(sliceIndex) else {
             sliceImage = nil
             viewer.setSlice(nil, center: .zero, right: .zero, up: .zero)
             return
         }
-        sliceImage = volume.sliceImage(plane: sliceIndex)
-        let place = volume.sliceFrame(plane: sliceIndex)
+        sliceImage = volume.sliceImage(sliceCut, sliceIndex)
+        let place = volume.sliceFrame(sliceCut, sliceIndex)
         viewer.setSlice(sliceIn3D ? sliceImage : nil, center: place.center, right: place.right, up: place.up)
+        guard sliceCut == .captured else {
+            sliceFrameImage = nil  // a lengthways cut has no video frame of its own
+            return
+        }
         let frame = volume.frames[sliceIndex]
         Task {
             guard let grabber = self.grabber, let image = try? await grabber.image(at: frame) else { return }

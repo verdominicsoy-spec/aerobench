@@ -53,6 +53,7 @@ class Case:
     cfl: float = 25.0
     multigrid: int = 2
     scheme: str = "jst"
+    restart: str | None = None  # a solution to start from (restart.dat of a run on the same mesh)
 
 
 def find_su2(hint: str | None = None) -> Path:
@@ -87,6 +88,8 @@ def config(case: Case, mesh: str) -> str:
     }[case.model]
     if case.scheme not in SCHEMES:
         raise EngineError(f"unknown scheme '{case.scheme}'", f"expected one of {', '.join(SCHEMES)}")
+    restart = (f"RESTART_SOL= YES\nSOLUTION_FILENAME= {case.restart}\nRESTART_ITER= 1" if case.restart
+               else "RESTART_SOL= NO")
     flow_scheme = {
         "jst": f"CONV_NUM_METHOD_FLOW= JST\nMUSCL_FLOW= NO\nJST_SENSOR_COEFF= ( {JST_DISSIPATION[0]}, {JST_DISSIPATION[1]} )",
         "fds": "CONV_NUM_METHOD_FLOW= FDS\nMUSCL_FLOW= YES\nSLOPE_LIMITER_FLOW= NONE",
@@ -95,7 +98,7 @@ def config(case: Case, mesh: str) -> str:
 SOLVER= INC_RANS
 {turb}
 MATH_PROBLEM= DIRECT
-RESTART_SOL= NO
+{restart}
 INC_DENSITY_MODEL= CONSTANT
 INC_ENERGY_EQUATION= NO
 INC_NONDIM= INITIAL_VALUES

@@ -29,10 +29,14 @@ CONVERGENCE = {"quick": {"tolerance": 1e-3, "window": 100, "residual_drop": 3.0}
 
 
 def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: int, env: dict | None,
-          progress: Callable[[float, str], None], log: Callable[..., None], field: bool = True) -> dict:
+          progress: Callable[[float, str], None], log: Callable[..., None], field: bool = True,
+          mesh_ready: dict | None = None, restart: Path | None = None) -> dict:
     """p holds elements (coords placed in m, unit, angle, inverted, chord),
     speed, rho, mu, alpha, model, mesh level, transition and the rest of the
-    wing-rans parameters. The mesh goes to mesh_file, SU2's files to workdir."""
+    wing-rans parameters. The mesh goes to mesh_file, SU2's files to workdir.
+    mesh_ready: mesh_file already holds this wing's mesh (its statistics and
+    transition zones, from an earlier solve), so it is not built again.
+    restart: start SU2 from this solution (same mesh) rather than from rest."""
     raw = p.get("elements")
     if not isinstance(raw, list) or not raw:
         raise EngineError("params.elements must list the elements: coords (placed, m), unit, angle, inverted, chord")
@@ -54,7 +58,9 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     # solver at each element's own angle, in isolation.
     transition = p.get("transition", "auto")
     zones = []
-    if transition == "auto":
+    if mesh_ready is not None:
+        zones = [tuple(z) for z in mesh_ready["transition"]]
+    elif transition == "auto":
         progress(2, "predicting where each element's flow turns turbulent")
         for e, c in zip(raw, chords):
             sense = -1 if e.get("inverted") else 1
@@ -66,16 +72,20 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
         zones = [(float(t[0]), float(t[1])) for t in transition]
     else:
         raise EngineError("params.transition must be \"auto\" or one [suction, pressure] pair per element")
-    if model in ("sa", "sst") and transition == "auto":
+    if model in ("sa", "sst") and transition == "auto" and mesh_ready is None:
         log("fully turbulent model: the laminar zones only refine the mesh there")
 
     scale, growth = MESH_LEVELS[level]
     settings = Settings(re=re_ref, ref_chord=ref_chord, surface_fine=0.0025 * scale, surface_coarse=0.008 * scale,
                         edge=0.0015 * scale, wake_size=0.01 * scale, growth=growth, alpha_deg=alpha, transition=zones)
-    progress(5, "meshing")
-    mesh = build(placed, settings, mesh_file, inverted)
-    log(f"mesh: {mesh['cells']} cells ({mesh['quads']} quads, {mesh['triangles']} triangles), "
-        f"{mesh['layers']} wall layers")
+    if mesh_ready is not None:
+        mesh = mesh_ready["mesh"]
+    else:
+        progress(5, "meshing")
+        settings.alpha_deg = float(p.get("wake_alpha", alpha))  # a sweep aligns the wakes with its middle angle
+        mesh = build(placed, settings, mesh_file, inverted)
+        log(f"mesh: {mesh['cells']} cells ({mesh['quads']} quads, {mesh['triangles']} triangles), "
+            f"{mesh['layers']} wall layers")
     ref_point = p.get("ref_point")
     if ref_point is None:
         main = placed[0]
@@ -85,7 +95,8 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     case = su2.Case(speed=speed, rho=rho, mu=mu, alpha_deg=alpha, ref_chord=ref_chord,
                     ref_point=(float(ref_point[0]), float(ref_point[1])), walls=[f"wall_{i}" for i in range(len(raw))],
                     model=model, turbulence_intensity=float(p.get("turbulence_intensity", 0.01)),
-                    iterations=int(p.get("iterations", 4000)), **CONVERGENCE.get(level, {}))
+                    iterations=int(p.get("iterations", 4000)), restart=str(restart) if restart else None,
+                    **CONVERGENCE.get(level, {}))
     result = su2.run(case, mesh_file, workdir, su2.find_su2(su2_hint), cores=cores,
                      progress=lambda pct, msg: progress(10 + 0.88 * pct, msg), env=env)
     result.pop("history_columns", None)
@@ -102,7 +113,7 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
             view = "field.json"
         except Exception as exc:  # noqa: BLE001 - the run's numbers stand without the picture
             log(f"no field view: {exc}", level="warning")
-    return {"re": re_ref, "mesh": mesh, "mesh_level": level, "transition": zones, "model": model,
+    return {"alpha": alpha, "re": re_ref, "mesh": mesh, "mesh_level": level, "transition": zones, "model": model,
             "model_name": su2.MODELS[model], **result, "surface": surface,
             "field": "flow.vtu" if (workdir / "flow.vtu").exists() else None, "field_view": view}
 
@@ -143,3 +154,49 @@ def surface_cp(path: Path, placed: list[np.ndarray]) -> list[dict]:
                     "cp": np.round(sel[:, 2], 5).tolist(),
                     "side": ["upper" if k <= half else "lower" for k in near]})
     return out
+
+
+def sweep(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: int, env: dict | None,
+          progress: Callable[[float, str], None], log: Callable[..., None]) -> dict:
+    """The wing at several angles on one mesh, each angle started from the
+    previous one's solution, in rising order. Stops starting new angles once
+    the next would run past time_limit seconds (from the time the last one
+    took). Each angle's files go to workdir/a<angle>."""
+    import time
+
+    alphas = sorted({float(a) for a in p.get("alphas", [])})
+    if not alphas:
+        raise EngineError("params.alphas must list the wing angles")
+    limit = float(p.get("time_limit", 300))
+    start = time.time()
+    rows, skipped, ready, previous = [], [], None, None
+    base = {**p, "wake_alpha": 0.5 * (alphas[0] + alphas[-1])}
+    for k, a in enumerate(alphas):
+        elapsed = time.time() - start
+        if rows and elapsed + rows[-1]["seconds"] > limit:
+            skipped = alphas[k:]
+            log(f"time limit: {len(skipped)} angle(s) not run", level="warning")
+            break
+        folder = workdir / f"a{a:g}"
+        folder.mkdir(parents=True, exist_ok=True)
+        t0 = time.time()
+        lo, hi = 100 * k / len(alphas), 100 * (k + 1) / len(alphas)
+        try:
+            r = solve({**base, "alpha": a}, folder, mesh_file, su2_hint, cores, env,
+                      lambda pct, msg: progress(lo + (hi - lo) * pct / 100, f"{a:g}°: {msg}"), log,
+                      mesh_ready=ready, restart=previous)
+        except EngineError as exc:
+            if previous is None:
+                raise
+            # A restart that will not settle: try that angle once from rest.
+            log(f"{a:g}° from the previous solution failed ({exc.msg}); from rest", level="warning")
+            r = solve({**base, "alpha": a}, folder, mesh_file, su2_hint, cores, env,
+                      lambda pct, msg: progress(lo + (hi - lo) * pct / 100, f"{a:g}°: {msg}"), log,
+                      mesh_ready=ready)
+        r.pop("history_columns", None)
+        r.update(seconds=round(time.time() - t0, 1), folder=folder.name)
+        rows.append(r)
+        ready = {"mesh": r["mesh"], "transition": r["transition"]}
+        previous = (folder / "restart.dat").resolve() if (folder / "restart.dat").exists() else None
+        log(f"{a:g}°: Cl {r['cl']:.4f}, Cd {r['cd']:.5f}{'' if r['converged'] else ' (not converged)'}, {r['seconds']:.0f} s")
+    return {"rows": rows, "skipped": skipped, "seconds": round(time.time() - start, 1), "time_limit": limit}

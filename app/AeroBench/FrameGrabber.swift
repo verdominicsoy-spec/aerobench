@@ -9,12 +9,18 @@ final class FrameGrabber: @unchecked Sendable {
     let frameCount: Int
     let fps: Double
     let size: CGSize
+    /// What the video says about itself (nil for a folder of images).
+    let detectedFps: Double?
+    let detectedDuration: Double?
+    var isVideo: Bool { generator != nil }
     private let generator: AVAssetImageGenerator?
     private let images: [URL]
 
     static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "tif", "tiff", "bmp"]
 
-    init(url: URL) async throws {
+    /// fps and duration override what the video reports, for one that
+    /// reports them wrong; frame i is then what shows at (i + 1/2) / fps.
+    init(url: URL, fps typedFps: Double? = nil, duration typedDuration: Double? = nil) async throws {
         self.url = url
         var isDir: ObjCBool = false
         _ = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
@@ -29,6 +35,8 @@ final class FrameGrabber: @unchecked Sendable {
             generator = nil
             frameCount = files.count
             fps = 30
+            detectedFps = nil
+            detectedDuration = nil
             size = CGSize(width: image.width, height: image.height)
         } else {
             let asset = AVURLAsset(url: url)
@@ -38,8 +46,11 @@ final class FrameGrabber: @unchecked Sendable {
             let duration = try await asset.load(.duration)
             let rate = Double(try await track.load(.nominalFrameRate))
             let natural = try await track.load(.naturalSize)
-            fps = rate > 0 ? rate : 30
-            frameCount = max(Int((duration.seconds * fps).rounded()), 1)
+            detectedFps = rate > 0 ? rate : nil
+            detectedDuration = duration.seconds.isFinite ? duration.seconds : nil
+            fps = (typedFps ?? 0) > 0 ? typedFps! : (rate > 0 ? rate : 30)
+            let length = (typedDuration ?? 0) > 0 ? typedDuration! : duration.seconds
+            frameCount = max(Int((length * fps).rounded()), 1)
             size = natural
             let g = AVAssetImageGenerator(asset: asset)
             g.requestedTimeToleranceBefore = .zero

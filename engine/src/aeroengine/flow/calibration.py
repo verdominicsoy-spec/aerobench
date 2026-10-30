@@ -123,6 +123,16 @@ class Calibration:
             raise EngineError("detail must be low, medium or high")
         self._spatial(data.get("spatial"))
         self._planes(data.get("planes"))
+        # The frame rate and frame count the app used (detected, or typed in
+        # because the video reports them wrong): frames are then picked by
+        # time, as the app picks them.
+        video = data.get("video") or {}
+        if not isinstance(video, dict):
+            raise EngineError("video must be an object: fps and frames")
+        self.video_fps = float(video["fps"]) if video.get("fps") else None
+        self.video_frames = int(video["frames"]) if video.get("frames") else None
+        if self.video_fps is not None and self.video_fps <= 0:
+            raise EngineError("video.fps must be above zero")
 
     # Spatial scale ----------------------------------------------------------
 

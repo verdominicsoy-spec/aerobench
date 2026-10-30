@@ -37,6 +37,7 @@ final class WingLabModel {
     enum Solver: String, CaseIterable, Identifiable {
         case preview = "Inviscid preview"
         case quickViscous = "Quick viscous"
+        case quickEstimate = "Quick estimate"
         case rans = "RANS CFD"
 
         var id: String { rawValue }
@@ -45,6 +46,7 @@ final class WingLabModel {
             switch self {
             case .preview: "Live while you drag, every element together. No viscosity: lift trends and how the load splits, no drag."
             case .quickViscous: "NeuralFoil (trained on XFOIL): one element in isolation, a whole polar in seconds, with drag and where the boundary layer turns turbulent. Picks sections; knows nothing of slot effects."
+            case .quickEstimate: "Every element together, on the quick RANS mesh: about 1½ minutes for one angle, to three figures. Sweep the wing angle for Cl and Cd against angle, inside 5 minutes."
             case .rans: "SU2 on a mesh around every element: slot flow, separation, the real gap effects. Minutes per run."
             }
         }
@@ -101,6 +103,29 @@ final class WingLabModel {
     var ransResult: WingRansResult?
     var ransFolder: URL?
     var su2Job: JobItem?
+
+    // Quick estimate: one angle, or a sweep of the wing angle within a time limit
+    var sweepOn = false
+    var sweepFrom = -4.0
+    var sweepTo = 4.0
+    var sweepStep = 2.0
+    var sweep: WingSweep?
+    var sweepFolder: URL?
+    var sweepJob: JobItem?
+    var sweepRow: Int?
+
+    var sweepAngles: [Double] { WingSweep.angles(from: sweepFrom, to: sweepTo, step: sweepStep) }
+
+    /// Shows one angle of the sweep in the CFD tab: its numbers, surface Cp and flow field.
+    func showSweepRow(_ i: Int) {
+        guard let s = sweep, s.rows.indices.contains(i), let base = sweepFolder else { return }
+        let row = s.rows[i]
+        let folder = row.folder.map { base.appendingPathComponent($0) } ?? base
+        sweepRow = i
+        ransResult = row
+        ransFolder = folder
+        ransField = row.fieldView == nil ? nil : try? WingField.load(from: folder)
+    }
 
     // The flow field of the last RANS run
     enum CFDView: String, CaseIterable, Identifiable {

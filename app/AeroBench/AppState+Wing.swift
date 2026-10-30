@@ -192,6 +192,48 @@ extension AppState {
         }
     }
 
+    /// Quick estimate: every element on the quick mesh, at the wing's angle
+    /// or over a sweep of angles (inside 5 minutes; the engine skips angles
+    /// that would run past it).
+    func runWingQuickEstimate() {
+        let lab = wingLab
+        let wing = lab.wing
+        guard !wing.elements.isEmpty else { return }
+        func points(_ p: [SIMD2<Double>]) -> JSONValue { .array(p.map { .array([.double($0.x), .double($0.y)]) }) }
+        var params = ransParams()
+        params["elements"] = .array(wing.elements.map { e in
+            .object(["coords": points(e.placed()), "unit": points(e.airfoil.coords), "angle": .double(e.angle),
+                     "inverted": .bool(e.inverted), "chord": .double(e.chord)])
+        })
+        params["mesh"] = .string("quick")
+        lab.ransResult = nil
+        lab.ransField = nil
+        lab.resultsTab = .cfd
+        guard lab.sweepOn else {
+            lab.sweep = nil
+            lab.ransJob = jobs.submit(command: "wing-rans", params: params, in: jobsRoot) { [weak self] item in
+                guard let self, item.status == .succeeded, let text = item.resultText else { return }
+                self.wingLab.ransResult = try? WingRansResult.decode(resultFile: Data(text.utf8))
+                self.wingLab.ransFolder = item.workdir
+                self.wingLab.ransField = self.wingLab.ransResult?.fieldView == nil ? nil : try? WingField.load(from: item.workdir)
+            }
+            return
+        }
+        params["alphas"] = .array(lab.sweepAngles.map { .double($0) })
+        params["time_limit"] = .double(300)
+        lab.sweep = nil
+        lab.sweepRow = nil
+        lab.sweepJob = jobs.submit(command: "wing-sweep", params: params, in: jobsRoot) { [weak self] item in
+            guard let self, item.status == .succeeded, let text = item.resultText,
+                  let s = try? WingSweep.decode(resultFile: Data(text.utf8)) else { return }
+            self.wingLab.sweep = s
+            self.wingLab.sweepFolder = item.workdir
+            // Start on the angle nearest the wing's own.
+            let near = s.rows.indices.min { abs((s.rows[$0].alpha ?? 0) - wing.alpha) < abs((s.rows[$1].alpha ?? 0) - wing.alpha) }
+            if let near { self.wingLab.showSweepRow(near) }
+        }
+    }
+
     /// Builds SU2 from source into the repo's build/su2 (once, 10 to 20 minutes).
     func installSU2() {
         wingLab.su2Job = jobs.submit(command: "su2-install", in: jobsRoot)

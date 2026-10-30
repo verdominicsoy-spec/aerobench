@@ -230,3 +230,33 @@ with open("history.csv", "w") as h:
     out = m.run(case, tmp_path / "m.su2", tmp_path, fake, cores=1)
     assert (tmp_path / "started_once").exists(), out
     assert out["converged"], out
+
+
+def test_sweep_chains_restarts_and_keeps_to_its_time_limit(monkeypatch, tmp_path):
+    from aeroengine.wing import rans
+
+    calls = []
+    clock = {"t": 0.0}
+    monkeypatch.setattr("time.time", lambda: clock["t"])
+
+    def fake_solve(p, workdir, mesh_file, su2_hint, cores, env, progress, log, field=True, mesh_ready=None, restart=None):
+        calls.append({"alpha": p["alpha"], "wake": p["wake_alpha"], "ready": mesh_ready is not None,
+                      "restart": restart.parent.name if restart else None})
+        if p["alpha"] == 2.0 and restart is not None:
+            raise EngineError("SU2 diverged at every CFL tried")
+        clock["t"] += 100.0 if mesh_ready is None else 60.0
+        (workdir / "restart.dat").write_text("x")
+        return {"alpha": p["alpha"], "cl": p["alpha"] / 10, "cd": 0.01, "converged": True,
+                "mesh": {"cells": 1}, "transition": [[0.0, 0.0]]}
+
+    monkeypatch.setattr(rans, "solve", fake_solve)
+    out = rans.sweep({"alphas": [4, 0, 2, -2, 6], "time_limit": 300}, tmp_path, tmp_path / "m.su2", None, 1, None,
+                     lambda *a: None, lambda *a, **k: None)
+    # Rising order, one mesh (wakes on the middle angle), each angle from the one before.
+    assert [c["alpha"] for c in calls[:2]] == [-2.0, 0.0] and all(c["wake"] == 2.0 for c in calls)
+    assert calls[0]["ready"] is False and calls[0]["restart"] is None
+    assert calls[1]["ready"] and calls[1]["restart"] == "a-2"
+    # 2 degrees would not settle from 0 degrees' solution: tried again from rest.
+    assert [c["restart"] for c in calls if c["alpha"] == 2.0] == ["a0", None]
+    # 100 + 60 + 60 = 220 s so far; the next, at about 60 s more, still fits; the one after does not.
+    assert [r["alpha"] for r in out["rows"]] == [-2.0, 0.0, 2.0, 4.0] and out["skipped"] == [6.0]

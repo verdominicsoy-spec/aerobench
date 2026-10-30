@@ -473,6 +473,13 @@ struct CFDResults: View {
 
     var body: some View {
         let lab = app.wingLab
+        VStack(spacing: 0) {
+            if let sweep = lab.sweep { SweepStrip(sweep: sweep) }
+            run(lab)
+        }
+    }
+
+    @ViewBuilder private func run(_ lab: WingLabModel) -> some View {
         if let r = lab.ransResult {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -555,7 +562,7 @@ struct CFDResults: View {
                 .opacity(r.converged ? 1 : 0.35)
             }
             .padding(8)
-        } else if let job = lab.ransJob, !job.status.isFinished {
+        } else if let job = [lab.ransJob, lab.sweepJob].compactMap({ $0 }).first(where: { !$0.status.isFinished }) {
             VStack {
                 ProgressView(value: job.progress, total: 100)
                 Text(job.progressMessage).font(.caption)
@@ -563,7 +570,7 @@ struct CFDResults: View {
             .padding()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            Text("Pick RANS CFD in Solvers and run it.").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            Text("Pick Quick estimate or RANS CFD in Solvers and run it.").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -745,6 +752,8 @@ struct WingInspector: View {
                 EmptyView()
             case .quickViscous:
                 quickViscousControls(lab)
+            case .quickEstimate:
+                quickEstimateControls(lab)
             case .rans:
                 ransControls(lab)
             }
@@ -884,6 +893,28 @@ struct WingInspector: View {
             Text("Optimise")
         } footer: {
             Text("Tick the angles, gaps and overlaps to search, and their ranges. Wings that break the minimum gap or the rules box are never run. Trials whose mesh fails or whose run diverges or does not converge are recorded as failed and the study carries on. Stopping is safe: Resume picks up where it left off.")
+        }
+    }
+
+    @ViewBuilder private func quickEstimateControls(_ lab: WingLabModel) -> some View {
+        let haveSU2 = app.settings.su2Executable != nil
+        if !haveSU2 { su2Install(lab) }
+        Toggle("Sweep the wing angle", isOn: Binding(get: { lab.sweepOn }, set: { lab.sweepOn = $0 }))
+        if lab.sweepOn {
+            NumberField(label: "From", unit: "°", value: Binding(get: { lab.sweepFrom }, set: { lab.sweepFrom = $0 }))
+            NumberField(label: "To", unit: "°", value: Binding(get: { lab.sweepTo }, set: { lab.sweepTo = $0 }))
+            NumberField(label: "Step", unit: "°", value: Binding(get: { lab.sweepStep }, set: { lab.sweepStep = max($0, 0.5) }))
+            Text("\(lab.sweepAngles.map { String(format: "%g°", $0) }.joined(separator: ", ")). One mesh, each angle started from the one before; angles that would run past 5 minutes are skipped and listed.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        let busy = (lab.ransJob.map { !$0.status.isFinished } ?? false) || (lab.sweepJob.map { !$0.status.isFinished } ?? false)
+        Button(lab.sweepOn ? "Run the Sweep" : "Run the Estimate") { app.runWingQuickEstimate() }
+            .buttonStyle(.borderedProminent)
+            .disabled(!haveSU2 || busy || lab.wing.elements.isEmpty || !lab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty)
+        Text("Uses the turbulence model chosen under RANS CFD (Spalart–Allmaras unless you changed it). Within 0.3% of the medium mesh on lift and about 1% on drag on a two-element wing; use RANS CFD for the final numbers.")
+            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        if let job = lab.sweepOn ? lab.sweepJob : lab.ransJob, !job.status.isFinished || job.status == .failed {
+            JobInlineStatus(job: job)
         }
     }
 
@@ -1188,5 +1219,52 @@ struct WingFieldPlot: View {
             Text(String(format: "%.2f", s.range.last ?? s.max)).font(.caption2.monospacedDigit())
         }
         .help("\(s.name): \(String(format: "%.3f", s.min)) to \(String(format: "%.3f", s.max)) in the window; the colours span the middle 98%.")
+    }
+}
+
+/// A quick-estimate sweep: Cl and Cd against the wing angle, and which
+/// angle the results below show.
+struct SweepStrip: View {
+    @Environment(AppState.self) private var app
+    let sweep: WingSweep
+
+    var body: some View {
+        let lab = app.wingLab
+        let rows = Array(sweep.rows.enumerated())
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Sweep, quick mesh").font(.caption).bold()
+                Picker("Angle", selection: Binding(get: { lab.sweepRow ?? 0 }, set: { lab.showSweepRow($0) })) {
+                    ForEach(rows, id: \.offset) { i, r in Text(String(format: "%g°", r.alpha ?? 0)).tag(i) }
+                }
+                .pickerStyle(.segmented).labelsHidden()
+                Text(String(format: "%.0f s in all", sweep.seconds)
+                     + (sweep.skipped.isEmpty ? "" : "; not run, out of time: " + sweep.skipped.map { String(format: "%g°", $0) }.joined(separator: ", ")))
+                    .font(.caption2).foregroundStyle(sweep.skipped.isEmpty ? Color.secondary : Color.orange)
+                if rows.contains(where: { !$0.element.converged }) {
+                    Text("Orange points did not converge: not results.").font(.caption2).foregroundStyle(.orange)
+                }
+            }
+            .frame(width: 260, alignment: .leading)
+            chart("Cl", rows.map { ($0.element.alpha ?? 0, $0.element.cl, $0.element.converged) })
+            chart("Cd", rows.map { ($0.element.alpha ?? 0, $0.element.cd, $0.element.converged) })
+        }
+        .padding(8)
+        .frame(height: 150)
+        Divider()
+    }
+
+    private func chart(_ name: String, _ points: [(Double, Double, Bool)]) -> some View {
+        Chart {
+            ForEach(Array(points.enumerated()), id: \.offset) { _, p in
+                LineMark(x: .value("α", p.0), y: .value(name, p.1)).foregroundStyle(.gray)
+                PointMark(x: .value("α", p.0), y: .value(name, p.1))
+                    .symbolSize(p.2 ? 40 : 30)
+                    .foregroundStyle(p.2 ? Color.accentColor : Color.orange)
+                    .opacity(p.2 ? 1 : 0.5)
+            }
+        }
+        .chartXAxisLabel("Wing angle (°)").chartYAxisLabel(name)
+        .chartYScale(domain: .automatic(includesZero: false))
     }
 }

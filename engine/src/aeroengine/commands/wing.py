@@ -128,6 +128,17 @@ def wing_rans(ctx: JobContext) -> dict:
                       ctx.options.cores, ctx.thread_env(), ctx.emit.progress, ctx.emit.log)
 
 
+@command("wing-sweep")
+def wing_sweep(ctx: JobContext) -> dict:
+    """The multi-element wing at several angles on one mesh (the quick level
+    by default), each angle started from the one before, within a time limit."""
+    from ..wing import rans
+
+    p = {"mesh": "quick", **ctx.params}
+    return rans.sweep(p, ctx.workdir, ctx.mesh_dir / "wing.su2", p.get("su2") or ctx.options.su2_path,
+                      ctx.options.cores, ctx.thread_env(), ctx.emit.progress, ctx.emit.log)
+
+
 @command("wing-optimise")
 def wing_optimise(ctx: JobContext) -> dict:
     """Optimises angles, gaps and overlaps of a multi-element wing with RANS

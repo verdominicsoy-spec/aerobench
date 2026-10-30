@@ -128,3 +128,40 @@ final class FlowVolumeTests: XCTestCase {
         XCTAssertEqual(v.sliceFrame(plane: 0).right, SIMD3(-0.2, 0, 0))
     }
 }
+
+final class FlowVolumeCutTests: XCTestCase {
+    /// Sweep along x at uneven spacing (0, 0.1, 0.4 m), y across, z up; each
+    /// voxel's value is its plane index, so a lengthways cut shows the planes.
+    private func volume() -> FlowVolume {
+        let x = [0.0, 0.1, 0.4], y = [-0.1, 0.0, 0.1, 0.2], z = [0.0, 0.05]
+        var values: [Float] = []
+        for i in 0..<3 { for _ in y { for _ in z { values.append(Float(i)) } } }
+        return FlowVolume(x: x, y: y, z: z, sweepAxis: "x", right: "+y", up: "+z", frames: [0, 1, 2],
+                          vmin: 0, vmax: 2, colormap: [SIMD3(0, 0, 0), SIMD3(0.5, 0.5, 0.5), SIMD3(1, 1, 1)], values: values)
+    }
+
+    func testCutAxesAndCounts() {
+        let v = volume()
+        XCTAssertEqual(v.axes(.captured).normal, 0)
+        XCTAssertEqual(v.axes(.side).normal, 1)  // a side profile is cut across y
+        XCTAssertEqual(v.axes(.top).normal, 2)
+        XCTAssertEqual(v.sliceCount(.side), 4)
+        XCTAssertEqual(v.slicePosition(.side, 1), 0.0)
+        XCTAssertEqual(v.sliceFrame(.side, 1).center, SIMD3(0.2, 0.0, 0.025))
+        XCTAssertEqual(v.sliceFrame(.side, 1).right, SIMD3(0.4, 0, 0))
+    }
+
+    func testSideProfileIsEvenAlongTheSweep() throws {
+        let v = volume()
+        let image = try XCTUnwrap(v.sliceImage(.side, 1))
+        XCTAssertEqual(image.height, 2)
+        XCTAssertEqual(image.width, 64)  // resampled evenly along the uneven sweep
+        let data = try XCTUnwrap(image.dataProvider?.data) as Data
+        func grey(_ col: Int) -> UInt8 { data[col * 4] }
+        // Across 0..0.4 m: the first quarter is nearest the planes at 0 and 0.1,
+        // the last stretch nearest the plane at 0.4.
+        XCTAssertEqual(grey(0), 0)
+        XCTAssertEqual(grey(20), 128)
+        XCTAssertEqual(grey(63), 255)
+    }
+}

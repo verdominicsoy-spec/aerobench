@@ -173,6 +173,100 @@ public struct FlowVolume: Sendable {
                        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     }
 
+    // MARK: Slices in any direction
+
+    /// Which way a slice is cut: across the sweep (the planes as captured),
+    /// lengthways and upright (a side profile), or lengthways and level (from above).
+    public enum Cut: String, CaseIterable, Identifiable, Sendable {
+        case captured = "As captured"
+        case side = "Side profile"
+        case top = "From above"
+
+        public var id: String { rawValue }
+    }
+
+    /// The world axis a cut is perpendicular to, and its image's across and
+    /// up axes. Side: along the sweep, and up. Above: along the sweep, and
+    /// the frames' right axis.
+    public func axes(_ cut: Cut) -> (normal: Int, across: Int, up: Int) {
+        switch cut {
+        case .captured: (sweepAxis, right.index, up.index)
+        case .side: (right.index, sweepAxis, up.index)
+        case .top: (up.index, sweepAxis, right.index)
+        }
+    }
+
+    public func sliceCount(_ cut: Cut) -> Int { counts[axes(cut).normal] }
+
+    public func slicePosition(_ cut: Cut, _ i: Int) -> Double {
+        let c = coordinates(axes(cut).normal)
+        return c[Swift.min(Swift.max(i, 0), c.count - 1)]
+    }
+
+    public func axisLetter(_ axis: Int) -> String { ["x", "y", "z"][axis] }
+
+    /// Where a cut's image sits in the world (centre, full-width and
+    /// full-height edges), metres. Its across and up axes run positive.
+    public func sliceFrame(_ cut: Cut, _ i: Int) -> (center: SIMD3<Double>, right: SIMD3<Double>, up: SIMD3<Double>) {
+        if cut == .captured { return sliceFrame(plane: i) }
+        let a = axes(cut)
+        var center = SIMD3<Double>(repeating: 0), r = SIMD3<Double>(repeating: 0), u = SIMD3<Double>(repeating: 0)
+        center[a.normal] = slicePosition(cut, i)
+        let ar = range(a.across), ur = range(a.up)
+        center[a.across] = (ar.lowerBound + ar.upperBound) / 2
+        center[a.up] = (ur.lowerBound + ur.upperBound) / 2
+        r[a.across] = ar.upperBound - ar.lowerBound
+        u[a.up] = ur.upperBound - ur.lowerBound
+        return (center, r, u)
+    }
+
+    /// A cut as an RGBA image, across axis left to right and up axis bottom
+    /// to top, both increasing. The sweep axis can be unevenly spaced, so
+    /// along it the image is resampled evenly (nearest plane), which keeps
+    /// lengths true. Empty voxels are transparent.
+    public func sliceImage(_ cut: Cut, _ i: Int) -> CGImage? {
+        if cut == .captured { return sliceImage(plane: i) }
+        let a = axes(cut)
+        guard (0..<counts[a.normal]).contains(i) else { return nil }
+        func columns(_ axis: Int) -> [Int] {
+            let c = coordinates(axis)
+            guard axis == sweepAxis, c.count > 1, let lo = c.first, let hi = c.last, hi > lo else { return Array(0..<c.count) }
+            let n = Swift.min(Swift.max(c.count * 2, 64), 1024)
+            var out: [Int] = []
+            var k = 0
+            for col in 0..<n {
+                let p = lo + (hi - lo) * (Double(col) + 0.5) / Double(n)
+                while k + 1 < c.count && abs(c[k + 1] - p) <= abs(c[k] - p) { k += 1 }
+                out.append(k)
+            }
+            return out
+        }
+        let across = columns(a.across), up = columns(a.up)
+        let w = across.count, h = up.count
+        var rgba = [UInt8](repeating: 0, count: w * h * 4)
+        var index = [0, 0, 0]
+        index[a.normal] = i
+        for row in 0..<h {
+            index[a.up] = up[h - 1 - row]  // the image's top row is the high end
+            for col in 0..<w {
+                index[a.across] = across[col]
+                let v = value(index[0], index[1], index[2])
+                guard !v.isNaN else { continue }
+                let c = color(Double(v))
+                let o = (row * w + col) * 4
+                rgba[o] = UInt8((c.x * 255).rounded())
+                rgba[o + 1] = UInt8((c.y * 255).rounded())
+                rgba[o + 2] = UInt8((c.z * 255).rounded())
+                rgba[o + 3] = 255
+            }
+        }
+        guard let provider = CGDataProvider(data: Data(rgba) as CFData) else { return nil }
+        return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
+                       space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+    }
+
     /// Voxel centres with lo <= value <= hi, thinned evenly to at most maxPoints.
     public func windowPoints(lo: Double, hi: Double, maxPoints: Int = 250_000) -> (positions: [SIMD3<Float>], colors: [SIMD4<Float>]) {
         let flo = Float(lo), fhi = Float(hi)

@@ -258,3 +258,24 @@ final class WingFieldTests: XCTestCase {
         XCTAssertThrowsError(try WingField(json: Data(json.utf8), binary: Data(count: 8)))
     }
 }
+
+final class WingSweepTests: XCTestCase {
+    func testAngles() {
+        XCTAssertEqual(WingSweep.angles(from: -4, to: 4, step: 2), [-4, -2, 0, 2, 4])
+        XCTAssertEqual(WingSweep.angles(from: 4, to: -4, step: -2), [-4, -2, 0, 2, 4])
+        XCTAssertEqual(WingSweep.angles(from: 0, to: 20, step: 1, limit: 5).count, 5)
+        XCTAssertEqual(WingSweep.angles(from: 0, to: 1, step: 0.5), [0, 0.5, 1])
+    }
+
+    func testDecodesTheEngineResult() throws {
+        let row = #"{"alpha": -2.0, "folder": "a-2", "seconds": 61.5, "re": 450000, "mesh": {"cells": 32322, "triangles": 15443, "quads": 16879, "layers": 20, "first_cell_height_m": 1e-5, "layer_thickness_m": 0.004}, "mesh_level": "quick", "transition": [[0.1, 0.2]], "model": "sa", "model_name": "Spalart-Allmaras", "iterations": 900, "converged": true, "residual_drop": 5.1, "cl": -2.05, "cd": 0.045, "elements": [], "surface": [], "field_view": "field.json"}"#
+        let json = #"{"data": {"rows": [\#(row)], "skipped": [4.0], "seconds": 290.2, "time_limit": 300}}"#
+        let s = try WingSweep.decode(resultFile: Data(json.utf8))
+        XCTAssertEqual(s.rows.count, 1)
+        XCTAssertEqual(s.rows[0].alpha, -2)
+        XCTAssertEqual(s.rows[0].folder, "a-2")
+        XCTAssertEqual(s.rows[0].fieldView, "field.json")
+        XCTAssertEqual(s.skipped, [4])
+        XCTAssertEqual(s.timeLimit, 300)
+    }
+}
