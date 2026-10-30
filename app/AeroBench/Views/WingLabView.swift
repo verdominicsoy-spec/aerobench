@@ -904,7 +904,7 @@ struct WingInspector: View {
             NumberField(label: "From", unit: "°", value: Binding(get: { lab.sweepFrom }, set: { lab.sweepFrom = $0 }))
             NumberField(label: "To", unit: "°", value: Binding(get: { lab.sweepTo }, set: { lab.sweepTo = $0 }))
             NumberField(label: "Step", unit: "°", value: Binding(get: { lab.sweepStep }, set: { lab.sweepStep = max($0, 0.5) }))
-            Text("\(lab.sweepAngles.map { String(format: "%g°", $0) }.joined(separator: ", ")). One mesh, each angle started from the one before; angles that would run past 5 minutes are skipped and listed.")
+            Text("\(lab.sweepAngles.map { String(format: "%g°", $0) }.joined(separator: ", ")). One mesh; the middle angle from rest, the rest each from its neighbour. Never past 5 minutes: angles there is no time for are skipped and listed.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         let busy = (lab.ransJob.map { !$0.status.isFinished } ?? false) || (lab.sweepJob.map { !$0.status.isFinished } ?? false)

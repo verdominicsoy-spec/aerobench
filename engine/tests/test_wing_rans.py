@@ -241,22 +241,23 @@ def test_sweep_chains_restarts_and_keeps_to_its_time_limit(monkeypatch, tmp_path
 
     def fake_solve(p, workdir, mesh_file, su2_hint, cores, env, progress, log, field=True, mesh_ready=None, restart=None):
         calls.append({"alpha": p["alpha"], "wake": p["wake_alpha"], "ready": mesh_ready is not None,
-                      "restart": restart.parent.name if restart else None})
-        if p["alpha"] == 2.0 and restart is not None:
+                      "restart": restart.parent.name if restart else None, "iterations": p["iterations"]})
+        if p["alpha"] == 4.0 and restart is not None:
             raise EngineError("SU2 diverged at every CFL tried")
-        clock["t"] += 100.0 if mesh_ready is None else 60.0
+        seconds = 180.0 if mesh_ready is None else (60.0 if restart is None else 30.0)
+        clock["t"] += seconds
         (workdir / "restart.dat").write_text("x")
-        return {"alpha": p["alpha"], "cl": p["alpha"] / 10, "cd": 0.01, "converged": True,
+        return {"alpha": p["alpha"], "cl": p["alpha"] / 10, "cd": 0.01, "converged": True, "iterations": 1800 if mesh_ready is None else (600 if restart is None else 300),
                 "mesh": {"cells": 1}, "transition": [[0.0, 0.0]]}
 
     monkeypatch.setattr(rans, "solve", fake_solve)
-    out = rans.sweep({"alphas": [4, 0, 2, -2, 6], "time_limit": 300}, tmp_path, tmp_path / "m.su2", None, 1, None,
+    out = rans.sweep({"alphas": [4, 0, 2, -2, -4], "time_limit": 300}, tmp_path, tmp_path / "m.su2", None, 1, None,
                      lambda *a: None, lambda *a, **k: None)
-    # Rising order, one mesh (wakes on the middle angle), each angle from the one before.
-    assert [c["alpha"] for c in calls[:2]] == [-2.0, 0.0] and all(c["wake"] == 2.0 for c in calls)
-    assert calls[0]["ready"] is False and calls[0]["restart"] is None
-    assert calls[1]["ready"] and calls[1]["restart"] == "a-2"
-    # 2 degrees would not settle from 0 degrees' solution: tried again from rest.
-    assert [c["restart"] for c in calls if c["alpha"] == 2.0] == ["a0", None]
-    # 100 + 60 + 60 = 220 s so far; the next, at about 60 s more, still fits; the one after does not.
-    assert [r["alpha"] for r in out["rows"]] == [-2.0, 0.0, 2.0, 4.0] and out["skipped"] == [6.0]
+    # The middle angle first, from rest; then up from it, then down from it, each from its neighbour.
+    assert [(c["alpha"], c["restart"]) for c in calls] == [
+        (0.0, None), (2.0, "a0"), (4.0, "a2"), (4.0, None), (-2.0, "a0")]
+    assert calls[0]["ready"] is False and all(c["ready"] for c in calls[1:]) and all(c["wake"] == 0.0 for c in calls)
+    # 180 (0) + 30 (2) + 60 (4, from rest after the restart failed) + 30 (-2) = 300 s: no time for -4.
+    assert [r["alpha"] for r in out["rows"]] == [-2.0, 0.0, 2.0, 4.0] and out["skipped"] == [-4.0]
+    # Iterations are capped by the time left at the slowest rate seen (0.1 s each).
+    assert calls[1]["iterations"] == 1200 and calls[4]["iterations"] == 300

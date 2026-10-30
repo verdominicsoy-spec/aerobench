@@ -158,45 +158,72 @@ def surface_cp(path: Path, placed: list[np.ndarray]) -> list[dict]:
 
 def sweep(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: int, env: dict | None,
           progress: Callable[[float, str], None], log: Callable[..., None]) -> dict:
-    """The wing at several angles on one mesh, each angle started from the
-    previous one's solution, in rising order. Stops starting new angles once
-    the next would run past time_limit seconds (from the time the last one
-    took). Each angle's files go to workdir/a<angle>."""
+    """The wing at several angles on one mesh within time_limit seconds.
+
+    The middle angle runs first, from rest; then the angles above it, then
+    those below, each started from its neighbour's solution, which takes far
+    fewer iterations. Every angle's iterations are capped by the time left,
+    so the sweep never runs past the limit: an angle that hits the cap is
+    reported as not converged, and angles there is no time to start are
+    listed as skipped. Each angle's files go to workdir/a<angle>."""
     import time
 
     alphas = sorted({float(a) for a in p.get("alphas", [])})
     if not alphas:
         raise EngineError("params.alphas must list the wing angles")
     limit = float(p.get("time_limit", 300))
+    max_iterations = int(p.get("iterations", 4000))
+    mid = min(range(len(alphas)), key=lambda k: abs(alphas[k] - 0.5 * (alphas[0] + alphas[-1])))
+    order = [(alphas[mid], None)] + [(alphas[k], alphas[k - 1]) for k in range(mid + 1, len(alphas))] \
+        + [(alphas[k], alphas[k + 1]) for k in range(mid - 1, -1, -1)]
     start = time.time()
-    rows, skipped, ready, previous = [], [], None, None
+    done: dict[float, dict] = {}
+    solutions: dict[float, Path] = {}
+    skipped: list[float] = []
+    ready = None
+    per_iteration = None  # seconds, the slowest seen
+    restart_time = None  # seconds a restarted angle took, once one has
     base = {**p, "wake_alpha": 0.5 * (alphas[0] + alphas[-1])}
-    for k, a in enumerate(alphas):
-        elapsed = time.time() - start
-        if rows and elapsed + rows[-1]["seconds"] > limit:
-            skipped = alphas[k:]
-            log(f"time limit: {len(skipped)} angle(s) not run", level="warning")
-            break
+    for n, (a, near) in enumerate(order):
+        left = limit - (time.time() - start)
+        if done:
+            expected = restart_time if restart_time is not None else 0.5 * next(iter(done.values()))["seconds"]
+            cap = int(left / per_iteration) if per_iteration else max_iterations
+            if expected > left or cap < 200:
+                skipped = sorted(x for x, _ in order[n:])
+                log(f"time limit: {len(skipped)} angle(s) not run", level="warning")
+                break
+        else:
+            cap = max_iterations
         folder = workdir / f"a{a:g}"
         folder.mkdir(parents=True, exist_ok=True)
         t0 = time.time()
-        lo, hi = 100 * k / len(alphas), 100 * (k + 1) / len(alphas)
+        lo, hi = 100 * n / len(order), 100 * (n + 1) / len(order)
+        report = lambda pct, msg, lo=lo, hi=hi, a=a: progress(lo + (hi - lo) * pct / 100, f"{a:g}°: {msg}")
+        restart = solutions.get(near) if near is not None else None
+        q = {**base, "alpha": a, "iterations": min(max_iterations, cap)}
         try:
-            r = solve({**base, "alpha": a}, folder, mesh_file, su2_hint, cores, env,
-                      lambda pct, msg: progress(lo + (hi - lo) * pct / 100, f"{a:g}°: {msg}"), log,
-                      mesh_ready=ready, restart=previous)
+            r = solve(q, folder, mesh_file, su2_hint, cores, env, report, log, mesh_ready=ready, restart=restart)
         except EngineError as exc:
-            if previous is None:
+            if restart is None:
                 raise
             # A restart that will not settle: try that angle once from rest.
-            log(f"{a:g}° from the previous solution failed ({exc.msg}); from rest", level="warning")
-            r = solve({**base, "alpha": a}, folder, mesh_file, su2_hint, cores, env,
-                      lambda pct, msg: progress(lo + (hi - lo) * pct / 100, f"{a:g}°: {msg}"), log,
-                      mesh_ready=ready)
+            log(f"{a:g}° from {near:g}°'s solution failed ({exc.msg}); from rest", level="warning")
+            q["iterations"] = min(max_iterations, int((limit - (time.time() - start)) / per_iteration)) if per_iteration else max_iterations
+            restart = None
+            r = solve(q, folder, mesh_file, su2_hint, cores, env, report, log, mesh_ready=ready)
         r.pop("history_columns", None)
-        r.update(seconds=round(time.time() - t0, 1), folder=folder.name)
-        rows.append(r)
+        seconds = round(time.time() - t0, 1)
+        r.update(seconds=seconds, folder=folder.name, started_from=near if restart is not None else None)
+        done[a] = r
         ready = {"mesh": r["mesh"], "transition": r["transition"]}
-        previous = (folder / "restart.dat").resolve() if (folder / "restart.dat").exists() else None
-        log(f"{a:g}°: Cl {r['cl']:.4f}, Cd {r['cd']:.5f}{'' if r['converged'] else ' (not converged)'}, {r['seconds']:.0f} s")
+        if (folder / "restart.dat").exists():
+            solutions[a] = (folder / "restart.dat").resolve()
+        if r.get("iterations"):
+            per_iteration = max(per_iteration or 0.0, seconds / r["iterations"])
+        if restart is not None:
+            restart_time = max(restart_time or 0.0, seconds)
+        log(f"{a:g}°: Cl {r['cl']:.4f}, Cd {r['cd']:.5f}{'' if r['converged'] else ' (not converged)'}, {seconds:.0f} s"
+            + (f", from {near:g}°" if restart is not None else ", from rest"))
+    rows = [done[a] for a in alphas if a in done]
     return {"rows": rows, "skipped": skipped, "seconds": round(time.time() - start, 1), "time_limit": limit}
