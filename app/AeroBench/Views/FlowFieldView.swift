@@ -739,6 +739,19 @@ struct FlowExplorePanel: View {
                     LabeledContent("Planes along", value: v.sweepLetter)
                 }
 
+                Section("Slice") {
+                    Picker("Cut", selection: $flow.sliceCut) {
+                        ForEach(FlowVolume.Cut.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    let n = v.sliceCount(flow.sliceCut), normal = v.axes(flow.sliceCut).normal
+                    Slider(value: Binding(get: { Double(flow.sliceIndex) }, set: { flow.sliceIndex = Int($0.rounded()) }),
+                           in: 0...Double(max(n - 1, 1)))
+                    LabeledContent(flow.sliceCut == .captured ? "Plane" : "Cut at",
+                                   value: "\(flow.sliceIndex + 1) of \(n), \(v.axisLetter(normal)) = \(String(format: "%.0f", v.slicePosition(flow.sliceCut, flow.sliceIndex) * 1000)) mm")
+                    Toggle("Show the slice in 3D", isOn: $flow.sliceIn3D)
+                }
+
                 Section {
                     ForEach($flow.isoLevels) { $iso in
                         IsoRow(iso: $iso, volume: v)
@@ -748,6 +761,18 @@ struct FlowExplorePanel: View {
                     Text("Isosurfaces")
                 } footer: {
                     Text("Marching cubes in the engine; releasing a slider recomputes. Empty space counts as the top of the range, so surfaces close around bodies.")
+                }
+
+                Section("Value window") {
+                    Toggle("Show voxels between", isOn: $flow.windowOn)
+                    if flow.windowOn {
+                        LabeledContent("Low \(flow.windowLo, format: .number.precision(.fractionLength(2)))") {
+                            Slider(value: $flow.windowLo, in: v.vmin...v.vmax, onEditingChanged: { editing in if !editing { flow.refreshWindow() } })
+                        }
+                        LabeledContent("High \(flow.windowHi, format: .number.precision(.fractionLength(2)))") {
+                            Slider(value: $flow.windowHi, in: v.vmin...v.vmax, onEditingChanged: { editing in if !editing { flow.refreshWindow() } })
+                        }
+                    }
                 }
 
                 Section {
@@ -801,42 +826,23 @@ struct FlowExplorePanel: View {
                     Text("The model open in the CAD Viewer, in its own coordinates, which match the field when STAR used the CAD frame. If the car sits in the wrong place, the offset moves it.")
                 }
 
-                Section("Value window") {
-                    Toggle("Show voxels between", isOn: $flow.windowOn)
-                    if flow.windowOn {
-                        LabeledContent("Low \(flow.windowLo, format: .number.precision(.fractionLength(2)))") {
-                            Slider(value: $flow.windowLo, in: v.vmin...v.vmax, onEditingChanged: { editing in if !editing { flow.refreshWindow() } })
-                        }
-                        LabeledContent("High \(flow.windowHi, format: .number.precision(.fractionLength(2)))") {
-                            Slider(value: $flow.windowHi, in: v.vmin...v.vmax, onEditingChanged: { editing in if !editing { flow.refreshWindow() } })
-                        }
-                    }
-                }
-
-                Section("Slice") {
-                    Picker("Cut", selection: $flow.sliceCut) {
-                        ForEach(FlowVolume.Cut.allCases) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    let n = v.sliceCount(flow.sliceCut), normal = v.axes(flow.sliceCut).normal
-                    Slider(value: Binding(get: { Double(flow.sliceIndex) }, set: { flow.sliceIndex = Int($0.rounded()) }),
-                           in: 0...Double(max(n - 1, 1)))
-                    LabeledContent(flow.sliceCut == .captured ? "Plane" : "Cut at",
-                                   value: "\(flow.sliceIndex + 1) of \(n), \(v.axisLetter(normal)) = \(String(format: "%.0f", v.slicePosition(flow.sliceCut, flow.sliceIndex) * 1000)) mm")
-                    Toggle("Show the slice in 3D", isOn: $flow.sliceIn3D)
-                }
-
                 Section("Export") {
-                    HStack {
-                        Button("Slice as PNG…") { app.exportSliceImage() }
+                    LabeledContent("Slice") {
+                        Button("PNG…") { app.exportSliceImage() }
                             .disabled(flow.sliceImage == nil)
                             .help("The slice on show, with its position, extents, a scale bar and the colour bar")
-                        Button("Isosurfaces .glb") { app.exportFlow(.isoGLB) }
-                        Button(".obj (mm)") { app.exportFlow(.isoOBJ) }
                     }
-                    HStack {
-                        Button("Volume .npz") { app.exportFlow(.volumeNPZ) }
-                        Button(".vti") { app.exportFlow(.volumeVTI) }
+                    LabeledContent("Isosurfaces") {
+                        HStack {
+                            Button(".glb") { app.exportFlow(.isoGLB) }
+                            Button(".obj (mm)") { app.exportFlow(.isoOBJ) }
+                        }
+                    }
+                    LabeledContent("Volume") {
+                        HStack {
+                            Button(".npz") { app.exportFlow(.volumeNPZ) }
+                            Button(".vti (ParaView)") { app.exportFlow(.volumeVTI) }
+                        }
                     }
                 }
             } else {

@@ -835,8 +835,6 @@ struct WingInspector: View {
             }
 
             Section {
-                NumberField(label: "Wing angle to the flow", unit: "°", value: Binding(
-                    get: { wing.alpha }, set: { v in lab.edit { $0.alpha = v } }))
                 NumberField(label: "Minimum gap", unit: "mm", value: mm({ wing.minGap }, { v in lab.edit { $0.minGap = v } }))
                 Toggle("Rules box", isOn: Binding(
                     get: { wing.rulesBox != nil },
@@ -853,9 +851,9 @@ struct WingInspector: View {
                 Text("The wing sits in its own plane, not on the car. The rules box is wherever you put it; data/rules/fs2027_aero.json has the FS and FSUK limits it comes from.")
             }
 
+            flowSection(lab)
             solversSection(lab)
             optimiseSection(lab)
-            previewSection(lab)
             lapSimSection(lab)
 
             Section("Export") {
@@ -894,13 +892,12 @@ struct WingInspector: View {
         }
     }
 
-    @ViewBuilder private func solversSection(_ lab: WingLabModel) -> some View {
+    /// What every solver shares: the wing's angle to the flow and the air.
+    @ViewBuilder private func flowSection(_ lab: WingLabModel) -> some View {
         let wing = lab.wing
         Section {
-            FittingPicker(title: "Solver", selection: Binding(get: { lab.solver }, set: { lab.solver = $0 })) {
-                ForEach(WingLabModel.Solver.allCases) { Text($0.rawValue).tag($0) }
-            }
-            Text(lab.solver.purpose).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            NumberField(label: "Wing angle to the flow", unit: "°", value: Binding(
+                get: { wing.alpha }, set: { v in lab.edit { $0.alpha = v } }))
             NumberField(label: "Speed", unit: "m/s", value: Binding(get: { wing.speed }, set: { v in lab.edit { $0.speed = max(v, 0.1) } }))
             NumberField(label: "Air density", unit: "kg/m³", value: Binding(get: { wing.rho }, set: { v in lab.edit { $0.rho = max(v, 0.01) } }))
             NumberField(label: "Viscosity (×10⁻⁵)", unit: "Pa s", value: Binding(
@@ -909,9 +906,23 @@ struct WingInspector: View {
                 LabeledContent("Re, \(WingIssue.label(i))", value: String(format: "%.0f", wing.reynolds(chord: e.chord)))
                     .font(.caption)
             }
+            NumberField(label: "Turbulence (Ncrit)", value: Binding(get: { lab.nCrit }, set: { lab.nCrit = min(max($0, 1), 14) }))
+        } header: {
+            Text("Flow")
+        } footer: {
+            Text("Used by every solver. Ncrit 9 is a clean wind tunnel; lower (4 to 6) for the turbulent air behind a car, which trips the boundary layer sooner.")
+        }
+    }
+
+    @ViewBuilder private func solversSection(_ lab: WingLabModel) -> some View {
+        Section {
+            FittingPicker(title: "Solver", selection: Binding(get: { lab.solver }, set: { lab.solver = $0 })) {
+                ForEach(WingLabModel.Solver.allCases) { Text($0.rawValue).tag($0) }
+            }
+            Text(lab.solver.purpose).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             switch lab.solver {
             case .preview:
-                EmptyView()
+                previewControls(lab)
             case .quickViscous:
                 quickViscousControls(lab)
             case .quickEstimate:
@@ -928,9 +939,6 @@ struct WingInspector: View {
         NumberField(label: "From α", unit: "°", value: Binding(get: { lab.alphaStart }, set: { lab.alphaStart = $0 }))
         NumberField(label: "To α", unit: "°", value: Binding(get: { lab.alphaEnd }, set: { lab.alphaEnd = $0 }))
         NumberField(label: "Step", unit: "°", value: Binding(get: { lab.alphaStep }, set: { lab.alphaStep = max($0, 0.1) }))
-        NumberField(label: "Turbulence (Ncrit)", value: Binding(get: { lab.nCrit }, set: { lab.nCrit = min(max($0, 1), 14) }))
-        Text("Ncrit 9 is a clean wind tunnel; lower (4 to 6) for the turbulent air behind a car, which trips the boundary layer sooner.")
-            .font(.caption).foregroundStyle(.secondary)
         if let i = lab.selection, lab.wing.elements.indices.contains(i) {
             Button("Polar of \(WingIssue.label(i)) (\(lab.wing.elements[i].airfoil.name))") { app.runWingPolar() }
                 .disabled(lab.polarJob.map { !$0.status.isFinished } ?? false)
@@ -1148,46 +1156,52 @@ struct WingInspector: View {
         }
     }
 
-    @ViewBuilder private func previewSection(_ lab: WingLabModel) -> some View {
-        Section {
-            if let r = lab.preview {
-                ForEach(Array(r.cl.enumerated()), id: \.offset) { i, cl in
-                    LabeledContent(WingIssue.label(i), value: String(format: "Cl %.3f", cl))
-                }
-                LabeledContent("Total", value: String(format: "Cl %.3f   Cm %.3f", r.clTotal, r.cmTotal))
-                Text(String(format: "On the total chord, %.0f mm. Solved in %.0f ms.", lab.wing.refChord * 1000, lab.previewMilliseconds))
-                    .font(.caption).foregroundStyle(.secondary)
-            } else {
-                Text(lab.previewError ?? "Add an element.").foregroundStyle(.secondary)
+    /// The preview runs on every change, so its controls are its numbers.
+    @ViewBuilder private func previewControls(_ lab: WingLabModel) -> some View {
+        if let r = lab.preview {
+            ForEach(Array(r.cl.enumerated()), id: \.offset) { i, cl in
+                LabeledContent(WingIssue.label(i), value: String(format: "Cl %.3f", cl))
             }
-        } header: {
-            Text("Inviscid preview")
-        } footer: {
-            Text("A panel method: no viscosity, so no drag and nothing about the slot effects that set the best gap. Use it for angle trends and how the load splits.")
+            LabeledContent("Total", value: String(format: "Cl %.3f   Cm %.3f", r.clTotal, r.cmTotal))
+            Text(String(format: "On the total chord, %.0f mm. Solved in %.0f ms.", lab.wing.refChord * 1000, lab.previewMilliseconds))
+                .font(.caption).foregroundStyle(.secondary)
+        } else {
+            Text(lab.previewError ?? "Add an element.").foregroundStyle(.secondary)
         }
     }
 
     @ViewBuilder private func lapSimSection(_ lab: WingLabModel) -> some View {
         let wing = lab.wing
-        let cl = lab.preview?.clTotal ?? 0
-        let add = wing.carContribution(cl: cl, cd: lab.cdEstimate)
+        // The best answer there is, as in the results strip: converged CFD, then
+        // the quick estimate, then the inviscid preview with a typed-in Cd.
+        let rans = lab.ransResult.flatMap { $0.converged ? $0 : nil }
+        let estimate = lab.estimate?.row(nearest: wing.alpha)
+        let from = rans.map { (cl: $0.cl, cd: $0.cd, name: "CFD") }
+            ?? estimate.map { (cl: $0.cl, cd: $0.cd, name: "quick estimate") }
+        let cl = from?.cl ?? lab.preview?.clTotal ?? 0
+        let cd = from?.cd ?? lab.cdEstimate
+        let add = wing.carContribution(cl: cl, cd: cd)
         Section {
             NumberField(label: "Span", unit: "mm", value: mm({ wing.span }, { v in lab.edit { $0.span = max(v, 0.01) } }))
             NumberField(label: "2D to 3D factor", value: Binding(get: { wing.factor3D }, set: { v in lab.edit { $0.factor3D = max(v, 0) } }))
-            NumberField(label: "Cd (estimate until a viscous run)", value: Binding(get: { lab.cdEstimate }, set: { lab.cdEstimate = $0 }))
+            if let from {
+                LabeledContent("From the \(from.name)", value: String(format: "Cl %.3f   Cd %.4f", from.cl, from.cd))
+            } else {
+                NumberField(label: "Cd (typed in: no estimate or CFD yet)", value: Binding(get: { lab.cdEstimate }, set: { lab.cdEstimate = $0 }))
+            }
             LabeledContent("Adds", value: String(format: "ClA %.3f m²   CdA %.3f m²", add.cla, add.cda))
             NumberField(label: "Replaces a wing worth ClA", unit: "m²", value: Binding(get: { lab.replacedCla }, set: { lab.replacedCla = $0 }))
             NumberField(label: "and CdA", unit: "m²", value: Binding(get: { lab.replacedCda }, set: { lab.replacedCda = $0 }))
             Button("Compare in the Lap Sim") {
-                app.sendWingToLapSim(cl: cl, cd: lab.cdEstimate, replacedCla: lab.replacedCla, replacedCda: lab.replacedCda)
+                app.sendWingToLapSim(cl: cl, cd: cd, replacedCla: lab.replacedCla, replacedCda: lab.replacedCda)
                 sentNote = "Lap Sim car B is now car A with this wing. Run the Lap Sim to see the lap time difference."
             }
-            .disabled(lab.preview == nil)
+            .disabled(from == nil && lab.preview == nil)
             if let note = sentNote { Text(note).font(.caption).foregroundStyle(.secondary) }
         } header: {
             Text("Use in the Lap Sim")
         } footer: {
-            Text("ClA = −Cl × span × total chord × factor (positive for downforce). A finite wing makes less than the 2D section: endplates help; around 0.7–0.9 is typical, but it is your estimate. Inviscid Cl is optimistic; viscous solvers come next.")
+            Text("ClA = −Cl × span × total chord × factor (positive for downforce). A finite wing makes less than the 2D section: endplates help; around 0.7–0.9 is typical, but it is your estimate. Uses converged CFD if there is one, else the quick estimate, else the inviscid preview (optimistic) with the Cd typed in.")
         }
     }
 }

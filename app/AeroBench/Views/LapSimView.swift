@@ -257,6 +257,19 @@ struct LapSimResultsView: View {
                         .chartYAxisLabel("Speed (km/h)")
                         .frame(height: 240)
                     }
+                    if !output.delta.isEmpty {
+                        chartBox("Time delta, B minus A") {
+                            Chart {
+                                RuleMark(y: .value("Zero", 0)).foregroundStyle(.secondary)
+                                ForEach(output.delta) { p in
+                                    LineMark(x: .value("Distance", p.s), y: .value("Δt", p.dt))
+                                }
+                            }
+                            .chartXAxisLabel("Distance (m)")
+                            .chartYAxisLabel("B − A (s), negative means B is ahead")
+                            .frame(height: 200)
+                        }
+                    }
                     chartBox("Track map, coloured by speed") {
                         if output.result.b != nil {
                             Picker("Config", selection: $mapConfig) {
@@ -271,19 +284,6 @@ struct LapSimResultsView: View {
                     if !output.gain.isEmpty {
                         chartBox("Where B gains and loses on A") {
                             GainMap(output: output)
-                        }
-                    }
-                    if !output.delta.isEmpty {
-                        chartBox("Time delta, B minus A") {
-                            Chart {
-                                RuleMark(y: .value("Zero", 0)).foregroundStyle(.secondary)
-                                ForEach(output.delta) { p in
-                                    LineMark(x: .value("Distance", p.s), y: .value("Δt", p.dt))
-                                }
-                            }
-                            .chartXAxisLabel("Distance (m)")
-                            .chartYAxisLabel("B − A (s), negative means B is ahead")
-                            .frame(height: 200)
                         }
                     }
                 }

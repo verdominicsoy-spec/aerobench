@@ -2,7 +2,7 @@ import AeroBenchKit
 import SwiftUI
 
 enum SidebarItem: Hashable {
-    case project, wingLab, cadViewer, flowField, lapSim, jobs
+    case project, wingLab, lapSim, cadViewer, flowField, jobs
 }
 
 struct ContentView: View {
@@ -17,10 +17,12 @@ struct ContentView: View {
                         .tag(SidebarItem.project)
                 }
                 Section("Tools") {
+                    // In working order: design the wing, see what it is worth on a lap,
+                    // check it on the car, then look at the flow from STAR.
                     Label("Wing Lab", systemImage: "airplane").tag(SidebarItem.wingLab)
+                    Label("Lap Sim", systemImage: "flag.checkered").tag(SidebarItem.lapSim)
                     Label("CAD Viewer", systemImage: "cube").tag(SidebarItem.cadViewer)
                     Label("Flow Field Viewer", systemImage: "wind").tag(SidebarItem.flowField)
-                    Label("Lap Sim", systemImage: "flag.checkered").tag(SidebarItem.lapSim)
                 }
                 Section("Engine") {
                     Label("Jobs", systemImage: "list.bullet.rectangle")
