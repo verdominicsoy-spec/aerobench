@@ -292,3 +292,22 @@ final class WingEstimateTests: XCTestCase {
         XCTAssertEqual(e.refChord, 0.44)
     }
 }
+
+final class WingStudyCheckTests: XCTestCase {
+    func testDecodesChecksAndPicksRANSsBest() throws {
+        let json = #"""
+        {"study": "s", "objective": "max_cl", "objective_name": "Most downforce", "direction": "maximize",
+         "spec": {"variables": [], "objective": "max_cl", "cd_cap": null, "cl_target": null, "sampler": "tpe", "solver": "estimate"},
+         "trials": [], "best": null, "complete": 0, "failed": 0, "invalid": 0, "target": 200, "solver": "estimate",
+         "checks": [{"number": 4, "estimate_value": 1.95, "cl": -1.80, "cd": 0.05, "load": 1.80, "value": 1.80, "feasible": true, "converged": true, "reason": null},
+                    {"number": 9, "estimate_value": 1.94, "cl": -1.90, "cd": 0.04, "load": 1.90, "value": 1.90, "feasible": true, "converged": true, "reason": null},
+                    {"number": 2, "estimate_value": 1.93, "converged": false, "reason": "not converged"}]}
+        """#
+        let s = try WingStudy.decode(exportFile: Data(json.utf8))
+        XCTAssertEqual(s.solver, "estimate")
+        XCTAssertEqual(s.checks?.count, 3)
+        XCTAssertEqual(s.checks?[0].estimateValue, 1.95)
+        XCTAssertEqual(s.bestCheck?.number, 9)  // RANS disagrees with the estimate's order
+        XCTAssertNil(s.checks?[2].value)
+    }
+}

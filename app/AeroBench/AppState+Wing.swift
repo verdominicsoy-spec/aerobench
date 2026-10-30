@@ -182,6 +182,8 @@ extension AppState {
         params["sampler"] = .string(setup.sampler)
         params["trials"] = .int(setup.trials)
         params["parallel"] = .int(settings.parallelTrials)
+        params["solver"] = .string(setup.solver)
+        params["check"] = .int(setup.solver == "estimate" ? setup.checkBest : 0)
         let file = WingLabModel.studyFile(project: project.url, name: setup.studyName)
         params["storage"] = .string(file.path)
         params["name"] = .string(file.deletingPathExtension().lastPathComponent)

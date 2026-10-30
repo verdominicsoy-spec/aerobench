@@ -37,3 +37,14 @@ def test_a_sweep_takes_about_a_second():
     assert time.time() - t < 5 and len(rows) == 19
     # An inverted wing: a bigger wing angle means less downforce.
     assert rows[0]["cl"] < rows[-1]["cl"]
+
+
+def test_a_flap_past_its_stall_angle_is_separating():
+    from aeroengine.wing.geometry import apply
+
+    w = _starter()
+    ok = estimate(_elements(w), [0.0], 15.0)["rows"][0]
+    assert not ok["separating"] and ok["elements"][1]["stall_angle"] == pytest.approx(15.0, abs=1.0)
+    # Every overnight RANS trial with the flap past 29 degrees failed to settle.
+    steep = estimate(_elements(apply(w, {"angle_1": 31.0})), [0.0], 15.0)["rows"][0]
+    assert steep["separating"] and steep["elements"][1]["past_stall"]

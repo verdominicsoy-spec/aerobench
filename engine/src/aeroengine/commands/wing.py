@@ -168,9 +168,12 @@ def wing_sweep(ctx: JobContext) -> dict:
 
 @command("wing-optimise")
 def wing_optimise(ctx: JobContext) -> dict:
-    """Optimises angles, gaps and overlaps of a multi-element wing with RANS
-    trials (Optuna). Resumes the study if its file already holds it."""
+    """Optimises angles, gaps and overlaps of a multi-element wing (Optuna),
+    each trial a quick estimate (seconds) or a RANS run (minutes); after a
+    quick-estimate study, optionally checks the best few with RANS. Resumes
+    the study if its file already holds it."""
     from ..wing import optimise, rans
+    from ..wing.estimate import estimate
     from ..wing.geometry import Element, Variable, Wing
 
     p = ctx.params
@@ -191,27 +194,53 @@ def wing_optimise(ctx: JobContext) -> dict:
     spec = optimise.Spec(variables, objective=str(p.get("objective", "max_cl")), cd_cap=p.get("cd_cap"),
                          cl_target=p.get("cl_target"), sampler=str(p.get("sampler", "tpe")),
                          trials=int(p.get("trials", 40)), parallel=max(1, int(p.get("parallel", 1))),
-                         seed=p.get("seed"))
+                         seed=p.get("seed"), solver=str(p.get("solver", "rans")))
+    checks = int(p.get("check", 0)) if spec.solver == "estimate" else 0
+    if spec.solver == "estimate":
+        spec.parallel = 1  # a trial takes a fraction of a second
     storage = p.get("storage")
     if not storage:
         raise EngineError("params.storage must be the study file (.db) in the project")
     su2_hint = p.get("su2") or ctx.options.su2_path
-    rans.su2.find_su2(su2_hint)  # fail now, not in every trial
+    if spec.solver == "rans" or checks:
+        rans.su2.find_su2(su2_hint)  # fail now, not in every trial
     flow = {k: p[k] for k in ("speed", "rho", "mu", "alpha", "model", "mesh", "transition", "n_crit",
                               "turbulence_intensity", "iterations", "ref_chord") if k in p}
 
-    def evaluate(wing: Wing, folder: Path) -> dict:
-        elements = [{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "angle": e.angle, "inverted": e.inverted,
-                     "chord": e.chord} for e in wing.elements]
-        return rans.solve({**flow, "elements": elements}, folder, folder / "wing.su2", su2_hint, ctx.options.cores,
+    def elements_of(wing: Wing) -> list[dict]:
+        return [{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "angle": e.angle, "inverted": e.inverted,
+                 "chord": e.chord} for e in wing.elements]
+
+    def evaluate_rans(wing: Wing, folder: Path) -> dict:
+        return rans.solve({**flow, "elements": elements_of(wing)}, folder, folder / "wing.su2", su2_hint, ctx.options.cores,
                           ctx.thread_env(), lambda pct, msg: None, lambda *a, **k: None, field=False)
 
-    ctx.emit.log(f"{spec.trials} trials, {spec.parallel} at a time on {ctx.options.cores} cores each, "
-                 f"{spec.sampler.upper()}: {optimise.OBJECTIVES[spec.objective]}")
-    return optimise.run(base, spec, evaluate, Path(storage).expanduser(), str(p.get("name", "study")),
-                        ctx.scratch_dir, ctx.emit.progress, ctx.emit.log, keep_runs=False,
-                        info={"mesh": flow.get("mesh", "medium"), "model": flow.get("model", "sa"),
-                              "speed": flow.get("speed"), "alpha": flow.get("alpha", 0.0)})
+    def evaluate_estimate(wing: Wing, folder: Path) -> dict:
+        r = estimate(elements_of(wing), [float(p.get("alpha", 0.0))], float(p.get("speed", 15)), float(p.get("rho", 1.225)),
+                     float(p.get("mu", 1.81e-5)), float(p.get("n_crit", 9.0)), p.get("ref_chord"),
+                     stall_margin=float(p.get("stall_margin", 2.0)))["rows"][0]
+        last = r["elements"][-1]
+        reason = None
+        if r["separating"]:
+            # Treated like a RANS run that never settles: failed, and the sampler steers away.
+            reason = (f"the last element is {last['effective_angle']:.1f} degrees in place, past its stall angle "
+                      f"({last['stall_angle']:.0f}): it would separate")
+        return {"cl": r["cl"], "cd": r["cd"], "cm": sum(e["cm"] for e in r["elements"]), "converged": not r["separating"],
+                "reason": reason, "elements": [{"cl": e["cl"]} for e in r["elements"]]}
+
+    evaluate = evaluate_estimate if spec.solver == "estimate" else evaluate_rans
+    where = "quick estimates" if spec.solver == "estimate" else (
+        f"RANS runs, {spec.parallel} at a time on {ctx.options.cores} cores each")
+    ctx.emit.log(f"{spec.trials} trials, {where}, {spec.sampler.upper()}: {optimise.OBJECTIVES[spec.objective]}")
+    path, name = Path(storage).expanduser(), str(p.get("name", "study"))
+    out = optimise.run(base, spec, evaluate, path, name, ctx.scratch_dir,
+                       (lambda pct, msg: ctx.emit.progress(pct * (0.5 if checks else 1.0), msg)), ctx.emit.log, keep_runs=False,
+                       info={"solver": spec.solver, "mesh": flow.get("mesh", "medium"), "model": flow.get("model", "sa"),
+                             "speed": flow.get("speed"), "alpha": flow.get("alpha", 0.0)})
+    if checks:
+        out = optimise.check(base, spec, path, name, evaluate_rans, checks, ctx.scratch_dir,
+                             lambda pct, msg: ctx.emit.progress(50 + 0.5 * pct, msg), ctx.emit.log)
+    return out
 
 
 @command("su2-install")

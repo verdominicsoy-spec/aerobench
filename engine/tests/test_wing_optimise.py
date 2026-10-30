@@ -228,3 +228,30 @@ def test_unsettled_runs_are_failed_but_steer_the_sampler(tmp_path):
             told += 1
             assert t.value < min(before)
     assert told
+
+
+def test_the_best_designs_are_checked_with_another_solver(tmp_path):
+    spec = optimise.Spec([Variable(1, "angle", 15, 40), Variable(1, "gap", 0.006, 0.02)], trials=20, seed=8,
+                         solver="estimate")
+    evaluate, _ = _fake()
+    optimise.run(_starter(), spec, evaluate, tmp_path / "s.db", "s", tmp_path / "w")
+    checked = []
+
+    def rans(wing, folder):
+        checked.append(round(wing.elements[1].angle, 6))
+        load = 2.0 if len(checked) == 2 else 1.5  # RANS prefers the second-best estimate
+        return {"cl": -load, "cd": 0.05, "converged": True}
+
+    out = optimise.check(_starter(), spec, tmp_path / "s.db", "s", rans, 3, tmp_path / "w")
+    assert len(out["checks"]) == 3 and len(set(checked)) == 3  # three distinct designs
+    best_by_estimate = sorted([t for t in out["trials"] if t["state"] == "complete"], key=lambda t: -t["value"])[:3]
+    assert [c["number"] for c in out["checks"]] == [t["number"] for t in best_by_estimate]
+    assert out["checks"][1]["value"] == 2.0 and out["checks"][1]["converged"]
+    assert out["solver"] == "estimate"
+    # Checking again does not rerun what is already checked.
+    optimise.check(_starter(), spec, tmp_path / "s.db", "s", rans, 3, tmp_path / "w")
+    assert len(checked) == 3
+    # And the study cannot be resumed with another solver.
+    with pytest.raises(EngineError, match="another solver"):
+        optimise.run(_starter(), optimise.Spec(spec.variables, trials=25, solver="rans"), evaluate, tmp_path / "s.db", "s",
+                     tmp_path / "w")

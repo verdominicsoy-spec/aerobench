@@ -289,8 +289,10 @@ from My Airfoils (your imports) or to hide a built-in one.
 **Optimise** (inspector): tick the angles, gaps and overlaps to search and
 give each a range, pick an objective (most downforce, best L/D, most
 downforce under a Cd cap, least drag for a downforce target) and TPE or
-CMA-ES, and start. Every trial is one RANS run with the model and mesh set
-under Solvers; *Settings* sets how many run at once (each on the per-job
+CMA-ES, and start. Each trial is a quick estimate by default (a few hundred
+in about a minute; it finds element angles well but barely sees the gap,
+so check the best few with RANS or run the study with RANS for gaps and
+overlaps), or a RANS run with the model and mesh set under Solvers; *Settings* sets how many run at once (each on the per-job
 cores). Wings that break the minimum gap or the rules box are skipped
 without a run; failed or unconverged runs are recorded as failed and the
 study carries on. The *Study* results tab has a sortable table of trials,

@@ -204,8 +204,32 @@ final class WingLabModel {
         var cdCap = 0.1
         var clTarget = 2.0  // downforce Cl (lift when upright)
         var sampler = "tpe"
-        var trials = 40
+        var trials = 200
         var studyName = "study-1"
+        /// Each trial a quick estimate (seconds) or a RANS run (minutes).
+        var solver = "estimate"
+        /// After a quick-estimate study, run this many of the best designs with RANS (0: none).
+        var checkBest = 0
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            let d = OptimiseSetup()
+            variables = try c.decodeIfPresent([DesignVariable].self, forKey: .variables) ?? d.variables
+            objective = try c.decodeIfPresent(Objective.self, forKey: .objective) ?? d.objective
+            cdCap = try c.decodeIfPresent(Double.self, forKey: .cdCap) ?? d.cdCap
+            clTarget = try c.decodeIfPresent(Double.self, forKey: .clTarget) ?? d.clTarget
+            sampler = try c.decodeIfPresent(String.self, forKey: .sampler) ?? d.sampler
+            trials = try c.decodeIfPresent(Int.self, forKey: .trials) ?? d.trials
+            studyName = try c.decodeIfPresent(String.self, forKey: .studyName) ?? d.studyName
+            // Set-ups saved before the choice ran RANS.
+            solver = try c.decodeIfPresent(String.self, forKey: .solver) ?? "rans"
+            checkBest = try c.decodeIfPresent(Int.self, forKey: .checkBest) ?? d.checkBest
+        }
+
+        /// Whether this set-up needs SU2 to run.
+        var needsSU2: Bool { solver == "rans" || checkBest > 0 }
     }
 
     var optimise = OptimiseSetup() {

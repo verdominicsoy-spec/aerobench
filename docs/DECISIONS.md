@@ -825,3 +825,25 @@ seconds.
 right click. Sections imported into My Airfoils can be deleted (the file and
 its index row); built-in NACA and UIUC sections come back whenever the index
 is rebuilt, so those can be hidden instead (kept per Mac, like favourites).
+
+**The optimiser runs on the quick estimate by default; RANS is optional.**
+Asked for: optimise with the quick estimate, the CFD run optional for
+accuracy. Each trial is now a quick estimate (a fraction of a second; 200
+trials took 30 s with start-up) unless the study is set to RANS, and after
+an estimate study the best few designs (distinct ones) can be run with RANS,
+recorded beside them, with RANS's pick shown.
+
+A last element past its stall angle counts as separating (failed, and the
+sampler steers away, as with a RANS run that never settles), with a 2°
+margin. Without the margin the estimate's optimum sat on the line at a 29.4°
+flap, where RANS had not settled. With it, on the overnight problem (flap
+15–45°, gap 6–25 mm) the estimate picked a 27.4° flap and a 15 mm gap; RANS
+nearby gives about 1.87, against RANS's own optimum of 1.977 at 26.9° and
+9.1 mm. The estimate barely sees the gap: RANS gains 6% closing it from
+14.6 to 9.1 mm at the same flap angle, the estimate 0.3%, because what sets
+the best gap is the slot flow re-energising the flap's boundary layer, which
+a panel method and single-element boundary layers cannot represent. So the
+estimate optimises angles well and gaps and overlaps poorly; the app says so
+when a gap or overlap is ticked, and the RANS check or a RANS study is the
+answer for those. Studies record their solver and cannot be resumed with
+another.

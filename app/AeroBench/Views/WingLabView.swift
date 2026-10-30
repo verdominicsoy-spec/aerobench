@@ -890,6 +890,20 @@ struct WingInspector: View {
             if lab.optimise.objective == .minCdClTarget {
                 NumberField(label: "Downforce Cl target", value: Binding(get: { lab.optimise.clTarget }, set: { lab.optimise.clTarget = $0 }))
             }
+            Picker("Each trial", selection: Binding(get: { lab.optimise.solver }, set: { lab.optimise.solver = $0 })) {
+                Text("Quick estimate (seconds)").tag("estimate")
+                Text("RANS CFD (minutes)").tag("rans")
+            }
+            .disabled(running)
+            if lab.optimise.solver == "estimate" {
+                Stepper(lab.optimise.checkBest == 0 ? "Check the best with RANS: off" : "Check the best \(lab.optimise.checkBest) with RANS CFD",
+                        value: Binding(get: { lab.optimise.checkBest }, set: { lab.optimise.checkBest = $0 }), in: 0...10)
+                    .disabled(running)
+                if lab.optimise.variables.contains(where: { $0.kind != .angle }) {
+                    Text("The quick estimate barely sees the gap and overlap: it leaves out the slot flow that sets the best gap (RANS put 6% more downforce at a 9 mm gap than at 15 mm; the estimate saw 0.3%). It finds angles well. For gaps and overlaps, check the best with RANS or run the study with RANS.")
+                        .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                }
+            }
             Picker("Search", selection: Binding(get: { lab.optimise.sampler }, set: { lab.optimise.sampler = $0 })) {
                 Text("TPE (default)").tag("tpe")
                 Text("CMA-ES").tag("cmaes")
@@ -903,19 +917,22 @@ struct WingInspector: View {
                     .onSubmit { lab.reloadStudy(project: app.project?.url) }
             }
             .disabled(running)
-            Text("\(app.settings.parallelTrials) trials at a time on \(app.settings.coresPerJob) cores each (Settings). Each trial is one RANS run with the model and mesh above.")
+            Text(lab.optimise.solver == "estimate"
+                 ? "Each trial is a quick estimate: a few hundred take about a minute. A flap past its stall angle (2° margin) counts as separating and the search steers away." + (lab.optimise.checkBest > 0 ? " The RANS checks use the model and mesh above." : "")
+                 : "\(app.settings.parallelTrials) trials at a time on \(app.settings.coresPerJob) cores each (Settings). Each trial is one RANS run with the model and mesh above.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let problem = lab.optimiseProblem {
                 Text(problem).font(.caption).foregroundStyle(.orange)
             }
-            if app.settings.su2Executable == nil {
-                Text("Each trial is an SU2 run: install SU2 under Solvers, RANS CFD.").font(.caption).foregroundStyle(.orange)
+            if lab.optimise.needsSU2 && app.settings.su2Executable == nil {
+                Text("RANS needs SU2: install it under Solvers, RANS CFD.").font(.caption).foregroundStyle(.orange)
             }
             HStack {
                 let resume = lab.study.map { $0.study == WingLabModel.studyFile(project: app.project?.url ?? URL(fileURLWithPath: "/"), name: lab.optimise.studyName).deletingPathExtension().lastPathComponent } ?? false
                 Button(resume ? "Resume Study" : "Start Study") { app.runWingOptimise() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(running || lab.optimiseProblem != nil || app.project == nil || app.settings.su2Executable == nil)
+                    .disabled(running || lab.optimiseProblem != nil || app.project == nil
+                              || (lab.optimise.needsSU2 && app.settings.su2Executable == nil))
                 if app.project == nil {
                     Text("Save the project first: studies live in it.").font(.caption).foregroundStyle(.secondary)
                 }
@@ -1062,8 +1079,10 @@ struct StudyResults: View {
     }
 
     @ViewBuilder private func header(_ s: WingStudy, _ lab: WingLabModel) -> some View {
+        if let checks = s.checks, !checks.isEmpty { checkTable(s, checks, lab) }
         HStack(alignment: .firstTextBaseline) {
             Text("\(s.study): \(s.objectiveName)").bold()
+            Text(s.solver == "estimate" ? "quick estimates" : "RANS").font(.caption).foregroundStyle(.secondary)
             Text("\(s.complete + s.failed) of \(s.target) run · \(s.failed) failed · \((s.invalid ?? 0)) invalid wings skipped")
                 .font(.caption).foregroundStyle(.secondary)
             Spacer()
@@ -1072,6 +1091,39 @@ struct StudyResults: View {
                 Button("Load Best") { lab.load(trial: b) }.font(.caption)
             }
         }
+    }
+
+    /// The best estimate designs run again with RANS: does RANS agree on the order?
+    @ViewBuilder private func checkTable(_ s: WingStudy, _ checks: [WingStudy.Check], _ lab: WingLabModel) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text("Checked with RANS").font(.caption).bold()
+                if let b = s.bestCheck, let t = s.trials.first(where: { $0.number == b.number }) {
+                    Text("RANS's pick: trial \(b.number)").font(.caption)
+                    Button("Load It") { lab.load(trial: t) }.font(.caption)
+                }
+            }
+            Grid(alignment: .trailing, horizontalSpacing: 10, verticalSpacing: 1) {
+                GridRow {
+                    Text("Trial").gridColumnAlignment(.leading)
+                    Text("Estimate")
+                    Text("RANS")
+                    Text("")
+                }
+                .bold()
+                ForEach(checks) { c in
+                    GridRow {
+                        Text("\(c.number)")
+                        Text(c.estimateValue.map { String(format: "%.4g", $0) } ?? "–")
+                        Text(c.value.map { String(format: "%.4g", $0) } ?? "–")
+                        Text(c.value == nil ? (c.reason ?? "failed") : (c.feasible == false ? "over limit" : ""))
+                            .foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: 260, alignment: .leading)
+                    }
+                }
+            }
+            .font(.caption.monospacedDigit())
+        }
+        .padding(.bottom, 4)
     }
 
     private func rows(_ s: WingStudy) -> [Row] {

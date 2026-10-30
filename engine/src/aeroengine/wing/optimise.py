@@ -49,6 +49,7 @@ class Spec:
     trials: int = 40  # in total, counting trials from earlier sessions of the study
     parallel: int = 1
     seed: int | None = None
+    solver: str = "rans"  # what each trial is: "rans" (SU2) or "estimate" (panel method and NeuralFoil)
 
     def __post_init__(self) -> None:
         if self.objective not in OBJECTIVES:
@@ -57,6 +58,8 @@ class Spec:
             raise EngineError("the drag cap objective needs a Cd cap above zero")
         if self.objective == "min_cd_cl_target" and not (self.cl_target and self.cl_target > 0):
             raise EngineError("the downforce target objective needs a target Cl above zero")
+        if self.solver not in ("rans", "estimate"):
+            raise EngineError("solver must be rans or estimate")
         if self.sampler not in ("tpe", "cmaes"):
             raise EngineError("sampler must be tpe or cmaes")
         if not self.variables:
@@ -116,8 +119,9 @@ def run(base: Wing, spec: Spec, evaluate: Evaluate, storage: Path, name: str, wo
         study.sampler = _sampler(spec, len(study.trials))
     old = study.user_attrs.get("spec")
     now = _spec_dict(spec)
-    if old and (old["variables"] != now["variables"] or old["objective"] != now["objective"]):
-        raise EngineError(f"study '{name}' was started with other design variables or another objective",
+    if old and (old["variables"] != now["variables"] or old["objective"] != now["objective"]
+                or old.get("solver", "rans") != now["solver"]):
+        raise EngineError(f"study '{name}' was started with other design variables, another objective or another solver",
                           "start a new study for a different set-up")
     study.set_user_attr("spec", now)
     if info:
@@ -288,7 +292,8 @@ def _current(base: Wing, variables: list[Variable]) -> dict[str, float]:
 
 def _spec_dict(spec: Spec) -> dict:
     return {"variables": [{"element": v.element, "kind": v.kind, "low": v.low, "high": v.high} for v in spec.variables],
-            "objective": spec.objective, "cd_cap": spec.cd_cap, "cl_target": spec.cl_target, "sampler": spec.sampler}
+            "objective": spec.objective, "cd_cap": spec.cd_cap, "cl_target": spec.cl_target, "sampler": spec.sampler,
+            "solver": spec.solver}
 
 
 def summary(study: optuna.Study, spec: Spec) -> dict:
@@ -310,7 +315,55 @@ def summary(study: optuna.Study, spec: Spec) -> dict:
             "direction": spec.direction, "spec": _spec_dict(spec), "info": study.user_attrs.get("info"),
             "trials": trials, "best": best, "complete": sum(t["state"] == "complete" for t in trials),
             "failed": sum(t["state"] == "fail" for t in trials),
-            "invalid": sum(t["state"] == "invalid" for t in trials), "target": spec.trials}
+            "invalid": sum(t["state"] == "invalid" for t in trials), "target": spec.trials,
+            "solver": spec.solver, "checks": study.user_attrs.get("checks", [])}
+
+
+def check(base: Wing, spec: Spec, storage: Path, name: str, evaluate: Evaluate, count: int, workroot: Path,
+          progress: Callable[[float, str], None] = lambda p, m: None, log: Callable[..., None] = lambda *a, **k: None) -> dict:
+    """Runs the best `count` designs of a study again with `evaluate` (RANS
+    after a quick-estimate study) and records what it says beside them, so
+    the ranking can be checked where the estimate is least sure."""
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    rdb = optuna.storages.RDBStorage(f"sqlite:///{storage}", engine_kwargs={"connect_args": {"timeout": 60}})
+    study = optuna.load_study(study_name=name, storage=rdb)
+    inverted = base.elements[0].inverted
+    s = summary(study, spec)
+    good = [t for t in s["trials"] if t["state"] == "complete" and t["feasible"]]
+    good.sort(key=lambda t: t["value"], reverse=spec.direction == "maximize")
+    picked, seen = [], set()
+    for t in good:  # distinct designs only
+        key = tuple(round(v, 6) for v in t["params"].values())
+        if key not in seen:
+            seen.add(key)
+            picked.append(t)
+        if len(picked) == count:
+            break
+    done = {c["number"]: c for c in study.user_attrs.get("checks", [])}
+    for k, t in enumerate(picked):
+        progress(100 * k / max(len(picked), 1), f"checking trial {t['number']} ({k + 1} of {len(picked)})")
+        if t["number"] in done:
+            continue
+        folder = workroot / f"check_{t['number']:04d}"
+        folder.mkdir(parents=True, exist_ok=True)
+        rec: dict = {"number": t["number"], "estimate_value": t["value"]}
+        try:
+            res = evaluate(apply(base, t["params"]), folder)
+            load = -res["cl"] if inverted else res["cl"]
+            rec.update(cl=res["cl"], cd=res["cd"], load=load, converged=bool(res["converged"]), reason=res.get("reason"))
+            if res["converged"] and res.get("scheme", "jst") == "jst":
+                rec["value"], rec["feasible"] = score(spec, load, res["cd"])
+        except EngineError as exc:
+            rec.update(converged=False, reason=exc.msg)
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+        done[t["number"]] = rec
+        study.set_user_attr("checks", list(done.values()))
+        _export(study, spec, storage.with_suffix(".json"))
+        what = f"{rec['value']:.4g}" if rec.get("value") is not None else f"failed ({rec.get('reason')})"
+        log(f"check of trial {t['number']}: estimate {t['value']:.4g}, RANS {what}")
+    _export(study, spec, storage.with_suffix(".json"))
+    return summary(study, spec)
 
 
 def _export(study: optuna.Study, spec: Spec, path: Path) -> None:

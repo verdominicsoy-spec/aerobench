@@ -86,10 +86,39 @@ public struct WingStudy: Codable, Equatable, Sendable {
     public var failed: Int
     public var invalid: Int?
     public var target: Int
+    /// "estimate" (panel method and NeuralFoil) or "rans" (SU2); nil in studies from before the choice.
+    public var solver: String?
+    /// The best designs of an estimate study run again with RANS.
+    public var checks: [Check]?
+
+    public struct Check: Codable, Equatable, Sendable, Identifiable {
+        public var number: Int
+        public var estimateValue: Double?
+        public var cl: Double?
+        public var cd: Double?
+        public var load: Double?
+        public var value: Double?
+        public var feasible: Bool?
+        public var converged: Bool?
+        public var reason: String?
+
+        public var id: Int { number }
+
+        enum CodingKeys: String, CodingKey {
+            case number, cl, cd, load, value, feasible, converged, reason
+            case estimateValue = "estimate_value"
+        }
+    }
 
     enum CodingKeys: String, CodingKey {
-        case study, objective, direction, spec, trials, best, complete, failed, invalid, target
+        case study, objective, direction, spec, trials, best, complete, failed, invalid, target, solver, checks
         case objectiveName = "objective_name"
+    }
+
+    /// The check RANS liked best, if any converged.
+    public var bestCheck: Check? {
+        let ok = (checks ?? []).filter { $0.value != nil && $0.feasible != false }
+        return direction == "minimize" ? ok.min { $0.value! < $1.value! } : ok.max { $0.value! < $1.value! }
     }
 
     /// Dictionary keys like "angle_1" must not be touched, so no snake case

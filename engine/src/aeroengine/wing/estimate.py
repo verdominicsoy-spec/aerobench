@@ -17,7 +17,11 @@ carries far more lift than it could alone at its effective angle without
 stalling. Its lift is its in-place inviscid lift scaled by the viscous loss
 NeuralFoil gives in the linear part of its lift curve, and its drag is NeuralFoil's at the effective
 angle or just below the section's stall onset, whichever is lower. The last
-element can stall, as on the real wing.
+element can stall, as on the real wing: once its effective angle passes the
+angle of its maximum lift alone, the row is marked separating. On the
+overnight two-element study that line split RANS cleanly: every trial that
+converged had the flap at most 14.6 degrees in place, every one that never
+settled at least 16.5, with the flap alone stalling at 15.
 
 What it misses: the slot's effect on the boundary layers beyond that (a
 narrow slot can be worse than either element alone). RANS gets those; this
@@ -32,8 +36,12 @@ from .panel import Solver
 from .viscous import polar, reynolds
 
 
+STALL_MARGIN = 2.0  # degrees: the last element counts as separating this far short of its stall angle
+
+
 def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float = 1.225, mu: float = 1.81e-5,
-             n_crit: float = 9.0, ref_chord: float | None = None, model_size: str = "large") -> dict:
+             n_crit: float = 9.0, ref_chord: float | None = None, model_size: str = "large",
+             stall_margin: float = STALL_MARGIN) -> dict:
     """elements: coords (placed, m, Selig order), unit, chord, angle, inverted.
     Returns one row per wing angle with total and per-element coefficients
     on the reference chord (the sum of the element chords by default)."""
@@ -68,19 +76,21 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
 
     viscous = []  # per element: NeuralFoil rows, one per wing angle
     scale = []  # per element and wing angle: viscous over inviscid lift (elements with one behind them)
+    stall = []  # per element: the angle of its maximum lift alone
     for i, e in enumerate(elements):
         sense = -1.0 if e.get("inverted") else 1.0
         unit = np.asarray(e["unit"], float)
         re = reynolds(speed, chords[i], rho, mu)
         own = [float(e.get("angle", 0.0)) + sense * effective[k][i] for k in range(len(alphas))]
+        sweep = np.arange(-6.0, 26.0, 1.0)
+        curve = polar(unit, sweep, re, n_crit, False, model_size)["rows"]
+        stall.append(float(sweep[int(np.argmax([r["cl"] for r in curve]))]))
         if i == len(elements) - 1:
             viscous.append(polar(unit, own, re, n_crit, bool(e.get("inverted")), model_size)["rows"])
             scale.append([None] * len(alphas))
             continue
         # Stall onset of the section alone: 4 degrees short of its maximum lift.
-        sweep = np.arange(-6.0, 26.0, 1.0)
-        curve = polar(unit, sweep, re, n_crit, False, model_size)["rows"]
-        onset = float(sweep[int(np.argmax([r["cl"] for r in curve]))]) - 4.0
+        onset = stall[i] - 4.0
         held = [min(a, onset) for a in own]
         viscous.append(polar(unit, held, re, n_crit, bool(e.get("inverted")), model_size)["rows"])
         # The viscous loss in the linear part of the lift curve (6 degrees
@@ -107,9 +117,14 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
                         "effective_angle": float(e_angle(elements[i], effective[k][i])), "upwash": effective[k][i] - float(a),
                         "held_below_stall": scale[i][k] is not None and v["alpha"] < e_angle(elements[i], effective[k][i]) - 1e-9,
                         "transition_suction": v["transition_suction"], "transition_pressure": v["transition_pressure"],
-                        "confidence": v["confidence"], "trusted": v["trusted"]})
+                        "confidence": v["confidence"], "trusted": v["trusted"], "stall_angle": stall[i],
+                        # The last element has nothing behind it: past the angle of its
+                        # maximum lift alone, it separates on the real wing (every
+                        # overnight RANS trial with the flap there failed to settle).
+                        "past_stall": scale[i][k] is None and e_angle(elements[i], effective[k][i]) > stall[i] - stall_margin})
         rows.append({"alpha": float(a), "cl": sum(x["cl"] for x in els), "cd": sum(x["cd"] for x in els),
-                     "trusted": all(x["trusted"] for x in els), "elements": els})
+                     "trusted": all(x["trusted"] for x in els), "separating": any(x["past_stall"] for x in els),
+                     "elements": els})
     return {"ref_chord": ref, "rows": rows,
             "re": [reynolds(speed, c, rho, mu) for c in chords]}
 
