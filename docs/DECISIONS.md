@@ -700,3 +700,29 @@ of the main element, so the optimum sits against that constraint. The study
 found three faults on the way, all fixed: invalid wings using up the trial
 budget, a resumed seeded study replaying its proposals, and the sampler
 learning nothing from runs that never settle.
+
+**Acceptance: the 30P30N three-element high-lift section.** Geometry from
+the UIUC database (30p-30n.dat: slat and flap at 30°, flap gap 1.27%), Re 9
+million on the stowed chord, Spalart–Allmaras, JST, the default medium
+settings: about 175,000 cells (the narrow flap gap caps the wall layers, so
+y+ = 1 at Re 9 million takes 40 of them), roughly an hour a point on 4 cores.
+The experiment is McDonnell Douglas's, as plotted in Klausmeyer and Lin, NASA
+TM 112858, Figure 3 (Geometry A, Re 9 million, Mach 0.2); the values below
+are read off that plot, so they are good to about ±0.05:
+
+| α | Cl | Experiment (read off the plot) | Difference |
+| --- | --- | --- | --- |
+| 0° | 2.269 | about 2.2 | +3% |
+| 8° | 3.251 | about 3.2 | +1.6% |
+| 16° | 3.998 | about 3.95 | +1.2% |
+| 21° | not converged (Cl swinging about 3.1) | about 4.3 (near maximum lift) | |
+
+Before stall the lift curve is within 3% of the experiment, a little high
+throughout, as the RANS codes in the NASA challenge were too (and the
+experiment's Mach 0.2 would lower incompressible lift by about 2% more). At
+21° the run separates and never settles: it is flagged, not reported. Two
+likely reasons: starting from freestream at 21° can lock RANS onto a stalled
+solution (the usual remedy is to start from the 16° solution), and the slat
+and main-element wakes may need longer or finer refinement at high angles.
+Maximum lift of a high-lift section is beyond this set-up for now; for an FS
+wing, which works below its stall, the attached range is what matters.
