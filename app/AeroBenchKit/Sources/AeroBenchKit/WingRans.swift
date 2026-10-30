@@ -98,3 +98,54 @@ public struct WingSweep: Codable, Equatable, Sendable {
         return out
     }
 }
+
+/// The quick multi-element estimate (the engine's wing-estimate): the panel
+/// method for how the elements load each other, NeuralFoil per element.
+/// Coefficients on the reference chord, in the wing frame (negative Cl is
+/// downforce).
+public struct WingEstimate: Codable, Equatable, Sendable {
+    public struct Element: Codable, Equatable, Sendable {
+        public var cl: Double
+        public var cd: Double
+        public var cm: Double
+        public var clOwn: Double
+        public var cdOwn: Double
+        public var clInviscidOwn: Double
+        /// The element's own angle of attack in place (its loading sense either way up).
+        public var effectiveAngle: Double
+        /// Degrees its neighbours turn the flow at it.
+        public var upwash: Double
+        public var transitionSuction: Double
+        public var transitionPressure: Double
+        public var confidence: Double
+        public var trusted: Bool
+        /// It has an element behind it, so it was held below its stall onset.
+        public var heldBelowStall: Bool
+    }
+
+    public struct Row: Codable, Equatable, Sendable, Identifiable {
+        public var alpha: Double
+        public var cl: Double
+        public var cd: Double
+        public var trusted: Bool
+        public var elements: [Element]
+
+        public var id: Double { alpha }
+    }
+
+    public var refChord: Double
+    public var rows: [Row]
+    public var re: [Double]
+
+    public static func decode(resultFile data: Data) throws -> WingEstimate {
+        struct Wrapper: Decodable { var data: WingEstimate }
+        let d = JSONDecoder()
+        d.keyDecodingStrategy = .convertFromSnakeCase
+        return try d.decode(Wrapper.self, from: data).data
+    }
+
+    /// The row nearest an angle.
+    public func row(nearest alpha: Double) -> Row? {
+        rows.min { abs($0.alpha - alpha) < abs($1.alpha - alpha) }
+    }
+}

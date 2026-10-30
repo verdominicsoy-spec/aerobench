@@ -791,3 +791,37 @@ now carries the frame rate and frame count the app used, and the engine
 picks frames by time the same way, so both always mean the same frame. The
 rate and length can be typed in for a video that reports them wrong; frame
 numbers then follow the typed timing.
+
+**The quick estimate takes seconds: panel method plus NeuralFoil.** Asked
+for: quick estimates in seconds, not minutes. No RANS run gets there, so
+the quick estimate is a different method. The multi-element panel method
+gives the lift each element carries in place; the angle at which that
+element alone (same shape and place) carries the same lift is its effective
+angle; NeuralFoil at that angle and the element's Reynolds number gives its
+viscous lift, drag and moment. An element with another behind it has its
+trailing edge unloaded by that element (the dumping effect), so it carries
+more lift in place than it could alone: its lift is its in-place inviscid
+lift scaled by NeuralFoil's viscous loss in the linear part of its lift
+curve (6° short of stall onset, which is 4° short of maximum lift), and its
+drag is NeuralFoil's at the effective angle or the stall onset, whichever is
+lower. The last element can stall. Drag is the sum of the profile drags (the
+elements' inviscid x-forces cancel between them).
+
+Validated against RANS (medium mesh, SA) on the 22 converged trials of the
+two-element overnight study, flap 17° to 28°, gap 8 to 21 mm: lift within
+1% up to a 26.5° flap, 2.2% mean error, rising to 11% at 28° where the flap
+starts to separate in RANS and the estimate cannot see it; drag 2% to 26%
+high, 11% mean; it ranks drag almost perfectly (rank correlation 0.985) and
+lift less well near the limit. The scale factor's angle was chosen on this
+same data, so it was also checked on the 30P30N (three elements, slat, Re 9
+million), which it does not do well: lift within 5% of RANS at 0°, but 13%
+high at 8° and 32% at 16°, with NeuralFoil flagging low confidence on the
+slat and the cove. So it is described as for main-and-flap wings, not slats,
+and the app shows NeuralFoil's low-confidence flag. Two elements at 19
+angles take under a second once NeuralFoil is loaded; a job is a few
+seconds.
+
+**Deleting sections.** Elements come off the wing with the Delete key or a
+right click. Sections imported into My Airfoils can be deleted (the file and
+its index row); built-in NACA and UIUC sections come back whenever the index
+is rebuilt, so those can be hidden instead (kept per Mac, like favourites).

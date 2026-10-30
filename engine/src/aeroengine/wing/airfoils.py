@@ -363,6 +363,25 @@ def import_files(paths: list[Path], root: Path | None = None) -> dict:
     return {"added": added, "failed": failed, "index": str(index)}
 
 
+def delete_mine(keys: list[str], root: Path | None = None) -> dict:
+    """Removes the user's own sections (keys "mine/...") from My Airfoils and
+    the index. Built-in sections cannot be deleted: rebuilding the index
+    would bring them back."""
+    root = (root or data_dir()) / "airfoils"
+    bad = [k for k in keys if not k.startswith("mine/") or "/" in k[5:] or k[5:] in ("", ".", "..")]
+    if bad:
+        raise EngineError("only your own imported sections can be deleted", ", ".join(bad))
+    db = sqlite3.connect(root / "index.sqlite")
+    deleted = []
+    for k in keys:
+        (root / "mine" / (k[5:] + ".dat")).unlink(missing_ok=True)
+        if db.execute("DELETE FROM airfoils WHERE key = ?", (k,)).rowcount:
+            deleted.append(k)
+    db.commit()
+    db.close()
+    return {"deleted": deleted}
+
+
 UIUC_ZIP = "https://m-selig.ae.illinois.edu/ads/archives/coord_seligFmt.zip"
 
 

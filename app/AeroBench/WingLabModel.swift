@@ -46,7 +46,7 @@ final class WingLabModel {
             switch self {
             case .preview: "Live while you drag, every element together. No viscosity: lift trends and how the load splits, no drag."
             case .quickViscous: "NeuralFoil (trained on XFOIL): one element in isolation, a whole polar in seconds, with drag and where the boundary layer turns turbulent. Picks sections; knows nothing of slot effects."
-            case .quickEstimate: "Every element together, on the quick RANS mesh: about 1½ minutes for one angle, to three figures. Sweep the wing angle for Cl and Cd against angle, inside 5 minutes."
+            case .quickEstimate: "Every element together in seconds, over a range of wing angles: the panel method for how the elements load each other, NeuralFoil for each element's viscous lift and drag. Lift within about 2% of RANS on a main-and-flap wing until the flap nears separation; drag about 10% high. Not for slats."
             case .rans: "SU2 on a mesh around every element: slot flow, separation, the real gap effects. Minutes per run."
             }
         }
@@ -55,6 +55,7 @@ final class WingLabModel {
     enum ResultsTab: String, CaseIterable, Identifiable {
         case pressure = "Pressure"
         case polar = "Polar"
+        case estimate = "Estimate"
         case cfd = "CFD"
         case study = "Study"
 
@@ -104,7 +105,15 @@ final class WingLabModel {
     var ransFolder: URL?
     var su2Job: JobItem?
 
-    // Quick estimate: one angle, or a sweep of the wing angle within a time limit
+    // Quick estimate: panel method and NeuralFoil, seconds
+    var estimateFrom = -4.0
+    var estimateTo = 10.0
+    var estimateStep = 1.0
+    var estimate: WingEstimate?
+    var estimateJob: JobItem?
+    var estimateAngles: [Double] { WingSweep.angles(from: estimateFrom, to: estimateTo, step: estimateStep, limit: 61) }
+
+    // RANS sweep of the wing angle on the quick mesh, within a time limit
     var sweepOn = false
     var sweepFrom = -2.0  // three angles fit in 5 minutes on 4 cores for a two-element wing
     var sweepTo = 2.0
@@ -269,7 +278,15 @@ final class WingLabModel {
 
     var families: [String] { Array(Set(library.map(\.family))).sorted() }
 
-    var shown: [Airfoil] { library.filter { filter.matches($0, favourites: favourites) } }
+    /// Built-in sections the user has hidden (they cannot be deleted: rebuilding the index brings them back).
+    var hidden: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "wingHidden") ?? []) {
+        didSet { UserDefaults.standard.set(Array(hidden), forKey: "wingHidden") }
+    }
+    var showHidden = false
+
+    var shown: [Airfoil] {
+        library.filter { filter.matches($0, favourites: favourites) && (showHidden || !hidden.contains($0.key)) }
+    }
 
     // MARK: Editing with undo
 

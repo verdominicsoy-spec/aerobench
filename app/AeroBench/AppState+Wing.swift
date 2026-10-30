@@ -36,6 +36,25 @@ extension AppState {
         }
     }
 
+    /// Deletes the user's own imported sections, after asking.
+    func deleteAirfoils(_ airfoils: [Airfoil]) {
+        let mine = airfoils.filter { $0.source == "mine" }
+        guard !mine.isEmpty else { return }
+        let alert = NSAlert()
+        alert.messageText = mine.count == 1 ? "Delete \(mine[0].name) from My Airfoils?" : "Delete \(mine.count) sections from My Airfoils?"
+        alert.informativeText = "The imported .dat file is removed. Wings already using it keep their copy."
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons.first?.hasDestructiveAction = true
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let keys = JSONValue.array(mine.map { .string($0.key) })
+        wingLab.libraryJob = jobs.submit(command: "airfoil-delete", params: ["keys": keys], in: jobsRoot) { [weak self] item in
+            guard let self, item.status == .succeeded else { return }
+            for a in mine { self.wingLab.favourites.remove(a.key) }
+            self.wingLab.loadLibrary(engineDirectory: self.settings.engineDirectory)
+        }
+    }
+
     /// One .dat per element, in mm in the wing frame, into a folder.
     func exportWingDat() {
         let wing = wingLab.wing
@@ -192,9 +211,30 @@ extension AppState {
         }
     }
 
-    /// Quick estimate: every element on the quick mesh, at the wing's angle
-    /// or over a sweep of angles (inside 5 minutes; the engine skips angles
-    /// that would run past it).
+    /// Quick estimate in seconds: the panel method and NeuralFoil, over the angle range.
+    func runWingEstimate() {
+        let lab = wingLab
+        let wing = lab.wing
+        guard !wing.elements.isEmpty else { return }
+        func points(_ p: [SIMD2<Double>]) -> JSONValue { .array(p.map { .array([.double($0.x), .double($0.y)]) }) }
+        var params = ransParams()
+        params["elements"] = .array(wing.elements.map { e in
+            .object(["coords": points(e.placed()), "unit": points(e.airfoil.coords), "angle": .double(e.angle),
+                     "inverted": .bool(e.inverted), "chord": .double(e.chord)])
+        })
+        var angles = lab.estimateAngles
+        if !angles.contains(where: { abs($0 - wing.alpha) < 1e-9 }) { angles = (angles + [wing.alpha]).sorted() }
+        params["alphas"] = .array(angles.map { .double($0) })
+        lab.estimate = nil
+        lab.resultsTab = .estimate
+        lab.estimateJob = jobs.submit(command: "wing-estimate", params: params, in: jobsRoot) { [weak self] item in
+            guard let self, item.status == .succeeded, let text = item.resultText else { return }
+            self.wingLab.estimate = try? WingEstimate.decode(resultFile: Data(text.utf8))
+        }
+    }
+
+    /// RANS on the quick mesh over a sweep of wing angles (inside 5 minutes;
+    /// the engine skips angles that would run past it), or at the wing's angle.
     func runWingQuickEstimate() {
         let lab = wingLab
         let wing = lab.wing

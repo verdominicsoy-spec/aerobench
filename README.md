@@ -260,7 +260,7 @@ undo and redo.
 | --- | --- | --- |
 | Inviscid preview (panel method) | lift trends and how the load splits between elements, live while dragging; no drag, no slot effects | under 50 ms |
 | Quick viscous (NeuralFoil) | choosing sections: a whole polar with drag and where the boundary layer turns turbulent, one element in isolation | seconds |
-| Quick estimate (SU2, quick mesh) | every element together, to three figures; optionally Cl and Cd against the wing angle | about 1½ min, a sweep within 5 min |
+| Quick estimate (panel method + NeuralFoil) | every element together, Cl and Cd against the wing angle: lift within about 2% of RANS on a main-and-flap wing until the flap nears separation, drag about 10% high; not for slats | seconds |
 | RANS CFD (SU2) | the real thing: slot flow, separation, gap effects; Spalart–Allmaras, SST, or SST with Langtry–Menter transition | minutes |
 
 The RANS mesh is zoned by the flow: structured quad wall layers on every
@@ -277,8 +277,14 @@ Cl–Cd, transition points), and the CFD run (Cl and Cd per element,
 convergence, surface Cp, and the flow field: pressure, speed, total pressure
 Cp0 or eddy viscosity over the plane with streamlines, and the value under
 the pointer). *Show Flow Field* still opens the run's flow.vtu in Finder for
-ParaView. Pick the *Quick* mesh for a multi-element answer in about two
-minutes, converged to three figures; medium is the validated default.
+ParaView. Under RANS CFD, the *Quick* mesh gives a multi-element answer in
+about 1½ minutes, converged to three figures (medium is the validated
+default), and *Sweep the wing angle* runs the quick mesh over several
+angles within 5 minutes.
+
+**Removing things**: select an element and press Delete (or right-click it)
+to take it off the wing. Right-click a section in the library to delete it
+from My Airfoils (your imports) or to hide a built-in one.
 
 **Optimise** (inspector): tick the angles, gaps and overlaps to search and
 give each a range, pick an objective (most downforce, best L/D, most

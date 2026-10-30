@@ -126,3 +126,23 @@ def test_commands(tmp_path):
     assert out.returncode == 0, out.stderr
     result = json.loads((tmp_path / "w" / "result.json").read_text())["data"]
     assert result["name"] == "NACA 2412" and len(result["coords"]) == POINTS
+
+
+def test_delete_only_your_own(tmp_path):
+    from aeroengine.job import EngineError
+    from aeroengine.wing.airfoils import build_index, delete_mine, import_files
+
+    build_index(tmp_path)
+    dat = tmp_path / "my flap.dat"
+    dat.write_text("MY FLAP\n" + "\n".join(f"{x:.6f} {y:.6f}" for x, y in naca4("4412")))
+    key = import_files([dat], tmp_path)["added"][0]["key"]
+    assert (tmp_path / "airfoils" / "mine" / "my_flap.dat").exists()
+    assert delete_mine([key], tmp_path) == {"deleted": [key]}
+    assert not (tmp_path / "airfoils" / "mine" / "my_flap.dat").exists()
+    import sqlite3
+    db = sqlite3.connect(tmp_path / "airfoils" / "index.sqlite")
+    assert db.execute("SELECT COUNT(*) FROM airfoils WHERE key = ?", (key,)).fetchone()[0] == 0
+    with pytest.raises(EngineError):
+        delete_mine(["naca/0012"], tmp_path)
+    with pytest.raises(EngineError):
+        delete_mine(["mine/../index"], tmp_path)

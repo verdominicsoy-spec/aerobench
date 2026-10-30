@@ -279,3 +279,16 @@ final class WingSweepTests: XCTestCase {
         XCTAssertEqual(s.timeLimit, 300)
     }
 }
+
+final class WingEstimateTests: XCTestCase {
+    func testDecodesTheEngineResult() throws {
+        let el = #"{"cl": -1.4478, "cd": 0.0287, "cm": -0.1, "cl_own": -2.123, "cd_own": 0.042, "cl_inviscid_own": -2.409, "effective_angle": 15.6, "upwash": -12.6, "transition_suction": 0.05, "transition_pressure": 0.6, "confidence": 0.99, "trusted": true, "held_below_stall": true}"#
+        let json = #"{"data": {"ref_chord": 0.44, "re": [304000, 142000], "rows": [{"alpha": -2.0, "cl": -2.0, "cd": 0.04, "trusted": true, "elements": [\#(el)]}, {"alpha": 0.0, "cl": -1.87, "cd": 0.039, "trusted": false, "elements": [\#(el)]}]}}"#
+        let e = try WingEstimate.decode(resultFile: Data(json.utf8))
+        XCTAssertEqual(e.rows.count, 2)
+        XCTAssertEqual(e.rows[0].elements[0].heldBelowStall, true)
+        XCTAssertEqual(e.rows[0].elements[0].clInviscidOwn, -2.409)
+        XCTAssertEqual(e.row(nearest: 0.4)?.alpha, 0)
+        XCTAssertEqual(e.refChord, 0.44)
+    }
+}

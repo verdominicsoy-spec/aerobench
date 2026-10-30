@@ -60,11 +60,29 @@ struct AirfoilLibraryPanel: View {
                         lab.add(airfoil)
                     }
                     .draggable(airfoil.key)
+                    .opacity(lab.hidden.contains(airfoil.key) ? 0.5 : 1)
+                    .contextMenu {
+                        Button("Add to the Wing") { lab.add(airfoil) }
+                        if let i = lab.selection, lab.wing.elements.indices.contains(i) {
+                            Button("Use for \(WingIssue.label(i))") { lab.swap(airfoil, into: i) }
+                        }
+                        Divider()
+                        if airfoil.source == "mine" {
+                            Button("Delete from My Airfoils…", role: .destructive) { app.deleteAirfoils([airfoil]) }
+                        } else if lab.hidden.contains(airfoil.key) {
+                            Button("Show in the Library") { lab.hidden.remove(airfoil.key) }
+                        } else {
+                            Button("Hide from the Library") { lab.hidden.insert(airfoil.key) }
+                        }
+                    }
                 }
                 .listStyle(.plain)
                 Divider()
                 HStack {
                     Text("\(shown.count) of \(lab.library.count)").font(.caption).foregroundStyle(.secondary)
+                    if !lab.hidden.isEmpty {
+                        Toggle("Show \(lab.hidden.count) hidden", isOn: $lab.showHidden).toggleStyle(.checkbox).font(.caption)
+                    }
                     Spacer()
                     Button("Import .dat…") { app.importAirfoilsPanel() }
                 }
@@ -236,6 +254,18 @@ struct WingCanvas: View {
                     .onTapGesture(coordinateSpace: .local) { point in
                         lab.selection = lab.element(at: m.world(point))
                     }
+                    .focusable()
+                    .focusEffectDisabled()
+                    .onDeleteCommand {
+                        if let i = lab.selection { lab.remove(i) }
+                    }
+                    .contextMenu {
+                        if let i = lab.selection, lab.wing.elements.indices.contains(i) {
+                            Button("Remove \(WingIssue.label(i)) (\(lab.wing.elements[i].airfoil.name))", role: .destructive) { lab.remove(i) }
+                        } else {
+                            Text("Click an element to select it first")
+                        }
+                    }
                     .dropDestination(for: String.self) { keys, location in
                         guard let key = keys.first, let airfoil = lab.airfoil(key) else { return false }
                         let p = m.world(location)
@@ -395,6 +425,7 @@ struct WingResultsPane: View {
             switch lab.resultsTab {
             case .pressure: CpPlot()
             case .polar: PolarPlots()
+            case .estimate: EstimateResults()
             case .cfd: CFDResults()
             case .study: StudyResults()
             }
@@ -570,7 +601,7 @@ struct CFDResults: View {
             .padding()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            Text("Pick Quick estimate or RANS CFD in Solvers and run it.").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            Text("Pick RANS CFD in Solvers and run it.").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -810,6 +841,7 @@ struct WingInspector: View {
         if let job = lab.ransJob, !job.status.isFinished || job.status == .failed {
             JobInlineStatus(job: job)
         }
+        ransSweepControls(lab)
         if needsSU2 && haveSU2 {
             Text("SU2 is installed now: run it again.").font(.caption).foregroundStyle(.secondary)
         }
@@ -897,24 +929,34 @@ struct WingInspector: View {
     }
 
     @ViewBuilder private func quickEstimateControls(_ lab: WingLabModel) -> some View {
-        let haveSU2 = app.settings.su2Executable != nil
-        if !haveSU2 { su2Install(lab) }
-        Toggle("Sweep the wing angle", isOn: Binding(get: { lab.sweepOn }, set: { lab.sweepOn = $0 }))
+        NumberField(label: "From", unit: "°", value: Binding(get: { lab.estimateFrom }, set: { lab.estimateFrom = $0 }))
+        NumberField(label: "To", unit: "°", value: Binding(get: { lab.estimateTo }, set: { lab.estimateTo = $0 }))
+        NumberField(label: "Step", unit: "°", value: Binding(get: { lab.estimateStep }, set: { lab.estimateStep = max($0, 0.25) }))
+        Text("Wing angles \(lab.estimateAngles.first.map { String(format: "%g", $0) } ?? "")° to \(lab.estimateAngles.last.map { String(format: "%g", $0) } ?? "")°, \(lab.estimateAngles.count) of them, and the wing's own.")
+            .font(.caption).foregroundStyle(.secondary)
+        Button("Run the Estimate") { app.runWingEstimate() }
+            .buttonStyle(.borderedProminent)
+            .disabled(lab.wing.elements.isEmpty || (lab.estimateJob.map { !$0.status.isFinished } ?? false)
+                      || !lab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty)
+        if let job = lab.estimateJob, !job.status.isFinished || job.status == .failed {
+            JobInlineStatus(job: job)
+        }
+    }
+
+    @ViewBuilder private func ransSweepControls(_ lab: WingLabModel) -> some View {
+        Toggle("Sweep the wing angle (quick mesh, within 5 min)", isOn: Binding(get: { lab.sweepOn }, set: { lab.sweepOn = $0 }))
         if lab.sweepOn {
             NumberField(label: "From", unit: "°", value: Binding(get: { lab.sweepFrom }, set: { lab.sweepFrom = $0 }))
             NumberField(label: "To", unit: "°", value: Binding(get: { lab.sweepTo }, set: { lab.sweepTo = $0 }))
             NumberField(label: "Step", unit: "°", value: Binding(get: { lab.sweepStep }, set: { lab.sweepStep = max($0, 0.5) }))
-            Text("\(lab.sweepAngles.map { String(format: "%g°", $0) }.joined(separator: ", ")). One mesh; the middle angle from rest, the rest each from its neighbour. Never past 5 minutes: angles there is no time for are skipped and listed.")
+            Text("\(lab.sweepAngles.map { String(format: "%g°", $0) }.joined(separator: ", ")). One mesh; the middle angle from rest, the rest each from its neighbour. Never past 5 minutes: angles there is no time for are skipped and listed. About three angles fit on 4 cores.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }
-        let busy = (lab.ransJob.map { !$0.status.isFinished } ?? false) || (lab.sweepJob.map { !$0.status.isFinished } ?? false)
-        Button(lab.sweepOn ? "Run the Sweep" : "Run the Estimate") { app.runWingQuickEstimate() }
-            .buttonStyle(.borderedProminent)
-            .disabled(!haveSU2 || busy || lab.wing.elements.isEmpty || !lab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty)
-        Text("Uses the turbulence model chosen under RANS CFD (Spalart–Allmaras unless you changed it). Within 0.3% of the medium mesh on lift and about 1% on drag on a two-element wing; use RANS CFD for the final numbers.")
-            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        if let job = lab.sweepOn ? lab.sweepJob : lab.ransJob, !job.status.isFinished || job.status == .failed {
-            JobInlineStatus(job: job)
+            Button("Run the Sweep") { app.runWingQuickEstimate() }
+                .disabled(app.settings.su2Executable == nil || (lab.sweepJob.map { !$0.status.isFinished } ?? false)
+                          || lab.wing.elements.isEmpty || !lab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty)
+            if let job = lab.sweepJob, !job.status.isFinished || job.status == .failed {
+                JobInlineStatus(job: job)
+            }
         }
     }
 
@@ -1263,6 +1305,81 @@ struct SweepStrip: View {
                     .foregroundStyle(p.2 ? Color.accentColor : Color.orange)
                     .opacity(p.2 ? 1 : 0.5)
             }
+        }
+        .chartXAxisLabel("Wing angle (°)").chartYAxisLabel(name)
+        .chartYScale(domain: .automatic(includesZero: false))
+    }
+}
+
+/// The quick estimate: Cl and Cd against the wing angle, and each element at
+/// the wing's own angle.
+struct EstimateResults: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        let lab = app.wingLab
+        if let est = lab.estimate, let here = est.row(nearest: lab.wing.alpha) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(String(format: "At %g°: Cl %.3f, Cd %.4f, L/D %.1f", here.alpha, here.cl, here.cd, abs(here.cl) / max(here.cd, 1e-9)))
+                        .font(.callout.monospacedDigit()).bold()
+                    Grid(alignment: .trailing, horizontalSpacing: 10, verticalSpacing: 2) {
+                        GridRow {
+                            Text("").gridColumnAlignment(.leading)
+                            Text("Cl").bold()
+                            Text("Cd").bold()
+                            Text("in place").bold()
+                        }
+                        ForEach(Array(here.elements.enumerated()), id: \.offset) { i, e in
+                            GridRow {
+                                Text(WingIssue.label(i))
+                                Text(String(format: "%.3f", e.cl))
+                                Text(String(format: "%.4f", e.cd))
+                                Text(String(format: "%.1f°%@", e.effectiveAngle, e.heldBelowStall ? " (held)" : ""))
+                                    .help("The element's own angle of attack in place; its neighbours turn the flow by \(String(format: "%+.1f", e.upwash))°. Held: it has an element behind it, so it is kept below its stall onset, as the slot does on the real wing.")
+                            }
+                        }
+                    }
+                    .font(.caption.monospacedDigit())
+                    if !here.trusted {
+                        Label("NeuralFoil is unsure of one or more sections here: check with RANS.", systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
+                    Text("Panel method and NeuralFoil: lift within about 2% of RANS on a main-and-flap wing until the flap nears separation, drag about 10% high. For trends and screening; RANS CFD for numbers to keep.")
+                        .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Button("Use for the Lap Sim") {
+                        lab.cdEstimate = here.cd
+                        app.sendWingToLapSim(cl: here.cl, cd: here.cd, replacedCla: lab.replacedCla, replacedCda: lab.replacedCda)
+                    }
+                    .buttonStyle(.link).font(.caption)
+                }
+                .frame(width: 290, alignment: .leading)
+                chart("Cl", est.rows.map { ($0.alpha, $0.cl, $0.trusted) }, mark: here.alpha)
+                chart("Cd", est.rows.map { ($0.alpha, $0.cd, $0.trusted) }, mark: here.alpha)
+            }
+            .padding(8)
+        } else if let job = lab.estimateJob, !job.status.isFinished {
+            VStack {
+                ProgressView(value: job.progress, total: 100)
+                Text(job.progressMessage).font(.caption)
+            }
+            .padding()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            Text("Pick Quick estimate in Solvers and run it: a few seconds.").foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func chart(_ name: String, _ points: [(Double, Double, Bool)], mark: Double) -> some View {
+        Chart {
+            ForEach(Array(points.enumerated()), id: \.offset) { _, p in
+                LineMark(x: .value("α", p.0), y: .value(name, p.1))
+                PointMark(x: .value("α", p.0), y: .value(name, p.1))
+                    .symbolSize(p.2 ? 16 : 24)
+                    .foregroundStyle(p.2 ? Color.accentColor : Color.orange)
+            }
+            RuleMark(x: .value("wing", mark)).foregroundStyle(.secondary.opacity(0.5))
         }
         .chartXAxisLabel("Wing angle (°)").chartYAxisLabel(name)
         .chartYScale(domain: .automatic(includesZero: false))

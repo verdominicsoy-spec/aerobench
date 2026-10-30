@@ -52,6 +52,17 @@ def airfoil_import(ctx: JobContext) -> dict:
     return out
 
 
+@command("airfoil-delete")
+def airfoil_delete(ctx: JobContext) -> dict:
+    """Deletes your own imported sections from My Airfoils."""
+    from ..wing.airfoils import delete_mine
+
+    keys = ctx.params.get("keys")
+    if not isinstance(keys, list) or not keys:
+        raise EngineError("params.keys must list the sections to delete")
+    return delete_mine([str(k) for k in keys], _root(ctx))
+
+
 @command("airfoil-naca")
 def airfoil_naca(ctx: JobContext) -> dict:
     """A NACA 4 or 5-digit section, normalised like the library's."""
@@ -126,6 +137,22 @@ def wing_rans(ctx: JobContext) -> dict:
 
     return rans.solve(ctx.params, ctx.workdir, ctx.mesh_dir / "wing.su2", ctx.params.get("su2") or ctx.options.su2_path,
                       ctx.options.cores, ctx.thread_env(), ctx.emit.progress, ctx.emit.log)
+
+
+@command("wing-estimate")
+def wing_estimate(ctx: JobContext) -> dict:
+    """Multi-element lift and drag in about a second: the panel method for
+    how the elements load each other, NeuralFoil per element (wing/estimate.py)."""
+    from ..wing.estimate import estimate
+
+    p = ctx.params
+    raw = p.get("elements")
+    if not isinstance(raw, list) or not raw:
+        raise EngineError("params.elements must list the elements: coords (placed, m), unit, chord, angle, inverted")
+    alphas = [float(a) for a in p.get("alphas", [p.get("alpha", 0.0)])]
+    ctx.emit.progress(10, f"{len(raw)} elements at {len(alphas)} angle(s)")
+    return estimate(raw, alphas, float(p.get("speed", 15)), float(p.get("rho", 1.225)), float(p.get("mu", 1.81e-5)),
+                    float(p.get("n_crit", 9.0)), p.get("ref_chord"))
 
 
 @command("wing-sweep")
