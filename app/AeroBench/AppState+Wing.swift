@@ -105,11 +105,13 @@ extension AppState {
         var params = ransParams()
         params["elements"] = elements
         lab.ransResult = nil
+        lab.ransField = nil
         lab.resultsTab = .cfd
         lab.ransJob = jobs.submit(command: "wing-rans", params: params, in: jobsRoot) { [weak self] item in
             guard let self, item.status == .succeeded, let text = item.resultText else { return }
             self.wingLab.ransResult = try? WingRansResult.decode(resultFile: Data(text.utf8))
             self.wingLab.ransFolder = item.workdir
+            self.wingLab.ransField = self.wingLab.ransResult?.fieldView == nil ? nil : try? WingField.load(from: item.workdir)
         }
     }
 

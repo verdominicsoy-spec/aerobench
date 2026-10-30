@@ -49,6 +49,8 @@ public struct WingRansResult: Codable, Equatable, Sendable {
     public var elements: [Element]
     public var surface: [Surface]
     public var field: String?
+    /// field.json (with field.bin) in the run folder: the flow resampled for the app's field view.
+    public var fieldView: String?
     public var cfl: Double?
     /// "jst" (the default) or "fds", the more dissipative fallback whose drag reads high.
     public var scheme: String?

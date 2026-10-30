@@ -531,11 +531,27 @@ struct CFDResults: View {
                     .buttonStyle(.link).font(.caption)
                 }
                 .frame(width: 260, alignment: .leading)
-                Chart(points(r)) { p in
-                    LineMark(x: .value("x (mm)", p.x), y: .value("−Cp", p.minusCp))
-                        .foregroundStyle(by: .value("Element", p.element))
+                VStack(alignment: .leading, spacing: 4) {
+                    Picker("View", selection: Binding(get: { lab.cfdView }, set: { lab.cfdView = $0 })) {
+                        ForEach(WingLabModel.CFDView.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 220)
+                    switch lab.cfdView {
+                    case .field:
+                        if let f = lab.ransField {
+                            WingFieldPlot(field: f, outlines: r.surface.map { s in zip(s.x, s.y).map { SIMD2($0, $1) } })
+                        } else {
+                            Text("No flow field for this run (runs from before the field view, or the flow file was not written).")
+                                .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                    case .surface:
+                        Chart(points(r)) { p in
+                            LineMark(x: .value("x (mm)", p.x), y: .value("−Cp", p.minusCp))
+                                .foregroundStyle(by: .value("Element", p.element))
+                        }
+                        .chartXAxisLabel("x (mm)").chartYAxisLabel("−Cp")
+                    }
                 }
-                .chartXAxisLabel("x (mm)").chartYAxisLabel("−Cp")
                 .opacity(r.converged ? 1 : 0.35)
             }
             .padding(8)
@@ -761,7 +777,8 @@ struct WingInspector: View {
         }
         Text(lab.turbulenceModel.purpose).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         Picker("Mesh", selection: Binding(get: { lab.meshLevel }, set: { lab.meshLevel = $0 })) {
-            Text("Coarse (quick look)").tag("coarse")
+            Text("Quick, about 2 min").tag("quick")
+            Text("Coarse").tag("coarse")
             Text("Medium").tag("medium")
             Text("Fine").tag("fine")
         }
@@ -1078,5 +1095,98 @@ struct StudyResults: View {
     private func dist(_ proxy: ChartProxy, _ p: CGPoint, _ t: WingStudy.Trial) -> Double {
         guard let q = proxy.position(for: (t.cd!, t.load!)) else { return .infinity }
         return hypot(q.x - p.x, q.y - p.y)
+    }
+}
+
+/// The flow around the wing from the last RANS run: a scalar over the plane,
+/// streamlines on top, the value under the pointer.
+struct WingFieldPlot: View {
+    @Environment(AppState.self) private var app
+    let field: WingField
+    /// Each element's outline as SU2 saw it, metres.
+    let outlines: [[SIMD2<Double>]]
+    @State private var hover: SIMD2<Double>?
+
+    private struct Fit {
+        let rect: CGRect
+        let scale: Double
+        let x0: Double
+        let y1: Double
+
+        func view(_ p: SIMD2<Double>) -> CGPoint {
+            CGPoint(x: rect.minX + (p.x - x0) * scale, y: rect.minY + (y1 - p.y) * scale)
+        }
+
+        func world(_ p: CGPoint) -> SIMD2<Double> {
+            SIMD2(x0 + (p.x - rect.minX) / scale, y1 - (p.y - rect.minY) / scale)
+        }
+    }
+
+    private func fit(_ size: CGSize) -> Fit {
+        let w = field.window.x1 - field.window.x0, h = field.window.y1 - field.window.y0
+        let scale = min(size.width / w, size.height / h)
+        let rect = CGRect(x: (size.width - w * scale) / 2, y: (size.height - h * scale) / 2, width: w * scale, height: h * scale)
+        return Fit(rect: rect, scale: scale, x0: field.window.x0, y1: field.window.y1)
+    }
+
+    var body: some View {
+        let lab = app.wingLab
+        let scalar = field.scalars.first { $0.key == lab.fieldScalar } ?? field.scalars.first
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Picker("Show", selection: Binding(get: { scalar?.key ?? "" }, set: { lab.fieldScalar = $0 })) {
+                    ForEach(field.scalars) { Text($0.name).tag($0.key) }
+                }
+                .frame(width: 270)
+                Toggle("Streamlines", isOn: Binding(get: { lab.showStreamlines }, set: { lab.showStreamlines = $0 }))
+                Spacer()
+                if let s = scalar, let p = hover, let v = field.value(s.key, at: p) {
+                    Text(String(format: "%.3f at %.0f, %.0f mm", v, p.x * 1000, p.y * 1000)).font(.caption.monospacedDigit())
+                }
+            }
+            .font(.caption)
+            GeometryReader { geo in
+                let m = fit(geo.size)
+                Canvas { ctx, _ in
+                    if let s = scalar, let image = lab.fieldImage(s.key) {
+                        ctx.draw(Image(decorative: image, scale: 1), in: m.rect)
+                    }
+                    for outline in outlines where outline.count > 2 {
+                        var path = Path()
+                        path.move(to: m.view(outline[0]))
+                        for p in outline.dropFirst() { path.addLine(to: m.view(p)) }
+                        path.closeSubpath()
+                        ctx.fill(path, with: .color(Color(white: 0.55)))
+                        ctx.stroke(path, with: .color(.black.opacity(0.6)), lineWidth: 0.8)
+                    }
+                    if lab.showStreamlines {
+                        var path = Path()
+                        for line in field.streamlines where line.count > 1 {
+                            path.move(to: m.view(line[0]))
+                            for p in line.dropFirst() { path.addLine(to: m.view(p)) }
+                        }
+                        ctx.stroke(path, with: .color(.black.opacity(0.45)), lineWidth: 0.6)
+                    }
+                }
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active(let p): hover = m.world(p)
+                    case .ended: hover = nil
+                    }
+                }
+            }
+            if let s = scalar { colorbar(s) }
+        }
+    }
+
+    @ViewBuilder private func colorbar(_ s: WingField.Scalar) -> some View {
+        let colors = s.colormap.map { Color(red: $0[0], green: $0[1], blue: $0[2]) }
+        HStack(spacing: 6) {
+            Text(String(format: "%.2f", s.range.first ?? s.min)).font(.caption2.monospacedDigit())
+            LinearGradient(colors: colors.isEmpty ? [.black, .white] : colors, startPoint: .leading, endPoint: .trailing)
+                .frame(height: 8).clipShape(RoundedRectangle(cornerRadius: 2))
+            Text(String(format: "%.2f", s.range.last ?? s.max)).font(.caption2.monospacedDigit())
+        }
+        .help("\(s.name): \(String(format: "%.3f", s.min)) to \(String(format: "%.3f", s.max)) in the window; the colours span the middle 98%.")
     }
 }

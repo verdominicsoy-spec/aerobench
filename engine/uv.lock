@@ -16,12 +16,14 @@ dependencies = [
     { name = "cmaes" },
     { name = "gmsh" },
     { name = "imageio-ffmpeg" },
+    { name = "matplotlib" },
     { name = "neuralfoil" },
     { name = "numpy" },
     { name = "opencv-python-headless" },
     { name = "optuna" },
     { name = "scikit-image" },
     { name = "scipy" },
+    { name = "vtk" },
 ]
 
 [package.dev-dependencies]
@@ -35,12 +37,14 @@ requires-dist = [
     { name = "cmaes", specifier = ">=0.11" },
     { name = "gmsh", specifier = ">=4.13" },
     { name = "imageio-ffmpeg", specifier = ">=0.6.0" },
+    { name = "matplotlib", specifier = ">=3.8" },
     { name = "neuralfoil", specifier = ">=0.3.3,<0.4" },
     { name = "numpy", specifier = ">=2.5.4" },
     { name = "opencv-python-headless", specifier = ">=5.0.0.93" },
     { name = "optuna", specifier = ">=4,<5" },
     { name = "scikit-image", specifier = ">=0.26.0" },
     { name = "scipy", specifier = ">=1.18.1" },
+    { name = "vtk", specifier = ">=9.3" },
 ]
 
 [package.metadata.requires-dev]

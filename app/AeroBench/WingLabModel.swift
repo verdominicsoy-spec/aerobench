@@ -1,4 +1,5 @@
 import AeroBenchKit
+import CoreGraphics
 import Foundation
 import Observation
 import simd
@@ -100,6 +101,37 @@ final class WingLabModel {
     var ransResult: WingRansResult?
     var ransFolder: URL?
     var su2Job: JobItem?
+
+    // The flow field of the last RANS run
+    enum CFDView: String, CaseIterable, Identifiable {
+        case field = "Flow field"
+        case surface = "Surface Cp"
+
+        var id: String { rawValue }
+    }
+    var cfdView: CFDView = .field
+    var ransField: WingField? {
+        didSet { fieldImages = [:] }
+    }
+    var fieldScalar = "cp"
+    var showStreamlines = true
+    @ObservationIgnored private var fieldImages: [String: CGImage] = [:]
+
+    /// The scalar as an image, made once per scalar and kept.
+    func fieldImage(_ key: String) -> CGImage? {
+        if let image = fieldImages[key] { return image }
+        guard let f = ransField else { return nil }
+        let px = f.pixels(key)
+        guard px.count == f.nx * f.ny * 4,
+              let provider = CGDataProvider(data: Data(px) as CFData),
+              let image = CGImage(width: f.nx, height: f.ny, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: f.nx * 4,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                                  provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+        else { return nil }
+        fieldImages[key] = image
+        return image
+    }
 
     // Optimisation
     struct DesignVariable: Codable, Equatable, Identifiable {

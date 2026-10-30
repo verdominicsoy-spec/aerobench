@@ -166,7 +166,7 @@ def wing_optimise(ctx: JobContext) -> dict:
         elements = [{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "angle": e.angle, "inverted": e.inverted,
                      "chord": e.chord} for e in wing.elements]
         return rans.solve({**flow, "elements": elements}, folder, folder / "wing.su2", su2_hint, ctx.options.cores,
-                          ctx.thread_env(), lambda pct, msg: None, lambda *a, **k: None)
+                          ctx.thread_env(), lambda pct, msg: None, lambda *a, **k: None, field=False)
 
     ctx.emit.log(f"{spec.trials} trials, {spec.parallel} at a time on {ctx.options.cores} cores each, "
                  f"{spec.sampler.upper()}: {optimise.OBJECTIVES[spec.objective]}")

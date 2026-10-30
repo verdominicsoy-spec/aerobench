@@ -202,7 +202,7 @@ def judge(history: dict[str, np.ndarray], case: Case) -> dict:
 # test passes, at half the tolerance to leave a margin; the flow and surface
 # files are written every WRITE_EVERY iterations, so they are at most that
 # many iterations older than the forces.
-WRITE_EVERY = 250
+WRITE_EVERY = 100
 STOP_AFTER_WRITE = 20  # iterations after a write before stopping, so the files are complete
 
 CFL_STEPS = (25.0, 10.0, 4.0)  # tried in turn when SU2 diverges

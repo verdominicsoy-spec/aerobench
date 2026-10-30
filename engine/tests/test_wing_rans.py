@@ -191,5 +191,6 @@ with open("history.csv", "w") as h:
                 iterations=100000)
     out = m.run(case, tmp_path / "m.su2", tmp_path, fake, cores=1)
     assert out["converged"] and out["stopped_early"]
-    assert out["iterations"] < m.WRITE_EVERY + m.STOP_AFTER_WRITE + 50  # the first check after a write, plus lines in flight
+    # Stopped within a couple of checks of the window filling, not at 100,000 (plus lines in flight).
+    assert out["iterations"] < case.window + 2 * m.WRITE_EVERY + m.STOP_AFTER_WRITE + 50
     assert out["cl"] == pytest.approx(1.2, abs=1e-6)

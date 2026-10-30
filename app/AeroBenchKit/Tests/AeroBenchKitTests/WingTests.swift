@@ -222,3 +222,37 @@ final class WingStudyTests: XCTestCase {
         XCTAssertNil(Wing(elements: [w.elements[0]]).applying(s.trials[1]))  // different element count
     }
 }
+
+final class WingFieldTests: XCTestCase {
+    /// 3 x 2 grid over x 0..3, y 0..2, one scalar: bottom row 0, 1, 2; top row NaN, 4, 5.
+    private func field() throws -> WingField {
+        let json = #"{"nx": 3, "ny": 2, "window": [0, 0, 3, 2], "v_inf": 1.0, "streamlines": [[[0, 0.5], [3, 0.5]]],
+        "scalars": [{"key": "cp", "name": "Cp", "min": 0, "max": 5, "range": [0, 5], "colormap": [[0, 0, 0], [1, 1, 1]]}]}"#
+        var bin = Data()
+        for v: Float in [0, 1, 2, .nan, 4, 5] { withUnsafeBytes(of: v.bitPattern.littleEndian) { bin.append(contentsOf: $0) } }
+        return try WingField(json: Data(json.utf8), binary: bin)
+    }
+
+    func testValuesAndStreamlines() throws {
+        let f = try field()
+        XCTAssertEqual(f.value("cp", at: SIMD2(1.5, 0.5)), 1)
+        XCTAssertEqual(f.value("cp", at: SIMD2(2.5, 1.5)), 5)
+        XCTAssertNil(f.value("cp", at: SIMD2(0.5, 1.5)))  // no flow there
+        XCTAssertNil(f.value("cp", at: SIMD2(5, 1)))  // outside the window
+        XCTAssertNil(f.value("speed", at: SIMD2(1, 1)))
+        XCTAssertEqual(f.streamlines, [[SIMD2(0, 0.5), SIMD2(3, 0.5)]])
+    }
+
+    func testPixelsAreFlippedAndTransparentWithoutFlow() throws {
+        let px = try field().pixels("cp")
+        XCTAssertEqual(px.count, 3 * 2 * 4)
+        XCTAssertEqual(Array(px[0..<4]), [0, 0, 0, 0])  // top-left is the NaN: transparent
+        XCTAssertEqual(Array(px[8..<12]), [255, 255, 255, 255])  // top-right is 5: the top of the range
+        XCTAssertEqual(Array(px[12..<16]), [0, 0, 0, 255])  // bottom-left is 0
+    }
+
+    func testRejectsAShortBinary() {
+        let json = #"{"nx": 3, "ny": 2, "window": [0, 0, 3, 2], "streamlines": [], "scalars": [{"key": "cp", "name": "Cp", "min": 0, "max": 1, "range": [0, 1], "colormap": []}]}"#
+        XCTAssertThrowsError(try WingField(json: Data(json.utf8), binary: Data(count: 8)))
+    }
+}

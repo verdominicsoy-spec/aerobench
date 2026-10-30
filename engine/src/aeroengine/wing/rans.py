@@ -15,14 +15,21 @@ from .mesh import Settings, build
 from .viscous import polar, reynolds
 
 MESH_LEVELS = {  # surface and wake spacing scale, wall layer growth
+    "quick": (2.2, 1.2),
     "coarse": (1.6, 1.2),
     "medium": (1.0, 1.15),
     "fine": (0.6, 1.1),
 }
 
 
+# The quick level answers to three figures: lift and drag still for 0.1%
+# over 100 iterations and the residual down 3 orders, rather than 0.01% over
+# 200 and 4 orders.
+CONVERGENCE = {"quick": {"tolerance": 1e-3, "window": 100, "residual_drop": 3.0}}
+
+
 def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: int, env: dict | None,
-          progress: Callable[[float, str], None], log: Callable[..., None]) -> dict:
+          progress: Callable[[float, str], None], log: Callable[..., None], field: bool = True) -> dict:
     """p holds elements (coords placed in m, unit, angle, inverted, chord),
     speed, rho, mu, alpha, model, mesh level, transition and the rest of the
     wing-rans parameters. The mesh goes to mesh_file, SU2's files to workdir."""
@@ -78,16 +85,26 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     case = su2.Case(speed=speed, rho=rho, mu=mu, alpha_deg=alpha, ref_chord=ref_chord,
                     ref_point=(float(ref_point[0]), float(ref_point[1])), walls=[f"wall_{i}" for i in range(len(raw))],
                     model=model, turbulence_intensity=float(p.get("turbulence_intensity", 0.01)),
-                    iterations=int(p.get("iterations", 4000)))
+                    iterations=int(p.get("iterations", 4000)), **CONVERGENCE.get(level, {}))
     result = su2.run(case, mesh_file, workdir, su2.find_su2(su2_hint), cores=cores,
                      progress=lambda pct, msg: progress(10 + 0.88 * pct, msg), env=env)
     result.pop("history_columns", None)
     surface = surface_cp(workdir / "surface.csv", placed)
     if not result["converged"]:
         log(f"not converged: {result['reason']}", level="warning")
+    view = None
+    if field and (workdir / "flow.vtu").exists():
+        from .field import extract
+
+        progress(98, "sampling the flow field")
+        try:
+            extract(workdir / "flow.vtu", placed, workdir)
+            view = "field.json"
+        except Exception as exc:  # noqa: BLE001 - the run's numbers stand without the picture
+            log(f"no field view: {exc}", level="warning")
     return {"re": re_ref, "mesh": mesh, "mesh_level": level, "transition": zones, "model": model,
             "model_name": su2.MODELS[model], **result, "surface": surface,
-            "field": "flow.vtu" if (workdir / "flow.vtu").exists() else None}
+            "field": "flow.vtu" if (workdir / "flow.vtu").exists() else None, "field_view": view}
 
 
 def surface_cp(path: Path, placed: list[np.ndarray]) -> list[dict]:
