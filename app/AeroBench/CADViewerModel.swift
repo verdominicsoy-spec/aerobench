@@ -37,8 +37,59 @@ final class CADViewerModel {
         didSet {
             viewer.setHidden(hidden)
             visibleBounds = model?.bounds(hidden: hidden)
+            cutter = nil
+            updateSection()
         }
     }
+
+    // Section cut: the visible parts cut by a plane across one axis
+    var sectionOn = false {
+        didSet {
+            if sectionOn && oldValue == false { centreSection() } else { updateSection() }
+        }
+    }
+    var sectionAxis = 0 { didSet { if sectionAxis != oldValue { centreSection() } } }
+    var sectionPosition = 0.0 { didSet { updateSection() } }  // metres along sectionAxis
+    private(set) var sectionSegments: [(SIMD2<Double>, SIMD2<Double>)] = []
+    @ObservationIgnored private var cutter: SectionCutter?
+
+    var sectionRange: ClosedRange<Double> {
+        guard let b = visibleBounds, b.max[sectionAxis] > b.min[sectionAxis] else { return 0...1 }
+        return b.min[sectionAxis]...b.max[sectionAxis]
+    }
+
+    private func centreSection() {
+        let r = sectionRange
+        sectionPosition = (r.lowerBound + r.upperBound) / 2
+    }
+
+    private func updateSection() {
+        guard sectionOn, let model else {
+            sectionSegments = []
+            viewer.setSlice(nil, center: .zero, right: .zero, up: .zero)
+            return
+        }
+        if cutter == nil { cutter = SectionCutter(model: model, hidden: hidden) }
+        sectionSegments = cutter?.cut(axis: sectionAxis, at: sectionPosition) ?? []
+        // The plane itself in the 3D view, a little larger than the parts.
+        guard let b = visibleBounds else { return }
+        let (u, v) = SectionCutter.planeAxes(sectionAxis)
+        var center = (b.min + b.max) / 2, right = SIMD3<Double>(repeating: 0), up = SIMD3<Double>(repeating: 0)
+        center[sectionAxis] = sectionPosition
+        right[u] = max(b.max[u] - b.min[u], 0.01) * 1.1
+        up[v] = max(b.max[v] - b.min[v], 0.01) * 1.1
+        viewer.setSlice(Self.planeImage, center: center, right: right, up: up)
+    }
+
+    /// A translucent blue square for the cut plane.
+    private static let planeImage: CGImage? = {
+        let rgba: [UInt8] = Array(repeating: [40, 110, 220, 70], count: 4).flatMap { $0 }
+        guard let provider = CGDataProvider(data: Data(rgba) as CFData) else { return nil }
+        return CGImage(width: 2, height: 2, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: 8,
+                       space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+    }()
     private(set) var visibleBounds: (min: SIMD3<Double>, max: SIMD3<Double>)?
 
     var measuring = false {
@@ -86,6 +137,8 @@ final class CADViewerModel {
         visibleBounds = model.bounds()
         status = .ready
         setReport(nil)
+        cutter = nil
+        if sectionOn { centreSection() }
     }
 
     func clear() {
@@ -96,6 +149,8 @@ final class CADViewerModel {
         viewer.show(nil)
         status = .empty
         setReport(nil)
+        cutter = nil
+        sectionOn = false
     }
 
     func isVisible(_ id: Int) -> Bool { !hidden.contains(id) }

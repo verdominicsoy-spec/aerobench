@@ -919,3 +919,14 @@ Student Reynolds numbers; NeuralFoil takes about 2 ms a section, so instead
 of fixed tables the whole library is computed on demand at the main
 element's Reynolds number, and a note turns orange when the wing has moved
 more than 20% away from it.
+
+**Flow probe, car in the field, section cut.** The probe reads the nearest
+voxel rather than interpolating: the volume is already resampled from video
+pixels, so interpolation would suggest more precision than there is. The car
+in the flow viewer is the CAD Viewer's model as loaded, in its own
+coordinates, with a manual offset; no automatic registration, because when
+STAR used the CAD frame there is nothing to register. The section cut runs
+on the CPU over the tessellated triangles (put in world space once, then
+each plane position is one pass) and is drawn as a flat 2D outline, rather
+than clipping the 3D view with a shader: the flat view is what shows a wing
+or floor profile, and it can be tested.

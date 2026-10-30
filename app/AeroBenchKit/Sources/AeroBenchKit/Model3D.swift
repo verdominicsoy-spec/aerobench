@@ -174,3 +174,59 @@ public enum Measure {
         corners.min { simd_distance_squared($0, p) < simd_distance_squared($1, p) } ?? p
     }
 }
+
+/// Cuts a model's visible geometry with axis-aligned planes: where the
+/// triangles cross the plane, as segments in the plane's other two axes
+/// (x cut: y, z; y cut: x, z; z cut: x, y). The triangles are put in world
+/// space once, so moving the plane is quick.
+public struct SectionCutter: Sendable {
+    private let corners: [SIMD3<Float>]  // three per triangle, world space, metres
+    public let bounds: (min: SIMD3<Double>, max: SIMD3<Double>)?
+
+    public init(model: Model3D, hidden: Set<Int> = []) {
+        var out: [SIMD3<Float>] = []
+        for inst in model.instances(hidden: hidden) {
+            let mesh = model.meshes[inst.node.mesh!]
+            let world = mesh.positions.map { p -> SIMD3<Float> in
+                let w = inst.world * SIMD4<Float>(p, 1)
+                return SIMD3(w.x, w.y, w.z)
+            }
+            out.reserveCapacity(out.count + mesh.indices.count)
+            for i in mesh.indices where Int(i) < world.count { out.append(world[Int(i)]) }
+        }
+        out.removeLast(out.count % 3)
+        corners = out
+        bounds = model.bounds(hidden: hidden)
+    }
+
+    /// The two in-plane axes of a cut across `axis`.
+    public static func planeAxes(_ axis: Int) -> (Int, Int) {
+        switch axis {
+        case 0: (1, 2)
+        case 1: (0, 2)
+        default: (0, 1)
+        }
+    }
+
+    public func cut(axis: Int, at value: Double) -> [(SIMD2<Double>, SIMD2<Double>)] {
+        let (u, v) = Self.planeAxes(axis)
+        let level = Float(value)
+        var out: [(SIMD2<Double>, SIMD2<Double>)] = []
+        var t = 0
+        while t + 2 < corners.count {
+            let p = [corners[t], corners[t + 1], corners[t + 2]]
+            t += 3
+            // A corner exactly on the plane counts as just above it, so each
+            // crossing is found once and no segment has zero length.
+            let d = p.map { $0[axis] - level }.map { $0 == 0 ? Float.leastNormalMagnitude : $0 }
+            var hits: [SIMD2<Double>] = []
+            for (a, b) in [(0, 1), (1, 2), (2, 0)] where (d[a] < 0) != (d[b] < 0) {
+                let s = d[a] / (d[a] - d[b])
+                let q = p[a] + s * (p[b] - p[a])
+                hits.append(SIMD2(Double(q[u]), Double(q[v])))
+            }
+            if hits.count == 2 { out.append((hits[0], hits[1])) }
+        }
+        return out
+    }
+}

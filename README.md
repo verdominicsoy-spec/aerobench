@@ -129,6 +129,10 @@ and perspective or orthographic. Untick parts in the tree to hide them; the
 bounds readout follows what is visible. Turn on Measure and click two points;
 with Snap to vertex on, clicks snap to the nearest mesh vertex, so edges and
 corners measure exactly. STL and OBJ carry no units, so pick mm, m or in.
+*Section* cuts the visible parts with a plane across x, y or z (shown in the
+3D view) and draws the cut flat and to scale below it, with a slider for
+where it cuts and the coordinates under the pointer, to see a wing or the
+floor in section.
 
 **Check Geometry** looks for duplicate vertices and faces, degenerate
 faces, open edges and holes, non-manifold edges, flipped normals and pierced

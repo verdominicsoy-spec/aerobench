@@ -107,3 +107,35 @@ final class ModelLoaderTests: XCTestCase {
         XCTAssertEqual(Measure.nearestCorner(to: SIMD3(0.9, 0.1, 0), of: corners), SIMD3(1, 0, 0))
     }
 }
+
+final class SectionCutterTests: XCTestCase {
+    /// A unit cube from 0 to 1 m (12 triangles), moved +2 m along x by its node.
+    private func cube() -> Model3D {
+        let p: [SIMD3<Float>] = [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]]
+        let faces: [UInt32] = [0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7]
+        var shift = matrix_identity_float4x4
+        shift.columns.3 = SIMD4(2, 0, 0, 1)
+        let mesh = TriangleMesh(positions: p, normals: Array(repeating: [0, 0, 1], count: 8), indices: faces)
+        return Model3D(meshes: [mesh], roots: [ModelNode(name: "cube", transform: shift, mesh: 0)], sourceName: "cube")
+    }
+
+    func testACutThroughACubeIsASquare() {
+        let cutter = SectionCutter(model: cube())
+        let segments = cutter.cut(axis: 2, at: 0.5)  // across z: segments in x, y
+        let length = segments.reduce(0) { $0 + simd_distance($1.0, $1.1) }
+        XCTAssertEqual(length, 4, accuracy: 1e-5)
+        for (a, b) in segments {
+            for q in [a, b] {
+                XCTAssertTrue((2 - 1e-6...3 + 1e-6).contains(q.x) && (-1e-6...1 + 1e-6).contains(q.y))
+            }
+        }
+        XCTAssertEqual(cutter.cut(axis: 0, at: 2.5).reduce(0) { $0 + simd_distance($1.0, $1.1) }, 4, accuracy: 1e-5)
+        XCTAssertTrue(cutter.cut(axis: 0, at: 0.5).isEmpty)  // the cube was moved to x = 2..3
+        XCTAssertEqual(cutter.bounds?.min.x ?? 0, 2, accuracy: 1e-6)
+    }
+
+    func testHiddenPartsAreNotCut() {
+        let model = cube()
+        XCTAssertTrue(SectionCutter(model: model, hidden: [model.roots[0].id]).cut(axis: 2, at: 0.5).isEmpty)
+    }
+}

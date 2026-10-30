@@ -16,6 +16,11 @@ struct CADViewerView: View {
                     Viewer3DView(viewer: app.cad.viewer)
                     overlay
                 }
+                if app.cad.sectionOn {
+                    Divider()
+                    CADSectionView()
+                        .frame(height: 260)
+                }
                 Divider()
                 CADStatusBar()
             }
@@ -83,6 +88,9 @@ struct CADToolbar: View {
             .frame(width: 120)
             Divider().frame(height: 18)
             Toggle("Measure", isOn: $cad.measuring).toggleStyle(.button)
+            Toggle("Section", isOn: $cad.sectionOn).toggleStyle(.button)
+                .disabled(cad.model == nil)
+                .help("Cut the visible parts with a plane and see them in section")
             Button("Check Geometry") { app.checkGeometry() }
                 .disabled(cad.fileURL == nil || (cad.checkJob.map { !$0.status.isFinished } ?? false))
             Toggle("Snap to vertex", isOn: $cad.snap)
@@ -276,5 +284,92 @@ struct IssueRow: View {
             .disabled(issue.points.isEmpty)
             Text(issue.detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+/// The visible parts cut by a plane across x, y or z, drawn flat and to
+/// scale, with the plane's position on a slider.
+struct CADSectionView: View {
+    @Environment(AppState.self) private var app
+    @State private var hover: SIMD2<Double>?
+
+    var body: some View {
+        @Bindable var cad = app.cad
+        let axes = SectionCutter.planeAxes(cad.sectionAxis)
+        let u = axes.0, v = axes.1
+        let names = ["x", "y", "z"]
+        VStack(spacing: 4) {
+            HStack(spacing: 10) {
+                Picker("Across", selection: $cad.sectionAxis) {
+                    ForEach(0..<3, id: \.self) { Text(names[$0]).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 150)
+                Slider(value: $cad.sectionPosition, in: cad.sectionRange)
+                TextField("mm", value: Binding(get: { cad.sectionPosition * 1000 }, set: { cad.sectionPosition = $0 / 1000 }),
+                          format: .number.precision(.fractionLength(0...1)))
+                    .frame(width: 70)
+                Text("mm").foregroundStyle(.secondary)
+                if let h = hover {
+                    Text(String(format: "%@ %.1f, %@ %.1f mm", names[u], h.x * 1000, names[v], h.y * 1000))
+                        .font(.caption.monospacedDigit())
+                        .frame(width: 170, alignment: .trailing)
+                }
+            }
+            .controlSize(.small)
+            GeometryReader { geo in
+                let fit = fit(geo.size, cad, u, v)
+                Canvas { ctx, _ in
+                    var path = Path()
+                    for (a, b) in cad.sectionSegments {
+                        path.move(to: fit.view(a))
+                        path.addLine(to: fit.view(b))
+                    }
+                    ctx.stroke(path, with: .color(.primary), lineWidth: 1)
+                    if cad.sectionSegments.isEmpty {
+                        ctx.draw(Text("The plane misses the visible parts").foregroundStyle(.secondary),
+                                 at: CGPoint(x: geo.size.width / 2, y: geo.size.height / 2))
+                    }
+                    let bar = SliceExportView.niceLength(fit.span / 5)
+                    let y = geo.size.height - 10
+                    ctx.stroke(Path { p in p.move(to: CGPoint(x: 10, y: y)); p.addLine(to: CGPoint(x: 10 + bar * fit.scale, y: y)) },
+                               with: .color(.secondary), lineWidth: 2)
+                    ctx.draw(Text(bar >= 1 ? String(format: "%g m", bar) : String(format: "%g mm", bar * 1000)).font(.caption2),
+                             at: CGPoint(x: 10 + bar * fit.scale / 2, y: y - 9))
+                    ctx.draw(Text("\(names[v]) up, \(names[u]) across").font(.caption2).foregroundStyle(.secondary),
+                             at: CGPoint(x: geo.size.width - 70, y: geo.size.height - 10))
+                }
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active(let p): hover = fit.world(p)
+                    case .ended: hover = nil
+                    }
+                }
+            }
+            .background(Color(nsColor: .textBackgroundColor))
+        }
+        .padding(6)
+    }
+
+    private struct Fit {
+        let scale: Double
+        let x0: Double
+        let y1: Double
+        let ox: Double
+        let oy: Double
+        let span: Double
+
+        func view(_ p: SIMD2<Double>) -> CGPoint { CGPoint(x: ox + (p.x - x0) * scale, y: oy + (y1 - p.y) * scale) }
+        func world(_ p: CGPoint) -> SIMD2<Double> { SIMD2(x0 + (p.x - ox) / scale, y1 - (p.y - oy) / scale) }
+    }
+
+    /// Framed on all the visible parts, not just this cut, so the scale holds
+    /// still while the plane moves.
+    private func fit(_ size: CGSize, _ cad: CADViewerModel, _ u: Int, _ v: Int) -> Fit {
+        let b = cad.visibleBounds ?? (SIMD3(repeating: 0), SIMD3(repeating: 1))
+        let w = max(b.max[u] - b.min[u], 1e-6), h = max(b.max[v] - b.min[v], 1e-6)
+        let pad = 16.0
+        let scale = min((size.width - 2 * pad) / w, (size.height - 2 * pad) / h)
+        return Fit(scale: scale, x0: b.min[u], y1: b.max[v], ox: (size.width - w * scale) / 2, oy: (size.height - h * scale) / 2, span: w)
     }
 }
