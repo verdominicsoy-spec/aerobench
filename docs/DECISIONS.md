@@ -930,3 +930,13 @@ on the CPU over the tessellated triangles (put in world space once, then
 each plane position is one pass) and is drawn as a flat 2D outline, rather
 than clipping the 3D view with a shader: the flat view is what shows a wing
 or floor profile, and it can be tested.
+
+**A disk image, not a frozen engine.** The engine's environment is several
+hundred MB of compiled packages (gmsh, VTK, OpenCascade, OpenCV,
+NeuralFoil, Optuna), and a uv virtualenv is not relocatable, so it is not
+shipped inside the app. The app carries the engine's source and lock file,
+copies them to Application Support on first launch and runs `uv sync
+--frozen` there; the app bundle is never written to, so its signature holds.
+Updates keep the environment, the airfoil library and SU2. Signing is ad hoc
+by default; a Developer ID signature and notarisation need Dominic's Apple
+account, so the script takes an identity rather than assuming one.

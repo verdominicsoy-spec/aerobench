@@ -1,3 +1,4 @@
+import AeroBenchKit
 import SwiftUI
 
 enum SidebarItem: Hashable {
@@ -45,6 +46,11 @@ struct ContentView: View {
             }
         }
         .navigationTitle(windowTitle)
+        .task { app.setUpBundledEngineIfNeeded() }
+        .sheet(isPresented: Binding(get: { app.engineSetup.map { $0.phase != .done } ?? false },
+                                    set: { if !$0 { app.engineSetup = nil } })) {
+            EngineSetupView()
+        }
         .dropDestination(for: URL.self) { urls, _ in
             guard let url = urls.first else { return false }
             let ext = url.pathExtension.lowercased()
@@ -77,3 +83,44 @@ struct ContentView: View {
     }
 }
 
+
+/// The packaged app's one-time engine setup.
+struct EngineSetupView: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Setting up the engine").font(.title3.bold())
+            switch app.engineSetup?.phase {
+            case .working(let message):
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text(message)
+                }
+                Text("The engine's Python packages (NeuralFoil, gmsh, Optuna and the rest) are installed once into ~/Library/Application Support/AeroBench.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            case .needsUV:
+                Text("AeroBench sets up its engine with uv, which is not installed. Install it with Homebrew (brew install uv) and reopen AeroBench, or let AeroBench install it from astral.sh.")
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Button("Install uv") { app.installUVAndSetUp() }.buttonStyle(.borderedProminent)
+                    Button("Later") { app.engineSetup = nil }
+                }
+            case .failed(let why):
+                Text("The setup did not finish.").foregroundStyle(.red)
+                ScrollView { Text(why).font(.caption.monospaced()).textSelection(.enabled) }.frame(maxHeight: 160)
+                HStack {
+                    Button("Try Again") {
+                        if let source = BundledEngine.source() { app.runEngineSetup(source: source, home: BundledEngine.home) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button("Close") { app.engineSetup = nil }
+                }
+            case .done, nil:
+                EmptyView()
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
+    }
+}

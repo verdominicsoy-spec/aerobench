@@ -51,6 +51,18 @@ committed).
 The first time, macOS may say it cannot verify the script: right-click it,
 choose Open, then Open again. After that a double-click is enough.
 
+**A disk image instead.** `app/scripts/make_dmg.sh` builds `build/AeroBench.dmg`:
+the app with the engine's source and the data folder inside it, to drag to
+Applications. On its first launch (and the first after an update) the app
+copies the engine to `~/Library/Application Support/AeroBench` and makes its
+Python environment there with uv (a minute or two, once; it offers to install
+uv if it is missing). The airfoil library and SU2 then live there too. The
+image is signed ad hoc, so on another Mac the first open is right-click, Open;
+`SIGN_IDENTITY="Developer ID Application: …"` signs it with a real
+certificate, which needs an Apple developer account (notarising is a separate
+step). A Settings engine folder pointing at a working git checkout is left
+alone.
+
 To work on the code itself, open `app/AeroBench.xcodeproj` in Xcode and Run
 (⌘R) with the **AeroBench** scheme and **My Mac**. Signing is set to "Sign to
 Run Locally", so no Apple developer team is needed.

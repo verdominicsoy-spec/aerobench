@@ -23,6 +23,8 @@ final class AppState {
     let flow: FlowFieldModel
     let wingLab: WingLabModel
     var project: OpenProject?
+    /// A packaged app setting up its engine; nil otherwise.
+    var engineSetup: EngineSetup?
     var recentProjects: [URL] = []
     var alert: AppAlert?
     /// The most recent ping, shown on the project screen.

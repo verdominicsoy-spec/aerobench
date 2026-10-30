@@ -46,3 +46,14 @@ jobs:
       - name: Show the build log
         if: ${{ failure() }}
         run: tail -100 build/last-build.log
+      - name: Package AeroBench.dmg with the engine inside
+        if: ${{ !cancelled() }}
+        run: |
+          app/scripts/make_dmg.sh
+          hdiutil attach build/AeroBench.dmg -mountpoint /tmp/aerobench-dmg -nobrowse
+          test -f /tmp/aerobench-dmg/AeroBench.app/Contents/Resources/AeroBench/engine/pyproject.toml
+          test -f /tmp/aerobench-dmg/AeroBench.app/Contents/Resources/AeroBench/engine/uv.lock
+          test -d /tmp/aerobench-dmg/AeroBench.app/Contents/Resources/AeroBench/data/tracks
+          test ! -e /tmp/aerobench-dmg/AeroBench.app/Contents/Resources/AeroBench/engine/.venv
+          codesign --verify --deep /tmp/aerobench-dmg/AeroBench.app
+          hdiutil detach /tmp/aerobench-dmg
