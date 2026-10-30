@@ -160,9 +160,10 @@ def sweep(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
           progress: Callable[[float, str], None], log: Callable[..., None]) -> dict:
     """The wing at several angles on one mesh within time_limit seconds.
 
-    The middle angle runs first, from rest; then the angles above it, then
-    those below, each started from its neighbour's solution, which takes far
-    fewer iterations. Every angle's iterations are capped by the time left,
+    The middle angle runs first, from rest; then the others alternately above
+    and below it, working outwards, each started from its neighbour's
+    solution, which takes about half the iterations. If time runs out, what
+    was run is a balanced range about the middle. Every angle's iterations are capped by the time left,
     so the sweep never runs past the limit: an angle that hits the cap is
     reported as not converged, and angles there is no time to start are
     listed as skipped. Each angle's files go to workdir/a<angle>."""
@@ -174,8 +175,12 @@ def sweep(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     limit = float(p.get("time_limit", 300))
     max_iterations = int(p.get("iterations", 4000))
     mid = min(range(len(alphas)), key=lambda k: abs(alphas[k] - 0.5 * (alphas[0] + alphas[-1])))
-    order = [(alphas[mid], None)] + [(alphas[k], alphas[k - 1]) for k in range(mid + 1, len(alphas))] \
-        + [(alphas[k], alphas[k + 1]) for k in range(mid - 1, -1, -1)]
+    order = [(alphas[mid], None)]
+    for step in range(1, len(alphas)):
+        if mid + step < len(alphas):
+            order.append((alphas[mid + step], alphas[mid + step - 1]))
+        if mid - step >= 0:
+            order.append((alphas[mid - step], alphas[mid - step + 1]))
     start = time.time()
     done: dict[float, dict] = {}
     solutions: dict[float, Path] = {}

@@ -106,8 +106,8 @@ final class WingLabModel {
 
     // Quick estimate: one angle, or a sweep of the wing angle within a time limit
     var sweepOn = false
-    var sweepFrom = -4.0
-    var sweepTo = 4.0
+    var sweepFrom = -2.0  // three angles fit in 5 minutes on 4 cores for a two-element wing
+    var sweepTo = 2.0
     var sweepStep = 2.0
     var sweep: WingSweep?
     var sweepFolder: URL?

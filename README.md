@@ -260,6 +260,7 @@ undo and redo.
 | --- | --- | --- |
 | Inviscid preview (panel method) | lift trends and how the load splits between elements, live while dragging; no drag, no slot effects | under 50 ms |
 | Quick viscous (NeuralFoil) | choosing sections: a whole polar with drag and where the boundary layer turns turbulent, one element in isolation | seconds |
+| Quick estimate (SU2, quick mesh) | every element together, to three figures; optionally Cl and Cd against the wing angle | about 1½ min, a sweep within 5 min |
 | RANS CFD (SU2) | the real thing: slot flow, separation, gap effects; Spalart–Allmaras, SST, or SST with Langtry–Menter transition | minutes |
 
 The RANS mesh is zoned by the flow: structured quad wall layers on every

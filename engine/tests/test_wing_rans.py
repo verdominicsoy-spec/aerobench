@@ -254,14 +254,14 @@ def test_sweep_chains_restarts_and_keeps_to_its_time_limit(monkeypatch, tmp_path
     monkeypatch.setattr(rans, "solve", fake_solve)
     out = rans.sweep({"alphas": [4, 0, 2, -2, -4], "time_limit": 300}, tmp_path, tmp_path / "m.su2", None, 1, None,
                      lambda *a: None, lambda *a, **k: None)
-    # The middle angle first, from rest; then up from it, then down from it, each from its neighbour.
+    # The middle angle first, from rest; then alternately above and below, each from its neighbour.
     assert [(c["alpha"], c["restart"]) for c in calls] == [
-        (0.0, None), (2.0, "a0"), (4.0, "a2"), (4.0, None), (-2.0, "a0")]
+        (0.0, None), (2.0, "a0"), (-2.0, "a0"), (4.0, "a2"), (4.0, None)]
     assert calls[0]["ready"] is False and all(c["ready"] for c in calls[1:]) and all(c["wake"] == 0.0 for c in calls)
-    # 180 (0) + 30 (2) + 60 (4, from rest after the restart failed) + 30 (-2) = 300 s: no time for -4.
+    # 180 (0) + 30 (2) + 30 (-2) + 60 (4, from rest after the restart failed) = 300 s: no time for -4.
     assert [r["alpha"] for r in out["rows"]] == [-2.0, 0.0, 2.0, 4.0] and out["skipped"] == [-4.0]
     # Iterations are capped by the time left at the slowest rate seen (0.1 s each).
-    assert calls[1]["iterations"] == 1200 and calls[4]["iterations"] == 300
+    assert calls[1]["iterations"] == 1200 and calls[4]["iterations"] == 600
 
 
 def test_a_restart_is_copied_in_under_a_short_name(monkeypatch, tmp_path):

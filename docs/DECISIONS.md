@@ -762,3 +762,32 @@ the free stream, negative where energy is lost) and the eddy viscosity
 ratio, plus streamlines seeded upstream and just behind each trailing edge,
 traced both ways so slot flow and any recirculation show. About 5 seconds a
 run, 3 to 4 MB per run.
+
+**Quick estimate sweeps: about three angles in 5 minutes.** Asked for:
+estimates on multiple elements in at most 5 minutes. The sweep meshes once
+(wakes aligned with the middle angle), runs the middle angle from rest, then
+the others alternately above and below, each started from its neighbour's
+solution, and caps every angle's iterations by the time left, so it never
+runs past the limit. On the two-element starter wing (quick mesh, 31,240
+cells, 4 cores): 0° from rest 118 s (with meshing), 2° from 0° 59 s, 4° from
+2° 66 s; the restarted 2° matched a fresh 2° run to 0.05% in Cl. Five angles
+would take about 6 minutes, so the default sweep is −2° to 2°; wider sweeps
+run what fits and list the rest. SU2 aborted ("buffer overflow detected") on
+a restart named by its absolute path, so the solution is copied into the
+run's folder as start.dat first.
+
+**Side profiles in the Flow Field Viewer.** Slices can be cut across the
+sweep (as captured), lengthways and upright (side profile), or lengthways
+and level (from above). Lengthways cuts have no video frame to compare
+with, and the sweep axis can be unevenly spaced, so along it the image is
+resampled evenly (nearest plane) to keep lengths true. A Side Profile
+button turns the camera to the side and shows the lengthways cut.
+
+**Video timing is shared between app and engine.** The app has always
+picked frame i as whatever shows at (i + 1/2) / fps, using the video's
+reported frame rate, while the engine counted frames as they decoded. Those
+agree only when the reported rate is right and constant. The calibration
+now carries the frame rate and frame count the app used, and the engine
+picks frames by time the same way, so both always mean the same frame. The
+rate and length can be typed in for a video that reports them wrong; frame
+numbers then follow the typed timing.
