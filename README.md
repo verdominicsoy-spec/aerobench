@@ -5,7 +5,7 @@ Flow Field Viewer and Lap Sim. SwiftUI front end, Python compute engine. The
 full brief is in [docs/AeroBench_spec.pdf](docs/AeroBench_spec.pdf), and every
 judgement call made while building it is in [docs/DECISIONS.md](docs/DECISIONS.md).
 
-**Status:** Phases 0–3 built (foundations, Lap Sim, CAD Viewer, Flow Field Viewer). Phase 4, Wing Lab, in progress: library, canvas, three solvers, SU2 runs and the optimiser are in; validation runs are next.
+**Status:** Phases 0–3 built (foundations, Lap Sim, CAD Viewer, Flow Field Viewer). Phase 4, Wing Lab, built and validated (NACA 0012 against Ladson, the 30P30N, a mesh study and an overnight optimisation; docs/DECISIONS.md has the numbers), waiting for review.
 
 ## Layout
 
