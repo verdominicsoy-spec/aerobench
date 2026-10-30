@@ -45,6 +45,27 @@ final class AppSettings {
         engineDirectory.map(EngineLocation.executable(inEngineDirectory:))
     }
 
+    /// SU2_CFD where the engine will look for it: the setting (the binary or
+    /// its folder), the repo's build/su2 (engine/scripts/install_su2.sh puts
+    /// it there), or Homebrew's folders. A GUI app does not see the shell's
+    /// PATH, so those are checked by name.
+    var su2Executable: URL? {
+        let fm = FileManager.default
+        var candidates: [URL] = []
+        let setting = su2Path.trimmingCharacters(in: .whitespaces)
+        if !setting.isEmpty {
+            let url = URL(fileURLWithPath: (setting as NSString).expandingTildeInPath)
+            var isDir: ObjCBool = false
+            fm.fileExists(atPath: url.path, isDirectory: &isDir)
+            candidates.append(isDir.boolValue ? url.appendingPathComponent("SU2_CFD") : url)
+        }
+        if let engine = engineDirectory {
+            candidates.append(engine.deletingLastPathComponent().appendingPathComponent("build/su2/bin/SU2_CFD"))
+        }
+        candidates += ["/opt/homebrew/bin/SU2_CFD", "/usr/local/bin/SU2_CFD"].map(URL.init(fileURLWithPath:))
+        return candidates.first { fm.isExecutableFile(atPath: $0.path) }
+    }
+
     var engineIsReady: Bool {
         engineExecutable.map { FileManager.default.isExecutableFile(atPath: $0.path) } ?? false
     }

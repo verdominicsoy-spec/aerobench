@@ -771,9 +771,11 @@ struct WingInspector: View {
         if lab.turbulenceModel != .sa {
             NumberField(label: "Turbulence intensity", unit: "%", value: Binding(get: { lab.turbulenceIntensity }, set: { lab.turbulenceIntensity = max($0, 0.01) }))
         }
+        let haveSU2 = app.settings.su2Executable != nil
+        if !haveSU2 { su2Install(lab) }
         Button("Run CFD") { app.runWingRANS() }
             .buttonStyle(.borderedProminent)
-            .disabled(lab.wing.elements.isEmpty || !lab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty
+            .disabled(!haveSU2 || lab.wing.elements.isEmpty || !lab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty
                       || (lab.ransJob.map { !$0.status.isFinished } ?? false))
         if !lab.wing.issues.filter({ $0.kind != .outsideRules }).isEmpty {
             Text("Fix the overlapping or touching elements first.").font(.caption).foregroundStyle(.orange)
@@ -782,9 +784,10 @@ struct WingInspector: View {
         if let job = lab.ransJob, !job.status.isFinished || job.status == .failed {
             JobInlineStatus(job: job)
         }
-        if needsSU2 {
-            su2Install(lab)
-        } else if let job = lab.su2Job {
+        if needsSU2 && haveSU2 {
+            Text("SU2 is installed now: run it again.").font(.caption).foregroundStyle(.secondary)
+        }
+        if haveSU2, let job = lab.su2Job {
             JobInlineStatus(job: job)
         }
     }
@@ -847,11 +850,14 @@ struct WingInspector: View {
             if let problem = lab.optimiseProblem {
                 Text(problem).font(.caption).foregroundStyle(.orange)
             }
+            if app.settings.su2Executable == nil {
+                Text("Each trial is an SU2 run: install SU2 under Solvers, RANS CFD.").font(.caption).foregroundStyle(.orange)
+            }
             HStack {
                 let resume = lab.study.map { $0.study == WingLabModel.studyFile(project: app.project?.url ?? URL(fileURLWithPath: "/"), name: lab.optimise.studyName).deletingPathExtension().lastPathComponent } ?? false
                 Button(resume ? "Resume Study" : "Start Study") { app.runWingOptimise() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(running || lab.optimiseProblem != nil || app.project == nil)
+                    .disabled(running || lab.optimiseProblem != nil || app.project == nil || app.settings.su2Executable == nil)
                 if app.project == nil {
                     Text("Save the project first: studies live in it.").font(.caption).foregroundStyle(.secondary)
                 }
