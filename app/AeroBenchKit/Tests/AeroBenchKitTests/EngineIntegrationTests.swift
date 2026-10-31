@@ -81,7 +81,7 @@ final class EngineIntegrationTests: XCTestCase {
         let job = try makeJob(JobSpec(command: "lapsim", params: try setup.jobParams(lapsimFolder: nil)))
         guard case .succeeded(let url) = await job.run(onEvent: { _ in }) else { return XCTFail() }
         let result = try LapSimResult.decode(resultFile: Data(contentsOf: url))
-        XCTAssertEqual(result.track.name, "Test track")
+        XCTAssertEqual(result.track.name, "Generated endurance #1")  // the default: an estimated endurance lap
         XCTAssertEqual(result.a.v.count, result.track.s.count)
         let b = try XCTUnwrap(result.b)
         XCTAssertLessThan(b.lapTime, result.a.lapTime)
