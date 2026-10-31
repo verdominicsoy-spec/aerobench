@@ -1073,3 +1073,15 @@ dock across the top (project, Wing Lab, Lap Sim, CAD Viewer, Flow Field,
 Jobs with its running count), the selected one in sage, ⌘1 to ⌘6 to switch,
 the choice kept per window. The canvas and charts get the width back.
 
+**The flow field on the canvas.** The RANS field (Cp, speed, Cp0, eddy
+viscosity over the plane) had its own results tab, a second picture of the
+wing beside the one being edited. It is now drawn on the canvas behind the
+wing, as STAR-CCM+ draws a scalar scene on a plane section, with the scalar,
+streamlines and colour bar picked there and the value read under the
+pointer. Over a ground the engine meshes the wing turned by minus its angle;
+the run now records that turn (frame_turn) and the field is turned back into
+the wing's frame. A field is only drawn while every element still matches
+the run's surface within a millimetre: an edited wing never sits on an old
+flow, which would be worse than no picture. The results tab keeps the
+surface Cp.
+

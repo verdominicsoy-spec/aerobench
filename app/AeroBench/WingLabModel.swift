@@ -158,19 +158,20 @@ final class WingLabModel {
         ransField = row.fieldView == nil ? nil : try? WingField.load(from: folder)
     }
 
-    // The flow field of the last RANS run
-    enum CFDView: String, CaseIterable, Identifiable {
-        case field = "Flow field"
-        case surface = "Surface Cp"
-
-        var id: String { rawValue }
-    }
-    var cfdView: CFDView = .field
+    // The flow field of the last RANS run, drawn on the canvas
     var ransField: WingField? {
         didSet { fieldImages = [:] }
     }
     var fieldScalar = "cp"
     var showStreamlines = true
+    /// The last RANS run's field on the canvas, behind the wing.
+    var fieldOnCanvas = true
+    /// Whether the last RANS run's field is of the wing as it is now (each
+    /// element within a millimetre): once the wing is edited it is not shown.
+    var fieldIsCurrent: Bool {
+        guard let r = ransResult, ransField != nil else { return false }
+        return r.matches(wing.elements.map { $0.placed() })
+    }
     @ObservationIgnored private var fieldImages: [String: CGImage] = [:]
 
     /// The scalar as an image, made once per scalar and kept.

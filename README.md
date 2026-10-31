@@ -197,10 +197,14 @@ puts the same comparison in the app with the validation numbers.
 
 **Results** (under the canvas; a strip across the top shows the latest preview, estimate and CFD numbers side by side and what the wing adds to the car, click one for its tab): inviscid Cp, the quick viscous polar (Cl–α,
 Cl–Cd, transition points), and the CFD run (Cl and Cd per element,
-convergence, surface Cp, and the flow field: pressure, speed, total pressure
-Cp0 or eddy viscosity over the plane with streamlines, and the value under
-the pointer). *Show Flow Field* still opens the run's flow.vtu in Finder for
-ParaView.
+convergence, surface Cp). The run's flow field is drawn on the canvas behind
+the wing, like a scalar scene on a plane section: *Field* (top left of the
+canvas) picks pressure, speed, total pressure Cp0 or eddy viscosity, or off,
+with streamlines, a colour bar and the value under the pointer. It shows
+only while the wing is the one that was run (each element within a
+millimetre), so an edited wing never sits on an old flow; a run that did not
+converge is drawn faded and labelled. *Show Flow Field* still opens the
+run's flow.vtu in Finder for ParaView.
 
 **Compare** (pin in the toolbar): pin the wing as A, then keep editing. A
 stays on the canvas as a dashed purple outline, its Cp and estimate curves

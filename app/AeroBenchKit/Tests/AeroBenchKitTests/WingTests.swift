@@ -162,6 +162,33 @@ final class WingRansResultTests: XCTestCase {
         XCTAssertEqual(r.mesh.layers, 31)
         XCTAssertEqual(r.attempts?.first?.outcome, "diverged at iteration 60")
         XCTAssertEqual(r.liftToDrag, 2.1 / 0.031, accuracy: 1e-9)
+        XCTAssertNil(r.frameTurn)  // older runs: the wing's own frame
+    }
+
+    /// Over a ground the engine meshes the wing turned by minus its angle: the
+    /// run's surface and field map back to the wing, and a run only matches
+    /// the wing it was of.
+    func testTheRunsFrameMapsBackToTheWing() throws {
+        let turn = 10.0, a = -turn * .pi / 180
+        // A wing-frame square element and the same square as the engine turned it.
+        let square: [SIMD2<Double>] = [SIMD2(0, 0), SIMD2(0.2, 0), SIMD2(0.2, 0.05), SIMD2(0, 0.05)]
+        let turned = square.map { SIMD2($0.x * cos(a) - $0.y * sin(a), $0.x * sin(a) + $0.y * cos(a)) }  // by frame_turn
+        let xs = turned.map { String($0.x) }.joined(separator: ","), ys = turned.map { String($0.y) }.joined(separator: ",")
+        let file = """
+        {"data": {"re": 1e6, "mesh": {"cells": 1, "triangles": 1, "quads": 0, "first_cell_height_m": 1e-5,
+          "layer_thickness_m": 0.01, "layers": 1}, "mesh_level": "quick", "transition": [], "model": "sa",
+          "model_name": "SA", "iterations": 10, "converged": true, "residual_drop": 3, "cl": 1, "cd": 0.1, "cm": 0,
+          "elements": [], "surface": [{"x": [\(xs)], "y": [\(ys)], "cp": [0, 0, 0, 0]}], "alpha": 10, "frame_turn": -10}}
+        """
+        let r = try WingRansResult.decode(resultFile: Data(file.utf8))
+        XCTAssertEqual(r.frameTurn, -10)
+        let back = r.toWing(turned[1])
+        XCTAssertEqual(back.x, 0.2, accuracy: 1e-12)
+        XCTAssertEqual(back.y, 0, accuracy: 1e-12)
+        XCTAssertEqual(r.toRun(back).y, turned[1].y, accuracy: 1e-12)
+        XCTAssertTrue(r.matches([square]))
+        XCTAssertFalse(r.matches([square.map { $0 + SIMD2(0.005, 0) }]))  // the element moved 5 mm since
+        XCTAssertFalse(r.matches([square, square]))  // an element added since
     }
 }
 

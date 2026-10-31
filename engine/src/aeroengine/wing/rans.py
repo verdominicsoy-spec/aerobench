@@ -128,7 +128,10 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
             view = "field.json"
         except Exception as exc:  # noqa: BLE001 - the run's numbers stand without the picture
             log(f"no field view: {exc}", level="warning")
-    return {"alpha": alpha, "re": re_ref, "mesh": mesh, "mesh_level": level, "transition": zones, "model": model,
+    # frame_turn: degrees the wing was turned before meshing (over a ground,
+    # by minus its angle): the surface and field are in that turned frame.
+    return {"alpha": alpha, "frame_turn": -alpha if ground is not None else 0.0,
+            "re": re_ref, "mesh": mesh, "mesh_level": level, "transition": zones, "model": model,
             "model_name": su2.MODELS[model], **result, "surface": surface,
             "field": "flow.vtu" if (workdir / "flow.vtu").exists() else None, "field_view": view}
 
