@@ -290,15 +290,16 @@ final class WingEstimateTests: XCTestCase {
         XCTAssertEqual(e.rows[0].elements[0].clInviscidOwn, -2.409)
         XCTAssertEqual(e.row(nearest: 0.4)?.alpha, 0)
         XCTAssertEqual(e.refChord, 0.44)
-        XCTAssertNil(e.rows[0].elements[0].separationAngle)
+        XCTAssertNil(e.rows[0].elements[0].deflection)
+        XCTAssertNil(e.rows[0].why)
     }
 
-    func testDecodesTheLastElementsSeparationLine() throws {
-        let el = #"{"cl": -0.4, "cd": 0.01, "cm": -0.1, "cl_own": -1.2, "cd_own": 0.03, "cl_inviscid_own": -1.5, "effective_angle": 14.6, "upwash": -12.3, "transition_suction": 0.05, "transition_pressure": 0.6, "confidence": 0.99, "trusted": true, "held_below_stall": false, "stall_angle": 15.0, "past_stall": false, "separation_angle": 15.59, "gap_ratio": 0.0303}"#
-        let json = #"{"data": {"ref_chord": 0.44, "re": [304000], "rows": [{"alpha": 0.0, "cl": -1.9, "cd": 0.04, "trusted": true, "separating": false, "elements": [\#(el)]}]}}"#
-        let last = try XCTUnwrap(WingEstimate.decode(resultFile: Data(json.utf8)).rows.first?.elements.first)
-        XCTAssertEqual(last.separationAngle, 15.59)
-        XCTAssertEqual(last.gapRatio, 0.0303)
+    func testDecodesWhyAnElementSeparates() throws {
+        let el = #"{"cl": -0.4, "cd": 0.01, "cm": -0.1, "cl_own": -1.2, "cd_own": 0.03, "cl_inviscid_own": -1.5, "effective_angle": 12.3, "upwash": -12.3, "transition_suction": 0.05, "transition_pressure": 0.6, "confidence": 0.99, "trusted": true, "held_below_stall": false, "stall_angle": 15.0, "past_stall": true, "deflection": 45.6}"#
+        let json = #"{"data": {"ref_chord": 0.44, "re": [304000], "rows": [{"alpha": 0.0, "cl": -1.9, "cd": 0.04, "trusted": true, "separating": true, "why": "Flap 1 is turned 45.6° past main, more than the 25° RANS has held: it separates", "elements": [\#(el)]}]}}"#
+        let row = try XCTUnwrap(WingEstimate.decode(resultFile: Data(json.utf8)).rows.first)
+        XCTAssertEqual(row.elements.first?.deflection, 45.6)
+        XCTAssertEqual(row.why?.hasPrefix("Flap 1 is turned"), true)
     }
 }
 

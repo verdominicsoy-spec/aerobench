@@ -16,29 +16,27 @@ behind unloads its trailing edge (the dumping effect), so in place it
 carries far more lift than it could alone at its effective angle without
 stalling. Its lift is its in-place inviscid lift scaled by the viscous loss
 NeuralFoil gives in the linear part of its lift curve, and its drag is NeuralFoil's at the effective
-angle or just below the section's stall onset, whichever is lower. The last
-element can stall, as on the real wing: once its effective angle passes the
-angle of its maximum lift alone, the row is marked separating. On the
-overnight two-element study that line split RANS cleanly: every trial that
-converged had the flap at most 14.6 degrees in place, every one that never
-settled at least 16.5, with the flap alone stalling at 15.
+angle or just below the section's stall onset, whichever is lower.
 
-The gap moves that line. A narrower slot feeds the flap's boundary layer
-and keeps it attached to a steeper angle: on the overnight study the flap
-stayed attached at 14.6 degrees in place with the gap 3% of the main chord,
-and separated from about 13.2 degrees at 5.7 to 6.6%. So the separation line
-sits 1.5 degrees further out for each 1% the gap closes below 4.75% of the
-chord in front (and further in above it). Every one of the 19 distinct
-converged trials falls on the right side of it; the gain could be anywhere
-from 1.0 to 3.0 degrees per 1% and still split them, so the line is not
-balanced on a knife edge. It is fitted on one main-and-flap wing over gaps
-of 2.6 to 6.9% of the main chord and is held at its ends outside that.
+An element behind another separates, as on the real wing, once it is turned
+too far past the one in front: more than MAX_DEFLECTION, 25 degrees chord
+line to chord line. Every RANS case so far splits on that. On the overnight
+two-element study (main fixed, flap angle and gap free) the flap held to 25.2
+degrees and separated from 26.0 whatever the gap; on the NACA 6212 starting
+wing it held at 22 and separated at 42 and 46 with the main free to move.
+The flap's effective angle does not split them: with the main free, a
+heavily loaded main's downwash keeps the flap's effective angle low in the
+panel method (9 to 13 degrees on the wings that separated) while the flap,
+recovering pressure in the main's wake, separates; and an effective-angle
+line moved by the gap, fitted earlier on the overnight study, marked two of
+its attached trials separating. A single element separates at its stall
+angle less STALL_MARGIN. Each row says why in `why`.
 
-What it misses: the slot's effect on lift before separation (it ranks gaps
-by whether the flap stays attached, not by the extra lift a good slot
-gives), a slot so narrow it chokes, and a flap whose nose sits behind the
-trailing edge in front (no overlap, so no slot: the line still credits the
-gap, every fitted case overlapped by 29 mm). RANS gets those; this is for
+What it misses: the slot's effect on lift beyond what the panel method's
+interaction gives, a slot so narrow it chokes, how the deflection limit
+moves with the gap and the sections (it is fitted on two wings), and a flap
+whose nose sits behind the trailing edge in front (no slot at all; the
+design search keeps every overlap positive). RANS gets those; this is for
 trends and screening."""
 
 from __future__ import annotations
@@ -46,7 +44,7 @@ from __future__ import annotations
 import numpy as np
 
 from ..job import EngineError
-from .geometry import closest
+from .geometry import label
 from .panel import Solver
 from .viscous import polar, reynolds
 
@@ -63,20 +61,11 @@ STALL_MARGIN = 2.0  # degrees: the last element counts as separating this far sh
 FRONT_LIFT_LIMIT = 9.0
 FRONT_SEPARATION = 13.0
 DRAG_GROWTH = 0.0087  # per degree squared past stall onset
-# The slot moves that line: degrees per 1% of the front element's chord the
-# gap is below SLOT_REF, within the gaps it was fitted on (overnight study).
-SLOT_GAIN = 1.5
-SLOT_REF = 4.75
-SLOT_FITTED = (2.6, 6.9)
-
-
-def separation_angle(stall: float, gap_ratio: float | None, stall_margin: float = STALL_MARGIN) -> float:
-    """The in-place angle past which the last element separates; gap_ratio is
-    its gap over the chord of the element in front (None for a single element)."""
-    if gap_ratio is None:
-        return stall - stall_margin
-    g = min(max(gap_ratio * 100, SLOT_FITTED[0]), SLOT_FITTED[1])
-    return stall - stall_margin + SLOT_GAIN * (SLOT_REF - g)
+# An element behind another separates once it is turned more than this past
+# the one in front (degrees, chord line to chord line), whatever its
+# effective angle: the overnight wing held to 25.2 and separated from 26.0,
+# the NACA 6212 wing held at 22 and separated at 42 and 46 (see above).
+MAX_DEFLECTION = 25.0
 
 
 def in_ground_effect(placed: list[np.ndarray], alpha: float, ride_height: float) -> tuple[list[np.ndarray], float]:
@@ -193,17 +182,26 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
             ratios.append(nf / iso if abs(iso) > 0.05 else 1.0)
         scale.append(ratios)
 
-    # The last element's gap: from the trailing edge in front (the midpoint of
-    # the first and last points, Selig order) to its surface.
-    gap_ratio = None
-    if len(placed) > 1:
-        te = (placed[-2][0] + placed[-2][-1]) / 2
-        gap_ratio = closest(te, placed[-1])[1] / chords[-2]
-    limit = separation_angle(stall[-1], gap_ratio, stall_margin)
+    deflection = [None] + [float(elements[i].get("angle", 0.0)) - float(elements[i - 1].get("angle", 0.0))
+                           for i in range(1, len(elements))]
+
+    def separation(i: int, in_place: float, front: bool) -> str | None:
+        """Why element i separates here, or None."""
+        name = label(i)
+        if deflection[i] is not None and deflection[i] > MAX_DEFLECTION:
+            return (f"{name} is turned {deflection[i]:.1f}° past {label(i - 1).lower()}, more than the "
+                    f"{MAX_DEFLECTION:.0f}° RANS has held: it separates")
+        if front and in_place > stall[i] + FRONT_SEPARATION:
+            return (f"{name} is {in_place:.1f}° in place, more than {FRONT_SEPARATION:.0f}° past its stall angle "
+                    f"({stall[i]:.0f}°): it separates")
+        if not front and deflection[i] is None and in_place > stall[i] - stall_margin:
+            return (f"{name} is {in_place:.1f}° in place, past its stall angle ({stall[i]:.0f}°) less "
+                    f"{stall_margin:g}°: it separates")
+        return None
 
     rows = []
     for k, a in enumerate(alphas):
-        els = []
+        els, why = [], []
         for i in range(len(elements)):
             v = viscous[i][k]
             share = chords[i] / ref
@@ -213,20 +211,19 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
             # Held at the separation line: past it the element counts as separating and the number means little.
             past_onset = min(max(0.0, in_place - (stall[i] - 4.0)), FRONT_SEPARATION + 4.0) if front else 0.0
             cd_own = v["cd"] * (1 + DRAG_GROWTH * past_onset**2)
+            reason = separation(i, in_place, front)
+            if reason:
+                why.append(reason)
             els.append({"cl": cl_own * share, "cd": cd_own * share, "cm": v["cm"] * share * chords[i] / ref,
                         "cl_own": cl_own, "cd_own": cd_own, "cl_inviscid_own": inviscid[k][i],
-                        "effective_angle": float(e_angle(elements[i], effective[k][i])), "upwash": effective[k][i] - float(a),
-                        "held_below_stall": scale[i][k] is not None and v["alpha"] < e_angle(elements[i], effective[k][i]) - 1e-9,
+                        "effective_angle": float(in_place), "upwash": effective[k][i] - float(a),
+                        "held_below_stall": front and v["alpha"] < in_place - 1e-9,
                         "transition_suction": v["transition_suction"], "transition_pressure": v["transition_pressure"],
                         "confidence": v["confidence"], "trusted": v["trusted"], "stall_angle": stall[i],
-                        # The last element has nothing behind it: past its separation
-                        # angle (its stall alone, moved by the slot) it separates on the
-                        # real wing, as every overnight RANS trial there did.
-                        "past_stall": (in_place > limit) if not front else (in_place > stall[i] + FRONT_SEPARATION),
-                        **({"separation_angle": limit, "gap_ratio": gap_ratio} if scale[i][k] is None else {})})
+                        "past_stall": reason is not None, "deflection": deflection[i]})
         rows.append({"alpha": float(a), "cl": sum(x["cl"] for x in els), "cd": sum(x["cd"] for x in els),
-                     "trusted": all(x["trusted"] for x in els), "separating": any(x["past_stall"] for x in els),
-                     "elements": els})
+                     "trusted": all(x["trusted"] for x in els), "separating": bool(why),
+                     "why": "; ".join(why) or None, "elements": els})
     return {"ref_chord": ref, "rows": rows, "ride_height": ride_height,
             "re": [reynolds(speed, c, rho, mu) for c in chords]}
 

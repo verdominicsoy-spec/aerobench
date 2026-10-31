@@ -149,7 +149,7 @@ struct WingReportView: View {
                     Text(String(format: "%.1f", abs(e.cl) / max(e.cd, 1e-9)))
                     ForEach(0..<n, id: \.self) { i in Text(i < e.elements.count ? String(format: "%.3f", e.elements[i].cl) : "") }
                     Text(car(e.cl, e.cd))
-                    Text(e.separating == true ? "last element separating" : (e.trusted ? "" : "NeuralFoil unsure"))
+                    Text(e.separating == true ? "separating" : (e.trusted ? "" : "NeuralFoil unsure"))
                 }
             }
             if let r = rans {

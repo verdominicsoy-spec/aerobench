@@ -121,13 +121,11 @@ public struct WingEstimate: Codable, Equatable, Sendable {
         public var trusted: Bool
         /// It has an element behind it, so it was held below its stall onset.
         public var heldBelowStall: Bool
-        /// The angle of its maximum lift alone, and whether (as the last element) it is past it, less a margin.
+        /// The angle of its maximum lift alone, and whether it separates here (see the row's `why`).
         public var stallAngle: Double?
         public var pastStall: Bool?
-        /// The last element: the in-place angle past which it separates (its
-        /// stall angle alone, moved by its slot), and its gap over the chord in front.
-        public var separationAngle: Double?
-        public var gapRatio: Double?
+        /// Degrees it is turned past the element in front (nil for the first).
+        public var deflection: Double?
     }
 
     public struct Row: Codable, Equatable, Sendable, Identifiable {
@@ -135,8 +133,9 @@ public struct WingEstimate: Codable, Equatable, Sendable {
         public var cl: Double
         public var cd: Double
         public var trusted: Bool
-        /// The last element is past its stall angle: it would separate.
+        /// An element separates here, and the engine's words for which and why.
         public var separating: Bool?
+        public var why: String?
         public var elements: [Element]
 
         public var id: Double { alpha }

@@ -235,8 +235,8 @@ def wing_optimise(ctx: JobContext) -> dict:
     quick-estimate study, optionally checks the best few with RANS. Resumes
     the study if its file already holds it."""
     from ..wing import optimise, rans
-    from ..wing.estimate import FRONT_SEPARATION, estimate
-    from ..wing.geometry import Element, Variable, Wing, label
+    from ..wing.estimate import estimate
+    from ..wing.geometry import Element, Variable, Wing
 
     p = ctx.params
     raw = p.get("elements")
@@ -286,15 +286,9 @@ def wing_optimise(ctx: JobContext) -> dict:
         r = estimate(elements_of(wing), [float(p.get("alpha", 0.0))], float(p.get("speed", 15)), float(p.get("rho", 1.225)),
                      float(p.get("mu", 1.81e-5)), float(p.get("n_crit", 9.0)), p.get("ref_chord"),
                      stall_margin=float(p.get("stall_margin", 2.0)), ride_height=wing.ride_height)["rows"][0]
-        reason = None
-        if r["separating"]:
-            # Treated like a RANS run that never settles: failed, and the sampler steers away.
-            k, e = next((k, e) for k, e in enumerate(r["elements"]) if e["past_stall"])
-            line = e.get("separation_angle", e["stall_angle"] + FRONT_SEPARATION)
-            reason = (f"{label(k)} is {e['effective_angle']:.1f} degrees in place, past where it separates "
-                      f"({line:.1f}, from its stall angle of {e['stall_angle']:.0f})")
+        # A separating wing is treated like a RANS run that never settles: failed, and the sampler steers away.
         return {"cl": r["cl"], "cd": r["cd"], "cm": sum(e["cm"] for e in r["elements"]), "converged": not r["separating"],
-                "reason": reason, "elements": [{"cl": e["cl"]} for e in r["elements"]]}
+                "reason": r["why"], "elements": [{"cl": e["cl"]} for e in r["elements"]]}
 
     evaluate = evaluate_estimate if spec.solver == "estimate" else evaluate_rans
     where = "quick estimates" if spec.solver == "estimate" else (

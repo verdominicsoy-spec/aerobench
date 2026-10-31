@@ -1113,7 +1113,7 @@ struct WingInspector: View {
             }
             .disabled(running)
             Text(lab.optimise.solver == "estimate"
-                 ? "Each trial is a quick estimate: a few hundred take about a minute. A flap past its stall angle (2° margin) counts as separating and the search steers away." + (lab.optimise.checkBest > 0 ? " The RANS checks use the model and mesh above." : "")
+                 ? "Each trial is a quick estimate: a few hundred take about a minute. A flap turned more than 25° past the element in front, or a main far past its stall angle, counts as separating and the search steers away." + (lab.optimise.checkBest > 0 ? " The RANS checks use the model and mesh above." : "")
                  : "\(app.settings.parallelTrials) trials at a time on \(app.settings.coresPerJob) cores each (Settings). Each trial is one RANS run with the model and mesh above.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let problem = lab.optimiseProblem {
@@ -1685,8 +1685,8 @@ struct EstimateResults: View {
                             .font(.caption).foregroundStyle(.orange)
                     }
                     if here.separating == true {
-                        Label(here.elements.last?.separationAngle.map { String(format: "The last element is %.1f° in place, past where it separates (%.1f°, from its stall angle and its gap): on the real wing it would. Check with RANS.", here.elements.last?.effectiveAngle ?? 0, $0) }
-                              ?? "The last element is past its stall angle here: on the real wing it would separate. Check with RANS.", systemImage: "exclamationmark.triangle")
+                        Label((here.why.map { "\($0). " } ?? "An element separates here. ") + "Check with RANS.",
+                              systemImage: "exclamationmark.triangle")
                             .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                     }
                     Text("Panel method and NeuralFoil: lift within about 2% of RANS on a main-and-flap wing until the flap nears separation, drag about 10% high. For trends and screening; RANS CFD for numbers to keep.")

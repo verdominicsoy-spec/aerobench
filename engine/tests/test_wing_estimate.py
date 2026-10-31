@@ -39,35 +39,43 @@ def test_a_sweep_takes_about_a_second():
     assert rows[0]["cl"] < rows[-1]["cl"]
 
 
-def test_a_flap_past_its_stall_angle_is_separating():
+def test_a_flap_turned_too_far_past_the_main_separates():
+    """RANS's verdicts: the overnight study (this wing, main at 3 degrees)
+    held the flap attached to 28.2 degrees and separated it from 29.0
+    whatever the gap; with the main free, a NACA 6212 wing separated with
+    the flap 42 degrees past the main though its effective angle stayed low."""
+    from aeroengine.wing.airfoils import naca4
+    from aeroengine.wing.design import layout
+    from aeroengine.wing.estimate import MAX_DEFLECTION
     from aeroengine.wing.geometry import apply
 
     w = _starter()
     ok = estimate(_elements(w), [0.0], 15.0)["rows"][0]
-    assert not ok["separating"] and ok["elements"][1]["stall_angle"] == pytest.approx(15.0, abs=1.0)
-    # Every overnight RANS trial with the flap past 29 degrees failed to settle.
-    steep = estimate(_elements(apply(w, {"angle_1": 31.0})), [0.0], 15.0)["rows"][0]
-    assert steep["separating"] and steep["elements"][1]["past_stall"]
+    assert not ok["separating"] and ok["why"] is None and ok["elements"][1]["deflection"] == pytest.approx(22.0)
+    held = estimate(_elements(apply(w, {"angle_1": 27.8, "gap_1": 0.0172})), [0.0], 15.0)["rows"][0]
+    assert not held["separating"]  # overnight trial 40: attached in RANS
+    steep = estimate(_elements(apply(w, {"angle_1": 3.0 + MAX_DEFLECTION + 1.0})), [0.0], 15.0)["rows"][0]
+    assert steep["separating"] and steep["elements"][1]["past_stall"] and "turned" in steep["why"]
+
+    six = layout([naca4("6212")] * 2, 0.44, True)
+    far = apply(six, {"angle_0": -0.97, "angle_1": 41.2, "gap_1": 0.0069, "overlap_1": 0.0158})
+    r = estimate(_elements(far), [0.0], 15.0)["rows"][0]
+    assert r["elements"][1]["effective_angle"] < 15  # low: the main's downwash
+    assert r["separating"] and r["why"].startswith("Flap 1 is turned 42.2")
 
 
-def test_a_narrow_slot_keeps_the_flap_attached_further():
-    """The overnight study: at 26.9 degrees the flap stayed attached in RANS
-    with a 9.1 mm gap, and separated at 27.8 degrees with 17.2 mm."""
-    from aeroengine.wing.estimate import SLOT_FITTED, separation_angle
-    from aeroengine.wing.geometry import apply
+def test_a_single_element_separates_short_of_its_stall_angle():
+    from aeroengine.wing.airfoils import naca4
+    from aeroengine.wing.geometry import Element
 
-    assert separation_angle(15.0, None) == 13.0
-    assert separation_angle(15.0, 0.0475) == pytest.approx(13.0)
-    assert separation_angle(15.0, 0.03) > separation_angle(15.0, 0.06)
-    # Held at the ends of the gaps it was fitted on.
-    assert separation_angle(15.0, 0.001) == separation_angle(15.0, SLOT_FITTED[0] / 100)
-    assert separation_angle(15.0, 0.2) == separation_angle(15.0, SLOT_FITTED[1] / 100)
+    def row(angle):
+        e = Element(naca4("4412"), 0.3, angle, [0.0, 0.0], False)
+        return estimate([{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "chord": 0.3, "angle": angle,
+                          "inverted": False}], [0.0], 15.0)["rows"][0]
 
-    w = _starter()
-    narrow = estimate(_elements(apply(w, {"angle_1": 26.9, "gap_1": 0.0091})), [0.0], 15.0)["rows"][0]
-    wide = estimate(_elements(apply(w, {"angle_1": 27.8, "gap_1": 0.0172})), [0.0], 15.0)["rows"][0]
-    assert narrow["elements"][1]["gap_ratio"] == pytest.approx(0.0091 / 0.3, rel=0.02)
-    assert not narrow["separating"] and wide["separating"]
+    assert not row(5.0)["separating"]
+    late = row(16.0)  # NeuralFoil stalls the 4412 here at 17 degrees: 16 is past it less 2
+    assert late["separating"] and "stall angle" in late["why"] and late["elements"][0]["deflection"] is None
 
 
 def test_a_main_element_past_stall_against_rans():
