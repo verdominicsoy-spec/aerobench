@@ -348,6 +348,15 @@ struct WingCanvas: View {
     @ViewBuilder private func overlay(_ lab: WingLabModel) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
+                Text("SHOWING").font(.caption2.bold()).foregroundStyle(.secondary)
+                Text((lab.pinned != nil && lab.replayIndex == nil ? "B: " : "") + lab.shownVersion)
+                    .font(.caption.monospacedDigit()).lineLimit(1)
+                if let a = lab.pinned, lab.replayIndex == nil {
+                    Text("A: " + a.version).font(.caption).foregroundStyle(.purple).lineLimit(1)
+                }
+            }
+            .help("Which version of the wing is on the canvas: a study trial, the from-scratch starter, or your own. \"Edited\" means changed since; Undo goes back.")
+            HStack(spacing: 6) {
                 Text("INVISCID PREVIEW").font(.caption2.bold()).foregroundStyle(.secondary)
                 if let r = lab.preview {
                     Text(String(format: "Cl %.3f   Cm %.3f   α %.1f°", r.clTotal, r.cmTotal, lab.wing.alpha))
@@ -432,6 +441,8 @@ struct WingCanvas: View {
                 ForEach(f.scalars) { Text($0.name).tag($0.key) }
             }
             .pickerStyle(.menu).fixedSize().font(.caption)
+            .padding(.horizontal, 4)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))  // readable over the field image
             .disabled(!lab.fieldIsCurrent)
             .help("The last RANS run's flow over the plane, behind the wing")
             if let scalar = shownScalar(lab) {
@@ -1256,12 +1267,6 @@ struct WingInspector: View {
                 Text("CMA-ES").tag("cmaes")
             }
             .disabled(running)
-            LabeledContent("Study") {
-                TextField("name", text: Binding(get: { lab.optimise.studyName }, set: { lab.optimise.studyName = $0 }))
-                    .multilineTextAlignment(.trailing)
-                    .onSubmit { lab.reloadStudy(project: app.project?.url) }
-            }
-            .disabled(running)
             Text("Ranges start at sensible defaults when a box is ticked (angles ±5°, gaps half to one and a half times, chords ±25%). Camber is added at mid-chord; the thickness's lower bound is the structural limit. CMA-ES does not handle section choices: they are sampled at random under it.")
                 .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
@@ -1275,6 +1280,14 @@ struct WingInspector: View {
         if lab.optimise.needsSU2 && app.settings.su2Executable == nil {
             Text("RANS needs SU2: install it under Solvers, RANS CFD.").font(.caption).foregroundStyle(.orange)
         }
+        LabeledContent("Study name") {
+            TextField("name", text: Binding(get: { lab.optimise.studyName }, set: { lab.optimise.studyName = $0 }))
+                .labelsHidden()
+                .multilineTextAlignment(.trailing)
+                .onSubmit { lab.reloadStudy(project: app.project?.url) }
+        }
+        .disabled(running)
+        .help("A new name starts a new study; a saved study's name resumes it")
         HStack {
             let resume = lab.study.map { $0.study == WingLabModel.studyFile(project: app.project?.url ?? URL(fileURLWithPath: "/"), name: lab.optimise.studyName).deletingPathExtension().lastPathComponent } ?? false
             Button(resume ? "Resume Study" : "Start Study") { app.runWingOptimise() }

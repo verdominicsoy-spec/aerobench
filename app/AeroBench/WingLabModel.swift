@@ -315,12 +315,12 @@ final class WingLabModel {
     // Where a study starts: the wing on the canvas, or one the engine lays out
     // from the library (sections ranked by maximum lift, a standard arrangement).
     enum StartFrom: String, CaseIterable, Identifiable {
-        case thisWing = "This wing"
+        case existing = "Existing"
         case scratch = "From scratch"
         var id: String { rawValue }
     }
     struct DesignSetup: Equatable {
-        var startFrom: StartFrom = .thisWing
+        var startFrom: StartFrom = .existing
         var elements = 2
         var minThickness = 8.0  // % of chord, the thinnest section allowed
     }
@@ -526,6 +526,34 @@ final class WingLabModel {
         guard let w = wing.applying(trial, sections: studySections, library: { self.airfoil($0) }) else { return }
         edit { $0 = w }
         selectedTrial = trial.number
+        let best = study.map { s in (s.bestCheck?.number ?? s.bestTrial?.number) == trial.number } ?? false
+        markOrigin("\(study?.study ?? optimise.studyName) · trial \(trial.number)" + (best ? " (best)" : ""))
+    }
+
+    // MARK: Where the canvas wing came from
+
+    /// What put the wing on the canvas: a study trial, the from-scratch
+    /// starter. `depth` is the undo depth just after, so undoing past it
+    /// drops the label.
+    struct Origin {
+        var label: String
+        var wing: Wing
+        var depth: Int
+    }
+    var origin: Origin?
+
+    func markOrigin(_ label: String) { origin = Origin(label: label, wing: wing, depth: undoStack.count) }
+
+    /// The wing on the canvas in a few words, for the SHOWING line.
+    var shownVersion: String {
+        if let t = replayTrial { return "\(study?.study ?? optimise.studyName) · trial \(t.number) (time-lapse)" }
+        return originVersion ?? "Your design"
+    }
+
+    /// The origin's label while it still applies, "edited" once the wing has changed since.
+    private var originVersion: String? {
+        guard let o = origin, undoStack.count >= o.depth else { return nil }
+        return o.wing == wing || o.label.hasSuffix(", edited") ? o.label : o.label + ", edited"
     }
 
     // The preview
@@ -603,6 +631,7 @@ final class WingLabModel {
         undoStack = []
         redoStack = []
         self.wing = wing
+        origin = nil
         selection = wing.elements.isEmpty ? nil : 0
         recompute()
     }
@@ -616,11 +645,12 @@ final class WingLabModel {
         var preview: PanelSolution?
         var estimate: WingEstimate?
         var rans: WingRansResult?
+        var version = "Your design"
     }
 
     var pinned: Pinned?
 
-    private var current: Pinned { Pinned(wing: wing, preview: preview, estimate: estimate, rans: ransResult) }
+    private var current: Pinned { Pinned(wing: wing, preview: preview, estimate: estimate, rans: ransResult, version: shownVersion) }
 
     func pinCurrent() { pinned = current }
 
@@ -629,6 +659,7 @@ final class WingLabModel {
         guard let a = pinned else { return }
         pinned = current
         edit { $0 = a.wing }
+        markOrigin(a.version)
         estimate = a.estimate
         ransResult = a.rans
         ransField = nil
@@ -739,6 +770,19 @@ final class WingLabModel {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(wing).write(to: folder.appendingPathComponent("wing.json"), options: .atomic)
         try encoder.encode(optimise).write(to: folder.appendingPathComponent("optimise.json"), options: .atomic)
+        let version = folder.appendingPathComponent("version.txt")
+        if let label = originVersion {
+            try label.write(to: version, atomically: true, encoding: .utf8)
+        } else {
+            try? FileManager.default.removeItem(at: version)
+        }
+    }
+
+    /// The SHOWING label saved beside wing.json, so a reopened project still
+    /// says where its wing came from.
+    func restoreVersion(fromProject project: URL) {
+        let url = ProjectStore.toolURL(for: project, tool: "wing").appendingPathComponent("version.txt")
+        if let label = try? String(contentsOf: url, encoding: .utf8), !label.isEmpty { markOrigin(label) }
     }
 
     static func loadOptimise(fromProject project: URL) -> OptimiseSetup? {

@@ -164,6 +164,7 @@ final class AppState {
         pingJob = nil
         lapSim = LapSimSetup.load(fromProject: url) ?? LapSimSetup()
         wingLab.reset(to: WingLabModel.load(fromProject: url) ?? WingLabModel.starter)
+        wingLab.restoreVersion(fromProject: url)
         wingLab.optimise = WingLabModel.loadOptimise(fromProject: url) ?? .init()
         wingLab.reloadStudy(project: url)
         project?.isDirty = false

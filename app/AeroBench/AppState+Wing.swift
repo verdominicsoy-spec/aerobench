@@ -517,7 +517,8 @@ extension AppState {
             lab.optimise.loadBest = true
             lab.meshLevel = "quick"
             lab.optimise.studyName = self.nextDesignName()
-            lab.design.startFrom = .thisWing  // set up: from here on it is this wing
+            lab.markOrigin("\(lab.optimise.studyName) · starter")
+            lab.design.startFrom = .existing  // set up: from here on it is the existing wing
         }
     }
 
