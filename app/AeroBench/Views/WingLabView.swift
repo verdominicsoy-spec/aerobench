@@ -511,16 +511,6 @@ struct WingCanvas: View {
             ctx.draw(Text(String(format: "Ground, %.0f mm below", (wing.rideHeight ?? 0) * 1000)).font(.caption2).foregroundStyle(.secondary),
                      at: CGPoint(x: m.view(g.point).x, y: m.view(g.point).y + 14))
         }
-        // Freestream arrow.
-        let al = wing.alpha * .pi / 180
-        let start = CGPoint(x: 30, y: 40)
-        var arrow = Path()
-        arrow.move(to: start)
-        let tip = CGPoint(x: start.x + 40 * cos(al), y: start.y - 40 * sin(al))
-        arrow.addLine(to: tip)
-        ctx.stroke(arrow, with: .color(.secondary), lineWidth: 1.5)
-        ctx.draw(Text("V").font(.caption2), at: CGPoint(x: tip.x + 8, y: tip.y))
-
         for (i, e) in wing.elements.enumerated() {
             let pts = e.placed()
             var path = Path()
