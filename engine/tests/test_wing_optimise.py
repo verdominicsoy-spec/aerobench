@@ -333,3 +333,28 @@ def test_fastest_lap_trades_downforce_for_drag_by_track(tmp_path):
     assert best["acceleration"] < 30 and best["skidpad"] > 35
     with pytest.raises(EngineError, match="car and a track"):
         optimise.Spec([Variable(1, "angle", 15, 45)], objective="min_lap_time")
+
+
+def test_calibration_changes_which_designs_rans_checks(tmp_path):
+    """Scaling drag up before ranking moves the check from a high-load,
+    high-drag design to a leaner one when the objective weighs drag."""
+
+    def evaluate(wing, folder):
+        a = wing.elements[1].angle
+        load = 1.0 + 0.04 * (a - 15)
+        cd = 0.02 + 0.001 * (a - 15)  # drag grows with the flap: L/D peaks inside the range once drag weighs more
+        return {"cl": -load, "cd": cd, "cm": 0.0, "converged": True, "reason": None,
+                "elements": [{"cl": -load * 0.6}, {"cl": -load * 0.4}]}
+
+    spec = optimise.Spec([Variable(1, "angle", 15, 45)], objective="max_cl_cd_cap", cd_cap=0.04, trials=30, seed=2,
+                         solver="estimate")
+    optimise.run(_starter(), spec, evaluate, tmp_path / "s.db", "s", tmp_path / "work")
+    plain = optimise.check(_starter(), spec, tmp_path / "s.db", "s", evaluate, 1, tmp_path / "w1")
+    first = plain["checks"][0]["number"]
+    # The estimate's drag turns out half of RANS's: designs near the cap are really over it.
+    calibrated = optimise.check(_starter(), spec, tmp_path / "s.db", "s", evaluate, 2, tmp_path / "w2", scale=(1.0, 2.0))
+    numbers = [c["number"] for c in calibrated["checks"]]
+    angles = {t["number"]: t["params"]["angle_1"] for t in calibrated["trials"]}
+    assert numbers[0] == first and angles[numbers[1]] < angles[first]
+    optimise.record_anchor(tmp_path / "s.db", "s", spec, {"cl_scale": 1.0, "cd_scale": 2.0, "converged": True})
+    assert json.loads((tmp_path / "s.json").read_text())["anchor"]["cd_scale"] == 2.0

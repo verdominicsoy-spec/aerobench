@@ -226,6 +226,10 @@ extension AppState {
         params["parallel"] = .int(settings.parallelTrials)
         params["solver"] = .string(setup.solver)
         params["check"] = .int(setup.solver == "estimate" ? setup.checkBest : 0)
+        if lab.calibrateNextStudy {
+            params["anchor"] = .bool(true)
+            lab.calibrateNextStudy = false
+        }
         if setup.objective == .minLapTime {
             do {
                 params["lap"] = try lapObjectiveParams()
@@ -479,6 +483,7 @@ extension AppState {
                 ? "Tuning \(lab.design.trials) designs on quick estimates, then checking the best \(checks) with RANS"
                 : "Tuning \(lab.design.trials) designs on quick estimates (SU2 is not installed, so no RANS check)"
             lab.designAwaitingStudy = true
+            lab.calibrateNextStudy = checks > 0
             let before = lab.optimiseJob
             self.runWingOptimise()
             if lab.optimiseJob === before {  // it could not start (the reason has been shown)

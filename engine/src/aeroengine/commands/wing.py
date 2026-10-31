@@ -292,13 +292,48 @@ def wing_optimise(ctx: JobContext) -> dict:
         f"RANS runs, {spec.parallel} at a time on {ctx.options.cores} cores each")
     ctx.emit.log(f"{spec.trials} trials, {where}, {spec.sampler.upper()}: {optimise.OBJECTIVES[spec.objective]}")
     path, name = Path(storage).expanduser(), str(p.get("name", "study"))
+    # Calibration: while the estimate study runs, one RANS run of the starting
+    # wing on the other cores. Its lift and drag over the estimate's correct the
+    # ranking before the RANS checks: the estimate's offset is mostly a matter
+    # of the sections (drag 10% high on a NACA 4412 wing, 30% low on a 6212).
+    anchor: dict = {}
+    calibrate = None
+    if checks and spec.solver == "estimate" and p.get("anchor"):
+        import threading
+
+        def run_anchor() -> None:
+            folder = ctx.scratch_dir / "anchor"
+            folder.mkdir(parents=True, exist_ok=True)
+            try:
+                est = evaluate_estimate(base, folder)
+                ran = evaluate_rans(base, folder)
+                anchor.update(cl_estimate=est["cl"], cd_estimate=est["cd"], cl_rans=ran["cl"], cd_rans=ran["cd"],
+                              converged=bool(ran["converged"]))
+            except EngineError as exc:
+                anchor.update(converged=False, reason=exc.msg)
+
+        calibrate = threading.Thread(target=run_anchor, daemon=True)
+        calibrate.start()
+        ctx.emit.log("calibrating: one RANS run of the starting wing alongside the estimate study")
     out = optimise.run(base, spec, evaluate, path, name, ctx.scratch_dir,
                        (lambda pct, msg: ctx.emit.progress(pct * (0.5 if checks else 1.0), msg)), ctx.emit.log, keep_runs=False,
                        info={"solver": spec.solver, "mesh": flow.get("mesh", "medium"), "model": flow.get("model", "sa"),
                              "speed": flow.get("speed"), "alpha": flow.get("alpha", 0.0)})
+    scale = (1.0, 1.0)
+    if calibrate is not None:
+        ctx.emit.progress(50, "waiting for the calibration run")
+        calibrate.join()
+        if anchor.get("converged") and abs(anchor["cl_estimate"]) > 1e-6 and anchor["cd_estimate"] > 0:
+            scale = (anchor["cl_rans"] / anchor["cl_estimate"], anchor["cd_rans"] / anchor["cd_estimate"])
+            ctx.emit.log(f"calibration: RANS lift x{scale[0]:.3f}, drag x{scale[1]:.3f} of the estimate's on the starting wing")
+        else:
+            ctx.emit.log(f"calibration run did not settle ({anchor.get('reason', 'not converged')}): ranking uncorrected",
+                         level="warning")
+        anchor.update(cl_scale=scale[0], cd_scale=scale[1])
+        optimise.record_anchor(path, name, spec, anchor)
     if checks:
         out = optimise.check(base, spec, path, name, evaluate_rans, checks, ctx.scratch_dir,
-                             lambda pct, msg: ctx.emit.progress(50 + 0.5 * pct, msg), ctx.emit.log)
+                             lambda pct, msg: ctx.emit.progress(50 + 0.5 * pct, msg), ctx.emit.log, scale=scale)
     return out
 
 

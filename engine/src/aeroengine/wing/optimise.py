@@ -358,21 +358,31 @@ def summary(study: optuna.Study, spec: Spec) -> dict:
             "failed": sum(t["state"] == "fail" for t in trials),
             "invalid": sum(t["state"] == "invalid" for t in trials), "target": spec.trials,
             "solver": spec.solver, "checks": study.user_attrs.get("checks", []),
+            "anchor": study.user_attrs.get("anchor"),
             "base_sections": study.user_attrs.get("base_sections")}
 
 
 def check(base: Wing, spec: Spec, storage: Path, name: str, evaluate: Evaluate, count: int, workroot: Path,
-          progress: Callable[[float, str], None] = lambda p, m: None, log: Callable[..., None] = lambda *a, **k: None) -> dict:
+          progress: Callable[[float, str], None] = lambda p, m: None, log: Callable[..., None] = lambda *a, **k: None,
+          scale: tuple[float, float] = (1.0, 1.0)) -> dict:
     """Runs the best `count` designs of a study again with `evaluate` (RANS
     after a quick-estimate study) and records what it says beside them, so
-    the ranking can be checked where the estimate is least sure."""
+    the ranking can be checked where the estimate is least sure. `scale`
+    multiplies each trial's lift and drag before ranking: the estimate's
+    calibration against a RANS run of the same wing family."""
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     rdb = optuna.storages.RDBStorage(f"sqlite:///{storage}", engine_kwargs={"connect_args": {"timeout": 60}})
     study = optuna.load_study(study_name=name, storage=rdb)
     inverted = base.elements[0].inverted
     s = summary(study, spec)
     good = [t for t in s["trials"] if t["state"] == "complete" and t["feasible"]]
-    good.sort(key=lambda t: t["value"], reverse=spec.direction == "maximize")
+
+    def ranked(t: dict) -> float:
+        if scale == (1.0, 1.0) or t.get("load") is None or t.get("cd") is None:
+            return t["value"]
+        return score(spec, t["load"] * scale[0], t["cd"] * scale[1])[0]
+
+    good.sort(key=ranked, reverse=spec.direction == "maximize")
     picked, seen = [], set()
     for t in good:  # distinct designs only
         key = tuple(round(v, 6) for v in t["params"].values())
@@ -406,6 +416,14 @@ def check(base: Wing, spec: Spec, storage: Path, name: str, evaluate: Evaluate, 
         log(f"check of trial {t['number']}: estimate {t['value']:.4g}, RANS {what}")
     _export(study, spec, storage.with_suffix(".json"))
     return summary(study, spec)
+
+
+def record_anchor(storage: Path, name: str, spec: Spec, anchor: dict) -> None:
+    """Keeps the calibration run with the study, for the export."""
+    rdb = optuna.storages.RDBStorage(f"sqlite:///{storage}", engine_kwargs={"connect_args": {"timeout": 60}})
+    study = optuna.load_study(study_name=name, storage=rdb)
+    study.set_user_attr("anchor", anchor)
+    _export(study, spec, storage.with_suffix(".json"))
 
 
 def _export(study: optuna.Study, spec: Spec, path: Path) -> None:

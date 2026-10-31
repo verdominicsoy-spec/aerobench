@@ -1343,6 +1343,12 @@ struct StudyResults: View {
                     Button("Load It") { lab.load(trial: t) }.font(.caption)
                 }
             }
+            if let a = s.anchor {
+                Text(a.converged == true
+                     ? String(format: "Ranked after calibrating on a RANS run of the starting wing: lift ×%.2f, drag ×%.2f of the estimate's.", a.clScale ?? 1, a.cdScale ?? 1)
+                     : "The calibration run of the starting wing did not settle, so the ranking is the estimate's own.")
+                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             Grid(alignment: .trailing, horizontalSpacing: 10, verticalSpacing: 1) {
                 GridRow {
                     Text("Trial").gridColumnAlignment(.leading)

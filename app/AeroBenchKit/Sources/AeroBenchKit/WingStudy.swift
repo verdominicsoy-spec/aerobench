@@ -93,6 +93,22 @@ public struct WingStudy: Codable, Equatable, Sendable {
     /// Each element's section (Selig order, unit chord) when a shape study
     /// started: trials' camber and thickness are relative to these.
     public var baseSections: [[[Double]]]?
+    /// One RANS run of the starting wing beside an estimate study: how far the
+    /// estimate's lift and drag were off, used to rank the designs RANS checks.
+    public var anchor: Anchor?
+
+    public struct Anchor: Codable, Equatable, Sendable {
+        public var converged: Bool?
+        public var clScale: Double?
+        public var cdScale: Double?
+        public var reason: String?
+
+        enum CodingKeys: String, CodingKey {
+            case converged, reason
+            case clScale = "cl_scale"
+            case cdScale = "cd_scale"
+        }
+    }
 
     public struct Check: Codable, Equatable, Sendable, Identifiable {
         public var number: Int
@@ -117,6 +133,7 @@ public struct WingStudy: Codable, Equatable, Sendable {
         case study, objective, direction, spec, trials, best, complete, failed, invalid, target, solver, checks
         case objectiveName = "objective_name"
         case baseSections = "base_sections"
+        case anchor
     }
 
     /// The check RANS liked best, if any converged.
