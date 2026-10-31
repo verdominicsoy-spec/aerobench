@@ -1030,6 +1030,10 @@ struct WingInspector: View {
             if lab.optimise.objective == .minCdClTarget {
                 NumberField(label: "Downforce Cl target", value: Binding(get: { lab.optimise.clTarget }, set: { lab.optimise.clTarget = $0 }))
             }
+            if lab.optimise.objective == .minLapTime {
+                Text("Each trial is a lap of the Lap Sim's track (\(app.lapSim.track.kind.title)) in car A, with this wing in place of the one under Use in the Lap Sim, using the 3D settings there. Downforce against drag is weighed by the track, not by a ratio.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             Picker("Each trial", selection: Binding(get: { lab.optimise.solver }, set: { lab.optimise.solver = $0 })) {
                 Text("Quick estimate (seconds)").tag("estimate")
                 Text("RANS CFD (minutes)").tag("rans")

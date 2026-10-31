@@ -299,3 +299,37 @@ def test_shape_variables_with_the_quick_estimate(tmp_path):
     assert np.allclose(out["base_sections"][1], _starter().elements[1].unit, atol=1e-6)
     with pytest.raises(EngineError, match="above zero"):
         optimise.Spec([Variable(1, "thickness", 0.0, 1.2)])
+
+
+def test_fastest_lap_trades_downforce_for_drag_by_track(tmp_path):
+    """A flap angle that buys downforce with drag: the acceleration run wants
+    much less of it than the skidpad."""
+    from aeroengine.lapsim import Car
+    from aeroengine.lapsim.track import resolve
+
+    car = Car(mass=280, cla=2.0, cda=1.0, mu_lat=1.5, mu_long=1.4, power=60000, driven_axle_fraction=0.55,
+              aero_balance_driven=0.5, crr=0.015, rho=1.225, v_max=33)
+
+    def evaluate(wing, folder):
+        a = wing.elements[1].angle
+        load = 1.0 + 0.04 * (a - 15)  # more flap, more downforce...
+        cd = 0.03 + 0.0002 * (a - 15) ** 2 + 0.004 * (a - 15)  # ...and more drag
+        return {"cl": -load, "cd": cd, "cm": 0.0, "converged": True, "reason": None,
+                "elements": [{"cl": -load * 0.6}, {"cl": -load * 0.4}]}
+
+    best = {}
+    for kind in ("acceleration", "skidpad"):
+        lap = optimise.LapScore(car=car, track=resolve({"builtin": kind}), span=1.0, chord=0.44, endplate=0.25,
+                                replaced_cla=0.5, replaced_cda=0.2)
+        spec = optimise.Spec([Variable(1, "angle", 15, 45)], objective="min_lap_time", trials=25, seed=3,
+                             solver="estimate", lap=lap)
+        out = optimise.run(_starter(), spec, evaluate, tmp_path / f"{kind}.db", kind, tmp_path / kind)
+        assert out["direction"] == "minimize"
+        t = out["trials"][out["best"]]
+        best[kind] = t["params"]["angle_1"]
+        assert t["value"] == pytest.approx(lap.lap_time(t["load"], t["cd"]))
+    # Off the line downforce buys traction, so the acceleration run's best is a
+    # shallow minimum near 23 degrees (lap times checked directly), not 15.
+    assert best["acceleration"] < 30 and best["skidpad"] > 35
+    with pytest.raises(EngineError, match="car and a track"):
+        optimise.Spec([Variable(1, "angle", 15, 45)], objective="min_lap_time")

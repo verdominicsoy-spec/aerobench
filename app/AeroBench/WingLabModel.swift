@@ -225,6 +225,7 @@ final class WingLabModel {
         case maxLD = "max_ld"
         case maxClCdCap = "max_cl_cd_cap"
         case minCdClTarget = "min_cd_cl_target"
+        case minLapTime = "min_lap_time"
 
         var id: String { rawValue }
         var title: String {
@@ -233,6 +234,7 @@ final class WingLabModel {
             case .maxLD: "Best L/D"
             case .maxClCdCap: "Most downforce, Cd capped"
             case .minCdClTarget: "Least drag for a downforce"
+            case .minLapTime: "Fastest lap"
             }
         }
     }

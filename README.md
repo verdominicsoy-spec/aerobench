@@ -178,7 +178,9 @@ estimate, else the preview). *Swap* puts A back on the canvas (undoable).
 
 **Optimise** (inspector): tick the angles, gaps and overlaps to search and
 give each a range, pick an objective (most downforce, best L/D, most
-downforce under a Cd cap, least drag for a downforce target) and TPE or
+downforce under a Cd cap, least drag for a downforce target, or the fastest
+lap: each trial is a lap of the Lap Sim's track in car A with this wing in
+place of the one it replaces, about 10 ms a lap) and TPE or
 CMA-ES, and start. Each trial is a quick estimate by default (a few hundred
 in about a minute; it finds element angles well and sees the gap only
 through when the flap separates, so check the best few with RANS or run the

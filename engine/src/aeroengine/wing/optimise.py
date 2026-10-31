@@ -32,11 +32,39 @@ OBJECTIVES = {
     "max_ld": "Best L/D",
     "max_cl_cd_cap": "Most downforce under a drag cap",
     "min_cd_cl_target": "Least drag for a downforce target",
+    "min_lap_time": "Fastest lap",
 }
 # Constraint penalty: 10 % past a cap or short of a target costs 1 in Cl
 # (or 10 % in Cd). The sampler steers away; feasible says which trials hold.
 PENALTY = 10.0
 INVALID = 1e6  # what a wing that breaks a constraint scores (negated when maximising)
+
+
+@dataclass
+class LapScore:
+    """For the fastest-lap objective: the Lap Sim's car with this wing in
+    place of the one it replaces, around one track. A lap takes about 10 ms,
+    so every trial gets its own lap rather than a linearised guess."""
+    car: object  # lapsim.Car, the car as it is (with the wing being replaced)
+    track: object  # lapsim.Track
+    span: float  # m
+    chord: float  # m, the wing's total chord (its reference)
+    endplate: float | None  # m; None: use the typed 3D factor
+    factor: float = 1.0
+    replaced_cla: float = 0.0
+    replaced_cda: float = 0.0
+    start_speed: float = 0.0
+
+    def lap_time(self, load: float, cd: float) -> float:
+        from dataclasses import replace as _replace
+
+        from ..lapsim import simulate
+        from .finite import car_contribution
+
+        cla, cda = car_contribution(-load, cd, self.span, self.chord, self.endplate, self.factor)
+        car = _replace(self.car, cla=max(self.car.cla - self.replaced_cla + cla, 0.0),
+                       cda=max(self.car.cda - self.replaced_cda + cda, 0.0))
+        return simulate(car, self.track, self.start_speed).lap_time
 
 
 @dataclass
@@ -50,6 +78,7 @@ class Spec:
     parallel: int = 1
     seed: int | None = None
     solver: str = "rans"  # what each trial is: "rans" (SU2) or "estimate" (panel method and NeuralFoil)
+    lap: LapScore | None = None  # for min_lap_time
 
     def __post_init__(self) -> None:
         if self.objective not in OBJECTIVES:
@@ -58,6 +87,8 @@ class Spec:
             raise EngineError("the drag cap objective needs a Cd cap above zero")
         if self.objective == "min_cd_cl_target" and not (self.cl_target and self.cl_target > 0):
             raise EngineError("the downforce target objective needs a target Cl above zero")
+        if self.objective == "min_lap_time" and self.lap is None:
+            raise EngineError("the fastest-lap objective needs a car and a track")
         if self.solver not in ("rans", "estimate"):
             raise EngineError("solver must be rans or estimate")
         if self.sampler not in ("tpe", "cmaes"):
@@ -76,7 +107,7 @@ class Spec:
 
     @property
     def direction(self) -> str:
-        return "minimize" if self.objective == "min_cd_cl_target" else "maximize"
+        return "minimize" if self.objective in ("min_cd_cl_target", "min_lap_time") else "maximize"
 
 
 def score(spec: Spec, load: float, cd: float) -> tuple[float, bool]:
@@ -86,6 +117,8 @@ def score(spec: Spec, load: float, cd: float) -> tuple[float, bool]:
         return load, True
     if spec.objective == "max_ld":
         return load / max(cd, 1e-9), True
+    if spec.objective == "min_lap_time":
+        return spec.lap.lap_time(load, cd), True  # type: ignore[union-attr]
     if spec.objective == "max_cl_cd_cap":
         over = max(0.0, cd / spec.cd_cap - 1)  # type: ignore[operator]
         return load - PENALTY * over, over == 0

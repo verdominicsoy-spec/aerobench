@@ -71,6 +71,17 @@ public enum LapSimTrackKind: String, Codable, CaseIterable, Sendable {
     case skidpad
     case acceleration
     case csv
+
+    public var title: String {
+        switch self {
+        case .testTrack: "test track"
+        case .fsg: "FSG Hockenheim"
+        case .fsi: "FSI Varano"
+        case .skidpad: "skidpad"
+        case .acceleration: "acceleration"
+        case .csv: "imported track"
+        }
+    }
 }
 
 public struct LapSimTrack: Codable, Equatable, Sendable {

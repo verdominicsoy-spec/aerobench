@@ -226,6 +226,14 @@ extension AppState {
         params["parallel"] = .int(settings.parallelTrials)
         params["solver"] = .string(setup.solver)
         params["check"] = .int(setup.solver == "estimate" ? setup.checkBest : 0)
+        if setup.objective == .minLapTime {
+            do {
+                params["lap"] = try lapObjectiveParams()
+            } catch {
+                show("The study cannot start", error)
+                return
+            }
+        }
         let file = WingLabModel.studyFile(project: project.url, name: setup.studyName)
         params["storage"] = .string(file.path)
         params["name"] = .string(file.deletingPathExtension().lastPathComponent)
@@ -379,6 +387,21 @@ extension AppState {
 
     /// Car B becomes car A with this wing in place of the one it replaces,
     /// and the Lap Sim compares the two.
+    /// The fastest-lap objective races the Lap Sim's car A, with this wing in
+    /// place of the one it replaces, around the Lap Sim's track.
+    func lapObjectiveParams() throws -> JSONValue {
+        let wing = wingLab.wing
+        let lap = try lapSim.jobParams(lapsimFolder: lapSimFolder)
+        var out: [String: JSONValue] = [
+            "car": lap["car"] ?? .null, "track": lap["track"] ?? .null, "ds": lap["ds"] ?? .double(0.5),
+            "start_speed": lap["start_speed"] ?? .double(0), "span": .double(wing.span),
+            "factor": .double(wing.factor3D), "replaced_cla": .double(wingLab.replacedCla),
+            "replaced_cda": .double(wingLab.replacedCda),
+        ]
+        if let h = wing.endplateHeight { out["endplate"] = .double(h) }
+        return .object(out)
+    }
+
     func sendWingToLapSim(cl: Double, cd: Double, replacedCla: Double, replacedCda: Double) {
         let add = wingLab.wing.carContribution(cl: cl, cd: cd)
         var b = lapSim.carA
