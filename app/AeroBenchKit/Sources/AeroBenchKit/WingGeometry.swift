@@ -126,6 +126,9 @@ public struct Wing: Codable, Equatable, Sendable {
     /// Endplate height (m). Set, the 3D factor and induced drag are estimated
     /// from span, chord and endplates (finite3D); nil, factor3D is used as typed.
     public var endplateHeight: Double?
+    /// From the wing's lowest point to the ground (m), for a front wing in
+    /// ground effect; nil is free air.
+    public var rideHeight: Double?
     public var speed: Double  // m/s, for the viscous solvers' Reynolds number
     public var rho: Double  // kg/m^3
     public var mu: Double  // Pa s
@@ -154,6 +157,7 @@ public struct Wing: Codable, Equatable, Sendable {
         span = try c.decodeIfPresent(Double.self, forKey: .span) ?? 1.0
         factor3D = try c.decodeIfPresent(Double.self, forKey: .factor3D) ?? 1.0
         endplateHeight = try c.decodeIfPresent(Double.self, forKey: .endplateHeight)
+        rideHeight = try c.decodeIfPresent(Double.self, forKey: .rideHeight)
         speed = try c.decodeIfPresent(Double.self, forKey: .speed) ?? 15
         rho = try c.decodeIfPresent(Double.self, forKey: .rho) ?? 1.225
         mu = try c.decodeIfPresent(Double.self, forKey: .mu) ?? 1.81e-5
@@ -311,6 +315,27 @@ public struct Wing: Codable, Equatable, Sendable {
         let ar = span / refChord
         let eff = ar * (1 + 1.9 * max(h, 0) / max(span, 1e-9))
         return (ar, eff, eff / (eff + 2))
+    }
+
+    /// With a ride height: the elements turned so the flow at the wing's angle
+    /// runs along x, and the height of the ground under them (as the engine's
+    /// estimate.in_ground_effect). The ground lies along the flow.
+    public var inGroundEffect: (elements: [[SIMD2<Double>]], ground: Double)? {
+        guard let h = rideHeight else { return nil }
+        let a = alpha * Double.pi / 180
+        let turned = elements.map { e in e.placed().map { SIMD2($0.x * cos(a) + $0.y * sin(a), -$0.x * sin(a) + $0.y * cos(a)) } }
+        let lowest = turned.flatMap { $0 }.map(\.y).min() ?? 0
+        return (turned, lowest - h)
+    }
+
+    /// The ground line in the wing's own frame, for drawing: a point on it and
+    /// its direction (along the flow).
+    public var groundLine: (point: SIMD2<Double>, direction: SIMD2<Double>)? {
+        guard let g = inGroundEffect else { return nil }
+        let a = alpha * Double.pi / 180
+        let dir = SIMD2(cos(a), sin(a))
+        // (0, g) in the turned frame, turned back into the wing's.
+        return (SIMD2(-g.ground * sin(a), g.ground * cos(a)), dir)
     }
 
     /// The 2D-to-3D lift factor in use: estimated, or as typed.

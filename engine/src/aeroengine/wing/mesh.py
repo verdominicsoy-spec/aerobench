@@ -43,6 +43,7 @@ class Settings:
     farfield_size: float = 5.0  # cell size at the far field, reference chords
     max_layer_fraction_of_gap: float = 0.4
     alpha_deg: float = 0.0  # wakes follow the freestream
+    ground: float | None = None  # y of a ground line under the wing (flow along x): the domain stops there
     # Transition x/c per element and surface: [(suction, pressure), ...];
     # 0 means turbulent from the leading edge (no laminar zone).
     transition: list[tuple[float, float]] = field(default_factory=list)
@@ -196,9 +197,21 @@ def build(elements: list[np.ndarray], s: Settings, out: Path, inverted: list[boo
         centre = np.mean(np.vstack(elements), axis=0)
         r = s.farfield * s.ref_chord
         c0 = geo.addPoint(centre[0], centre[1], 0)
-        ring = [geo.addPoint(centre[0] + r * np.cos(t), centre[1] + r * np.sin(t), 0) for t in (0, np.pi / 2, np.pi, 1.5 * np.pi)]
-        arcs = [geo.addCircleArc(ring[k], c0, ring[(k + 1) % 4]) for k in range(4)]
-        outer = geo.addCurveLoop(arcs)
+        floor = []
+        if s.ground is None:
+            ring = [geo.addPoint(centre[0] + r * np.cos(t), centre[1] + r * np.sin(t), 0) for t in (0, np.pi / 2, np.pi, 1.5 * np.pi)]
+            arcs = [geo.addCircleArc(ring[k], c0, ring[(k + 1) % 4]) for k in range(4)]
+            outer = geo.addCurveLoop(arcs)
+        else:
+            # The circle cut by the ground: arcs over the top, a flat floor under the wing.
+            depth = s.ground - centre[1]
+            half = float(np.sqrt(r * r - depth * depth))
+            right = geo.addPoint(centre[0] + half, s.ground, 0)
+            top = geo.addPoint(centre[0], centre[1] + r, 0)
+            left = geo.addPoint(centre[0] - half, s.ground, 0)
+            arcs = [geo.addCircleArc(right, c0, top), geo.addCircleArc(top, c0, left)]
+            floor = [geo.addLine(left, right)]
+            outer = geo.addCurveLoop(arcs + floor)
         surface = geo.addPlaneSurface([outer] + loops)
         geo.synchronize()
         # Each wall segment gets exactly one cell along it: the spacing is ours.
@@ -208,6 +221,8 @@ def build(elements: list[np.ndarray], s: Settings, out: Path, inverted: list[boo
         for e, curves in enumerate(wall_curves):
             gmsh.model.addPhysicalGroup(1, curves, name=f"wall_{e}")
         gmsh.model.addPhysicalGroup(1, arcs, name="farfield")
+        if floor:
+            gmsh.model.addPhysicalGroup(1, floor, name="ground")
         gmsh.model.addPhysicalGroup(2, [surface], name="fluid")
 
         fld = gmsh.model.mesh.field

@@ -50,6 +50,17 @@ from .viscous import polar, reynolds
 
 
 STALL_MARGIN = 2.0  # degrees: the last element counts as separating this far short of its stall angle
+# An element with another behind it: the slot keeps it attached well past its
+# own stall angle, but not for ever. Fitted on a NACA 6212 main-and-flap wing
+# swept through stall with RANS (0 to -9 degrees): attached and lift right to
+# 8 degrees past its stall angle in place, lift 7% over at 12, separated at
+# 15.6. Its lift stops growing FRONT_LIFT_LIMIT past stall, it counts as
+# separating FRONT_SEPARATION past stall, and its drag grows with the square
+# of how far past stall onset it is (DRAG_GROWTH fits the three attached
+# angles within 5%; held at onset, the drag was 30 to 60% low).
+FRONT_LIFT_LIMIT = 9.0
+FRONT_SEPARATION = 13.0
+DRAG_GROWTH = 0.0087  # per degree squared past stall onset
 # The slot moves that line: degrees per 1% of the front element's chord the
 # gap is below SLOT_REF, within the gaps it was fitted on (overnight study).
 SLOT_GAIN = 1.5
@@ -66,18 +77,33 @@ def separation_angle(stall: float, gap_ratio: float | None, stall_margin: float 
     return stall - stall_margin + SLOT_GAIN * (SLOT_REF - g)
 
 
+def in_ground_effect(placed: list[np.ndarray], alpha: float, ride_height: float) -> tuple[list[np.ndarray], float]:
+    """The wing turned so the flow at `alpha` runs along x, and the height of
+    a ground `ride_height` below its lowest point."""
+    a = np.radians(alpha)
+    rot = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])  # points times this turn them by -alpha
+    turned = [p @ rot for p in placed]
+    return turned, min(float(p[:, 1].min()) for p in turned) - ride_height
+
+
 def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float = 1.225, mu: float = 1.81e-5,
              n_crit: float = 9.0, ref_chord: float | None = None, model_size: str = "large",
-             stall_margin: float = STALL_MARGIN) -> dict:
+             stall_margin: float = STALL_MARGIN, ride_height: float | None = None) -> dict:
     """elements: coords (placed, m, Selig order), unit, chord, angle, inverted.
     Returns one row per wing angle with total and per-element coefficients
-    on the reference chord (the sum of the element chords by default)."""
+    on the reference chord (the sum of the element chords by default).
+    With a ride height (m, from the wing's lowest point to a ground moving
+    with the flow) the panel method includes the ground; each element's
+    effective angle is still against itself alone in free air, so the
+    ground's effect reaches NeuralFoil as an extra turning of the flow."""
     if not elements:
         raise EngineError("no elements to estimate")
+    if ride_height is not None and not ride_height > 0:
+        raise EngineError("the ride height must be above zero")
     placed = [np.asarray(e["coords"], float) for e in elements]
     chords = [float(e["chord"]) for e in elements]
     ref = float(ref_chord or sum(chords))
-    multi = Solver(placed, ref)
+    multi = Solver(placed, ref) if ride_height is None else None
 
     # Each element alone, in place: its inviscid lift is linear in the
     # freestream angle, so two solves give it exactly.
@@ -92,7 +118,11 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
     effective = []  # [row][element] in degrees of freestream
     inviscid = []
     for a in alphas:
-        r = multi.solve(float(a))
+        if multi is not None:
+            r = multi.solve(float(a))
+        else:
+            turned, ground = in_ground_effect(placed, float(a), ride_height)
+            r = Solver(turned, ref, ground=ground).solve(0.0)
         row_eff, row_inv = [], []
         for i, (c0, slope) in enumerate(alone):
             own = r.cl[i] * ref / chords[i]  # this element's lift on its own chord, in place
@@ -120,10 +150,16 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
         onset = stall[i] - 4.0
         held = [min(a, onset) for a in own]
         viscous.append(polar(unit, held, re, n_crit, bool(e.get("inverted")), model_size)["rows"])
+        # The lift in place stops growing FRONT_LIFT_LIMIT past the section's
+        # stall angle: cap the in-place inviscid lift there.
+        c0, slope = alone[i]
+        cap = (stall[i] + FRONT_LIFT_LIMIT - float(e.get("angle", 0.0))) * sense  # freestream-equivalent angle
+        for k in range(len(alphas)):
+            if own[k] > stall[i] + FRONT_LIFT_LIMIT and abs(slope) > 1e-9:
+                inviscid[k][i] = c0 + slope * cap
         # The viscous loss in the linear part of the lift curve (6 degrees
         # short of stall onset, or lower if the element sits lower): NeuralFoil
         # over the panel method, the section alone, upright.
-        c0, slope = alone[i]
         ratios = []
         for a in held:
             ar = min(a, onset - 6.0)
@@ -146,9 +182,13 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
         for i in range(len(elements)):
             v = viscous[i][k]
             share = chords[i] / ref
-            cl_own = v["cl"] if scale[i][k] is None else inviscid[k][i] * scale[i][k]
-            els.append({"cl": cl_own * share, "cd": v["cd"] * share, "cm": v["cm"] * share * chords[i] / ref,
-                        "cl_own": cl_own, "cd_own": v["cd"], "cl_inviscid_own": inviscid[k][i],
+            front = scale[i][k] is not None
+            in_place = e_angle(elements[i], effective[k][i])
+            cl_own = v["cl"] if not front else inviscid[k][i] * scale[i][k]
+            past_onset = max(0.0, in_place - (stall[i] - 4.0)) if front else 0.0
+            cd_own = v["cd"] * (1 + DRAG_GROWTH * past_onset**2)
+            els.append({"cl": cl_own * share, "cd": cd_own * share, "cm": v["cm"] * share * chords[i] / ref,
+                        "cl_own": cl_own, "cd_own": cd_own, "cl_inviscid_own": inviscid[k][i],
                         "effective_angle": float(e_angle(elements[i], effective[k][i])), "upwash": effective[k][i] - float(a),
                         "held_below_stall": scale[i][k] is not None and v["alpha"] < e_angle(elements[i], effective[k][i]) - 1e-9,
                         "transition_suction": v["transition_suction"], "transition_pressure": v["transition_pressure"],
@@ -156,12 +196,12 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
                         # The last element has nothing behind it: past its separation
                         # angle (its stall alone, moved by the slot) it separates on the
                         # real wing, as every overnight RANS trial there did.
-                        "past_stall": scale[i][k] is None and e_angle(elements[i], effective[k][i]) > limit,
+                        "past_stall": (in_place > limit) if not front else (in_place > stall[i] + FRONT_SEPARATION),
                         **({"separation_angle": limit, "gap_ratio": gap_ratio} if scale[i][k] is None else {})})
         rows.append({"alpha": float(a), "cl": sum(x["cl"] for x in els), "cd": sum(x["cd"] for x in els),
                      "trusted": all(x["trusted"] for x in els), "separating": any(x["past_stall"] for x in els),
                      "elements": els})
-    return {"ref_chord": ref, "rows": rows,
+    return {"ref_chord": ref, "rows": rows, "ride_height": ride_height,
             "re": [reynolds(speed, c, rho, mu) for c in chords]}
 
 

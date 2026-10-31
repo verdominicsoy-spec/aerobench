@@ -170,8 +170,9 @@ def estimate_from_params(p: dict) -> dict:
     if not isinstance(raw, list) or not raw:
         raise EngineError("params.elements must list the elements: coords (placed, m), unit, chord, angle, inverted")
     alphas = [float(a) for a in p.get("alphas", [p.get("alpha", 0.0)])]
+    height = p.get("ride_height")
     return estimate(raw, alphas, float(p.get("speed", 15)), float(p.get("rho", 1.225)), float(p.get("mu", 1.81e-5)),
-                    float(p.get("n_crit", 9.0)), p.get("ref_chord"))
+                    float(p.get("n_crit", 9.0)), p.get("ref_chord"), ride_height=None if height is None else float(height))
 
 
 @command("wing-sweep")
@@ -203,6 +204,7 @@ def wing_starter(ctx: JobContext) -> dict:
                    rules_box=tuple(float(v) for v in box) if box else None, speed=float(p.get("speed", 15)),
                    rho=float(p.get("rho", 1.225)), mu=float(p.get("mu", 1.81e-5)), n_crit=float(p.get("n_crit", 9.0)),
                    min_thickness=float(p.get("min_thickness", 0.08)), min_gap=float(p.get("min_gap", 0.005)),
+                   ride_height=None if p.get("ride_height") is None else float(p["ride_height"]),
                    progress=lambda pct, msg: ctx.emit.progress(pct, msg))
 
 
@@ -241,12 +243,15 @@ def wing_optimise(ctx: JobContext) -> dict:
     try:
         box = p.get("rules_box")
         base = Wing([Element.from_dict(e) for e in raw], min_gap=float(p.get("min_gap", 0.005)),
-                    rules_box=tuple(float(v) for v in box) if box else None, alpha=float(p.get("alpha", 0.0)))
+                    rules_box=tuple(float(v) for v in box) if box else None, alpha=float(p.get("alpha", 0.0)),
+                    ride_height=None if p.get("ride_height") is None else float(p["ride_height"]))
         variables = [Variable(int(v["element"]), str(v["kind"]), float(v["low"]), float(v["high"]))
                      for v in p.get("variables", [])]
     except (KeyError, TypeError, ValueError) as exc:
         raise EngineError(f"bad wing or design variables: {exc}") from None
     for v in variables:
+        if v.kind == "height" and base.ride_height is None:
+            raise EngineError("the ride height is a variable only over a ground", "set a ride height first")
         if not 0 <= v.element < len(base.elements) or (v.kind in ("gap", "overlap") and v.element == 0):
             raise EngineError(f"{v.name}: no such element (gap and overlap belong to flaps)")
     spec = optimise.Spec(variables, objective=str(p.get("objective", "max_cl")), cd_cap=p.get("cd_cap"),
@@ -271,13 +276,14 @@ def wing_optimise(ctx: JobContext) -> dict:
                  "chord": e.chord} for e in wing.elements]
 
     def evaluate_rans(wing: Wing, folder: Path) -> dict:
-        return rans.solve({**flow, "elements": elements_of(wing)}, folder, folder / "wing.su2", su2_hint, ctx.options.cores,
+        return rans.solve({**flow, "elements": elements_of(wing), "ride_height": wing.ride_height}, folder,
+                          folder / "wing.su2", su2_hint, ctx.options.cores,
                           ctx.thread_env(), lambda pct, msg: None, lambda *a, **k: None, field=False)
 
     def evaluate_estimate(wing: Wing, folder: Path) -> dict:
         r = estimate(elements_of(wing), [float(p.get("alpha", 0.0))], float(p.get("speed", 15)), float(p.get("rho", 1.225)),
                      float(p.get("mu", 1.81e-5)), float(p.get("n_crit", 9.0)), p.get("ref_chord"),
-                     stall_margin=float(p.get("stall_margin", 2.0)))["rows"][0]
+                     stall_margin=float(p.get("stall_margin", 2.0)), ride_height=wing.ride_height)["rows"][0]
         last = r["elements"][-1]
         reason = None
         if r["separating"]:

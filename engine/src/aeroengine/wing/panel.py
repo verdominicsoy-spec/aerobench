@@ -39,16 +39,17 @@ class Result:
     cm_total: float
 
 
-def _psi_matrix(px: np.ndarray, py: np.ndarray, nodes: list[np.ndarray]) -> np.ndarray:
+def _psi_matrix(px: np.ndarray, py: np.ndarray, nodes: list[np.ndarray], self_terms: bool = True) -> np.ndarray:
     """d psi(p) / d gamma_j for every field point p and every node j (all
     elements' nodes concatenated), from the linear vortex panels of each
-    element. Field points that are panel nodes take XFOIL's limits."""
+    element. Field points that are panel nodes take XFOIL's limits (unless
+    self_terms is off: the panels are images, never at a field point)."""
     total = sum(len(n) for n in nodes)
     out = np.zeros((len(px), total))
     q = 1 / (4 * np.pi)
     offset = 0
     # Which global node each field point is, if any: same coordinates, same index order.
-    field_node = np.arange(len(px)) if len(px) == total else None
+    field_node = np.arange(len(px)) if self_terms and len(px) == total else None
     for xy in nodes:
         n = len(xy)
         a, b = xy[:-1], xy[1:]
@@ -90,8 +91,14 @@ class Solver:
     angles of attack then cost one back substitution each."""
 
     def __init__(self, elements: list[np.ndarray], ref_chord: float | None = None,
-                 ref_point: tuple[float, float] | None = None) -> None:
+                 ref_point: tuple[float, float] | None = None, ground: float | None = None) -> None:
+        """ground: the height (y) of a ground plane parallel to x, the flow's
+        direction, so only alpha 0 makes sense with it (turn the wing instead).
+        It is an image wing of opposite vorticity mirrored in that line,
+        which makes the line a streamline: a ground moving with the flow, as
+        a rolling road, without a boundary layer of its own."""
         self.elements = [np.asarray(e, float) for e in elements]
+        self.ground = ground
         if not self.elements:
             raise ValueError("no elements")
         sizes = [len(e) for e in self.elements]
@@ -102,6 +109,10 @@ class Solver:
         m, k = len(nodes), len(self.elements)
         a = np.zeros((m + k, m + k))
         a[:m, :m] = _psi_matrix(nodes[:, 0], nodes[:, 1], self.local)
+        if ground is not None:
+            g = ground - self.origin[1]
+            images = [np.column_stack([e[:, 0], 2 * g - e[:, 1]]) for e in self.local]
+            a[:m, :m] -= _psi_matrix(nodes[:, 0], nodes[:, 1], images, self_terms=False)  # image strengths are -gamma
         starts = np.cumsum([0] + sizes[:-1])
         self.sharp = []
         for e, (s, n) in enumerate(zip(starts, sizes)):
@@ -130,6 +141,8 @@ class Solver:
         self.ref_point = np.asarray(ref_point, float)
 
     def solve(self, alpha_deg: float) -> Result:
+        if self.ground is not None and abs(alpha_deg) > 1e-9:
+            raise ValueError("with a ground plane the flow runs along x: turn the wing, not the flow")
         al = np.radians(alpha_deg)
         x, y = self.nodes[:, 0], self.nodes[:, 1]
         rhs = np.zeros(self.m + len(self.elements))

@@ -45,6 +45,19 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     chords = [float(e["chord"]) for e in raw]
     speed, rho, mu = float(p.get("speed", 15)), float(p.get("rho", 1.225)), float(p.get("mu", 1.81e-5))
     alpha = float(p.get("alpha", 0.0))
+    # A ground must lie along the flow: the wing is turned by its angle instead
+    # (as in the estimate) and the flow runs along x over a slip wall that far
+    # below the wing's lowest point.
+    ground = None
+    flow_alpha = alpha
+    if p.get("ride_height") is not None:
+        from .estimate import in_ground_effect
+
+        height = float(p["ride_height"])
+        if not height > 0:
+            raise EngineError("the ride height must be above zero")
+        placed, ground = in_ground_effect(placed, alpha, height)
+        flow_alpha = 0.0
     ref_chord = float(p.get("ref_chord", sum(chords)))
     model = str(p.get("model", "sa"))
     if model not in su2.MODELS:
@@ -77,12 +90,14 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
 
     scale, growth = MESH_LEVELS[level]
     settings = Settings(re=re_ref, ref_chord=ref_chord, surface_fine=0.0025 * scale, surface_coarse=0.008 * scale,
-                        edge=0.0015 * scale, wake_size=0.01 * scale, growth=growth, alpha_deg=alpha, transition=zones)
+                        edge=0.0015 * scale, wake_size=0.01 * scale, growth=growth, alpha_deg=flow_alpha,
+                        transition=zones, ground=ground)
     if mesh_ready is not None:
         mesh = mesh_ready["mesh"]
     else:
         progress(5, "meshing")
-        settings.alpha_deg = float(p.get("wake_alpha", alpha))  # a sweep aligns the wakes with its middle angle
+        if ground is None:
+            settings.alpha_deg = float(p.get("wake_alpha", alpha))  # a sweep aligns the wakes with its middle angle
         mesh = build(placed, settings, mesh_file, inverted)
         log(f"mesh: {mesh['cells']} cells ({mesh['quads']} quads, {mesh['triangles']} triangles), "
             f"{mesh['layers']} wall layers")
@@ -92,7 +107,7 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
         half = (len(main) - 1) // 2
         le, te = main[half], 0.5 * (main[0] + main[-1])
         ref_point = (le + 0.25 * (te - le)).tolist()
-    case = su2.Case(speed=speed, rho=rho, mu=mu, alpha_deg=alpha, ref_chord=ref_chord,
+    case = su2.Case(speed=speed, rho=rho, mu=mu, alpha_deg=flow_alpha, ref_chord=ref_chord, ground=ground is not None,
                     ref_point=(float(ref_point[0]), float(ref_point[1])), walls=[f"wall_{i}" for i in range(len(raw))],
                     model=model, turbulence_intensity=float(p.get("turbulence_intensity", 0.01)),
                     iterations=int(p.get("iterations", 4000)), restart=str(restart) if restart else None,
@@ -172,6 +187,9 @@ def sweep(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     alphas = sorted({float(a) for a in p.get("alphas", [])})
     if not alphas:
         raise EngineError("params.alphas must list the wing angles")
+    if p.get("ride_height") is not None:
+        raise EngineError("a sweep shares one mesh across angles, but over a ground each angle turns the wing "
+                          "against the ground and needs its own", "run the angles one at a time")
     limit = float(p.get("time_limit") or float("inf"))  # 0 or none: no limit
     max_iterations = int(p.get("iterations", 4000))
     if p.get("order") == "rising":

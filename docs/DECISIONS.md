@@ -986,3 +986,32 @@ names stacked and the sections drifted out of shape. A shape study now
 records the sections it started from (base_sections in the export) and the
 app always reshapes from those; for studies from before that, from the
 section as it is in the library.
+
+**The estimate past a front element's stall.** The first design run showed
+the estimate optimiser's favourite was badly separated in RANS (Cd 0.71):
+it had pushed the main element 23 degrees past its own stall angle, because
+an element with a flap behind it was credited with all its in-place lift and
+never checked for separation. A RANS sweep of the NACA 6212 starting wing
+through stall (0 to -9 degrees) showed the slot keeps the main attached well
+past its own stall (8 degrees past with lift exact, 12 past with lift 7%
+over) until it separates (15.6 past). The estimate now caps a front
+element's lift 9 degrees past its stall angle, counts it as separating 13
+past, and grows its drag with the square of how far past stall onset it is
+(0.0087 per degree squared; held at onset the drag was 30 to 60% low). On
+that sweep lift is within 1.5% and drag within 4% at every attached angle,
+and -9 is flagged; the overnight 4412 study is still split 27 of 27 as RANS
+did, lift 0.8% off on average, drag now 16% high there (a per-section
+offset the design run's calibration removes).
+
+**Designing a wing in a few minutes.** Quick methods do the search, RANS
+confirms. The engine ranks the library by NeuralFoil's maximum lift at the
+main element's Reynolds number and lays the best few out as a standard
+wing; the estimate study (300 trials, about 1½ minutes) runs while one RANS
+run of the starting wing calibrates the estimate's lift and drag for this
+section family on the other cores; the calibrated ranking picks which few
+designs RANS checks; RANS's pick is loaded.
+
+**Lap Sim tracks and load transfer.** Generated tracks keep to the 2027
+rulebook's layout limits, read from the rulebook into
+data/rules/fs2027_tracks.json. Load transfer and tyre load sensitivity are
+off (zero) for projects from before them so their results do not move.

@@ -68,3 +68,20 @@ def test_a_narrow_slot_keeps_the_flap_attached_further():
     wide = estimate(_elements(apply(w, {"angle_1": 27.8, "gap_1": 0.0172})), [0.0], 15.0)["rows"][0]
     assert narrow["elements"][1]["gap_ratio"] == pytest.approx(0.0091 / 0.3, rel=0.02)
     assert not narrow["separating"] and wide["separating"]
+
+
+def test_a_main_element_past_stall_against_rans():
+    """The NACA 6212 main-and-flap starting wing swept through stall with RANS
+    (quick mesh, SA): attached to -6 degrees, separated at -9. The estimate's
+    front-element lift ceiling, drag growth and separation line are fitted to it."""
+    from aeroengine.wing.airfoils import naca4
+    from aeroengine.wing.design import layout
+
+    w = layout([naca4("6212")] * 2, 0.44, True)
+    rows = {r["alpha"]: r for r in estimate(_elements(w), [0.0, -3.0, -6.0, -9.0], 15.0)["rows"]}
+    rans = {0.0: (-2.1677, 0.03468), -3.0: (-2.4104, 0.04433), -6.0: (-2.5037, 0.06419)}
+    for a, (cl, cd) in rans.items():
+        assert rows[a]["cl"] == pytest.approx(cl, rel=0.03)
+        assert rows[a]["cd"] == pytest.approx(cd, rel=0.10)
+        assert not rows[a]["separating"]
+    assert rows[-9.0]["separating"] and rows[-9.0]["elements"][0]["past_stall"]  # RANS: Cl -1.55, Cd 0.25, never settled

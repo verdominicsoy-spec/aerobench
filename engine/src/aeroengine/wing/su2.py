@@ -54,6 +54,7 @@ class Case:
     multigrid: int = 2
     scheme: str = "jst"
     restart: str | None = None  # a solution to start from (restart.dat of a run on the same mesh)
+    ground: bool = False  # the mesh has a "ground" marker: a slip wall, a ground moving with the flow
 
 
 def find_su2(hint: str | None = None) -> Path:
@@ -113,6 +114,7 @@ REF_LENGTH= {case.ref_chord}
 REF_AREA= {case.ref_chord}
 MARKER_HEATFLUX= ( {heatflux} )
 MARKER_FAR= ( farfield )
+{"MARKER_EULER= ( ground )" if case.ground else ""}
 MARKER_PLOTTING= ( {walls} )
 MARKER_MONITORING= ( {walls} )
 NUM_METHOD_GRAD= GREEN_GAUSS

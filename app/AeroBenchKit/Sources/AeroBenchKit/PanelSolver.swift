@@ -39,11 +39,17 @@ public final class PanelSolver: @unchecked Sendable {
     /// A trailing edge gap below this fraction of chord counts as closed.
     static let sharpFraction = 1e-4
 
+    /// The height (y) of a ground plane along x, the flow's direction, or nil.
+    public let ground: Double?
+
     /// Nil if an element has fewer than six points or the system is
-    /// singular (elements on top of each other).
-    public init?(elements: [[SIMD2<Double>]], refChord: Double? = nil, refPoint: SIMD2<Double>? = nil) {
+    /// singular (elements on top of each other). With `ground` the flow must
+    /// run along x (solve at alpha 0, turning the wing instead): the ground is
+    /// an image wing of opposite vorticity mirrored in it, as in the engine.
+    public init?(elements: [[SIMD2<Double>]], refChord: Double? = nil, refPoint: SIMD2<Double>? = nil, ground: Double? = nil) {
         guard !elements.isEmpty, elements.allSatisfy({ $0.count >= 6 }) else { return nil }
         self.elements = elements
+        self.ground = ground
         let all = elements.flatMap { $0 }
         let centre = all.reduce(SIMD2<Double>(0, 0), +) / Double(all.count)
         nodes = all.map { $0 - centre }
@@ -57,7 +63,12 @@ public final class PanelSolver: @unchecked Sendable {
         let n = order
 
         var a = [Double](repeating: 0, count: n * n)  // column-major
-        Self.fillPsi(&a, n: n, nodes: nodes, starts: starts, sizes: sizes)
+        Self.fillPsi(&a, n: n, field: nodes, panels: nodes, starts: starts, sizes: sizes, sign: 1, selfTerms: true)
+        if let ground {
+            let g = ground - centre.y
+            let images = nodes.map { SIMD2($0.x, 2 * g - $0.y) }
+            Self.fillPsi(&a, n: n, field: nodes, panels: images, starts: starts, sizes: sizes, sign: -1, selfTerms: false)
+        }
         var sharpFlags: [Bool] = []
         for e in 0..<k {
             let st = starts[e], sz = sizes[e]
@@ -98,16 +109,18 @@ public final class PanelSolver: @unchecked Sendable {
         self.refPoint = refPoint ?? (le + 0.25 * (te - le))
     }
 
-    /// d psi / d gamma at every node from every element's linear vortex
-    /// panels (XFOIL's PSILIN), into the top-left m x m block.
-    private static func fillPsi(_ a: inout [Double], n: Int, nodes: [SIMD2<Double>], starts: [Int], sizes: [Int]) {
-        let q = 1 / (4 * Double.pi)
-        for i in 0..<nodes.count {
-            let p = nodes[i]
+    /// d psi / d gamma at every field node from every element's linear vortex
+    /// panels (XFOIL's PSILIN), added into the top-left m x m block times
+    /// `sign`. Images (sign -1) never sit on a field node, so no self terms.
+    private static func fillPsi(_ a: inout [Double], n: Int, field: [SIMD2<Double>], panels: [SIMD2<Double>],
+                                starts: [Int], sizes: [Int], sign: Double, selfTerms: Bool) {
+        let q = sign / (4 * Double.pi)
+        for i in 0..<field.count {
+            let p = field[i]
             for (st, sz) in zip(starts, sizes) {
                 for j in 0..<(sz - 1) {
                     let ja = st + j, jb = st + j + 1
-                    let pa = nodes[ja], pb = nodes[jb]
+                    let pa = panels[ja], pb = panels[jb]
                     let d = pb - pa
                     let len = simd_length(d)
                     let sx = d.x / len, sy = d.y / len
@@ -118,11 +131,11 @@ public final class PanelSolver: @unchecked Sendable {
                     let rs1 = x1 * x1 + yy * yy, rs2 = x2 * x2 + yy * yy
                     let sgn: Double = yy >= 0 ? 1 : -1
                     var g1 = 0.0, t1 = 0.0, g2 = 0.0, t2 = 0.0
-                    if i != ja && rs1 > 0 {
+                    if !(selfTerms && i == ja) && rs1 > 0 {
                         g1 = log(rs1)
                         t1 = atan2(sgn * x1, sgn * yy) + (0.5 - 0.5 * sgn) * Double.pi
                     }
-                    if i != jb && rs2 > 0 {
+                    if !(selfTerms && i == jb) && rs2 > 0 {
                         g2 = log(rs2)
                         t2 = atan2(sgn * x2, sgn * yy) + (0.5 - 0.5 * sgn) * Double.pi
                     }

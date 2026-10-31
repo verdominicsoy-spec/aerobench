@@ -279,6 +279,7 @@ struct WingMapping {
     init(wing: Wing, size: CGSize, zoom: Double, pan: CGSize) {
         var pts = wing.elements.flatMap { $0.placed() }
         if let b = wing.rulesBox { pts += [SIMD2(b.minX, b.minY), SIMD2(b.maxX, b.maxY)] }
+        if let g = wing.groundLine { pts.append(g.point) }  // keep the ground in view
         if pts.isEmpty { pts = [SIMD2(-0.05, -0.1), SIMD2(0.45, 0.1)] }
         let lo = pts.reduce(SIMD2(Double.infinity, .infinity)) { simd_min($0, $1) }
         let hi = pts.reduce(SIMD2(-Double.infinity, -.infinity)) { simd_max($0, $1) }
@@ -419,6 +420,23 @@ struct WingCanvas: View {
             let rect = CGRect(x: a.x, y: a.y, width: c.x - a.x, height: c.y - a.y)
             ctx.stroke(Path(rect), with: .color(.purple), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
             ctx.draw(Text("Rules box").font(.caption2).foregroundStyle(.purple), at: CGPoint(x: rect.minX + 30, y: rect.minY - 8))
+        }
+        if let g = wing.groundLine {
+            // The ground, along the flow, hatched underneath.
+            let a = m.view(g.point - 5 * g.direction), b = m.view(g.point + 5 * g.direction)
+            var line = Path()
+            line.move(to: a)
+            line.addLine(to: b)
+            ctx.stroke(line, with: .color(.secondary), lineWidth: 1.5)
+            var hatch = Path()
+            for k in stride(from: -60, through: 60, by: 1) {
+                let p0 = m.view(g.point + Double(k) * 0.02 * g.direction)
+                hatch.move(to: p0)
+                hatch.addLine(to: CGPoint(x: p0.x - 6, y: p0.y + 6))
+            }
+            ctx.stroke(hatch, with: .color(.secondary.opacity(0.5)), lineWidth: 0.8)
+            ctx.draw(Text(String(format: "Ground, %.0f mm below", (wing.rideHeight ?? 0) * 1000)).font(.caption2).foregroundStyle(.secondary),
+                     at: CGPoint(x: m.view(g.point).x, y: m.view(g.point).y + 14))
         }
         // Freestream arrow.
         let al = wing.alpha * .pi / 180
@@ -915,10 +933,16 @@ struct WingInspector: View {
                     .font(.caption)
             }
             NumberField(label: "Turbulence (Ncrit)", value: Binding(get: { lab.nCrit }, set: { lab.nCrit = min(max($0, 1), 14) }))
+            Toggle("Ground (a front wing)", isOn: Binding(
+                get: { wing.rideHeight != nil }, set: { on in lab.edit { $0.rideHeight = on ? 0.05 : nil } }))
+            if wing.rideHeight != nil {
+                NumberField(label: "Ride height (lowest point)", unit: "mm", value: Binding(
+                    get: { (wing.rideHeight ?? 0) * 1000 }, set: { v in lab.edit { $0.rideHeight = max(v, 1) / 1000 } }))
+            }
         } header: {
             Text("Flow")
         } footer: {
-            Text("Used by every solver. Ncrit 9 is a clean wind tunnel; lower (4 to 6) for the turbulent air behind a car, which trips the boundary layer sooner.")
+            Text("Used by every solver. Ncrit 9 is a clean wind tunnel; lower (4 to 6) for the turbulent air behind a car, which trips the boundary layer sooner. The ground moves with the flow, as on track or a rolling road: an image wing in the quick solvers, a slip wall in RANS. Over a ground, a RANS angle sweep is not available (each angle needs its own mesh).")
         }
     }
 

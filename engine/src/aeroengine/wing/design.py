@@ -89,7 +89,7 @@ def variables(wing: Wing) -> list[Variable]:
 def starter(root: Path | None, elements: int = 2, chord_total: float = 0.44, inverted: bool = True,
             rules_box=None, speed: float = 15.0, rho: float = 1.225, mu: float = 1.81e-5, n_crit: float = 9.0,
             min_thickness: float = 0.08, candidates: int = 6, min_gap: float = 0.005,
-            progress=lambda pct, msg: None) -> dict:
+            ride_height: float | None = None, progress=lambda pct, msg: None) -> dict:
     t0 = time.time()
     secs = _sections(root, min_thickness)
     if not secs:
@@ -114,7 +114,7 @@ def starter(root: Path | None, elements: int = 2, chord_total: float = 0.44, inv
         w = layout([unit] * elements, chord_total, inverted, rules_box, min_gap)
         els = [{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "chord": e.chord, "angle": e.angle,
                 "inverted": e.inverted} for e in w.elements]
-        row = estimate(els, [0.0], speed, rho, mu, n_crit)["rows"][0]
+        row = estimate(els, [0.0], speed, rho, mu, n_crit, ride_height=ride_height)["rows"][0]
         load = -row["cl"] if inverted else row["cl"]
         ok = not w.issues() and not row["separating"]
         tried.append({"key": key, "name": name, "cl_max": clmax, "load": load, "cd": row["cd"], "valid": ok})
@@ -128,7 +128,9 @@ def starter(root: Path | None, elements: int = 2, chord_total: float = 0.44, inv
         "section": {"key": key, "name": name},
         "elements": [{"key": key, "name": name, "unit": e.unit.tolist(), "chord": e.chord, "angle": e.angle,
                       "leading_edge": e.leading_edge.tolist(), "inverted": e.inverted} for e in w.elements],
-        "variables": [{"element": v.element, "kind": v.kind, "low": v.low, "high": v.high} for v in variables(w)],
+        "variables": [{"element": v.element, "kind": v.kind, "low": v.low, "high": v.high} for v in variables(w)]
+        + ([{"element": 0, "kind": "height", "low": max(0.5 * ride_height, 0.03), "high": 2.0 * ride_height}]
+           if ride_height is not None else []),
         "re": re, "ranked": len(ranked), "tried": tried, "seconds": time.time() - t0,
         "labels": [label(i) for i in range(len(w.elements))],
     }

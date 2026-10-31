@@ -186,6 +186,7 @@ extension AppState {
             "model": .string(lab.turbulenceModel.rawValue), "mesh": .string(lab.meshLevel),
             "transition": lab.predictTransition ? .string("auto") : .array(wing.elements.map { _ in .array([.double(0), .double(0)]) }),
             "turbulence_intensity": .double(lab.turbulenceIntensity / 100), "n_crit": .double(lab.nCrit),
+            "ride_height": wing.rideHeight.map { .double($0) } ?? .null,
         ]
     }
 

@@ -52,6 +52,7 @@ class Wing:
     min_gap: float = 0.005  # m
     rules_box: tuple[float, float, float, float] | None = None  # min x, min y, max x, max y (entered by the user)
     alpha: float = 0.0
+    ride_height: float | None = None  # m, lowest point to a ground along the flow; None is free air
 
     def copy(self) -> "Wing":
         return replace(self, elements=[replace(e, leading_edge=e.leading_edge.copy()) for e in self.elements])
@@ -150,9 +151,10 @@ def inside(p: np.ndarray, poly: np.ndarray) -> bool:
 @dataclass
 class Variable:
     """One design variable: an element's angle (degrees), gap or overlap (m),
-    or its shape: camber added (fraction of chord) and thickness (scale)."""
+    or its shape: camber added (fraction of chord) and thickness (scale);
+    or the whole wing's ride height over a ground (m, element 0)."""
     element: int
-    kind: str  # "angle", "gap", "overlap", "camber" or "thickness"
+    kind: str  # "angle", "gap", "overlap", "camber", "thickness" or "height"
     low: float
     high: float
     name: str = field(init=False)
@@ -196,6 +198,8 @@ def apply(base: Wing, values: dict[str, float]) -> Wing:
     to what the base wing had, so turning an element does not drag the slot
     with it."""
     w = base.copy()
+    if "height_0" in values:
+        w.ride_height = values["height_0"]
     targets = [(base.gap(i), base.overlap(i)) if i else (0.0, 0.0) for i in range(len(base.elements))]
     for i, e in enumerate(w.elements):
         if f"camber_{i}" in values or f"thickness_{i}" in values:

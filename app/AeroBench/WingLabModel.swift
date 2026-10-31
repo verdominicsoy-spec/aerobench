@@ -619,7 +619,11 @@ final class WingLabModel {
             return
         }
         let start = Date()
-        if let solver = PanelSolver(elements: wing.elements.map { $0.placed() }, refChord: wing.refChord) {
+        if let g = wing.inGroundEffect,
+           let solver = PanelSolver(elements: g.elements, refChord: wing.refChord, ground: g.ground) {
+            preview = solver.solve(alphaDeg: 0)  // turned: the flow and the ground run along x
+            previewError = nil
+        } else if wing.rideHeight == nil, let solver = PanelSolver(elements: wing.elements.map { $0.placed() }, refChord: wing.refChord) {
             preview = solver.solve(alphaDeg: wing.alpha)
             previewError = nil
         } else {
