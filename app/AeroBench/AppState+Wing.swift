@@ -158,13 +158,8 @@ extension AppState {
         let lab = wingLab
         let wing = lab.wing
         guard !wing.elements.isEmpty else { return }
-        func points(_ p: [SIMD2<Double>]) -> JSONValue { .array(p.map { .array([.double($0.x), .double($0.y)]) }) }
-        let elements = JSONValue.array(wing.elements.map { e in
-            .object(["coords": points(e.placed()), "unit": points(e.airfoil.coords), "angle": .double(e.angle),
-                     "inverted": .bool(e.inverted), "chord": .double(e.chord)])
-        })
         var params = ransParams()
-        params["elements"] = elements
+        params["elements"] = elementsParam()
         lab.ransResult = nil
         lab.ransField = nil
         lab.resultsTab = .cfd
@@ -188,6 +183,16 @@ extension AppState {
             "turbulence_intensity": .double(lab.turbulenceIntensity / 100), "n_crit": .double(lab.nCrit),
             "ride_height": wing.rideHeight.map { .double($0) } ?? .null,
         ]
+    }
+
+    /// The placed and unit coordinates of every element, as the RANS,
+    /// sweep and estimate commands read them.
+    private func elementsParam() -> JSONValue {
+        func points(_ p: [SIMD2<Double>]) -> JSONValue { .array(p.map { .array([.double($0.x), .double($0.y)]) }) }
+        return .array(wingLab.wing.elements.map { e in
+            .object(["coords": points(e.placed()), "unit": points(e.airfoil.coords), "angle": .double(e.angle),
+                     "inverted": .bool(e.inverted), "chord": .double(e.chord)])
+        })
     }
 
     /// Starts the optimiser, or resumes the study of the same name: the
@@ -287,12 +292,8 @@ extension AppState {
     private func estimateParams() -> [String: JSONValue] {
         let lab = wingLab
         let wing = lab.wing
-        func points(_ p: [SIMD2<Double>]) -> JSONValue { .array(p.map { .array([.double($0.x), .double($0.y)]) }) }
         var params = ransParams()
-        params["elements"] = .array(wing.elements.map { e in
-            .object(["coords": points(e.placed()), "unit": points(e.airfoil.coords), "angle": .double(e.angle),
-                     "inverted": .bool(e.inverted), "chord": .double(e.chord)])
-        })
+        params["elements"] = elementsParam()
         var angles = lab.estimateAngles
         if !angles.contains(where: { abs($0 - wing.alpha) < 1e-9 }) { angles = (angles + [wing.alpha]).sorted() }
         params["alphas"] = .array(angles.map { .double($0) })
@@ -353,12 +354,8 @@ extension AppState {
         let lab = wingLab
         let wing = lab.wing
         guard !wing.elements.isEmpty else { return }
-        func points(_ p: [SIMD2<Double>]) -> JSONValue { .array(p.map { .array([.double($0.x), .double($0.y)]) }) }
         var params = ransParams()
-        params["elements"] = .array(wing.elements.map { e in
-            .object(["coords": points(e.placed()), "unit": points(e.airfoil.coords), "angle": .double(e.angle),
-                     "inverted": .bool(e.inverted), "chord": .double(e.chord)])
-        })
+        params["elements"] = elementsParam()
         params["mesh"] = .string(lab.sweepRising ? lab.meshLevel : "quick")
         lab.ransResult = nil
         lab.ransField = nil
