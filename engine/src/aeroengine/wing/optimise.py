@@ -128,6 +128,10 @@ def run(base: Wing, spec: Spec, evaluate: Evaluate, storage: Path, name: str, wo
     study.set_user_attr("spec", now)
     if info:
         study.set_user_attr("info", info)
+    # Shape trials store only camber and thickness relative to the sections the
+    # study started from, so those go with the study (once: a resume keeps them).
+    if any(v.kind in ("camber", "thickness") for v in spec.variables) and "base_sections" not in study.user_attrs:
+        study.set_user_attr("base_sections", [np.round(e.unit, 6).tolist() for e in base.elements])
     inverted = base.elements[0].inverted
     dists = {v.name: optuna.distributions.FloatDistribution(v.low, v.high) for v in spec.variables}
 
@@ -320,7 +324,8 @@ def summary(study: optuna.Study, spec: Spec) -> dict:
             "trials": trials, "best": best, "complete": sum(t["state"] == "complete" for t in trials),
             "failed": sum(t["state"] == "fail" for t in trials),
             "invalid": sum(t["state"] == "invalid" for t in trials), "target": spec.trials,
-            "solver": spec.solver, "checks": study.user_attrs.get("checks", [])}
+            "solver": spec.solver, "checks": study.user_attrs.get("checks", []),
+            "base_sections": study.user_attrs.get("base_sections")}
 
 
 def check(base: Wing, spec: Spec, storage: Path, name: str, evaluate: Evaluate, count: int, workroot: Path,

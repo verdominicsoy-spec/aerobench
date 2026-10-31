@@ -290,7 +290,7 @@ final class WingLabModel {
         return order.indices.contains(i) ? order[i] : nil
     }
     /// The canvas wing during a time-lapse.
-    var replayWing: Wing? { replayTrial.flatMap { wing.applying($0) } }
+    var replayWing: Wing? { replayTrial.flatMap { wing.applying($0, sections: studySections) } }
 
     /// The best value among the trials up to the one on show.
     var replayBestSoFar: Double? {
@@ -383,9 +383,26 @@ final class WingLabModel {
         return nil
     }
 
+    /// The sections the study's shapes are relative to: as the study recorded
+    /// them, or for studies from before that, each element's section as it is
+    /// in the library (the canvas may hold a trial's shape already).
+    var studySections: [Airfoil]? {
+        guard let study, study.spec.variables.contains(where: { $0.kind == "camber" || $0.kind == "thickness" }) else { return nil }
+        let originals = wing.elements.map { e -> Airfoil in
+            guard e.airfoil.key.hasPrefix("shaped/") else { return e.airfoil }
+            return airfoil(String(e.airfoil.key.dropFirst("shaped/".count))) ?? e.airfoil
+        }
+        guard let recorded = study.baseSections, recorded.count == originals.count else { return originals }
+        return zip(originals, recorded).map { original, unit in
+            var a = original
+            a.coords = unit.compactMap { $0.count == 2 ? SIMD2($0[0], $0[1]) : nil }
+            return a
+        }
+    }
+
     /// Puts a trial's wing on the canvas (undoable).
     func load(trial: WingStudy.Trial) {
-        guard let w = wing.applying(trial) else { return }
+        guard let w = wing.applying(trial, sections: studySections) else { return }
         edit { $0 = w }
         selectedTrial = trial.number
     }

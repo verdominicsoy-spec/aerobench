@@ -377,5 +377,11 @@ final class AirfoilReshapeTests: XCTestCase {
         let shaped = try XCTUnwrap(wing.applying(trial))
         XCTAssertEqual(shaped.elements[0].airfoil, base)
         XCTAssertEqual(shaped.elements[1].airfoil, cambered)
+
+        // Loading it again onto the shaped wing, with the study's sections,
+        // gives the same wing: shapes never stack.
+        let again = try XCTUnwrap(shaped.applying(trial, sections: [base, base]))
+        XCTAssertEqual(again.elements[1].airfoil, cambered)
+        XCTAssertEqual(again.elements[1].airfoil.name, "NACA 0012 (camber +2.0%, thickness 100%)")
     }
 }

@@ -90,6 +90,9 @@ public struct WingStudy: Codable, Equatable, Sendable {
     public var solver: String?
     /// The best designs of an estimate study run again with RANS.
     public var checks: [Check]?
+    /// Each element's section (Selig order, unit chord) when a shape study
+    /// started: trials' camber and thickness are relative to these.
+    public var baseSections: [[[Double]]]?
 
     public struct Check: Codable, Equatable, Sendable, Identifiable {
         public var number: Int
@@ -113,6 +116,7 @@ public struct WingStudy: Codable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case study, objective, direction, spec, trials, best, complete, failed, invalid, target, solver, checks
         case objectiveName = "objective_name"
+        case baseSections = "base_sections"
     }
 
     /// The check RANS liked best, if any converged.
@@ -165,13 +169,17 @@ public struct WingStudy: Codable, Equatable, Sendable {
 extension Wing {
     /// This wing with a trial's shapes, angles and leading edges: what the
     /// optimiser ran. Nil if the trial has no placement or the element count differs.
-    public func applying(_ trial: WingStudy.Trial) -> Wing? {
+    /// A trial's camber and thickness are relative to the sections the study
+    /// started from, so shapes are applied to `sections` (one per element),
+    /// never to what is on the canvas: that may already be a trial's shape.
+    public func applying(_ trial: WingStudy.Trial, sections: [Airfoil]? = nil) -> Wing? {
         guard let placement = trial.placement, placement.count == elements.count else { return nil }
         var w = self
         for (i, p) in placement.enumerated() where p.leadingEdge.count == 2 {
             let camber = trial.params["camber_\(i)"], thickness = trial.params["thickness_\(i)"]
             if camber != nil || thickness != nil {
-                w.elements[i].airfoil = w.elements[i].airfoil.reshaped(camber: camber ?? 0, thickness: thickness ?? 1)
+                let base = sections.flatMap { $0.indices.contains(i) ? $0[i] : nil } ?? w.elements[i].airfoil
+                w.elements[i].airfoil = base.reshaped(camber: camber ?? 0, thickness: thickness ?? 1)
             }
             w.elements[i].angle = p.angle
             w.elements[i].leadingEdge = SIMD2(p.leadingEdge[0], p.leadingEdge[1])

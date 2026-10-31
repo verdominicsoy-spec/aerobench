@@ -977,3 +977,12 @@ surface column, and the primary action in each panel is sage37's prominent
 capsule button. Colours, radii and the press spring are the design system's
 tokens (app/AeroBench/Sage37.swift). The glassout console for SU2 and
 optimiser output is not built; the Jobs log stays a plain list.
+
+**Shape trials are relative to the study's starting sections.** The first
+version applied a trial's camber and thickness to whatever section was on
+the canvas, so loading trials one after another (clicking rows, Load It,
+Load Best, the time-lapse) reshaped the reshaped section each time: the
+names stacked and the sections drifted out of shape. A shape study now
+records the sections it started from (base_sections in the export) and the
+app always reshapes from those; for studies from before that, from the
+section as it is in the library.

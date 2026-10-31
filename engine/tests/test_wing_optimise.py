@@ -110,6 +110,7 @@ def test_finds_the_optimum_and_records_everything(tmp_path):
     spec = optimise.Spec([Variable(1, "angle", 15, 40), Variable(1, "gap", 0.006, 0.02)], trials=30, seed=1)
     evaluate, _ = _fake()
     out = optimise.run(_starter(), spec, evaluate, tmp_path / "s.db", "s", tmp_path / "work")
+    assert out["base_sections"] is None  # no shape variables: nothing to keep
     assert out["complete"] == 30 and out["failed"] == 0
     first = out["trials"][0]
     assert first["params"] == pytest.approx({"angle_1": 25.0, "gap_1": 0.012}, abs=1e-6)  # the wing as drawn
@@ -294,5 +295,7 @@ def test_shape_variables_with_the_quick_estimate(tmp_path):
     assert out["trials"][0]["params"] == {"camber_1": 0.0, "thickness_1": 1.0}
     best = out["trials"][out["best"]]
     assert best["params"]["camber_1"] > 0.01 and best["load"] > out["trials"][0]["load"]
+    # The sections the shapes are relative to go with the study, for the app.
+    assert np.allclose(out["base_sections"][1], _starter().elements[1].unit, atol=1e-6)
     with pytest.raises(EngineError, match="above zero"):
         optimise.Spec([Variable(1, "thickness", 0.0, 1.2)])
