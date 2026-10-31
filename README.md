@@ -193,6 +193,26 @@ from the lowest angle up with no time limit.
 *Help → How Accurate Is Each Solver?* (or the ? in the Wing Lab toolbar)
 puts the same comparison in the app with the validation numbers.
 
+**Against wind-tunnel data.** `aeroengine validate` runs the quick
+estimate's viscous core (NeuralFoil, the whole estimate for one element)
+against public measurements: NACA 0012 at Re 6 million (Ladson, NASA
+TM-4074, in data/validation) and every clean run at Re 150,000 to 520,000 in
+the University of Illinois low-speed tests, volumes 1 to 3 (171 runs, 52
+sections, fetched from the source the first time and not committed). Today:
+
+| | Lift, mean error (attached) | Drag, mean error |
+| --- | --- | --- |
+| NACA 0012, Re 6 million | 4.6% | 2.5% |
+| E387, Re 200,000–300,000 | 4.4–4.9% | 28–37% (its laminar bubble) |
+| FX 63-137, Re 200,000–300,000 | 7–9% | 12–16% |
+| S1223, Re 200,000–300,000 | 16–21% | 5–24% |
+| All 171 UIUC runs (median) | 7.9%, 17% of runs within 5% | 8.1%, 84% within 15% |
+
+Lift reads high almost everywhere, by about 5% on gently cambered sections
+and 15 to 20% on the most cambered (S1223, E423). No public multi-element
+or ground-effect tables were reachable, so those rest on the RANS
+comparisons above.
+
 **Results** (under the canvas; a strip across the top shows the latest preview, estimate and CFD numbers side by side and what the wing adds to the car, click one for its tab): inviscid Cp, the quick viscous polar (Cl–α,
 Cl–Cd, transition points), and the CFD run (Cl and Cd per element,
 convergence, surface Cp). The run's flow field is drawn on the canvas behind
@@ -458,6 +478,7 @@ engine/               aeroengine Python package, managed with uv
   scripts/            install_su2.sh, fetch_airfoils.py, make_tracks.py, make_sample_cad.py
 data/airfoils/        airfoil library and its polars, fetched not committed
 data/rules/           the FS rule limits the Wing Lab's rules box comes from
+data/validation/      public wind-tunnel data the quick methods are checked against
 data/tracks/          event track centrelines (with their licence)
 samples/              small test inputs, including a synthetic CAD assembly
 docs/                 spec and DECISIONS.md

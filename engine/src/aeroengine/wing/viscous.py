@@ -24,11 +24,12 @@ def reynolds(speed: float, chord: float, rho: float = 1.225, mu: float = 1.81e-5
 
 
 def polar(coords: np.ndarray, alphas, re: float, n_crit: float = 9.0, inverted: bool = False,
-          model_size: str = "large") -> dict:
+          model_size: str = "large", xtr: float = 1.0) -> dict:
     """Coefficients over angles of attack for one unit-chord section in
     Selig order. With `inverted` the section is analysed upright and the
     answer mirrored: lift and moment change sign, and the surfaces swap, so
-    "suction" is always the side the load pulls towards."""
+    "suction" is always the side the load pulls towards. xtr below 1 trips
+    both surfaces there (x/c), as a wind-tunnel model's grit does."""
     try:
         import neuralfoil as nf
     except ImportError as exc:  # pragma: no cover
@@ -39,7 +40,8 @@ def polar(coords: np.ndarray, alphas, re: float, n_crit: float = 9.0, inverted: 
     if not 1e3 <= re <= 1e8:
         raise EngineError(f"Reynolds number {re:.3g} is outside 1e3 to 1e8")
     a = np.atleast_1d(np.asarray(alphas, float))
-    r = nf.get_aero_from_coordinates(coordinates=coords, alpha=a, Re=re, n_crit=n_crit, model_size=model_size)
+    r = nf.get_aero_from_coordinates(coordinates=coords, alpha=a, Re=re, n_crit=n_crit, xtr_upper=xtr, xtr_lower=xtr,
+                                     model_size=model_size)
     sign = -1.0 if inverted else 1.0
     top, bottom = np.asarray(r["Top_Xtr"], float), np.asarray(r["Bot_Xtr"], float)
     conf = np.asarray(r["analysis_confidence"], float)

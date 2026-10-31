@@ -1102,3 +1102,42 @@ into the wrong ClA). Defaults are the safe ones (ranges a box starts with,
 about 25 estimate trials a variable, checks that stop at the first RANS
 confirms); exact ranges, sampler and study name sit under Advanced.
 
+**The quick methods against public wind-tunnel data.** Until now every
+correction in the estimate was fitted to this project's own RANS runs. The
+validation suite (aeroengine validate; engine/src/aeroengine/validation.py)
+runs the viscous core, NeuralFoil at the measured angles (for a single
+element that is the whole estimate), against published measurements. Lift
+is scored over the attached range (to 2 degrees short of the measured
+maximum lift), as a fraction of the measured lift, with |Cl| below 0.4
+scored against 0.4 so a near-zero miss is not infinite; drag over the same
+range.
+
+Sources, public only: NACA 0012 at Re 6 million, tripped (Ladson, NASA
+TM-4074, 1988, as the NASA Turbulence Modeling Resource tabulates it; public
+domain, in data/validation); and the University of Illinois low-speed tests,
+volumes 1 to 3 (Selig et al., Summary of Low-Speed Airfoil Data, SoarTech
+1995 onwards), every clean run at Re 150,000 to 520,000 with the model's
+as-built coordinates where given. The UIUC data come with the GNU GPL and
+the authors' terms, so they are fetched from the source on first use and
+not committed. Searched for and not reachable: NLR 7301 main and flap (on
+the ECARP CD-ROM only), Zerihan and Zhang's ground-effect wings
+(Southampton's server sits behind a bot check), AGARD AR-303 (timed out).
+
+Results: NACA 0012 lift 4.6% and drag 2.5%. Over 171 UIUC runs on 52
+sections, lift's median error is 7.9% (17% of runs within 5%, 69% within
+10%) and drag's 8.1% (84% within 15%). The lift error is nearly always high,
+and grows with camber: about 5% on E387 and SD7062, 10% on S1210, 15 to 21%
+on S1223 and E423. E387's drag is the worst (28 to 37%: its laminar
+separation bubble).
+
+A correction tried, not applied: the estimate's lift times 0.94, fitted on
+all the runs, halves the error on sections left out of the fit (median
+4.8%, 53% within 5%, 85% within 10%); adding camber or Reynolds number
+barely helps across the board, and S1223 stays 11 to 15% off (its lift
+slope is off as well as its level). It is not applied because it would pull
+the estimate away from RANS, which it now matches on the starting wing
+within 1.5% (and RANS read the 30P30N 1 to 3% high against experiment): the
+estimate would then read under RANS, and likely under STAR-CCM+. Whether
+the quick methods should match the wind tunnel or the RANS that follows
+them is Dominic's call.
+
