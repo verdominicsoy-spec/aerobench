@@ -227,12 +227,13 @@ extension AppState {
         params["parallel"] = .int(settings.parallelTrials)
         params["solver"] = .string(setup.solver)
         params["check"] = .int(setup.solver == "estimate" ? setup.checkBest : 0)
-        if lab.calibrateNextStudy {
-            // A design run: calibrate on the starting wing, and stop checking
-            // once RANS confirms one design (the next is only a fallback).
-            params["anchor"] = .bool(true)
+        if lab.designRunNext {
+            // A design run: stop checking once RANS confirms one design (the
+            // next is only a fallback). No calibration run: the check measures
+            // the estimate on the wing that matters, and waiting for it cost a
+            // minute without changing which design was checked.
             params["until_pass"] = .bool(true)
-            lab.calibrateNextStudy = false
+            lab.designRunNext = false
         }
         if setup.objective == .minLapTime {
             do {
@@ -485,10 +486,10 @@ extension AppState {
             lab.meshLevel = "quick"
             lab.optimise.studyName = self.nextDesignName()
             lab.designStage = checks > 0
-                ? "Tuning \(lab.design.trials) designs on quick estimates, then checking the best \(checks) with RANS"
+                ? "Tuning \(lab.design.trials) designs on quick estimates, then checking the best with RANS"
                 : "Tuning \(lab.design.trials) designs on quick estimates (SU2 is not installed, so no RANS check)"
             lab.designAwaitingStudy = true
-            lab.calibrateNextStudy = checks > 0
+            lab.designRunNext = checks > 0
             let before = lab.optimiseJob
             self.runWingOptimise()
             if lab.optimiseJob === before {  // it could not start (the reason has been shown)

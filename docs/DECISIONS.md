@@ -957,7 +957,9 @@ Cl 1.891, against about 1.87 for the old pick and 1.977 for RANS's own best
 (26.9 degrees, 9.1 mm): from 5.4% short to 4.4% short. The rest is the lift
 a well-set slot adds before anything separates, which the estimate still
 does not model. It is fitted on one main-and-flap wing, so it is a better
-default, not a validated slot model.
+default, not a validated slot model. (Replaced by the flap's deflection, see
+"Flap separation by deflection": scored again later, this line marked two of
+the overnight study's attached trials separating.)
 
 **Shape variables.** Phase 5 in the spec asks for about 12 shape parameters
 per element. For a quick check two were judged enough: camber added as a
@@ -1006,10 +1008,46 @@ offset the design run's calibration removes).
 **Designing a wing in a few minutes.** Quick methods do the search, RANS
 confirms. The engine ranks the library by NeuralFoil's maximum lift at the
 main element's Reynolds number and lays the best few out as a standard
-wing; the estimate study (300 trials, about 1½ minutes) runs while one RANS
-run of the starting wing calibrates the estimate's lift and drag for this
-section family on the other cores; the calibrated ranking picks which few
-designs RANS checks; RANS's pick is loaded.
+wing; an estimate study of 150 trials tunes it (under a minute: the first
+timed run was within 0.005 s a lap of its 300-trial best by trial 50); RANS
+on the quick mesh checks the best. If that separates, the next best design
+at least 5% of some variable's range away from it is checked (the top of a
+converged study is one design many times over: the first timed run spent
+two 5-minute RANS runs on two copies of one separated wing), and checking
+stops at the first design RANS confirms.
+
+The first version also ran one RANS run of the starting wing alongside the
+estimate study to calibrate its lift and drag. It came out 1.012 and 1.001
+on the NACA 6212 wing, and with the top of the study that flat it could not
+change which design was checked, so a design run no longer waits for it (a
+minute on 4 cores); `anchor` stays in the engine for scripted studies.
+
+Timed on 4 cores, fastest lap on the generated endurance track: 52 s of
+estimates, then 5½ minutes for one RANS check, which converged with the lap
+0.02 s slower than the estimate's (lift 2.6% under, drag 0.6% over); 55.76 s
+against 55.84 s for the starting wing. That is over the 3 to 5 minutes
+aimed for on this machine; the RANS check is nearly all of it and scales
+with cores.
+
+**Flap separation by deflection.** The timed runs kept choosing wings RANS
+could not settle: first with the flap's nose pulled behind the main's
+trailing edge (overlap -2 mm; every slot the estimate had been fitted on
+overlapped by 29 mm, so the design search now keeps every overlap at 2 mm or
+more), then with the overlap positive but the flap 42 degrees past the main.
+The estimate had both attached: with the main free to move, a heavily
+loaded main's downwash keeps the flap's effective angle low in the panel
+method (12 to 13 degrees there), while in RANS the flap is recovering
+pressure in the main's wake and separates. Scored against all 34 RANS
+verdicts so far (the overnight study, the 6212 sweep, the design checks),
+the deflection, the flap's chord line against the main's, splits them: the
+overnight wing held to 25.2 degrees and separated from 26.0 whatever the
+gap, the 6212 wing held at 22 and separated at 42 to 47. Neither the gap
+line nor a Valarezo-Chin peak-to-trailing-edge pressure difference (tried
+on the panel solution) split them. So an element turned more than 25
+degrees past the one in front now counts as separating; the estimate gets
+33 of 34, the miss being the 25.2 degree trial, on the safe side. It is
+fitted on two wings and says nothing about how the limit moves with gap or
+section; RANS checks the pick.
 
 **Lap Sim tracks and load transfer.** Generated tracks keep to the 2027
 rulebook's layout limits, read from the rulebook into

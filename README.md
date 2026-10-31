@@ -106,10 +106,15 @@ L/D), the thinnest section allowed and how many designs RANS should check.
 The engine ranks the library's sections by NeuralFoil's maximum lift at your
 Reynolds number and lays the best few out as a standard wing (inside the
 rules box if there is one), the quick estimate picks the starting wing, an
-estimate study tunes every angle, gap and overlap (about 1½ minutes for 300
-designs), the best few run with RANS on the quick mesh (about 1½ minutes
-each), and RANS's pick is loaded. Undo brings the old wing back; the study
-stays in the Study tab like any other.
+estimate study tunes every angle, gap and overlap (150 designs, under a
+minute), the best runs with RANS on the quick mesh, and the wing is loaded.
+If RANS says it separates, the next best design that differs from it is
+checked instead. Undo brings the old wing back; the study stays in the Study
+tab like any other. On 4 cores a design took 7½ minutes with a fastest-lap
+aim: 52 seconds of estimates, a minute waiting on a calibration run since
+dropped, and 5½ minutes for the one RANS check (lap time within 0.02 s of
+the estimate's, lift 2.6% under, drag 0.6% over). The RANS check is most of
+it: it scales with cores.
 
 **Library** (left; the toolbar's sidebar buttons hide or show it and the inspector). The NACA 4 and 5-digit set is always there; *Download the
 Library* fetches the UIUC database (about 1,600 sections, not shipped with
@@ -201,8 +206,9 @@ downforce under a Cd cap, least drag for a downforce target, or the fastest
 lap: each trial is a lap of the Lap Sim's track in car A with this wing in
 place of the one it replaces, about 10 ms a lap) and TPE or
 CMA-ES, and start. Each trial is a quick estimate by default (a few hundred
-in about a minute; it finds element angles well and sees the gap only
-through when the flap separates, so check the best few with RANS or run the
+in about a minute; it finds element angles well, counts a flap turned more
+than 25° past the element in front as separated, and sees the gap only
+through the panel method, so check the best few with RANS or run the
 study with RANS for gaps and overlaps), or a RANS run with the model and mesh set under Solvers; *Settings* sets how many run at once (each on the per-job
 cores). Wings that break the minimum gap or the rules box are skipped
 without a run; failed or unconverged runs are recorded as failed and the

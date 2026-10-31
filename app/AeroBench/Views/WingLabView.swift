@@ -1861,14 +1861,16 @@ struct DesignWingSheet: View {
                     Text("Best L/D").tag(WingLabModel.Objective.maxLD)
                 }
                 NumberField(label: "Thinnest section", unit: "%", value: Binding(get: { lab.design.minThickness }, set: { lab.design.minThickness = min(max($0, 2), 30) }))
-                Stepper(haveSU2 ? (lab.design.checks == 0 ? "RANS check: off" : "Check the best \(lab.design.checks) with RANS") : "RANS check: SU2 not installed",
+                Stepper(haveSU2 ? (lab.design.checks == 0 ? "RANS check: off" : lab.design.checks == 1 ? "Check the best with RANS"
+                                 : "Check with RANS, up to \(lab.design.checks) designs") : "RANS check: SU2 not installed",
                         value: Binding(get: { lab.design.checks }, set: { lab.design.checks = $0 }), in: 0...4)
                     .disabled(!haveSU2)
             }
             .formStyle(.grouped)
-            let minutes = 1.0 + (haveSU2 ? 1.5 * Double(lab.design.checks) : 0)
-            Text(String(format: "About %.0f minutes on 4 cores.", minutes.rounded(.up)))
-                .font(.caption).foregroundStyle(.secondary)
+            Text(haveSU2 && lab.design.checks > 0
+                 ? "About a minute of quick estimates, then 2 to 5 minutes a RANS check on 4 cores. Checking stops at the first design RANS confirms; the next is a fallback in case it separates."
+                 : "About a minute of quick estimates.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if lab.library.isEmpty {
                 Text("No airfoil library yet: only the NACA set will be tried. Download the library (left) for the high-lift sections.")
                     .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)

@@ -292,8 +292,8 @@ final class WingLabModel {
     var designStage: String?  // what the running design is doing, shown over the canvas
     var designJob: JobItem?
     @ObservationIgnored var designAwaitingStudy = false
-    /// The next study also runs the calibration RANS run (set by a design).
-    @ObservationIgnored var calibrateNextStudy = false
+    /// The next study is a design run's: its RANS checks stop at the first that holds.
+    @ObservationIgnored var designRunNext = false
     var selectedTrial: Int?
 
     // Panels (kept per Mac)
