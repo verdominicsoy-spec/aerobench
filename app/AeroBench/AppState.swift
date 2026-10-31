@@ -58,6 +58,7 @@ final class AppState {
         checkForUpdates()
         flow.onCalibrationChange = { [weak self] in self?.project?.isDirty = true }
         wingLab.onChange = { [weak self] in self?.scheduleLiveEstimate() }
+        scheduleLiveEstimate()
         terminationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -175,6 +176,7 @@ final class AppState {
         wingLab.optimise = WingLabModel.loadOptimise(fromProject: url) ?? .init()
         wingLab.reloadStudy(project: url)
         wingLab.markSaved()
+        scheduleLiveEstimate()
         project?.isDirty = false
         recentProjects.removeAll { $0.standardizedFileURL == url.standardizedFileURL }
         recentProjects.insert(url, at: 0)

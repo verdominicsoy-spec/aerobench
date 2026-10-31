@@ -18,7 +18,8 @@ final class LapSimModelTests: XCTestCase {
         XCTAssertEqual(setup.carA.cogHeight, 0)  // an older file keeps the point mass it was run with
         XCTAssertEqual(setup.carA.tyreLoadSensitivity, 0)
         XCTAssertGreaterThan(CarParameters.placeholder.cogHeight, 0)  // a new car has load transfer on
-        XCTAssertTrue(setup.compare)
+        XCTAssertEqual(setup.cars.count, 2)  // compare on: A and B, B a copy of A when none was saved
+        XCTAssertEqual(setup.cars[1], setup.carA)
         XCTAssertEqual(setup.track.kind, .endurance)  // no track saved at all: a new project's default
         // A saved track from before generated layouts keeps what it was.
         let old = try AeroJSON.decoder().decode(LapSimTrack.self, from: Data(#"{"skidpadRadius": 9}"#.utf8))
@@ -34,11 +35,22 @@ final class LapSimModelTests: XCTestCase {
         XCTAssertEqual(track.jobValue(lapsimFolder: nil), .object(["generated": .int(7), "event": .string("autocross")]))
     }
 
-    func testJobParamsOnlyIncludeCarBWhenComparing() throws {
+    func testJobParamsSendEveryCar() throws {
         var setup = LapSimSetup()
-        XCTAssertNil(try setup.jobParams(lapsimFolder: nil)["car_b"])
-        setup.compare = true
-        XCTAssertNotNil(try setup.jobParams(lapsimFolder: nil)["car_b"])
+        guard case .array(let one) = try setup.jobParams(lapsimFolder: nil)["cars"] else { return XCTFail() }
+        XCTAssertEqual(one.count, 1)
+        setup.cars += [setup.carA, setup.carA]
+        guard case .array(let three) = try setup.jobParams(lapsimFolder: nil)["cars"] else { return XCTFail() }
+        XCTAssertEqual(three.count, 3)
+        XCTAssertNotNil(try setup.jobParams(lapsimFolder: nil)["car"])  // A, for the wing optimiser's lap objective
+    }
+
+    func testNewSetupFilesKeepEveryCar() throws {
+        var setup = LapSimSetup()
+        setup.cars = [.placeholder, .placeholder, .placeholder]
+        setup.cars[2].mass = 310
+        let back = try AeroJSON.decoder().decode(LapSimSetup.self, from: AeroJSON.encoder().encode(setup))
+        XCTAssertEqual(back, setup)
     }
 
     func testRelativeCSVPathResolvesInsideTheProject() {

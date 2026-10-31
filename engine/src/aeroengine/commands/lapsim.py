@@ -1,4 +1,4 @@
-"""lapsim: one or two car configs around one track."""
+"""lapsim: one to five car configs around one track."""
 
 from __future__ import annotations
 
@@ -9,6 +9,10 @@ from ..lapsim import Car, simulate
 from ..lapsim.analysis import sensitivities
 from ..lapsim.track import DEFAULT_DS, resolve
 from . import command
+
+
+MAX_CARS = 5
+LABELS = "ABCDE"
 
 
 def _arr(a: np.ndarray, digits: int = 4) -> list[float]:
@@ -43,19 +47,23 @@ def lapsim(ctx: JobContext) -> dict:
     if laps < 1:
         raise EngineError("laps must be at least 1")
 
-    car_a = Car.from_dict(p.get("car"), "car")
-    car_b = Car.from_dict(p["car_b"], "car_b") if p.get("car_b") is not None else None
+    # "cars" (A to E); older jobs send "car" and an optional "car_b".
+    raw = p.get("cars") or [p.get("car")] + ([p["car_b"]] if p.get("car_b") is not None else [])
+    if not 1 <= len(raw) <= MAX_CARS:
+        raise EngineError(f"between 1 and {MAX_CARS} cars, not {len(raw)}")
+    cars = [Car.from_dict(c, f"car {LABELS[i]}") for i, c in enumerate(raw)]
 
     ctx.emit.progress(2, "building track")
     track = resolve(p.get("track"), ds)
     ctx.emit.log(f"track '{track.name}': {track.length:.1f} m, {'closed' if track.closed else 'open'}, {len(track.x)} nodes")
 
-    a = _config(ctx, car_a, track, start_speed, laps, want_sens, "A", (20, 55) if car_b else (40, 95))
-    b = _config(ctx, car_b, track, start_speed, laps, want_sens, "B", (70, 95)) if car_b else None
-
-    delta = None
-    if b is not None:
-        delta = _arr(np.asarray(b["t"]) - np.asarray(a["t"]))
+    configs = []
+    for i, car in enumerate(cars):
+        lo = 10 + 85 * i / len(cars)
+        configs.append({"label": LABELS[i], **_config(ctx, car, track, start_speed, laps, want_sens, LABELS[i],
+                                                       (lo + 85 / len(cars) / 2, lo + 85 / len(cars)))})
+    # Each car's time gained (negative) or lost along the lap against A.
+    deltas = [None] + [_arr(np.asarray(c["t"]) - np.asarray(configs[0]["t"])) for c in configs[1:]]
 
     return {
         "track": {
@@ -69,7 +77,10 @@ def lapsim(ctx: JobContext) -> dict:
             "kappa": _arr(track.kappa, 6),
         },
         "start_speed": start_speed,
-        "a": a,
-        "b": b,
-        "delta_t": delta,
+        "configs": configs,
+        "deltas": deltas,
+        # The first two as before, for readers of the A/B result.
+        "a": configs[0],
+        "b": configs[1] if len(configs) > 1 else None,
+        "delta_t": deltas[1] if len(configs) > 1 else None,
     }

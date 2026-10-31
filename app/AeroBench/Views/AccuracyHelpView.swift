@@ -13,16 +13,12 @@ struct AccuracyHelpView: View {
     }
 
     private let solvers = [
-        Solver(name: "Inviscid preview", speed: "under 50 ms, live while dragging",
-               goodFor: "How the load splits between elements and which way lift moves when you change an angle or a gap.",
-               trust: "Lift trends only. Absolute lift runs high because there is no boundary layer.",
-               misses: "Drag, stall, anything the slot does to the boundary layers."),
         Solver(name: "Quick viscous (NeuralFoil)", speed: "seconds",
                goodFor: "Choosing a section: its polar, drag and where the flow turns turbulent.",
                trust: "Close to XFOIL-class results for one section on its own at sensible Reynolds numbers. Rows it is unsure of are marked.",
                misses: "The other elements. Each section is run alone."),
-        Solver(name: "Quick estimate", speed: "about a second per sweep; the optimiser runs a few hundred in a minute",
-               goodFor: "Every element together: Cl and Cd against wing angle, element angles in the optimiser, and spotting a flap about to separate.",
+        Solver(name: "Live estimate", speed: "the panel method under 50 ms while dragging, NeuralFoil's lift and drag about 30 ms later; the optimiser runs a few hundred in a minute",
+               goodFor: "Every element together: how the load splits, Cl and Cd against wing angle, element angles in the optimiser, and spotting a flap about to separate.",
                trust: "On the main-and-flap wing, lift within about 2% of RANS and drag about 10% high until the flap nears separation. Flags the flap within 2° of its stall angle.",
                misses: "Gap size barely changes its answer, so gaps and overlaps need RANS. Not checked on slats. Past separation its numbers mean nothing."),
         Solver(name: "RANS CFD (SU2)", speed: "about 1½ min on the Quick mesh, several on Medium",

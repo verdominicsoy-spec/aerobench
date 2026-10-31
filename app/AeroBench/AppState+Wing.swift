@@ -153,13 +153,14 @@ extension AppState {
         }
     }
 
-    /// Meshes the wing and runs SU2 on it.
-    func runWingRANS() {
+    /// Meshes the wing and runs SU2 on it (on the Solvers mesh, or `mesh`).
+    func runWingRANS(mesh: String? = nil) {
         let lab = wingLab
         let wing = lab.wing
         guard !wing.elements.isEmpty else { return }
         var params = ransParams()
         params["elements"] = elementsParam()
+        if let mesh { params["mesh"] = .string(mesh) }
         lab.ransResult = nil
         lab.ransField = nil
         lab.resultsTab = .cfd
@@ -171,10 +172,11 @@ extension AppState {
         }
     }
 
-    /// Flow and solver settings shared by a RANS run and every optimiser trial.
-    private func ransParams() -> [String: JSONValue] {
+    /// Flow and solver settings shared by a RANS run and every optimiser trial
+    /// (the canvas wing's, or another's: A when comparing).
+    private func ransParams(_ other: Wing? = nil) -> [String: JSONValue] {
         let lab = wingLab
-        let wing = lab.wing
+        let wing = other ?? lab.wing
         return [
             "speed": .double(wing.speed), "rho": .double(wing.rho), "mu": .double(wing.mu),
             "alpha": .double(wing.alpha), "ref_chord": .double(wing.refChord),
@@ -187,9 +189,9 @@ extension AppState {
 
     /// The placed and unit coordinates of every element, as the RANS,
     /// sweep and estimate commands read them.
-    private func elementsParam() -> JSONValue {
+    private func elementsParam(_ other: Wing? = nil) -> JSONValue {
         func points(_ p: [SIMD2<Double>]) -> JSONValue { .array(p.map { .array([.double($0.x), .double($0.y)]) }) }
-        return .array(wingLab.wing.elements.map { e in
+        return .array((other ?? wingLab.wing).elements.map { e in
             .object(["coords": points(e.placed()), "unit": points(e.airfoil.coords), "angle": .double(e.angle),
                      "inverted": .bool(e.inverted), "chord": .double(e.chord)])
         })
@@ -247,6 +249,12 @@ extension AppState {
             }
         }
         let file = WingLabModel.studyFile(project: project.url, name: setup.studyName)
+        // The wing it starts from, once: a resumed study keeps its first start.
+        let start = WingLabModel.startFile(project: project.url, name: setup.studyName)
+        if !FileManager.default.fileExists(atPath: start.path), let data = try? AeroJSON.encoder().encode(wing) {
+            try? FileManager.default.createDirectory(at: start.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? data.write(to: start, options: .atomic)
+        }
         params["storage"] = .string(file.path)
         params["name"] = .string(file.deletingPathExtension().lastPathComponent)
         lab.resultsTab = .study
@@ -277,23 +285,11 @@ extension AppState {
         }
     }
 
-    /// Quick estimate in seconds: the panel method and NeuralFoil, over the angle range.
-    func runWingEstimate() {
+    private func estimateParams(_ other: Wing? = nil) -> [String: JSONValue] {
         let lab = wingLab
-        guard !lab.wing.elements.isEmpty else { return }
-        lab.estimate = nil
-        lab.resultsTab = .estimate
-        lab.estimateJob = jobs.submit(command: "wing-estimate", params: estimateParams(), in: jobsRoot) { [weak self] item in
-            guard let self, item.status == .succeeded, let text = item.resultText else { return }
-            self.wingLab.estimate = try? WingEstimate.decode(resultFile: Data(text.utf8))
-        }
-    }
-
-    private func estimateParams() -> [String: JSONValue] {
-        let lab = wingLab
-        let wing = lab.wing
-        var params = ransParams()
-        params["elements"] = elementsParam()
+        let wing = other ?? lab.wing
+        var params = ransParams(wing)
+        params["elements"] = elementsParam(wing)
         var angles = lab.estimateAngles
         if !angles.contains(where: { abs($0 - wing.alpha) < 1e-9 }) { angles = (angles + [wing.alpha]).sorted() }
         params["alphas"] = .array(angles.map { .double($0) })
@@ -332,19 +328,6 @@ extension AppState {
                 }
             } while lab.liveDirty && lab.liveEstimate
             lab.liveBusy = false
-        }
-    }
-
-    func setLiveEstimate(_ on: Bool) {
-        let lab = wingLab
-        lab.liveEstimate = on
-        if on {
-            lab.resultsTab = .estimate
-            scheduleLiveEstimate()
-        } else {
-            lab.warmEngine?.stop()
-            lab.warmEngine = nil
-            lab.liveStatus = nil
         }
     }
 
@@ -522,6 +505,94 @@ extension AppState {
         }
     }
 
+    // MARK: Start against best
+
+    /// The wing a study started from: saved beside it, or for a study from
+    /// before that, rebuilt from its first optimise job's input on the canvas wing.
+    func studyStartWing(_ name: String) -> Wing? {
+        guard let project else { return nil }
+        let file = WingLabModel.startFile(project: project.url, name: name)
+        if let data = try? Data(contentsOf: file), let wing = try? AeroJSON.decoder().decode(Wing.self, from: data) { return wing }
+        struct Job: Decodable {
+            struct Element: Decodable { var unit: [[Double]]; var chord, angle: Double; var leading_edge: [Double]; var inverted: Bool }
+            struct Params: Decodable { var name: String?; var alpha: Double?; var elements: [Element]? }
+            var command: String
+            var params: Params
+        }
+        let folders = (try? FileManager.default.contentsOfDirectory(at: jobsRoot, includingPropertiesForKeys: nil)) ?? []
+        for folder in folders.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {  // ids start with the date: first run first
+            guard let data = try? Data(contentsOf: folder.appendingPathComponent("job.json")),
+                  let job = try? JSONDecoder().decode(Job.self, from: data),
+                  job.command == "wing-optimise", job.params.name == name, let elements = job.params.elements else { continue }
+            var wing = wingLab.wing
+            wing.alpha = job.params.alpha ?? wing.alpha
+            wing.elements = elements.enumerated().map { i, e in
+                let coords = e.unit.compactMap { $0.count == 2 ? SIMD2($0[0], $0[1]) : nil }
+                // The canvas section's name when it is the same shape, else a plain one.
+                let same = wingLab.wing.elements.indices.contains(i) && wingLab.wing.elements[i].airfoil.coords == coords
+                let airfoil = same ? wingLab.wing.elements[i].airfoil : Airfoil(
+                    key: "start/\(name)/\(i)", name: "\(WingIssue.label(i)) at the start", family: "", source: "study",
+                    thickness: (coords.map(\.y).max() ?? 0) - (coords.map(\.y).min() ?? 0), thicknessX: 0.3,
+                    camber: 0, camberX: 0.4, teThickness: 0, coords: coords)
+                return WingElement(airfoil: airfoil, chord: e.chord, angle: e.angle,
+                                   leadingEdge: SIMD2(e.leading_edge[0], e.leading_edge[1]), inverted: e.inverted)
+            }
+            return wing
+        }
+        return nil
+    }
+
+    /// The start as A and the best as B: every A/B view (outlines, Cp, the
+    /// estimate charts, the A card's differences) then shows what changed.
+    func compareStartAndBest() {
+        let lab = wingLab
+        guard let s = lab.study, let start = studyStartWing(s.study) else {
+            show("No starting wing", WingLabError("The study's starting wing was not saved and no optimise job for it was found."))
+            return
+        }
+        let pick = s.bestCheck.flatMap { c in s.trials.first { $0.number == c.number } } ?? s.bestTrial
+        guard let best = pick else { return }
+        lab.edit { $0 = start }
+        lab.markOrigin("\(s.study) · start")
+        lab.pinCurrent()
+        lab.load(trial: best)
+        estimate(for: start) { [weak self] est in
+            guard let self, self.wingLab.pinned?.wing == start else { return }
+            self.wingLab.pinned?.estimate = est
+        }
+    }
+
+    /// One estimate of any wing through the warm engine (A's, when B is on the canvas).
+    private func estimate(for wing: Wing, then done: @escaping (WingEstimate) -> Void) {
+        let lab = wingLab
+        guard let executable = settings.engineExecutable else { return }
+        if lab.warmEngine == nil { lab.warmEngine = WarmEngine(executableURL: executable) }
+        guard let engine = lab.warmEngine else { return }
+        let params = JSONValue.object(estimateParams(wing))
+        Task { @MainActor in
+            if let data = try? await engine.request("wing-estimate", params: params),
+               let est = try? WingEstimate.decode(resultFile: data) { done(est) }
+        }
+    }
+
+    /// RANS on A and on B at once, on the quick mesh (within 0.3% of medium,
+    /// about a minute and a half each), for their fields and the change between them.
+    func runCFDOnBoth() {
+        let lab = wingLab
+        guard let a = lab.pinned else { return }
+        runWingRANS(mesh: "quick")
+        var params = ransParams(a.wing)
+        params["elements"] = elementsParam(a.wing)
+        params["mesh"] = .string("quick")
+        lab.pinnedRansJob = jobs.submit(command: "wing-rans", params: params, in: jobsRoot) { [weak self] item in
+            guard let self, item.status == .succeeded, let text = item.resultText,
+                  self.wingLab.pinned?.wing == a.wing else { return }
+            let r = try? WingRansResult.decode(resultFile: Data(text.utf8))
+            self.wingLab.pinned?.rans = r
+            self.wingLab.pinned?.field = r?.fieldView == nil ? nil : try? WingField.load(from: item.workdir)
+        }
+    }
+
     /// The study's best on the canvas: RANS's pick if it checked any, else the estimate's.
     func loadStudyBest(succeeded: Bool) {
         let lab = wingLab
@@ -552,13 +623,17 @@ extension AppState {
         return .object(out)
     }
 
-    func sendWingToLapSim(cl: Double, cd: Double, replacedCla: Double, replacedCda: Double) {
+    /// Puts this wing on a Lap Sim car in place of the one it replaces: car
+    /// `index`, or a new car copied from A when nil. Returns the car's label.
+    @discardableResult
+    func sendWingToLapSim(cl: Double, cd: Double, replacedCla: Double, replacedCda: Double, into index: Int?) -> String {
         let add = wingLab.wing.carContribution(cl: cl, cd: cd)
-        var b = lapSim.carA
-        b.cla = max(b.cla - replacedCla + add.cla, 0)
-        b.cda = max(b.cda - replacedCda + add.cda, 0)
-        lapSim.carB = b
-        lapSim.compare = true
+        let i = index ?? lapSim.cars.count
+        var car = index.map { lapSim.cars[$0] } ?? lapSim.carA
+        car.cla = max(car.cla - replacedCla + add.cla, 0)
+        car.cda = max(car.cda - replacedCda + add.cda, 0)
+        if i < lapSim.cars.count { lapSim.cars[i] = car } else { lapSim.cars.append(car) }
+        return LapSimSetup.labels[i]
     }
 }
 

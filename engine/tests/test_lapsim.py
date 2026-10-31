@@ -267,6 +267,24 @@ def test_lapsim_command_compares_two_configs(engine, tmp_path: Path):
     assert pcts == sorted(pcts)
 
 
+def test_lapsim_command_runs_up_to_five_cars(engine, tmp_path: Path):
+    cars = [CAR.to_dict(), {**CAR.to_dict(), "cla": 4.5}, {**CAR.to_dict(), "mass": 300}]
+    job = {"command": "lapsim", "params": {"cars": cars, "track": {"builtin": "skidpad"}, "sensitivities": False}}
+    code, events, stderr = engine.run("lapsim", job, tmp_path / "job", timeout=120)
+    assert code == 0, (events, stderr)
+    data = json.loads((tmp_path / "job" / "result.json").read_text())["data"]
+    assert [c["label"] for c in data["configs"]] == ["A", "B", "C"]
+    assert data["deltas"][0] is None
+    for c, d in zip(data["configs"][1:], data["deltas"][1:]):
+        assert d[-1] == pytest.approx(c["lap_time"] - data["configs"][0]["lap_time"], abs=1e-3)
+    assert data["configs"][2]["lap_time"] > data["configs"][0]["lap_time"]  # heavier is slower
+    assert data["b"]["lap_time"] == data["configs"][1]["lap_time"]
+
+    six = {"command": "lapsim", "params": {"cars": [CAR.to_dict()] * 6, "track": {"builtin": "skidpad"}}}
+    code, events, _ = engine.run("lapsim", six, tmp_path / "six")
+    assert code == 1 and "5 cars" in events[-1]["msg"]
+
+
 def test_lapsim_command_reports_bad_input(engine, tmp_path: Path):
     code, events, _ = engine.run("lapsim", {"params": {"car": {"mass": 280}, "track": {"builtin": "skidpad"}}}, tmp_path / "job")
     assert code == 1

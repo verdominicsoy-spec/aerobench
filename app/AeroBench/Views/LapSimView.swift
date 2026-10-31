@@ -56,7 +56,7 @@ struct LapSimSetupView: View {
     var body: some View {
         @Bindable var app = app
         let setup = app.lapSim
-        let usesPlaceholders = CarField.all.contains { $0.isPlaceholder(setup.carA) || (setup.compare && $0.isPlaceholder(setup.carB)) }
+        let usesPlaceholders = CarField.all.contains { field in setup.cars.contains { field.isPlaceholder($0) } }
 
         Form {
             if usesPlaceholders {
@@ -123,16 +123,22 @@ struct LapSimSetupView: View {
             }
 
             Section {
-                Toggle("Compare with config B", isOn: $app.lapSim.compare)
-                CarGrid(compare: setup.compare)
+                Stepper("Cars: \(setup.cars.count)", value: Binding(get: { setup.cars.count }, set: { n in
+                    // A new car starts as a copy of A; fewer drops the last.
+                    while app.lapSim.cars.count < n { app.lapSim.cars.append(app.lapSim.carA) }
+                    app.lapSim.cars = Array(app.lapSim.cars.prefix(n))
+                }), in: 1...LapSimSetup.maxCars)
+                .help("A, and up to four more to compare with it. Wing Lab can put a wing in any of them.")
+                CarGrid()
                 HStack {
-                    if setup.compare {
-                        Button("Copy A to B") { app.lapSim.carB = app.lapSim.carA }
+                    if setup.cars.count > 1 {
+                        Button("Copy A to the Others") {
+                            app.lapSim.cars = Array(repeating: app.lapSim.carA, count: app.lapSim.cars.count)
+                        }
                     }
                     Spacer()
                     Button("Reset to placeholders") {
-                        app.lapSim.carA = .placeholder
-                        app.lapSim.carB = .placeholder
+                        app.lapSim.cars = Array(repeating: .placeholder, count: app.lapSim.cars.count)
                     }
                 }
             } header: {
@@ -204,49 +210,53 @@ struct NumberRow: View {
 }
 
 struct PlaceholderTag: View {
+    /// A dot instead of "est." where columns are narrow (three or more cars).
+    var compact = false
+
     var body: some View {
-        Text("est.")
-            .font(.caption2)
+        Text(compact ? "●" : "est.")
+            .font(compact ? .system(size: 6) : .caption2)
             .foregroundStyle(.orange)
+            .fixedSize()
             .help("Placeholder estimate, not team data")
     }
 }
 
-/// Car parameters, A and optionally B side by side.
+/// Car parameters, one column per car (A to E).
 struct CarGrid: View {
     @Environment(AppState.self) private var app
-    let compare: Bool
 
     var body: some View {
+        let cars = app.lapSim.cars.indices
+        // Narrower boxes as cars are added, so five still fit beside the labels.
+        let width: CGFloat = cars.count > 3 ? 56 : cars.count > 2 ? 66 : 80
         Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
             GridRow {
                 Text("")
-                Text("A").bold().gridColumnAlignment(.trailing)
-                if compare { Text("B").bold().gridColumnAlignment(.trailing) }
+                ForEach(cars, id: \.self) { Text(LapSimSetup.labels[$0]).bold().gridColumnAlignment(.trailing) }
                 Text("")
             }
             ForEach(CarField.all) { field in
                 GridRow {
                     Text(field.label)
-                    cell(field, \.carA)
-                    if compare { cell(field, \.carB) }
+                    ForEach(cars, id: \.self) { cell(field, $0, width: width) }
                     Text(field.unit).foregroundStyle(.secondary)
                 }
             }
         }
     }
 
-    private func cell(_ field: CarField, _ car: WritableKeyPath<LapSimSetup, CarParameters>) -> some View {
+    private func cell(_ field: CarField, _ car: Int, width: CGFloat) -> some View {
         let binding = Binding<Double>(
-            get: { app.lapSim[keyPath: car][keyPath: field.keyPath] * field.scale },
-            set: { app.lapSim[keyPath: car][keyPath: field.keyPath] = $0 / field.scale }
+            get: { app.lapSim.cars[car][keyPath: field.keyPath] * field.scale },
+            set: { app.lapSim.cars[car][keyPath: field.keyPath] = $0 / field.scale }
         )
         return HStack(spacing: 4) {
-            if field.isPlaceholder(app.lapSim[keyPath: car]) { PlaceholderTag() }
+            if field.isPlaceholder(app.lapSim.cars[car]) { PlaceholderTag(compact: app.lapSim.cars.count > 2) }
             TextField(field.label, value: binding, format: .number)
                 .labelsHidden()
                 .multilineTextAlignment(.trailing)
-                .frame(width: 80)
+                .frame(width: width)
         }
     }
 }
@@ -255,7 +265,8 @@ struct CarGrid: View {
 
 struct LapSimResultsView: View {
     @Environment(AppState.self) private var app
-    @State private var mapConfig = "A"
+    @State private var mapConfig = 0
+    @State private var gainConfig = 1
 
     var body: some View {
         if let output = app.lapSimOutput {
@@ -276,32 +287,30 @@ struct LapSimResultsView: View {
                         .frame(height: 240)
                     }
                     if !output.delta.isEmpty {
-                        chartBox("Time delta, B minus A") {
+                        chartBox("Time against A") {
                             Chart {
                                 RuleMark(y: .value("Zero", 0)).foregroundStyle(.secondary)
                                 ForEach(output.delta) { p in
                                     LineMark(x: .value("Distance", p.s), y: .value("Δt", p.dt))
+                                        .foregroundStyle(by: .value("Config", p.config))
                                 }
                             }
                             .chartXAxisLabel("Distance (m)")
-                            .chartYAxisLabel("B − A (s), negative means B is ahead")
+                            .chartYAxisLabel("Car − A (s), negative means ahead of A")
                             .frame(height: 200)
                         }
                     }
                     chartBox("Track map, coloured by speed") {
-                        if output.result.b != nil {
-                            Picker("Config", selection: $mapConfig) {
-                                Text("A").tag("A")
-                                Text("B").tag("B")
-                            }
-                            .pickerStyle(.segmented)
-                            .frame(width: 120)
+                        if output.labels.count > 1 {
+                            carPicker($mapConfig, output.labels.indices)
                         }
-                        TrackMap(output: output, points: mapConfig == "B" && output.result.b != nil ? output.mapB : output.mapA)
+                        TrackMap(output: output, points: output.maps[min(mapConfig, output.maps.count - 1)])
                     }
-                    if !output.gain.isEmpty {
-                        chartBox("Where B gains and loses on A") {
-                            GainMap(output: output)
+                    if output.labels.count > 1 {
+                        let car = min(max(gainConfig, 1), output.labels.count - 1)
+                        chartBox("Where \(output.labels[car]) gains and loses on A") {
+                            if output.labels.count > 2 { carPicker($gainConfig, 1..<output.labels.count) }
+                            if let gain = output.gains[car] { GainMap(gain: gain, output: output, label: output.labels[car]) }
                         }
                     }
                 }
@@ -318,6 +327,15 @@ struct LapSimResultsView: View {
                     .disabled(app.lapSimJob.map { !$0.status.isFinished } ?? false)
             }
         }
+    }
+
+    private func carPicker(_ selection: Binding<Int>, _ cars: Range<Int>) -> some View {
+        Picker("Car", selection: selection) {
+            ForEach(cars, id: \.self) { Text(LapSimSetup.labels[$0]).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
     }
 
     private func header(_ output: LapSimOutput) -> some View {
@@ -394,12 +412,17 @@ struct SummaryGrid: View {
             }
             Divider()
             row("Lap time", configs) { seconds($0.lapTime) }
-            if let b = result.b {
+            if configs.count > 1 {
                 GridRow {
-                    Text("Δ B − A").gridColumnAlignment(.leading)
-                    Text("")
-                    Text(signed(b.lapTime - result.a.lapTime) + " s")
-                        .foregroundStyle(b.lapTime <= result.a.lapTime ? .green : .red)
+                    Text("Δ against A").gridColumnAlignment(.leading)
+                    ForEach(configs) { named in
+                        if named.id == "A" {
+                            Text("")
+                        } else {
+                            Text(signed(named.config.lapTime - result.a.lapTime) + " s")
+                                .foregroundStyle(named.config.lapTime <= result.a.lapTime ? .green : .red)
+                        }
+                    }
                 }
             }
             row("Average speed", configs) { kmh($0.vAvg) }
@@ -484,19 +507,19 @@ struct NamedConfig: Identifiable {
     let config: LapSimResult.Config
 
     static func list(_ result: LapSimResult) -> [NamedConfig] {
-        var out = [NamedConfig(id: "A", config: result.a)]
-        if let b = result.b { out.append(NamedConfig(id: "B", config: b)) }
-        return out
+        zip(LapSimSetup.labels, result.configs).map { NamedConfig(id: $0, config: $1) }
     }
 }
 
-/// The track coloured by how fast B gains (green) or loses (red) time on A.
+/// The track coloured by how fast one car gains (green) or loses (red) time on A.
 struct GainMap: View {
+    let gain: LapSimOutput.Gain
     let output: LapSimOutput
+    let label: String
 
     var body: some View {
         VStack(alignment: .leading) {
-            Chart(output.gain) { p in
+            Chart(gain.points) { p in
                 PointMark(x: .value("x", p.x), y: .value("y", p.y))
                     .symbolSize(12)
                     .foregroundStyle(color(p.rate))
@@ -508,20 +531,20 @@ struct GainMap: View {
             .aspectRatio(1, contentMode: .fit)
             .frame(maxHeight: 420)
             HStack(spacing: 6) {
-                Text(String(format: "B gains %.3f s/100 m", output.gainLimit))
-                LinearGradient(colors: [color(-output.gainLimit), color(0), color(output.gainLimit)], startPoint: .leading, endPoint: .trailing)
+                Text(String(format: "%@ gains %.3f s/100 m", label, gain.limit))
+                LinearGradient(colors: [color(-gain.limit), color(0), color(gain.limit)], startPoint: .leading, endPoint: .trailing)
                     .frame(width: 160, height: 8)
                     .clipShape(Capsule())
-                Text(String(format: "B loses %.3f s/100 m", output.gainLimit))
+                Text(String(format: "%@ loses %.3f s/100 m", label, gain.limit))
             }
             .font(.caption)
             .foregroundStyle(.secondary)
         }
     }
 
-    /// Green where B gains, grey where they match, red where B loses.
+    /// Green where the car gains, grey where it matches A, red where it loses.
     private func color(_ rate: Double) -> Color {
-        let f = min(max(rate / output.gainLimit, -1), 1)
+        let f = min(max(rate / gain.limit, -1), 1)
         let grey = 0.6
         return f < 0
             ? Color(red: grey * (1 + f), green: grey + (0.75 - grey) * -f, blue: grey * (1 + f))

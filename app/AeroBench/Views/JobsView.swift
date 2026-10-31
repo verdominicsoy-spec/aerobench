@@ -198,7 +198,7 @@ extension JobItem {
         case "airfoil-delete": "Delete airfoils"
         case "airfoil-polars": "Library polars"
         case "wing-polar": "Element polar"
-        case "wing-estimate": "Quick estimate"
+        case "wing-estimate": "Estimate"
         case "wing-rans": "RANS CFD"
         case "wing-sweep": "RANS angle sweep"
         case "wing-optimise": "Optimise"

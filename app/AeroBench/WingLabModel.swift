@@ -35,9 +35,8 @@ final class WingLabModel {
 
     // Solvers
     enum Solver: String, CaseIterable, Identifiable {
-        case preview = "Inviscid preview"
+        case live = "Live estimate"
         case quickViscous = "Quick viscous"
-        case quickEstimate = "Quick estimate"
         case rans = "RANS CFD"
 
         var id: String { rawValue }
@@ -45,23 +44,21 @@ final class WingLabModel {
         /// Where this solver's results show.
         var resultsTab: ResultsTab {
             switch self {
-            case .preview: .pressure
+            case .live: .estimate
             case .quickViscous: .polar
-            case .quickEstimate: .estimate
             case .rans: .cfd
             }
         }
 
         var purpose: String {
             switch self {
-            case .preview: "Live while you drag, every element together. No viscosity: lift trends and how the load splits, no drag."
             case .quickViscous: "NeuralFoil (trained on XFOIL): one element in isolation, a whole polar in seconds, with drag and where the boundary layer turns turbulent. Picks sections; knows nothing of slot effects."
-            case .quickEstimate: "Every element together in seconds, over a range of wing angles: the panel method for how the elements load each other, NeuralFoil for each element's viscous lift and drag. Lift within about 2% of RANS on a main-and-flap wing until the flap nears separation; drag about 10% high. Not for slats."
+            case .live: "Every element together, live as you edit: the panel method at once (how the elements load each other, Cp, Cm), then NeuralFoil's viscous lift and drag for each element a moment later, over a range of wing angles. Lift within about 2% of RANS on a main-and-flap wing until the flap nears separation; drag about 10% high. Not for slats."
             case .rans: "SU2 on a mesh around every element: slot flow, separation, the real gap effects. Minutes per run."
             }
         }
     }
-    var solver: Solver = .preview {
+    var solver: Solver = .live {
         didSet { if solver != oldValue { resultsTab = solver.resultsTab } }
     }
     enum ResultsTab: String, CaseIterable, Identifiable {
@@ -117,16 +114,13 @@ final class WingLabModel {
     var ransFolder: URL?
     var su2Job: JobItem?
 
-    // Quick estimate: panel method and NeuralFoil, seconds
+    // Live estimate: panel method and NeuralFoil, through the warm engine
     var estimateFrom = -4.0
     var estimateTo = 10.0
     var estimateStep = 1.0
     var estimate: WingEstimate?
-    var estimateJob: JobItem?
-    /// Re-run the estimate through the warm engine on every change to the wing.
-    var liveEstimate = UserDefaults.standard.bool(forKey: "wingLiveEstimate") {
-        didSet { UserDefaults.standard.set(liveEstimate, forKey: "wingLiveEstimate") }
-    }
+    /// Re-run the estimate through the warm engine on every change to the wing: always on.
+    let liveEstimate = true
     var liveStatus: String?  // loading, or why the last live estimate failed
     @ObservationIgnored var warmEngine: WarmEngine?
     @ObservationIgnored var liveBusy = false
@@ -160,7 +154,7 @@ final class WingLabModel {
 
     // The flow field of the last RANS run, drawn on the canvas
     var ransField: WingField? {
-        didSet { fieldImages = [:] }
+        didSet { fieldImages = [:]; changeImages = [:] }
     }
     var fieldScalar = "cp"
     var showStreamlines = true
@@ -179,15 +173,17 @@ final class WingLabModel {
         if let image = fieldImages[key] { return image }
         guard let f = ransField else { return nil }
         let px = f.pixels(key)
-        guard px.count == f.nx * f.ny * 4,
-              let provider = CGDataProvider(data: Data(px) as CFData),
-              let image = CGImage(width: f.nx, height: f.ny, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: f.nx * 4,
-                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-                                  provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
-        else { return nil }
+        guard px.count == f.nx * f.ny * 4, let image = Self.image(px, f.nx, f.ny) else { return nil }
         fieldImages[key] = image
         return image
+    }
+
+    private static func image(_ px: [UInt8], _ w: Int, _ h: Int) -> CGImage? {
+        guard let provider = CGDataProvider(data: Data(px) as CFData) else { return nil }
+        return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
+                       space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
     }
 
     // Optimisation
@@ -646,11 +642,38 @@ final class WingLabModel {
         var estimate: WingEstimate?
         var rans: WingRansResult?
         var version = "Your design"
+        var field: WingField?
     }
 
-    var pinned: Pinned?
+    var pinnedRansJob: JobItem?
+    var pinned: Pinned? {
+        didSet { changeImages = [:] }
+    }
 
-    private var current: Pinned { Pinned(wing: wing, preview: preview, estimate: estimate, rans: ransResult, version: shownVersion) }
+    // How the flow changed from A: B's field minus A's, scalar by scalar.
+    var showChange = false
+    @ObservationIgnored private var changeImages: [String: (image: CGImage, limit: Double)] = [:]
+
+    /// Both have a field from runs in the same frame (same wing angle), so they can be subtracted.
+    var canShowChange: Bool {
+        guard let a = pinned, a.field != nil, let ar = a.rans, let br = ransResult, fieldIsCurrent else { return false }
+        return abs((ar.frameTurn ?? 0) - (br.frameTurn ?? 0)) < 1e-9
+    }
+
+    /// B − A of one scalar as an image, with the ± limit its colours span.
+    func changeImage(_ key: String) -> (image: CGImage, limit: Double)? {
+        if let c = changeImages[key] { return c }
+        guard canShowChange, let b = ransField, let a = pinned?.field else { return nil }
+        let (px, limit) = b.difference(key, from: a)
+        guard px.count == b.nx * b.ny * 4, let image = Self.image(px, b.nx, b.ny) else { return nil }
+        changeImages[key] = (image, limit)
+        return (image, limit)
+    }
+
+    private var current: Pinned {
+        Pinned(wing: wing, preview: preview, estimate: estimate, rans: ransResult, version: shownVersion,
+               field: fieldIsCurrent ? ransField : nil)
+    }
 
     func pinCurrent() { pinned = current }
 
@@ -807,6 +830,11 @@ final class WingLabModel {
         let safe = name.trimmingCharacters(in: .whitespaces).map { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" ? $0 : "_" }
         return ProjectStore.toolURL(for: project, tool: "wing").appendingPathComponent("studies")
             .appendingPathComponent(String(safe)).appendingPathExtension("db")
+    }
+
+    /// The wing a study started from, kept beside it when it starts.
+    static func startFile(project: URL, name: String) -> URL {
+        studyFile(project: project, name: name).deletingPathExtension().appendingPathExtension("start.json")
     }
 
     /// Reads the study's export, if there is one.

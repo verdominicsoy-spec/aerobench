@@ -357,9 +357,13 @@ struct WingCanvas: View {
             }
             .help("Which version of the wing is on the canvas: a study trial, the from-scratch starter, or your own. \"Edited\" means changed since; Undo goes back.")
             HStack(spacing: 6) {
-                Text("INVISCID PREVIEW").font(.caption2.bold()).foregroundStyle(.secondary)
-                if let r = lab.preview {
-                    Text(String(format: "Cl %.3f   Cm %.3f   α %.1f°", r.clTotal, r.cmTotal, lab.wing.alpha))
+                Text("LIVE ESTIMATE").font(.caption2.bold()).foregroundStyle(.secondary)
+                // NeuralFoil's viscous numbers once they are in; the panel method's lift until then.
+                if let e = lab.estimate?.row(nearest: lab.wing.alpha), lab.liveStatus == nil {
+                    Text(String(format: "Cl %.3f   Cd %.4f   L/D %.1f   α %.1f°", e.cl, e.cd, abs(e.cl) / max(e.cd, 1e-9), lab.wing.alpha))
+                        .font(.caption.monospacedDigit())
+                } else if let r = lab.preview {
+                    Text(String(format: "Cl %.3f (inviscid)   Cm %.3f   α %.1f°", r.clTotal, r.cmTotal, lab.wing.alpha))
                         .font(.caption.monospacedDigit())
                 }
                 fieldControls(lab)
@@ -416,7 +420,13 @@ struct WingCanvas: View {
                 }
             }
             Spacer()
-            if let scalar = shownScalar(lab) { FieldColorbar(scalar: scalar) }
+            if let scalar = shownScalar(lab) {
+                if lab.showChange, let change = lab.changeImage(scalar.key) {
+                    ChangeColorbar(name: scalar.name, limit: change.limit)
+                } else {
+                    FieldColorbar(scalar: scalar)
+                }
+            }
             Text("Drag an airfoil here to add an element, or onto one to swap its section. Drag an element to move it, the round handle to turn it, the square one to change its chord.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
@@ -445,6 +455,11 @@ struct WingCanvas: View {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))  // readable over the field image
             .disabled(!lab.fieldIsCurrent)
             .help("The last RANS run's flow over the plane, behind the wing")
+            if lab.canShowChange {
+                Toggle("Change from A", isOn: Binding(get: { lab.showChange }, set: { lab.showChange = $0 }))
+                    .toggleStyle(.checkbox).font(.caption)
+                    .help("B's field minus A's: blue where it fell, red where it rose, white where it held")
+            }
             if let scalar = shownScalar(lab) {
                 Toggle("Streamlines", isOn: Binding(get: { lab.showStreamlines }, set: { lab.showStreamlines = $0 }))
                     .toggleStyle(.checkbox).font(.caption)
@@ -537,7 +552,8 @@ struct WingCanvas: View {
         guard let scalar = shownScalar(lab) else { return }
         let t = -(r.frameTurn ?? 0) * .pi / 180, c = cos(t), sn = sin(t), s = m.scale
         let w = f.window.x1 - f.window.x0, h = f.window.y1 - f.window.y0
-        if let image = lab.fieldImage(scalar.key) {
+        let change = lab.showChange ? lab.changeImage(scalar.key)?.image : nil
+        if let image = change ?? lab.fieldImage(scalar.key) {
             var g = ctx
             if !r.converged { g.opacity = 0.5 }
             // Image space (metres from the window's top left, y down) to the view:
@@ -741,6 +757,28 @@ struct PolarPlots: View {
 struct CFDResults: View {
     @Environment(AppState.self) private var app
 
+    /// A is pinned but A and B do not both have a field yet: run them together.
+    @ViewBuilder private func compareBar(_ lab: WingLabModel) -> some View {
+        let running = [lab.pinnedRansJob, lab.ransJob].contains { $0.map { !$0.status.isFinished } ?? false }
+        HStack(spacing: 8) {
+            Text("A and B side by side: their flow fields and the change between them (Field, Change from A).")
+                .font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            if running {
+                ProgressView().controlSize(.small)
+                Text("running both…").font(.caption).foregroundStyle(.secondary)
+            } else {
+                Button("Run CFD on A and B") { app.runCFDOnBoth() }
+                    .disabled(app.settings.su2Executable == nil)
+                    .help("Both at once on the quick mesh (within 0.3% of medium): about a minute and a half")
+            }
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(Color.secondary.opacity(0.08))
+    }
+
     struct Point: Identifiable {
         let id: Int
         let element: String
@@ -751,6 +789,7 @@ struct CFDResults: View {
     var body: some View {
         let lab = app.wingLab
         VStack(spacing: 0) {
+            if let a = lab.pinned, a.field == nil || !lab.fieldIsCurrent { compareBar(lab) }
             if let sweep = lab.sweep { SweepStrip(sweep: sweep) }
             run(lab)
         }
@@ -1057,12 +1096,11 @@ struct WingInspector: View {
             }
             Text(lab.solver.purpose).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             switch lab.solver {
-            case .preview:
+            case .live:
                 previewControls(lab)
+                quickEstimateControls(lab)
             case .quickViscous:
                 quickViscousControls(lab)
-            case .quickEstimate:
-                quickEstimateControls(lab)
             case .rans:
                 ransControls(lab)
             }
@@ -1246,7 +1284,7 @@ struct WingInspector: View {
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         Picker("Each trial", selection: Binding(get: { lab.optimise.solver }, set: { lab.optimise.solver = $0 })) {
-            Text("Quick estimate (seconds)").tag("estimate")
+            Text("Estimate (tenths of a second)").tag("estimate")
             Text("RANS CFD (minutes)").tag("rans")
         }
         .disabled(running)
@@ -1295,7 +1333,7 @@ struct WingInspector: View {
                 .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         Text(lab.optimise.solver == "estimate"
-             ? "Each trial is a quick estimate, a few tenths of a second. A flap turned more than 25° past the element in front, or a main far past its stall angle, counts as separating and the search steers away." + (lab.optimise.checkBest > 0 ? " RANS checks run on the model and mesh under Solvers, 2 to 5 minutes each on 4 cores." : "")
+             ? "Each trial is an estimate, as the live one, a few tenths of a second. A flap turned more than 25° past the element in front, or a main far past its stall angle, counts as separating and the search steers away." + (lab.optimise.checkBest > 0 ? " RANS checks run on the model and mesh under Solvers, 2 to 5 minutes each on 4 cores." : "")
              : "\(app.settings.parallelTrials) trials at a time on \(app.settings.coresPerJob) cores each (Settings), each one RANS run with the model and mesh under Solvers.")
             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         if let problem = lab.optimiseProblem {
@@ -1331,22 +1369,10 @@ struct WingInspector: View {
         NumberField(label: "Step", unit: "°", value: Binding(get: { lab.estimateStep }, set: { lab.estimateStep = max($0, 0.25); app.scheduleLiveEstimate() }))
         Text("Wing angles \(lab.estimateAngles.first.map { String(format: "%g", $0) } ?? "")° to \(lab.estimateAngles.last.map { String(format: "%g", $0) } ?? "")°, \(lab.estimateAngles.count) of them, and the wing's own.")
             .font(.caption).foregroundStyle(.secondary)
-        Toggle("Live while editing", isOn: Binding(get: { lab.liveEstimate }, set: { app.setLiveEstimate($0) }))
-            .help("Keeps the engine loaded and re-runs the estimate on every change, about 30 ms each")
-        if lab.liveEstimate {
-            if let status = lab.liveStatus {
-                Text(status).font(.caption).foregroundStyle(.secondary)
-            } else if !lab.wing.issues.allSatisfy({ $0.kind == .outsideRules }) {
-                Text("Paused: elements overlap or are too close").font(.caption).foregroundStyle(.secondary)
-            }
-        } else {
-            Button("Run the Estimate") { app.runWingEstimate() }
-                .buttonStyle(S37ButtonStyle(kind: .prominent))
-                .disabled(lab.wing.elements.isEmpty || (lab.estimateJob.map { !$0.status.isFinished } ?? false)
-                          || !lab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty)
-        }
-        if let job = lab.estimateJob, !job.status.isFinished || job.status == .failed {
-            JobInlineStatus(job: job)
+        if let status = lab.liveStatus {
+            Text(status).font(.caption).foregroundStyle(.secondary)
+        } else if !lab.wing.issues.allSatisfy({ $0.kind == .outsideRules }) {
+            Text("Viscous part paused: elements overlap or are too close").font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -1388,15 +1414,22 @@ struct WingInspector: View {
     /// The preview runs on every change, so its controls are its numbers.
     @ViewBuilder private func previewControls(_ lab: WingLabModel) -> some View {
         if let r = lab.preview {
+            Text("Panel method (inviscid): how the load splits").font(.caption).bold()
             ForEach(Array(r.cl.enumerated()), id: \.offset) { i, cl in
                 LabeledContent(WingIssue.label(i), value: String(format: "Cl %.3f", cl))
             }
-            LabeledContent("Total", value: String(format: "Cl %.3f   Cm %.3f", r.clTotal, r.cmTotal))
+            LabeledContent("Total, inviscid", value: String(format: "Cl %.3f   Cm %.3f", r.clTotal, r.cmTotal))
             Text(String(format: "On the total chord, %.0f mm. Solved in %.0f ms.", lab.wing.refChord * 1000, lab.previewMilliseconds))
                 .font(.caption).foregroundStyle(.secondary)
         } else {
             Text(lab.previewError ?? "Add an element.").foregroundStyle(.secondary)
         }
+    }
+
+    private func send(_ cl: Double, _ cd: Double, into car: Int?) {
+        let lab = app.wingLab
+        let label = app.sendWingToLapSim(cl: cl, cd: cd, replacedCla: lab.replacedCla, replacedCda: lab.replacedCda, into: car)
+        sentNote = "Lap Sim car \(label) now has this wing (\(lab.shownVersion)). Run the Lap Sim to compare it with A."
     }
 
     @ViewBuilder private func lapSimSection(_ lab: WingLabModel) -> some View {
@@ -1406,7 +1439,7 @@ struct WingInspector: View {
         let rans = lab.ransResult.flatMap { $0.converged ? $0 : nil }
         let estimate = lab.estimate?.row(nearest: wing.alpha)
         let from = rans.map { (cl: $0.cl, cd: $0.cd, name: "CFD") }
-            ?? estimate.map { (cl: $0.cl, cd: $0.cd, name: "quick estimate") }
+            ?? estimate.map { (cl: $0.cl, cd: $0.cd, name: "live estimate") }
         let cl = from?.cl ?? lab.preview?.clTotal ?? 0
         let cd = from?.cd ?? lab.cdEstimate
         let add = wing.carContribution(cl: cl, cd: cd)
@@ -1430,10 +1463,17 @@ struct WingInspector: View {
             LabeledContent("Adds", value: String(format: "ClA %.3f m²   CdA %.3f m²", add.cla, add.cda))
             NumberField(label: "Replaces: old wing's ClA", unit: "m²", value: Binding(get: { lab.replacedCla }, set: { lab.replacedCla = $0 }))
             NumberField(label: "Replaces: old wing's CdA", unit: "m²", value: Binding(get: { lab.replacedCda }, set: { lab.replacedCda = $0 }))
-            Button("Compare in the Lap Sim") {
-                app.sendWingToLapSim(cl: cl, cd: cd, replacedCla: lab.replacedCla, replacedCda: lab.replacedCda)
-                sentNote = "Lap Sim car B is now car A with this wing. Run the Lap Sim to see the lap time difference."
+            Menu("Put in a Lap Sim Car") {
+                let cars = app.lapSim.cars.indices
+                ForEach(cars, id: \.self) { i in
+                    Button("Car \(LapSimSetup.labels[i]): swap its wing for this one") { send(cl, cd, into: i) }
+                }
+                if cars.count < LapSimSetup.maxCars {
+                    Divider()
+                    Button("New car \(LapSimSetup.labels[cars.count]): car A with this wing") { send(cl, cd, into: nil) }
+                }
             }
+            .fixedSize()
             .disabled(from == nil && lab.preview == nil)
             if let note = sentNote { Text(note).font(.caption).foregroundStyle(.secondary) }
         } header: {
@@ -1507,13 +1547,15 @@ struct StudyResults: View {
         if let checks = s.checks, !checks.isEmpty { checkTable(s, checks, lab) }
         HStack(alignment: .firstTextBaseline) {
             Text("\(s.study): \(s.objectiveName)").bold()
-            Text(s.solver == "estimate" ? "quick estimates" : "RANS").font(.caption).foregroundStyle(.secondary)
+            Text(s.solver == "estimate" ? "estimates" : "RANS").font(.caption).foregroundStyle(.secondary)
             Text("\(s.complete + s.failed) of \(s.target) run · \(s.failed) failed · \((s.invalid ?? 0)) invalid wings skipped")
                 .font(.caption).foregroundStyle(.secondary)
             Spacer()
             if let b = s.bestTrial, let v = b.value {
                 Text(String(format: "best: trial %ld, %.4g", b.number, v)).font(.caption.monospacedDigit())
                 Button("Load Best") { lab.load(trial: b) }.font(.caption)
+                Button("Compare Start and Best") { app.compareStartAndBest() }.font(.caption)
+                    .help("The starting wing as A (dashed) and the best as B, so every chart and the A card show what the study changed. The CFD tab can then run both for their flow fields.")
             }
         }
         timeLapse(lab)
@@ -1727,6 +1769,27 @@ struct StudyResults: View {
 
 /// A field scalar's colours and the values at each end (the middle 98% of
 /// the window's values).
+/// The change from A: blue where the scalar fell, red where it rose.
+struct ChangeColorbar: View {
+    let name: String
+    let limit: Double
+
+    var body: some View {
+        let colors = stride(from: -1.0, through: 1.0, by: 0.25).map { f -> Color in
+            let c = WingField.diverging(f)
+            return Color(red: Double(c.0) / 255, green: Double(c.1) / 255, blue: Double(c.2) / 255)
+        }
+        HStack(spacing: 6) {
+            Text("Change in \(name), B − A").font(.caption2)
+            Text(String(format: "%+.2f", -limit)).font(.caption2.monospacedDigit())
+            LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
+                .frame(width: 160, height: 8).clipShape(RoundedRectangle(cornerRadius: 2))
+            Text(String(format: "%+.2f", limit)).font(.caption2.monospacedDigit())
+        }
+        .help("B's field minus A's at the same points. The colours span the 95th percentile of the change, so a moved edge does not wash out the rest.")
+    }
+}
+
 struct FieldColorbar: View {
     let scalar: WingField.Scalar
 
@@ -1840,15 +1903,8 @@ struct EstimateResults: View {
                 chart("Cd", est.rows.map { ($0.alpha, $0.cd, $0.trusted) }, mark: here.alpha, pinned: a?.map { ($0.alpha, $0.cd) })
             }
             .padding(8)
-        } else if let job = lab.estimateJob, !job.status.isFinished {
-            VStack {
-                ProgressView(value: job.progress, total: 100)
-                Text(job.progressMessage).font(.caption)
-            }
-            .padding()
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            Text("Pick Quick estimate in Solvers and run it: a few seconds.").foregroundStyle(.secondary)
+            Text(app.wingLab.liveStatus ?? "The live estimate runs as you edit: add an element, or move apart ones that overlap.").foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -1889,12 +1945,11 @@ struct ResultsSummary: View {
             ?? estimate.map { ($0.cl, $0.cd, "estimate") }
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                card("Inviscid preview", tab: .pressure,
-                     lines: lab.preview.map { [String(format: "Cl %.3f", $0.clTotal), "no drag"] } ?? ["—"], lab: lab)
-                card("Quick estimate", tab: .estimate,
+                card("Live estimate", tab: .estimate,
                      lines: estimate.map { [String(format: "Cl %.3f  Cd %.4f", $0.cl, $0.cd),
                                             String(format: "L/D %.1f", abs($0.cl) / max($0.cd, 1e-9)) + ($0.separating == true ? "  separating" : "")] }
-                        ?? ["not run"], warn: estimate.map { !$0.trusted || $0.separating == true } ?? false, lab: lab)
+                        ?? lab.preview.map { [String(format: "Cl %.3f inviscid", $0.clTotal), lab.liveStatus ?? "no drag yet"] } ?? ["—"],
+                     warn: estimate.map { !$0.trusted || $0.separating == true } ?? false, lab: lab)
                 card("RANS CFD", tab: .cfd,
                      lines: rans.map { [String(format: "Cl %.3f  Cd %.4f", $0.cl, $0.cd),
                                         ($0.converged ? String(format: "L/D %.1f", abs($0.cl) / max($0.cd, 1e-9)) : "not converged") + ", \($0.meshLevel)"] }

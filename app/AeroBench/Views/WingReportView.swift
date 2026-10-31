@@ -34,7 +34,7 @@ struct WingReportView: View {
                 fieldView(field, fieldImage, fieldScalar)
             }
             Spacer(minLength: 0)
-            Text("AeroBench, 2D section. A quick check before a full CFD run, not a replacement for it: the quick estimate is within about 2% of RANS on lift and 10% high on drag for a main-and-flap wing; RANS matched wind-tunnel lift within 2% on NACA 0012.")
+            Text("AeroBench, 2D section. A quick check before a full CFD run, not a replacement for it: the live estimate is within about 2% of RANS on lift and 10% high on drag for a main-and-flap wing; RANS matched wind-tunnel lift within 2% on NACA 0012.")
                 .font(.system(size: 7)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -132,7 +132,7 @@ struct WingReportView: View {
             .bold()
             if let p = preview {
                 GridRow {
-                    Text("Inviscid preview")
+                    Text("Live estimate, inviscid part")
                     Text(String(format: "%.3f", p.clTotal))
                     Text("–")
                     Text("–")
@@ -143,7 +143,7 @@ struct WingReportView: View {
             }
             if let e = est {
                 GridRow {
-                    Text("Quick estimate")
+                    Text("Live estimate")
                     Text(String(format: "%.3f", e.cl))
                     Text(String(format: "%.4f", e.cd))
                     Text(String(format: "%.1f", abs(e.cl) / max(e.cd, 1e-9)))
@@ -217,7 +217,7 @@ struct WingReportView: View {
     private var polarChart: some View {
         let rows = estimate?.rows ?? []
         return VStack(alignment: .leading, spacing: 2) {
-            Text(rows.isEmpty ? "Lift against wing angle: run the quick estimate" : "Quick estimate: Cl against wing angle")
+            Text(rows.isEmpty ? "Lift against wing angle: no live estimate yet" : "Live estimate: Cl against wing angle")
                 .font(.system(size: 8)).foregroundStyle(.secondary)
             Chart {
                 ForEach(rows) { r in

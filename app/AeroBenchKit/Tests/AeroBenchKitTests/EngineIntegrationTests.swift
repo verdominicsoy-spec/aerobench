@@ -76,8 +76,10 @@ final class EngineIntegrationTests: XCTestCase {
 
     func testLapSimResultDecodes() async throws {
         var setup = LapSimSetup()
-        setup.compare = true
-        setup.carB.cla += 1
+        setup.cars.append(setup.carA)
+        setup.cars[1].cla += 1
+        setup.cars.append(setup.carA)
+        setup.cars[2].mass += 20
         let job = try makeJob(JobSpec(command: "lapsim", params: try setup.jobParams(lapsimFolder: nil)))
         guard case .succeeded(let url) = await job.run(onEvent: { _ in }) else { return XCTFail() }
         let result = try LapSimResult.decode(resultFile: Data(contentsOf: url))
@@ -88,6 +90,10 @@ final class EngineIntegrationTests: XCTestCase {
         XCTAssertEqual(result.deltaT?.count, result.track.s.count)
         XCTAssertLessThan(try XCTUnwrap(result.a.sensitivity).dtDcla, 0)
         XCTAssertEqual(result.a.car, setup.carA)
+        XCTAssertEqual(result.configs.count, 3)
+        XCTAssertGreaterThan(result.configs[2].lapTime, result.a.lapTime)  // heavier
+        XCTAssertNil(result.deltas[0])
+        XCTAssertEqual(result.deltas[2]?.count, result.track.s.count)
     }
 
     /// Phase 2 acceptance check, automated: STEP through the engine to glb

@@ -180,9 +180,14 @@ public struct LapSimTrack: Codable, Equatable, Sendable {
 public struct LapSimSetup: Codable, Equatable, Sendable {
     public static let fileName = "setup.json"
 
-    public var carA = CarParameters.placeholder
-    public var carB = CarParameters.placeholder
-    public var compare = false
+    public static let maxCars = 5
+    public static let labels = ["A", "B", "C", "D", "E"]
+    /// Car A, then up to four to compare with it.
+    public var cars = [CarParameters.placeholder]
+    public var carA: CarParameters {
+        get { cars[0] }
+        set { cars[0] = newValue }
+    }
     public var track = LapSimTrack()
     public var ds = 0.5  // m
     public var enduranceLaps = 22
@@ -192,15 +197,23 @@ public struct LapSimSetup: Codable, Equatable, Sendable {
     public init() {}
 
     enum CodingKeys: String, CodingKey {
-        case carA, carB, compare, track, ds, enduranceLaps, startSpeed, sensitivities
+        case cars, track, ds, enduranceLaps, startSpeed, sensitivities
     }
+
+    /// Before up to five cars: A, and B when comparing.
+    private enum OldKeys: String, CodingKey { case carA, carB, compare }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = LapSimSetup()
-        carA = try c.decodeIfPresent(CarParameters.self, forKey: .carA) ?? d.carA
-        carB = try c.decodeIfPresent(CarParameters.self, forKey: .carB) ?? d.carB
-        compare = try c.decodeIfPresent(Bool.self, forKey: .compare) ?? d.compare
+        if let cars = try c.decodeIfPresent([CarParameters].self, forKey: .cars), !cars.isEmpty {
+            self.cars = Array(cars.prefix(Self.maxCars))
+        } else {
+            let old = try decoder.container(keyedBy: OldKeys.self)
+            let a = try old.decodeIfPresent(CarParameters.self, forKey: .carA) ?? .placeholder
+            let b = try old.decodeIfPresent(CarParameters.self, forKey: .carB)
+            cars = [a] + (try old.decodeIfPresent(Bool.self, forKey: .compare) == true ? [b ?? a] : [])
+        }
         track = try c.decodeIfPresent(LapSimTrack.self, forKey: .track) ?? d.track
         ds = try c.decodeIfPresent(Double.self, forKey: .ds) ?? d.ds
         enduranceLaps = try c.decodeIfPresent(Int.self, forKey: .enduranceLaps) ?? d.enduranceLaps
@@ -211,13 +224,13 @@ public struct LapSimSetup: Codable, Equatable, Sendable {
     public func jobParams(lapsimFolder: URL?) throws -> [String: JSONValue] {
         var params: [String: JSONValue] = [
             "car": try JSONValue(encoding: carA),
+            "cars": .array(try cars.map { try JSONValue(encoding: $0) }),
             "track": track.jobValue(lapsimFolder: lapsimFolder),
             "ds": .double(ds),
             "laps": .int(enduranceLaps),
             "start_speed": .double(startSpeed),
             "sensitivities": .bool(sensitivities),
         ]
-        if compare { params["car_b"] = try JSONValue(encoding: carB) }
         return params
     }
 
@@ -291,10 +304,25 @@ public struct LapSimResult: Decodable, Sendable {
     public var a: Config
     public var b: Config?
     public var deltaT: [Double]?
+    /// Every car, A first (older results: A and B).
+    public var configs: [Config]
+    /// Each car's time against A along the lap; nil for A.
+    public var deltas: [[Double]?]
 
     enum CodingKeys: String, CodingKey {
-        case track, a, b
+        case track, a, b, configs, deltas
         case startSpeed = "start_speed", deltaT = "delta_t"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        track = try c.decode(TrackData.self, forKey: .track)
+        startSpeed = try c.decode(Double.self, forKey: .startSpeed)
+        a = try c.decode(Config.self, forKey: .a)
+        b = try c.decodeIfPresent(Config.self, forKey: .b)
+        deltaT = try c.decodeIfPresent([Double].self, forKey: .deltaT)
+        configs = try c.decodeIfPresent([Config].self, forKey: .configs) ?? [a] + (b.map { [$0] } ?? [])
+        deltas = try c.decodeIfPresent([[Double]?].self, forKey: .deltas) ?? [nil] + (b != nil ? [deltaT] : [])
     }
 
     /// Decodes the whole result.json written by the engine.

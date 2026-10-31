@@ -108,6 +108,54 @@ public struct WingField: Sendable {
         }
         return out
     }
+
+    /// How one scalar changed from another run `a` to this one: this − a on
+    /// this field's grid, `a` sampled at the same points (both runs in the same
+    /// frame). RGBA pixels as `pixels`, blue where it fell, white where it held,
+    /// red where it rose, over ±limit (the 95th percentile of the change, so one
+    /// spike at a moved trailing edge does not wash out the rest); transparent
+    /// where either run has no flow.
+    public func difference(_ key: String, from a: WingField) -> (pixels: [UInt8], limit: Double) {
+        guard let k = scalars.firstIndex(where: { $0.key == key }) else { return ([], 1) }
+        let block = values[k]
+        var delta = [Double](repeating: .nan, count: nx * ny)
+        let dx = (window.x1 - window.x0) / Double(nx), dy = (window.y1 - window.y0) / Double(ny)
+        for j in 0..<ny {
+            for i in 0..<nx {
+                let v = block[j * nx + i]
+                guard v.isFinite,
+                      let old = a.value(key, at: SIMD2(window.x0 + (Double(i) + 0.5) * dx, window.y0 + (Double(j) + 0.5) * dy))
+                else { continue }
+                delta[j * nx + i] = Double(v) - old
+            }
+        }
+        let mags = delta.filter(\.isFinite).map(abs).sorted()
+        let limit = Swift.max(mags.isEmpty ? 0 : mags[Swift.min(Int(Double(mags.count) * 0.95), mags.count - 1)], 1e-6)
+        var out = [UInt8](repeating: 0, count: nx * ny * 4)
+        for j in 0..<ny {
+            let row = (ny - 1 - j) * nx  // flip: the image's first row is the top
+            for i in 0..<nx {
+                let d = delta[j * nx + i]
+                guard d.isFinite else { continue }
+                let c = Self.diverging(d / limit)
+                let o = (row + i) * 4
+                out[o] = c.0
+                out[o + 1] = c.1
+                out[o + 2] = c.2
+                out[o + 3] = 255
+            }
+        }
+        return (out, limit)
+    }
+
+    /// −1 blue, 0 white, +1 red.
+    public static func diverging(_ f: Double) -> (UInt8, UInt8, UInt8) {
+        let t = Swift.min(Swift.max(f, -1), 1)
+        let end: (Double, Double, Double) = t < 0 ? (0.19, 0.38, 0.74) : (0.80, 0.22, 0.17)
+        let a = abs(t)
+        func mix(_ e: Double) -> UInt8 { UInt8(((1 - a) + a * e) * 255) }
+        return (mix(end.0), mix(end.1), mix(end.2))
+    }
 }
 
 public enum WingFieldError: LocalizedError {
