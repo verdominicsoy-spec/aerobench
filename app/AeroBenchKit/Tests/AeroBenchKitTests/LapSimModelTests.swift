@@ -6,7 +6,8 @@ final class LapSimModelTests: XCTestCase {
         let value = try JSONValue(encoding: CarParameters.placeholder)
         guard case .object(let obj) = value else { return XCTFail() }
         XCTAssertEqual(Set(obj.keys), ["mass", "cla", "cda", "mu_lat", "mu_long", "power", "driven_axle_fraction",
-                                       "aero_balance_driven", "crr", "rho", "v_max"])
+                                       "aero_balance_driven", "crr", "rho", "v_max", "cog_height", "wheelbase",
+                                       "track_width", "tyre_load_sensitivity"])
     }
 
     func testOldSetupFilesFillInDefaults() throws {
@@ -14,6 +15,9 @@ final class LapSimModelTests: XCTestCase {
         let setup = try AeroJSON.decoder().decode(LapSimSetup.self, from: Data(json.utf8))
         XCTAssertEqual(setup.carA.mass, 300)
         XCTAssertEqual(setup.carA.cla, CarParameters.placeholder.cla)
+        XCTAssertEqual(setup.carA.cogHeight, 0)  // an older file keeps the point mass it was run with
+        XCTAssertEqual(setup.carA.tyreLoadSensitivity, 0)
+        XCTAssertGreaterThan(CarParameters.placeholder.cogHeight, 0)  // a new car has load transfer on
         XCTAssertTrue(setup.compare)
         XCTAssertEqual(setup.track.kind, .testTrack)
     }

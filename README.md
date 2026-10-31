@@ -238,6 +238,16 @@ endurance time and energy; dt/dClA and dt/dCdA with the ClA-for-CdA exchange
 rate; along the lap, the speed trace and the B minus A time delta; then on
 the track map, speed and where B gains (green) or loses (red) time on A.
 
+**Load transfer** (car values, on for a new car): with a CoG height,
+wheelbase, track width and tyre load sensitivity, each axle has to hold its
+own share of the cornering force with its own load (static weight, its share
+of the downforce and the lateral load transfer), and each tyre's grip
+coefficient falls as its load rises, μ (1 − k (Fz / Fz0 − 1)). The axle that
+runs out first sets the cornering speed, so the downforce balance against
+the weight split now changes lap time. The rear (driven) axle gains m a h / L
+under acceleration. All four at 0 is the plain point mass, and projects from
+before keep that.
+
 The car values shipped are **placeholder estimates**, marked "est." until you
 change them. Every value is editable and saved in the project's
 `lapsim/setup.json` when you save.

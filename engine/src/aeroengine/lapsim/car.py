@@ -22,12 +22,24 @@ class Car:
     crr: float  # rolling resistance coefficient, applied to static weight
     rho: float  # kg/m^3, air density
     v_max: float  # m/s, speed cap
+    # Load transfer and tyre load sensitivity. All zero (the default, and what
+    # older inputs mean) keeps the single friction circle of the point mass.
+    cog_height: float = 0.0  # m
+    wheelbase: float = 0.0  # m
+    track_width: float = 0.0  # m
+    tyre_load_sensitivity: float = 0.0  # fall in mu per unit rise in load over the static wheel load
+
+    @property
+    def axles(self) -> bool:
+        """Each axle holds its own share: on once any of the four is set."""
+        return self.cog_height > 0 or self.tyre_load_sensitivity > 0
 
     @classmethod
     def from_dict(cls, data: Any, label: str = "car") -> "Car":
         if not isinstance(data, dict):
             raise EngineError(f"{label} must be a JSON object")
-        names = [f.name for f in fields(cls)]
+        optional = {"cog_height", "wheelbase", "track_width", "tyre_load_sensitivity"}
+        names = [f.name for f in fields(cls) if f.name not in optional or f.name in data]
         missing = [n for n in names if n not in data]
         if missing:
             raise EngineError(f"{label} is missing {', '.join(missing)}")
@@ -43,7 +55,7 @@ class Car:
 
     def validate(self, label: str = "car") -> None:
         positive = ["mass", "mu_lat", "mu_long", "power", "rho", "v_max"]
-        non_negative = ["cla", "cda", "crr"]
+        non_negative = ["cla", "cda", "crr", "cog_height", "wheelbase", "track_width", "tyre_load_sensitivity"]
         fractions = ["driven_axle_fraction", "aero_balance_driven"]
         for n in positive:
             if not getattr(self, n) > 0:
@@ -54,6 +66,10 @@ class Car:
         for n in fractions:
             if not 0 <= getattr(self, n) <= 1:
                 raise EngineError(f"{label}.{n} must be between 0 and 1")
+        if self.cog_height > 0 and not (self.wheelbase > 0 and self.track_width > 0):
+            raise EngineError(f"{label}: load transfer needs the wheelbase and track width as well as the CoG height")
+        if self.tyre_load_sensitivity >= 1:
+            raise EngineError(f"{label}.tyre_load_sensitivity must be below 1")
 
     def to_dict(self) -> dict[str, float]:
         return {f.name: getattr(self, f.name) for f in fields(self)}

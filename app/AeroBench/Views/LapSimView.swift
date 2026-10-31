@@ -36,6 +36,11 @@ struct CarField: Identifiable {
         CarField(id: "crr", label: "Rolling resistance", unit: "Crr", scale: 1, keyPath: \.crr),
         CarField(id: "rho", label: "Air density", unit: "kg/m³", scale: 1, keyPath: \.rho),
         CarField(id: "vmax", label: "Top speed", unit: "km/h", scale: 3.6, keyPath: \.vMax),
+        // Load transfer: 0 for all four is the plain point mass.
+        CarField(id: "cog", label: "CoG height", unit: "mm", scale: 1000, keyPath: \.cogHeight),
+        CarField(id: "wheelbase", label: "Wheelbase", unit: "mm", scale: 1000, keyPath: \.wheelbase),
+        CarField(id: "trackWidth", label: "Track width", unit: "mm", scale: 1000, keyPath: \.trackWidth),
+        CarField(id: "loadSens", label: "Tyre load sensitivity", unit: "0–1", scale: 1, keyPath: \.tyreLoadSensitivity),
     ]
 
     func isPlaceholder(_ car: CarParameters) -> Bool {
@@ -122,6 +127,8 @@ struct LapSimSetupView: View {
                 }
             } header: {
                 Text("Car")
+            } footer: {
+                Text("With a CoG height or a tyre load sensitivity, each axle holds its own share of the cornering force with its own load, so the downforce balance against the weight split matters; the rear (driven) axle gains weight under acceleration. All four at 0 is the plain point mass.")
             }
 
             Section("Simulation") {

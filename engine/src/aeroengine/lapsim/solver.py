@@ -10,6 +10,16 @@ for the lateral grip in use, minus drag and rolling resistance. Backward pass:
 braking on all four tyres, same friction circle, helped by drag and rolling
 resistance. Speed is the minimum of the cornering limit and both passes.
 Steps integrate v^2 over distance with Heun's method.
+
+With load transfer on (car.axles: a CoG height or a tyre load sensitivity),
+each axle must hold its own share of the cornering force (front and rear in
+proportion to the static weight, by moments about the CoG) with its own
+load: static weight, its share of the downforce, and the lateral load
+transfer m a_y h / t across it, shared the same way. Each tyre's mu falls
+with its load, mu (1 - k (Fz / Fz0 - 1)) with Fz0 its static load. The axle
+that runs out first sets the cornering speed, so the aero balance against
+the weight distribution matters. Traction on the driven axle (the rear)
+gains the longitudinal transfer m a h / L. Braking keeps the total grip.
 """
 
 from __future__ import annotations
@@ -46,7 +56,42 @@ class Lap:
         }
 
 
+def axle_ratio(car: Car, v, kappa):
+    """Lateral force needed over grip available, for the worse axle (1 is
+    the limit). Works on floats or arrays."""
+    v2 = np.asarray(v, float) ** 2
+    ay = v2 * np.abs(kappa)
+    q = 0.5 * car.rho * v2
+    worst = np.zeros_like(ay)
+    for weight, aero in ((1 - car.driven_axle_fraction, 1 - car.aero_balance_driven),
+                         (car.driven_axle_fraction, car.aero_balance_driven)):
+        if weight <= 0:
+            continue
+        fz = car.mass * G * weight + q * car.cla * aero
+        fy = car.mass * ay * weight
+        shift = fy * car.cog_height / car.track_width if car.track_width > 0 else 0.0 * fy
+        outer = np.minimum(fz / 2 + shift, fz)
+        inner = np.maximum(fz / 2 - shift, 0.0)
+        static = car.mass * G * weight / 2
+        k = car.tyre_load_sensitivity
+
+        def grip(f):
+            return car.mu_lat * np.maximum(1 - k * (f / static - 1), 0.0) * f
+
+        worst = np.maximum(worst, fy / np.maximum(grip(outer) + grip(inner), 1e-9))
+    return worst
+
+
 def corner_speed(car: Car, kappa: np.ndarray) -> np.ndarray:
+    if car.axles:
+        # The ratio rises with speed, so bisect for where it reaches 1.
+        lo, hi = np.zeros_like(kappa, dtype=float), np.full(len(kappa), float(car.v_max))
+        free = axle_ratio(car, hi, kappa) <= 1
+        for _ in range(48):
+            mid = 0.5 * (lo + hi)
+            ok = axle_ratio(car, mid, kappa) <= 1
+            lo, hi = np.where(ok, mid, lo), np.where(ok, hi, mid)
+        return np.where(free, car.v_max, lo)
     k = np.abs(kappa)
     denom = car.mass * k - 0.5 * car.mu_lat * car.rho * car.cla
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -59,6 +104,9 @@ class _Physics:
     """Scalar force model, kept in plain floats because it runs per node."""
 
     def __init__(self, car: Car) -> None:
+        self.car = car
+        self.axles = car.axles
+        self.transfer = car.cog_height / car.wheelbase if car.axles and car.wheelbase > 0 else 0.0
         self.m = car.mass
         self.half_rho = 0.5 * car.rho
         self.cla, self.cda = car.cla, car.cda
@@ -69,14 +117,25 @@ class _Physics:
         self.roll = car.crr * car.mass * G  # static weight only, see DECISIONS.md
 
     def _long_share(self, v: float, k: float, q: float) -> float:
-        lat = self.m * v * v * abs(k)
-        grip = self.mu_lat * (self.m * G + q * self.cla)
-        r = lat / grip
+        if self.axles:
+            r = float(axle_ratio(self.car, v, k))
+        else:
+            lat = self.m * v * v * abs(k)
+            grip = self.mu_lat * (self.m * G + q * self.cla)
+            r = lat / grip
         return math.sqrt(1.0 - r * r) if r < 1.0 else 0.0
 
     def accel(self, v: float, k: float) -> float:
         q = self.half_rho * v * v
-        traction = self.mu_long * (self.w_driven + q * self.cla * self.bal) * self._long_share(v, k, q)
+        load = self.w_driven + q * self.cla * self.bal
+        if self.transfer:
+            # The rear gains m a h / L as the car accelerates, and a depends on
+            # the traction: Fx = mu (load + h/L (Fx - D - R)), solved for Fx.
+            resist = q * self.cda + self.roll
+            denom = 1.0 - self.mu_long * self.transfer
+            if denom > 0:
+                load = max((load - self.transfer * resist) / denom, 0.0)
+        traction = self.mu_long * load * self._long_share(v, k, q)
         drive = traction if v <= 0 else min(traction, self.power / v)
         # Negative means the car cannot gain speed here; it holds speed
         # rather than being slowed by the forward pass (braking is the

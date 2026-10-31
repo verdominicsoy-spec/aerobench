@@ -13,17 +13,24 @@ public struct CarParameters: Codable, Equatable, Sendable {
     public var crr: Double
     public var rho: Double  // kg/m^3
     public var vMax: Double  // m/s
+    /// Load transfer and tyre load sensitivity; all zero is the plain point mass.
+    public var cogHeight: Double  // m
+    public var wheelbase: Double  // m
+    public var trackWidth: Double  // m
+    public var tyreLoadSensitivity: Double  // fall in mu per unit rise in load over the static wheel load
 
     /// Estimates for a typical Formula Student car, not team data. Replace
     /// them in the app; anything still equal to these is marked as a
     /// placeholder.
     public static let placeholder = CarParameters(
         mass: 280, cla: 3.5, cda: 1.3, muLat: 1.5, muLong: 1.4, power: 80_000,
-        drivenAxleFraction: 0.55, aeroBalanceDriven: 0.55, crr: 0.015, rho: 1.225, vMax: 33
+        drivenAxleFraction: 0.55, aeroBalanceDriven: 0.55, crr: 0.015, rho: 1.225, vMax: 33,
+        cogHeight: 0.28, wheelbase: 1.53, trackWidth: 1.2, tyreLoadSensitivity: 0.15
     )
 
     public init(mass: Double, cla: Double, cda: Double, muLat: Double, muLong: Double, power: Double,
-                drivenAxleFraction: Double, aeroBalanceDriven: Double, crr: Double, rho: Double, vMax: Double) {
+                drivenAxleFraction: Double, aeroBalanceDriven: Double, crr: Double, rho: Double, vMax: Double,
+                cogHeight: Double = 0, wheelbase: Double = 0, trackWidth: Double = 0, tyreLoadSensitivity: Double = 0) {
         self.mass = mass
         self.cla = cla
         self.cda = cda
@@ -35,10 +42,17 @@ public struct CarParameters: Codable, Equatable, Sendable {
         self.crr = crr
         self.rho = rho
         self.vMax = vMax
+        self.cogHeight = cogHeight
+        self.wheelbase = wheelbase
+        self.trackWidth = trackWidth
+        self.tyreLoadSensitivity = tyreLoadSensitivity
     }
 
     enum CodingKeys: String, CodingKey {
-        case mass, cla, cda, power, crr, rho
+        case mass, cla, cda, power, crr, rho, wheelbase
+        case cogHeight = "cog_height"
+        case trackWidth = "track_width"
+        case tyreLoadSensitivity = "tyre_load_sensitivity"
         case muLat = "mu_lat"
         case muLong = "mu_long"
         case drivenAxleFraction = "driven_axle_fraction"
@@ -61,6 +75,11 @@ public struct CarParameters: Codable, Equatable, Sendable {
         crr = try c.decodeIfPresent(Double.self, forKey: .crr) ?? p.crr
         rho = try c.decodeIfPresent(Double.self, forKey: .rho) ?? p.rho
         vMax = try c.decodeIfPresent(Double.self, forKey: .vMax) ?? p.vMax
+        // Projects from before load transfer keep the point mass they were run with.
+        cogHeight = try c.decodeIfPresent(Double.self, forKey: .cogHeight) ?? 0
+        wheelbase = try c.decodeIfPresent(Double.self, forKey: .wheelbase) ?? 0
+        trackWidth = try c.decodeIfPresent(Double.self, forKey: .trackWidth) ?? 0
+        tyreLoadSensitivity = try c.decodeIfPresent(Double.self, forKey: .tyreLoadSensitivity) ?? 0
     }
 }
 
