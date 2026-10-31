@@ -1137,7 +1137,11 @@ barely helps across the board, and S1223 stays 11 to 15% off (its lift
 slope is off as well as its level). It is not applied because it would pull
 the estimate away from RANS, which it now matches on the starting wing
 within 1.5% (and RANS read the 30P30N 1 to 3% high against experiment): the
-estimate would then read under RANS, and likely under STAR-CCM+. Whether
-the quick methods should match the wind tunnel or the RANS that follows
-them is Dominic's call.
+estimate would then read under RANS, and likely under STAR-CCM+.
+Dominic's call: match STAR. The estimate stays calibrated to RANS, and the
+tunnel cases record how far both sit from measurement. The suite now holds
+the estimate to the SU2 reference runs as well (against_rans: the starting
+wing at 0 to -9 degrees, over a ground at 300, 150 and 60 mm, and the timed
+design run's check): lift within 2.8% wherever RANS converged, drag within
+9.1%, and both runs RANS never settled called separating.
 
