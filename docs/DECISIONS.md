@@ -1067,3 +1067,9 @@ calls it separating, as RANS did. The drag needed nothing: the estimate's
 ratio over free air was already RANS's. One wing, two heights; the live
 panel preview still shows the image's whole gain.
 
+**A dock, not a sidebar.** The tools sat in a sidebar column that took
+200 points of width from every screen to hold six labels. They are now a
+dock across the top (project, Wing Lab, Lap Sim, CAD Viewer, Flow Field,
+Jobs with its running count), the selected one in sage, ⌘1 to ⌘6 to switch,
+the choice kept per window. The canvas and charts get the width back.
+

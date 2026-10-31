@@ -1,54 +1,63 @@
 import AeroBenchKit
 import SwiftUI
 
-enum SidebarItem: Hashable {
+/// The tools, in working order: design the wing, see what it is worth on a
+/// lap, check it on the car, then look at the flow from STAR.
+enum Tool: String, CaseIterable, Identifiable {
     case project, wingLab, lapSim, cadViewer, flowField, jobs
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .project: "Project"
+        case .wingLab: "Wing Lab"
+        case .lapSim: "Lap Sim"
+        case .cadViewer: "CAD Viewer"
+        case .flowField: "Flow Field"
+        case .jobs: "Jobs"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .project: "folder"
+        case .wingLab: "airplane"
+        case .lapSim: "flag.checkered"
+        case .cadViewer: "cube"
+        case .flowField: "wind"
+        case .jobs: "list.bullet.rectangle"
+        }
+    }
+
+    /// ⌘1 to ⌘6, in dock order.
+    var key: KeyEquivalent { KeyEquivalent(Character(String((Tool.allCases.firstIndex(of: self) ?? 0) + 1))) }
 }
 
 struct ContentView: View {
     @Environment(AppState.self) private var app
-    @State private var selection: SidebarItem? = .project
+    @SceneStorage("tool") private var selection: Tool = .project
 
     var body: some View {
-        NavigationSplitView {
-            List(selection: $selection) {
-                Section("Project") {
-                    Label(app.project?.manifest.name ?? "No Project", systemImage: "folder")
-                        .tag(SidebarItem.project)
-                }
-                Section("Tools") {
-                    // In working order: design the wing, see what it is worth on a lap,
-                    // check it on the car, then look at the flow from STAR.
-                    Label("Wing Lab", systemImage: "airplane").tag(SidebarItem.wingLab)
-                    Label("Lap Sim", systemImage: "flag.checkered").tag(SidebarItem.lapSim)
-                    Label("CAD Viewer", systemImage: "cube").tag(SidebarItem.cadViewer)
-                    Label("Flow Field Viewer", systemImage: "wind").tag(SidebarItem.flowField)
-                }
-                Section("Engine") {
-                    Label("Jobs", systemImage: "list.bullet.rectangle")
-                        .badge(app.jobs.runningCount)
-                        .tag(SidebarItem.jobs)
+        VStack(spacing: 0) {
+            ToolDock(selection: $selection)
+            Divider().overlay(S37.C.separator)
+            Group {
+                switch selection {
+                case .project:
+                    ProjectView()
+                case .wingLab:
+                    WingLabView()
+                case .cadViewer:
+                    CADViewerView()
+                case .flowField:
+                    FlowFieldView()
+                case .lapSim:
+                    LapSimView()
+                case .jobs:
+                    JobsView()
                 }
             }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 210)
-            // sage37: the sidebar is a solid surface column, not translucent.
-            .scrollContentBackground(.hidden)
-            .background(S37.C.surface)
-        } detail: {
-            switch selection ?? .project {
-            case .project:
-                ProjectView()
-            case .wingLab:
-                WingLabView()
-            case .cadViewer:
-                CADViewerView()
-            case .flowField:
-                FlowFieldView()
-            case .lapSim:
-                LapSimView()
-            case .jobs:
-                JobsView()
-            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .navigationTitle(windowTitle)
         .task { app.setUpBundledEngineIfNeeded() }
@@ -88,6 +97,43 @@ struct ContentView: View {
     }
 }
 
+
+/// The dock across the top: the project, the four tools, the engine's jobs.
+struct ToolDock: View {
+    @Environment(AppState.self) private var app
+    @Binding var selection: Tool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            item(.project, title: app.project?.manifest.name ?? "No Project")
+            Divider().frame(height: 18).padding(.horizontal, 4)
+            ForEach([Tool.wingLab, .lapSim, .cadViewer, .flowField]) { item($0, title: $0.title) }
+            Spacer(minLength: 12)
+            item(.jobs, title: app.jobs.runningCount > 0 ? "Jobs · \(app.jobs.runningCount) running" : "Jobs")
+        }
+        .padding(.horizontal, S37.Space.s3)
+        .padding(.vertical, 6)
+        .background(S37.C.surface)
+    }
+
+    private func item(_ tool: Tool, title: String) -> some View {
+        let on = selection == tool
+        return Button { selection = tool } label: {
+            Label(title, systemImage: tool.symbol)
+                .labelStyle(.titleAndIcon)
+                .lineLimit(1)
+                .font(.system(size: 12.5, weight: on ? .semibold : .regular))
+                .foregroundStyle(on ? S37.C.onSage : S37.C.ink)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 26)
+                .background { if on { Capsule().fill(S37.C.sage) } }
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(tool.key, modifiers: .command)
+        .help("\(tool.title) (⌘\(String(tool.key.character)))")
+    }
+}
 
 /// The packaged app's one-time engine setup.
 struct EngineSetupView: View {

@@ -77,6 +77,10 @@ set in Settings (the SU2_CFD binary or its folder).
 
 ## Projects and jobs
 
+The dock across the top holds the project, the four tools in working order
+(Wing Lab, Lap Sim, CAD Viewer, Flow Field) and the engine's jobs; ⌘1 to ⌘6
+switch between them.
+
 A project is a folder:
 
 ```
@@ -463,7 +467,7 @@ stdout is JSON lines (`progress`, `log`, `result`, `error`), the result lands in
 On the Project screen (no project needs to be open):
 
 1. **Ping Engine** should show "pong from Python 3.12.x".
-2. **Run** the dummy job at 10 s, open **Jobs** in the sidebar, watch the progress
+2. **Run** the dummy job at 10 s, open **Jobs** in the dock, watch the progress
    bar move, then press **Cancel**. It should end as cancelled within a second.
 3. Run it again, and while it is running kill the engine from Terminal:
    `pkill -9 -f "aeroengine dummy"`. The job should show as failed with
