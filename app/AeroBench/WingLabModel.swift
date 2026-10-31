@@ -770,6 +770,7 @@ final class WingLabModel {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(wing).write(to: folder.appendingPathComponent("wing.json"), options: .atomic)
         try encoder.encode(optimise).write(to: folder.appendingPathComponent("optimise.json"), options: .atomic)
+        markSaved()
         let version = folder.appendingPathComponent("version.txt")
         if let label = originVersion {
             try label.write(to: version, atomically: true, encoding: .utf8)
@@ -784,6 +785,15 @@ final class WingLabModel {
         let url = ProjectStore.toolURL(for: project, tool: "wing").appendingPathComponent("version.txt")
         if let label = try? String(contentsOf: url, encoding: .utf8), !label.isEmpty { markOrigin(label) }
     }
+
+    // What the project files hold, so undoing back to it is not an unsaved change.
+    private var savedWing: Wing?
+    private var savedOptimise: OptimiseSetup?
+    func markSaved() {
+        savedWing = wing
+        savedOptimise = optimise
+    }
+    var hasUnsavedChanges: Bool { wing != savedWing || optimise != savedOptimise }
 
     static func loadOptimise(fromProject project: URL) -> OptimiseSetup? {
         let url = ProjectStore.toolURL(for: project, tool: "wing").appendingPathComponent("optimise.json")

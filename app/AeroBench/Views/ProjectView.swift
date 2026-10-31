@@ -78,7 +78,7 @@ struct ProjectDetailView: View {
         .formStyle(.grouped)
         .toolbar {
             Button("Save", systemImage: "square.and.arrow.down") { app.saveProject() }
-                .disabled(!project.isDirty)
+                .disabled(!app.hasUnsavedChanges)
             Button("Show in Finder", systemImage: "folder") {
                 NSWorkspace.shared.activateFileViewerSelecting([project.url])
             }

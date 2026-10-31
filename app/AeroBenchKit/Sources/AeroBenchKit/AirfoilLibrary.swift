@@ -42,7 +42,7 @@ public enum AirfoilLibrary {
             guard let points = try? JSONDecoder().decode([[Double]].self, from: Data(text(9).utf8)) else { continue }
             let coords = points.compactMap { $0.count == 2 ? SIMD2($0[0], $0[1]) : nil }
             guard coords.count >= 6 else { continue }
-            out.append(Airfoil(key: text(0), name: text(1), family: text(2), source: text(3),
+            out.append(Airfoil(key: text(0), name: text(1).split(whereSeparator: \.isWhitespace).joined(separator: " "), family: text(2), source: text(3),
                                thickness: sqlite3_column_double(stmt, 4), thicknessX: sqlite3_column_double(stmt, 5),
                                camber: sqlite3_column_double(stmt, 6), camberX: sqlite3_column_double(stmt, 7),
                                teThickness: sqlite3_column_double(stmt, 8), coords: coords))

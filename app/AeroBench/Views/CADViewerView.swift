@@ -75,25 +75,31 @@ struct CADToolbar: View {
         HStack(spacing: 10) {
             Button("Open…") { app.openCADPanel() }
             Divider().frame(height: 18)
-            ForEach(StandardView.allCases) { view in
-                Button(view.title) { cad.viewer.look(from: view) }
+            // The view, measuring and section tools need a model to act on.
+            Group {
+                ForEach(StandardView.allCases) { view in
+                    Button(view.title) { cad.viewer.look(from: view) }
+                }
+                Button("Fit") { cad.viewer.fitAll() }
+                Picker("Projection", selection: $cad.projection) {
+                    Text("Persp").tag(Projection.perspective)
+                    Text("Ortho").tag(Projection.orthographic)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 120)
+                Divider().frame(height: 18)
+                Toggle("Measure", isOn: $cad.measuring).toggleStyle(.button)
+                Toggle("Section", isOn: $cad.sectionOn).toggleStyle(.button)
+                    .help("Cut the visible parts with a plane and see them in section")
             }
-            Button("Fit") { cad.viewer.fitAll() }
-            Picker("Projection", selection: $cad.projection) {
-                Text("Persp").tag(Projection.perspective)
-                Text("Ortho").tag(Projection.orthographic)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 120)
-            Divider().frame(height: 18)
-            Toggle("Measure", isOn: $cad.measuring).toggleStyle(.button)
-            Toggle("Section", isOn: $cad.sectionOn).toggleStyle(.button)
-                .disabled(cad.model == nil)
-                .help("Cut the visible parts with a plane and see them in section")
+            .disabled(cad.model == nil)
             Button("Check Geometry") { app.checkGeometry() }
                 .disabled(cad.fileURL == nil || (cad.checkJob.map { !$0.status.isFinished } ?? false))
-            Toggle("Snap to vertex", isOn: $cad.snap)
+            Toggle("Snap", isOn: $cad.snap)
+                .fixedSize()
+                .disabled(cad.model == nil)
+                .help("Snap measuring points to the nearest vertex")
             Spacer()
             Toggle("FPS", isOn: $cad.showStatistics)
         }

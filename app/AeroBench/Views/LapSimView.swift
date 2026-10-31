@@ -150,6 +150,7 @@ struct LapSimSetupView: View {
             Section {
                 HStack {
                     Button("Run Lap Sim") { app.runLapSim() }
+                        .buttonStyle(S37ButtonStyle(kind: .prominent))
                         .keyboardShortcut("r")
                         .disabled(isRunning)
                     if let job = app.lapSimJob, !job.status.isFinished {
@@ -307,8 +308,15 @@ struct LapSimResultsView: View {
                 .padding()
             }
         } else {
-            ContentUnavailableView("No Lap Sim Results", systemImage: "flag.checkered",
-                                   description: Text("Pick a track, check the car values and press Run Lap Sim (⌘R)."))
+            ContentUnavailableView {
+                Label("No Lap Sim Results", systemImage: "flag.checkered")
+            } description: {
+                Text("Pick a track and check the car values on the left, then run it (⌘R). The track map shows here.")
+            } actions: {
+                Button("Run Lap Sim") { app.runLapSim() }
+                    .buttonStyle(S37ButtonStyle(kind: .prominent))
+                    .disabled(app.lapSimJob.map { !$0.status.isFinished } ?? false)
+            }
         }
     }
 

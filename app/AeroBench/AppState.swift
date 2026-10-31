@@ -53,15 +53,12 @@ final class AppState {
         jobs.loadHistory(from: jobsRoot)
         showLatestLapSim()
         flow.onCalibrationChange = { [weak self] in self?.project?.isDirty = true }
-        wingLab.onChange = { [weak self] in
-            self?.project?.isDirty = true
-            self?.scheduleLiveEstimate()
-        }
+        wingLab.onChange = { [weak self] in self?.scheduleLiveEstimate() }
         terminationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                if let self, self.project?.isDirty == true { self.saveProject() }
+                if let self, self.hasUnsavedChanges { self.saveProject() }
                 self?.jobs.stopAllForQuit()
             }
         }
@@ -139,12 +136,18 @@ final class AppState {
     }
 
     func closeProject() {
-        if project?.isDirty == true { saveProject() }
+        if hasUnsavedChanges { saveProject() }
         project = nil
         pingJob = nil
         wingLab.study = nil
         jobs.loadHistory(from: jobsRoot)
         showLatestLapSim()
+    }
+
+    /// Anything not yet written to the project: the wing lab compares with its files.
+    var hasUnsavedChanges: Bool {
+        guard let project else { return false }
+        return project.isDirty || wingLab.hasUnsavedChanges
     }
 
     func updateManifest(_ change: (inout ProjectManifest) -> Void) {
@@ -159,7 +162,7 @@ final class AppState {
     }
 
     private func setProject(url: URL, manifest: ProjectManifest) {
-        if project?.isDirty == true { saveProject() }
+        if hasUnsavedChanges { saveProject() }
         project = OpenProject(url: url, manifest: manifest)
         pingJob = nil
         lapSim = LapSimSetup.load(fromProject: url) ?? LapSimSetup()
@@ -167,6 +170,7 @@ final class AppState {
         wingLab.restoreVersion(fromProject: url)
         wingLab.optimise = WingLabModel.loadOptimise(fromProject: url) ?? .init()
         wingLab.reloadStudy(project: url)
+        wingLab.markSaved()
         project?.isDirty = false
         recentProjects.removeAll { $0.standardizedFileURL == url.standardizedFileURL }
         recentProjects.insert(url, at: 0)

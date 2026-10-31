@@ -347,17 +347,19 @@ struct ImpliedCameraNote: View {
 struct NumberField: View {
     let label: String
     var unit: String = ""
+    var digits = 4
     @Binding var value: Double
 
     var body: some View {
         LabeledContent(label) {
             HStack(spacing: 4) {
-                TextField(label, value: $value, format: .number.precision(.fractionLength(0...4)))
+                TextField(label, value: $value, format: .number.precision(.fractionLength(0...digits)))
                     .labelsHidden()
                     .multilineTextAlignment(.trailing)
                     .frame(width: 90)
                 // At least 30 wide so short units line up, wider rather than wrapping (kg/m³).
-                Text(unit).foregroundStyle(.secondary).lineLimit(1).fixedSize().frame(minWidth: 30, alignment: .leading)
+                // A space, not empty, when there is no unit: an empty Text has no baseline and drops the value.
+                Text(unit.isEmpty ? " " : unit).foregroundStyle(.secondary).lineLimit(1).fixedSize().frame(minWidth: 30, alignment: .leading)
             }
         }
     }
@@ -599,6 +601,8 @@ struct FrameCanvas: View {
                         Button("Demo Sweep") { app.runFlowDemo() }
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.background)  // black only behind frames, as the CAD Viewer's empty state
             }
         }
         .background(Color.black.opacity(0.85))

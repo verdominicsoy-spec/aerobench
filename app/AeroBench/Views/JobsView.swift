@@ -53,7 +53,7 @@ struct JobRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 JobStatusIcon(status: job.status)
-                Text(job.command).bold()
+                Text(job.title).bold()
                 Spacer()
                 Text(job.created, format: .dateTime.day().month().hour().minute().second())
                     .font(.caption)
@@ -81,12 +81,13 @@ struct JobRow: View {
 struct JobDetailView: View {
     @Environment(AppState.self) private var app
     let job: JobItem
+    private static let previewLimit = 20_000
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 JobStatusIcon(status: job.status)
-                Text(job.command).font(.title2).bold()
+                Text(job.title).font(.title2).bold()
                 Text(job.status.rawValue).foregroundStyle(.secondary)
                 Spacer()
                 if !job.status.isFinished {
@@ -97,7 +98,7 @@ struct JobDetailView: View {
                     NSWorkspace.shared.activateFileViewerSelecting([job.workdir])
                 }
             }
-            Text(job.id).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+            Text("\(job.command)  \(job.id)").font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
 
             if job.status == .running || job.status == .succeeded {
                 ProgressView(value: job.progress, total: 100) {
@@ -123,14 +124,26 @@ struct JobDetailView: View {
             }
 
             if let result = job.resultText {
-                GroupBox("result.json") {
+                GroupBox {
                     ScrollView {
-                        Text(result)
+                        // One Text can't lay out a large file (it draws blank), so show the start.
+                        Text(result.count > Self.previewLimit ? String(result.prefix(Self.previewLimit)) + "\n…" : result)
                             .font(.caption.monospaced())
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .frame(maxHeight: 160)
+                } label: {
+                    HStack {
+                        Text("result.json")
+                        if result.count > Self.previewLimit {
+                            Text("first \(Self.previewLimit / 1000) kB of \(result.utf8.count / 1000) kB").foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Open") { NSWorkspace.shared.open(job.workdir.appendingPathComponent(JobFolder.resultFile)) }
+                            .buttonStyle(.link)
+                    }
+                    .font(.caption)
                 }
             }
 
@@ -171,6 +184,41 @@ struct LogView: View {
         case "error", "stderr": .red
         case "warning": .orange
         default: .primary
+        }
+    }
+}
+
+extension JobItem {
+    /// The command in words, for the jobs list.
+    var title: String {
+        switch command {
+        case "airfoil-fetch": "Download airfoil library"
+        case "airfoil-index": "Index airfoil library"
+        case "airfoil-import": "Import airfoils"
+        case "airfoil-delete": "Delete airfoils"
+        case "airfoil-polars": "Library polars"
+        case "wing-polar": "Element polar"
+        case "wing-estimate": "Quick estimate"
+        case "wing-rans": "RANS CFD"
+        case "wing-sweep": "RANS angle sweep"
+        case "wing-optimise": "Optimise"
+        case "wing-shortlist": "Find sections"
+        case "wing-starter": "Set up from scratch"
+        case "su2-install": "Install SU2"
+        case "lapsim": "Lap Sim"
+        case "tessellate": "Open CAD"
+        case "cad-check": "Check geometry"
+        case "cad-repair": "Repair geometry"
+        case "flow-demo": "Flow demo sweep"
+        case "flow-detect": "Detect flow layout"
+        case "flow-preview": "Flow preview"
+        case "flow-reconstruct": "Reconstruct flow"
+        case "flow-iso": "Isosurface"
+        case "flow-object": "Flow object"
+        case "flow-export": "Export flow"
+        case "ping": "Ping engine"
+        case "dummy": "Dummy job"
+        default: command
         }
     }
 }

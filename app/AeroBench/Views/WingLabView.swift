@@ -720,8 +720,20 @@ struct PolarPlots: View {
         } else if let job = lab.polarJob, !job.status.isFinished {
             ProgressView("Running NeuralFoil…").frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            Text("Pick Quick viscous in Solvers, select an element and run its polar.")
-                .foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            let lab = app.wingLab
+            VStack(spacing: 8) {
+                Text("No polar yet: NeuralFoil runs one element's section over a range of angles, a few seconds.")
+                    .foregroundStyle(.secondary)
+                if let i = lab.selection, lab.wing.elements.indices.contains(i) {
+                    Button("Run Polar of \(WingIssue.label(i))") {
+                        lab.solver = .quickViscous
+                        app.runWingPolar()
+                    }
+                } else {
+                    Text("Click an element on the canvas first.").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
@@ -823,7 +835,19 @@ struct CFDResults: View {
             .padding()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            Text("Pick RANS CFD in Solvers and run it.").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            VStack(spacing: 8) {
+                Text("No CFD yet: a 2D RANS run of the whole wing with SU2, 2 to 5 minutes.").foregroundStyle(.secondary)
+                if app.settings.su2Executable == nil {
+                    Text("Needs SU2: install it under Solvers, RANS CFD.").font(.caption).foregroundStyle(.orange)
+                }
+                Button("Run CFD") {
+                    app.wingLab.solver = .rans
+                    app.runWingRANS()
+                }
+                .disabled(app.settings.su2Executable == nil || app.wingLab.wing.elements.isEmpty
+                          || !app.wingLab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -979,7 +1003,7 @@ struct WingInspector: View {
     @ViewBuilder private func elementSection(_ lab: WingLabModel, _ i: Int) -> some View {
         let e = lab.wing.elements[i]
         Section {
-            NumberField(label: "Chord", unit: "mm", value: mm({ e.chord }, { v in lab.edit { $0.elements[i].chord = max(v, 0.005) } }))
+            NumberField(label: "Chord", unit: "mm", digits: 1, value: mm({ e.chord }, { v in lab.edit { $0.elements[i].chord = max(v, 0.005) } }))
             NumberField(label: "Angle of attack", unit: "°", value: Binding(get: { e.angle }, set: { v in lab.edit { $0.elements[i].angle = v } }))
             NumberField(label: "Leading edge x", unit: "mm", value: mm({ e.leadingEdge.x }, { v in lab.edit { $0.elements[i].leadingEdge.x = v } }))
             NumberField(label: "Leading edge y", unit: "mm", value: mm({ e.leadingEdge.y }, { v in lab.edit { $0.elements[i].leadingEdge.y = v } }))
@@ -1009,8 +1033,8 @@ struct WingInspector: View {
             NumberField(label: "Viscosity (×10⁻⁵)", unit: "Pa s", value: Binding(
                 get: { wing.mu * 1e5 }, set: { v in lab.edit { $0.mu = max(v, 0.01) * 1e-5 } }))
             ForEach(Array(wing.elements.enumerated()), id: \.element.id) { i, e in
-                LabeledContent("Re, \(WingIssue.label(i))", value: String(format: "%.0f", wing.reynolds(chord: e.chord)))
-                    .font(.caption)
+                LabeledContent("Reynolds number, \(WingIssue.label(i))",
+                               value: wing.reynolds(chord: e.chord).formatted(.number.precision(.fractionLength(0))))
             }
             NumberField(label: "Turbulence (Ncrit)", value: Binding(get: { lab.nCrit }, set: { lab.nCrit = min(max($0, 1), 14) }))
             Toggle("Ground (a front wing)", isOn: Binding(
@@ -1392,8 +1416,9 @@ struct WingInspector: View {
                 get: { wing.endplateHeight != nil }, set: { on in lab.edit { $0.endplateHeight = on ? 0.25 : nil } }))
             if let f = wing.finite3D {
                 NumberField(label: "Endplate height", unit: "mm", value: mm({ wing.endplateHeight ?? 0 }, { v in lab.edit { $0.endplateHeight = max(v, 0) } }))
-                LabeledContent("3D lift factor", value: String(format: "%.2f (aspect ratio %.1f, %.1f with endplates)", f.liftFactor, f.aspectRatio, f.effectiveAspectRatio))
-                    .font(.caption)
+                LabeledContent("3D lift factor", value: String(format: "%.2f", f.liftFactor))
+                    .help(String(format: "Aspect ratio %.1f, %.1f with endplates", f.aspectRatio, f.effectiveAspectRatio))
+                LabeledContent("Aspect ratio", value: String(format: "%.1f, %.1f with endplates", f.aspectRatio, f.effectiveAspectRatio))
             } else {
                 NumberField(label: "2D to 3D factor", value: Binding(get: { wing.factor3D }, set: { v in lab.edit { $0.factor3D = max(v, 0) } }))
             }
@@ -1403,8 +1428,8 @@ struct WingInspector: View {
                 NumberField(label: "Cd (typed in: no estimate or CFD yet)", value: Binding(get: { lab.cdEstimate }, set: { lab.cdEstimate = $0 }))
             }
             LabeledContent("Adds", value: String(format: "ClA %.3f m²   CdA %.3f m²", add.cla, add.cda))
-            NumberField(label: "Replaces a wing worth ClA", unit: "m²", value: Binding(get: { lab.replacedCla }, set: { lab.replacedCla = $0 }))
-            NumberField(label: "and CdA", unit: "m²", value: Binding(get: { lab.replacedCda }, set: { lab.replacedCda = $0 }))
+            NumberField(label: "Replaces: old wing's ClA", unit: "m²", value: Binding(get: { lab.replacedCla }, set: { lab.replacedCla = $0 }))
+            NumberField(label: "Replaces: old wing's CdA", unit: "m²", value: Binding(get: { lab.replacedCda }, set: { lab.replacedCda = $0 }))
             Button("Compare in the Lap Sim") {
                 app.sendWingToLapSim(cl: cl, cd: cd, replacedCla: lab.replacedCla, replacedCda: lab.replacedCda)
                 sentNote = "Lap Sim car B is now car A with this wing. Run the Lap Sim to see the lap time difference."
@@ -1425,6 +1450,14 @@ struct StudyResults: View {
     @Environment(AppState.self) private var app
     @State private var order = [KeyPathComparator(\Row.number)]
     @State private var selection: Int?
+    @State private var chart = ChartKind.progress
+
+    // One chart at a time, so it gets the panel's height instead of half of it.
+    enum ChartKind: String, CaseIterable, Identifiable {
+        case progress = "Best so far"
+        case front = "Downforce vs drag"
+        var id: String { rawValue }
+    }
 
     struct Row: Identifiable {
         let id: Int
@@ -1445,21 +1478,14 @@ struct StudyResults: View {
                 header(study, lab)
                 ViewThatFits(in: .horizontal) {
                     HSplitView {
-                        table(study, lab).frame(minWidth: 380)
-                        VStack(spacing: 8) {
-                            bestSoFar(study, lab)
-                            scatter(study, lab)
-                        }
-                        .frame(minWidth: 260)
+                        // Wide enough for every column without a sideways scroller over the last row.
+                        table(study, lab).frame(minWidth: 580)
+                        charts(study, lab).frame(minWidth: 260)
                     }
-                    .frame(minWidth: 660)
+                    .frame(minWidth: 860)
                     VSplitView {
                         table(study, lab).frame(minHeight: 140)
-                        HStack(spacing: 8) {
-                            bestSoFar(study, lab)
-                            scatter(study, lab)
-                        }
-                        .frame(minHeight: 160)
+                        charts(study, lab).frame(minHeight: 160)
                     }
                 }
             }
@@ -1555,8 +1581,11 @@ struct StudyResults: View {
                         Text("\(c.number)")
                         Text(c.estimateValue.map { String(format: "%.4g", $0) } ?? "–")
                         Text(c.value.map { String(format: "%.4g", $0) } ?? "–")
-                        Text(c.value == nil ? (c.reason ?? "failed") : (c.feasible == false ? "over limit" : ""))
-                            .foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: 260, alignment: .leading)
+                        let note = c.value == nil ? (c.reason ?? "failed") : (c.feasible == false ? "over limit" : "")
+                        Text(note)
+                            .foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                            .help(note)
+                            .textSelection(.enabled)
                     }
                 }
             }
@@ -1608,11 +1637,26 @@ struct StudyResults: View {
             TableColumn("L/D", value: \.ld) { Text(fmt($0.ld, "%.1f")).monospacedDigit() }.width(44)
             TableColumn("Score", value: \.value) { Text(fmt($0.value, "%.4g")).monospacedDigit() }.width(54)
             TableColumn("Design", value: \.design) { r in
-                Text(r.design.isEmpty ? r.note : r.design).font(.caption).help(r.note)
+                Text(r.design.isEmpty ? r.note : r.design).font(.caption)
+                    .help(r.note.isEmpty ? r.design : r.design + "\n" + r.note)
             }
+            .width(min: 120)  // fills what is left: an ideal width made the table scroll sideways
         }
         .onChange(of: selection) { _, n in
             if let n, let t = s.trials.first(where: { $0.number == n }) { lab.load(trial: t) }
+        }
+    }
+
+    @ViewBuilder private func charts(_ s: WingStudy, _ lab: WingLabModel) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Picker("Chart", selection: $chart) {
+                ForEach(ChartKind.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented).labelsHidden().fixedSize().controlSize(.small)
+            switch chart {
+            case .progress: bestSoFar(s, lab)
+            case .front: scatter(s, lab)
+            }
         }
     }
 

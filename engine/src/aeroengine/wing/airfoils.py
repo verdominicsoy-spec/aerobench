@@ -139,7 +139,7 @@ def parse_dat(text: str, fallback_name: str = "airfoil") -> tuple[str, np.ndarra
             if blocks[-1]:
                 blocks.append([])
         elif name is None and not pairs:
-            name = line.strip()
+            name = " ".join(line.split())  # some UIUC headers carry double spaces
     blocks = [b for b in blocks if b]
     if len(pairs) < 6:
         raise EngineError(f"{fallback_name}: fewer than six coordinate pairs")

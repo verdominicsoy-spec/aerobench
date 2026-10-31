@@ -36,10 +36,17 @@ struct SettingsView: View {
                         if let url = chooseFolder(title: "Choose the SU2 folder", files: true) { settings.su2Path = url.path }
                     }
                 }
+                if let su2 = settings.su2Executable {
+                    Label("Found \(su2.path)", systemImage: "checkmark.circle").foregroundStyle(.green)
+                } else {
+                    Label("No SU2_CFD found. Install it from Wing Lab, Solvers, RANS CFD, or choose one here.",
+                          systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                }
             } header: {
                 Text("SU2")
             } footer: {
-                Text("Used by Wing Lab from Phase 4.")
+                Text("Wing Lab's RANS CFD, angle sweeps and the optimiser's RANS checks run on it. Left empty, the app looks next to the engine and in Homebrew's folders.")
             }
 
             Section {
@@ -49,7 +56,7 @@ struct SettingsView: View {
             } header: {
                 Text("Compute")
             } footer: {
-                Text("Up to \(settings.maxParallelJobs * settings.coresPerJob) of \(totalCores) cores. Leave room for the Parallels VM. "
+                Text("Up to \(settings.maxParallelJobs * settings.coresPerJob) of \(totalCores) cores. Leave some free for the rest of the Mac. "
                      + "A wing optimisation runs its trials at once on \(settings.coresPerJob) cores each, "
                      + "\(settings.parallelTrials * settings.coresPerJob) in all.")
             }

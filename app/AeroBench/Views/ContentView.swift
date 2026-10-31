@@ -93,7 +93,7 @@ struct ContentView: View {
 
     private var windowTitle: String {
         guard let project = app.project else { return "AeroBench" }
-        return project.isDirty ? "\(project.manifest.name) — Edited" : project.manifest.name
+        return app.hasUnsavedChanges ? "\(project.manifest.name) — Edited" : project.manifest.name
     }
 }
 
