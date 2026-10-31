@@ -99,6 +99,18 @@ only if Keep mesh was ticked.
 A multi-element wing in its own plane (not placed on the car), analysed by
 the solver that suits the question.
 
+**Design a wing** (the wand in the toolbar): from whatever is on the canvas
+to an optimised wing in a few minutes, hands-off. Pick 2 or 3 elements, what
+to aim for (the fastest lap on the Lap Sim's track, most downforce or best
+L/D), the thinnest section allowed and how many designs RANS should check.
+The engine ranks the library's sections by NeuralFoil's maximum lift at your
+Reynolds number and lays the best few out as a standard wing (inside the
+rules box if there is one), the quick estimate picks the starting wing, an
+estimate study tunes every angle, gap and overlap (about 1½ minutes for 300
+designs), the best few run with RANS on the quick mesh (about 1½ minutes
+each), and RANS's pick is loaded. Undo brings the old wing back; the study
+stays in the Study tab like any other.
+
 **Library** (left; the toolbar's sidebar buttons hide or show it and the inspector). The NACA 4 and 5-digit set is always there; *Download the
 Library* fetches the UIUC database (about 1,600 sections, not shipped with
 AeroBench since UIUC gives no licence to redistribute it). Search, filter by
@@ -199,8 +211,11 @@ as drawn; its lower bound is the structural limit). A trial's reshaped
 sections show on the canvas, and applying it puts them on the wing as new
 sections.
 
-**Into the Lap Sim** (inspector): with the span and a 2D-to-3D factor
-(your estimate), the wing's ClA = −Cl × span × total chord × factor
+**Into the Lap Sim** (inspector): with the span and either an endplate
+height (the 3D factor is then estimated: the aspect ratio raised by the
+endplates, AR (1 + 1.9 h / b), through lifting-line theory, AR_eff / (AR_eff
++ 2), plus induced drag CL² / (π AR_eff)) or a 2D-to-3D factor you type, the
+wing's ClA = −Cl × span × total chord × factor
 (positive for downforce) and CdA, from converged CFD if there is one, else
 the quick estimate, else the inviscid preview with a Cd you type in (the
 same rule as the results strip). *Compare in the Lap Sim* makes car B car A

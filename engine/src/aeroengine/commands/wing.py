@@ -187,6 +187,25 @@ def wing_sweep(ctx: JobContext) -> dict:
                       ctx.options.cores, ctx.thread_env(), ctx.emit.progress, ctx.emit.log)
 
 
+@command("wing-starter")
+def wing_starter(ctx: JobContext) -> dict:
+    """A starting wing for designing one from scratch: the library's sections
+    ranked by maximum lift at the main element's Reynolds number, the best few
+    laid out as a 2 or 3-element wing (in the rules box if given) and the one
+    the quick estimate likes best returned, with design variables to search."""
+    from ..wing.airfoils import data_dir
+    from ..wing.design import starter
+
+    p = ctx.params
+    box = p.get("rules_box")
+    return starter((_root(ctx) or data_dir()) / "airfoils", elements=int(p.get("elements", 2)),
+                   chord_total=float(p.get("chord_total", 0.44)), inverted=bool(p.get("inverted", True)),
+                   rules_box=tuple(float(v) for v in box) if box else None, speed=float(p.get("speed", 15)),
+                   rho=float(p.get("rho", 1.225)), mu=float(p.get("mu", 1.81e-5)), n_crit=float(p.get("n_crit", 9.0)),
+                   min_thickness=float(p.get("min_thickness", 0.08)), min_gap=float(p.get("min_gap", 0.005)),
+                   progress=lambda pct, msg: ctx.emit.progress(pct, msg))
+
+
 def _lap_score(raw, base):
     """The fastest-lap objective's car and track: params.lap holds the Lap
     Sim's car (as in a lapsim job), its track, the wing's span and endplate

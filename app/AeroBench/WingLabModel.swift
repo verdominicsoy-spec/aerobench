@@ -278,6 +278,20 @@ final class WingLabModel {
     }
     var study: WingStudy?
     var optimiseJob: JobItem?
+
+    // Design a wing from scratch: a starting wing from the library, a quick-estimate
+    // study from it, the best few checked with RANS, and RANS's pick loaded.
+    struct DesignSetup: Equatable {
+        var elements = 2
+        var objective: Objective = .minLapTime
+        var minThickness = 8.0  // % of chord, the thinnest section allowed
+        var checks = 2  // best designs run with RANS on the quick mesh at the end
+        var trials = 300
+    }
+    var design = DesignSetup()
+    var designStage: String?  // what the running design is doing, shown over the canvas
+    var designJob: JobItem?
+    @ObservationIgnored var designAwaitingStudy = false
     var selectedTrial: Int?
 
     // Panels (kept per Mac)

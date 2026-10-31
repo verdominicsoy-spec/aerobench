@@ -7,6 +7,7 @@ import simd
 struct WingLabView: View {
     @Environment(AppState.self) private var app
     @Environment(\.openWindow) private var openWindow
+    @State private var showDesign = false
 
     var body: some View {
         let lab = app.wingLab
@@ -33,6 +34,10 @@ struct WingLabView: View {
                     .help(lab.showLibrary ? "Hide the airfoil library" : "Show the airfoil library")
             }
             ToolbarItemGroup {
+                Button { showDesign = true } label: { Label("Design a Wing", systemImage: "wand.and.stars") }
+                    .help("From here to an optimised wing in a few minutes: sections from the library, a quick-estimate study, the best checked with RANS")
+                    .disabled(lab.designStage != nil)
+                    .popover(isPresented: $showDesign, arrowEdge: .bottom) { DesignWingSheet(dismiss: { showDesign = false }) }
                 Menu {
                     Button(lab.pinned == nil ? "Pin This Wing as A" : "Pin This Wing as A Instead") { lab.pinCurrent() }
                         .disabled(lab.wing.elements.isEmpty)
@@ -351,6 +356,18 @@ struct WingCanvas: View {
                 Button("Fit") { zoom = 1; pan = .zero }
             }
             .buttonStyle(.borderless)
+            if let stage = lab.designStage {
+                HStack(spacing: 8) {
+                    Text("DESIGNING").font(.caption2.bold()).foregroundStyle(S37.C.sageInk)
+                    Text(stage).font(.caption).lineLimit(1)
+                    if let job = lab.optimiseJob, lab.designAwaitingStudy, !job.status.isFinished {
+                        ProgressView(value: job.progress, total: 100).frame(width: 120)
+                        Text(job.progressMessage).font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
+                    } else {
+                        ProgressView().controlSize(.small)
+                    }
+                }
+            }
             if let t = lab.replayTrial, let i = lab.replayIndex {
                 HStack(spacing: 8) {
                     Text("TIME-LAPSE").font(.caption2.bold()).foregroundStyle(.orange)
@@ -1779,5 +1796,56 @@ struct FittingPicker<Value: Hashable, Content: View>: View {
             Picker(title, selection: $selection, content: content)
                 .pickerStyle(.menu)
         }
+    }
+}
+
+/// Design a wing: what to aim for, then the whole run is hands-off.
+struct DesignWingSheet: View {
+    @Environment(AppState.self) private var app
+    let dismiss: () -> Void
+
+    var body: some View {
+        let lab = app.wingLab
+        let haveSU2 = app.settings.su2Executable != nil
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Design a wing").font(.headline)
+            Text("Replaces the wing on the canvas (undo brings it back). Sections come from the library, ranked by maximum lift at your Reynolds number; a quick-estimate study tunes angles, gaps and overlaps\(lab.wing.rulesBox == nil ? "" : " inside the rules box"); the best are checked with RANS on the quick mesh and RANS's pick is loaded.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Form {
+                Picker("Elements", selection: Binding(get: { lab.design.elements }, set: { lab.design.elements = $0 })) {
+                    Text("2").tag(2)
+                    Text("3").tag(3)
+                }
+                .pickerStyle(.segmented)
+                Picker("Aim for", selection: Binding(get: { lab.design.objective }, set: { lab.design.objective = $0 })) {
+                    Text("Fastest lap (\(app.lapSim.track.kind.title))").tag(WingLabModel.Objective.minLapTime)
+                    Text("Most downforce").tag(WingLabModel.Objective.maxCl)
+                    Text("Best L/D").tag(WingLabModel.Objective.maxLD)
+                }
+                NumberField(label: "Thinnest section", unit: "%", value: Binding(get: { lab.design.minThickness }, set: { lab.design.minThickness = min(max($0, 2), 30) }))
+                Stepper(haveSU2 ? (lab.design.checks == 0 ? "RANS check: off" : "Check the best \(lab.design.checks) with RANS") : "RANS check: SU2 not installed",
+                        value: Binding(get: { lab.design.checks }, set: { lab.design.checks = $0 }), in: 0...4)
+                    .disabled(!haveSU2)
+            }
+            .formStyle(.grouped)
+            let minutes = 1.0 + (haveSU2 ? 1.5 * Double(lab.design.checks) : 0)
+            Text(String(format: "About %.0f minutes on 4 cores.", minutes.rounded(.up)))
+                .font(.caption).foregroundStyle(.secondary)
+            if lab.library.isEmpty {
+                Text("No airfoil library yet: only the NACA set will be tried. Download the library (left) for the high-lift sections.")
+                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel", action: dismiss).buttonStyle(S37ButtonStyle(kind: .plain))
+                Button("Design") {
+                    dismiss()
+                    app.designWing()
+                }
+                .buttonStyle(S37ButtonStyle(kind: .prominent))
+            }
+        }
+        .padding(16)
+        .frame(width: 420)
     }
 }

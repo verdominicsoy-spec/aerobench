@@ -245,6 +245,7 @@ extension AppState {
             } else {
                 self.wingLab.reloadStudy(project: self.project?.url)
             }
+            if self.wingLab.designAwaitingStudy { self.finishDesign(succeeded: item.status == .succeeded) }
         }
         lab.optimiseJob = job
         // The engine rewrites the export after every trial; follow it.
@@ -387,6 +388,123 @@ extension AppState {
 
     /// Car B becomes car A with this wing in place of the one it replaces,
     /// and the Lap Sim compares the two.
+    // MARK: Design a wing
+
+    private struct StarterResult: Decodable {
+        struct Element: Decodable {
+            var key: String
+            var name: String
+            var unit: [[Double]]
+            var chord: Double
+            var angle: Double
+            var leadingEdge: [Double]
+            var inverted: Bool
+        }
+        struct Variable: Decodable {
+            var element: Int
+            var kind: String
+            var low: Double
+            var high: Double
+        }
+        var elements: [Element]
+        var variables: [Variable]
+    }
+
+    /// From whatever is on the canvas to an optimised wing: the engine picks a
+    /// starting wing from the library (seconds), a quick-estimate study tunes
+    /// it (about a minute), the best few run with RANS on the quick mesh
+    /// (about 1½ minutes each) and RANS's pick is loaded.
+    func designWing() {
+        let lab = wingLab
+        guard project != nil else {
+            show("Save the project first", WingLabError("The design's study is stored in the project."))
+            return
+        }
+        let wing = lab.wing
+        var params: [String: JSONValue] = [
+            "elements": .int(lab.design.elements), "chord_total": .double(wing.elements.isEmpty ? 0.44 : wing.refChord),
+            "inverted": .bool(wing.elements.first?.inverted ?? true), "speed": .double(wing.speed), "rho": .double(wing.rho),
+            "mu": .double(wing.mu), "n_crit": .double(lab.nCrit), "min_thickness": .double(lab.design.minThickness / 100),
+            "min_gap": .double(wing.minGap),
+        ]
+        if let b = wing.rulesBox {
+            params["rules_box"] = .array([.double(b.minX), .double(b.minY), .double(b.maxX), .double(b.maxY)])
+        }
+        lab.designStage = "Choosing sections from the library"
+        lab.designJob = jobs.submit(command: "wing-starter", params: params, in: jobsRoot) { [weak self] item in
+            guard let self else { return }
+            let lab = self.wingLab
+            let d = JSONDecoder()
+            d.keyDecodingStrategy = .convertFromSnakeCase
+            struct Wrapper: Decodable { var data: StarterResult }
+            guard item.status == .succeeded, let text = item.resultText,
+                  let r = try? d.decode(Wrapper.self, from: Data(text.utf8)).data else {
+                lab.designStage = nil
+                if item.status == .failed { self.show("Could not start the design", WingLabError(item.message ?? "The starting wing failed.")) }
+                return
+            }
+            var elements: [WingElement] = []
+            for e in r.elements {
+                let coords = e.unit.compactMap { $0.count == 2 ? SIMD2($0[0], $0[1]) : nil }
+                guard e.leadingEdge.count == 2, coords.count > 10 else {
+                    lab.designStage = nil
+                    self.show("Could not start the design", WingLabError("The engine sent an unreadable section."))
+                    return
+                }
+                // The library's own entry when there is one; else (the NACA set without
+                // a library) the section as the engine sent it.
+                let airfoil = lab.airfoil(e.key) ?? Airfoil(
+                    key: e.key, name: e.name, family: "NACA", source: "naca",
+                    thickness: (coords.map(\.y).max() ?? 0) - (coords.map(\.y).min() ?? 0), thicknessX: 0.3,
+                    camber: 0, camberX: 0.4, teThickness: 0, coords: coords)
+                elements.append(WingElement(airfoil: airfoil, chord: e.chord, angle: e.angle,
+                                            leadingEdge: SIMD2(e.leadingEdge[0], e.leadingEdge[1]), inverted: e.inverted))
+            }
+            lab.edit { $0.elements = elements; $0.alpha = 0 }
+            lab.optimise.variables = r.variables.compactMap { v in
+                guard let kind = WingLabModel.DesignVariable.Kind(rawValue: v.kind) else { return nil }
+                var dv = WingLabModel.DesignVariable(element: v.element, kind: kind, low: 0, high: 0)
+                dv.low = v.low / dv.engineScale
+                dv.high = v.high / dv.engineScale
+                return dv
+            }
+            lab.optimise.objective = lab.design.objective
+            lab.optimise.solver = "estimate"
+            lab.optimise.trials = lab.design.trials
+            let checks = self.settings.su2Executable == nil ? 0 : lab.design.checks
+            lab.optimise.checkBest = checks
+            lab.meshLevel = "quick"
+            lab.optimise.studyName = self.nextDesignName()
+            lab.designStage = checks > 0
+                ? "Tuning \(lab.design.trials) designs on quick estimates, then checking the best \(checks) with RANS"
+                : "Tuning \(lab.design.trials) designs on quick estimates (SU2 is not installed, so no RANS check)"
+            lab.designAwaitingStudy = true
+            let before = lab.optimiseJob
+            self.runWingOptimise()
+            if lab.optimiseJob === before {  // it could not start (the reason has been shown)
+                lab.designAwaitingStudy = false
+                lab.designStage = nil
+            }
+        }
+    }
+
+    /// Loads RANS's pick (or the estimate's best without a check) once the study ends.
+    func finishDesign(succeeded: Bool) {
+        let lab = wingLab
+        lab.designAwaitingStudy = false
+        lab.designStage = nil
+        guard succeeded, let s = lab.study else { return }
+        let pick = s.bestCheck.flatMap { c in s.trials.first { $0.number == c.number } } ?? s.bestTrial
+        if let pick { lab.load(trial: pick) }
+    }
+
+    private func nextDesignName() -> String {
+        guard let project else { return "design-1" }
+        var n = 1
+        while FileManager.default.fileExists(atPath: WingLabModel.studyFile(project: project.url, name: "design-\(n)").path) { n += 1 }
+        return "design-\(n)"
+    }
+
     /// The fastest-lap objective races the Lap Sim's car A, with this wing in
     /// place of the one it replaces, around the Lap Sim's track.
     func lapObjectiveParams() throws -> JSONValue {
