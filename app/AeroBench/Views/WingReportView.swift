@@ -107,7 +107,8 @@ struct WingReportView: View {
             Text("Conditions").bold()
             Text(String(format: "%.1f m/s, Re %.2g on the reference chord", wing.speed, wing.reynolds(chord: wing.refChord)))
             Text(String(format: "Wing angle %.1f°, reference chord %.0f mm", wing.alpha, wing.refChord * 1000))
-            Text(String(format: "Span %.0f mm, 3D factor %.2f", wing.span * 1000, wing.factor3D))
+            Text(String(format: "Span %.0f mm, 3D factor %.2f%@", wing.span * 1000, wing.liftFactor3D,
+                        wing.endplateHeight.map { String(format: " (endplates %.0f mm)", $0 * 1000) } ?? ""))
             Text(wing.elements.first?.inverted ?? true ? "Inverted (downforce)" : "Upright (lift)")
         }
         .font(.system(size: 8).monospacedDigit())

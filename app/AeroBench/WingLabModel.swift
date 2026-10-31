@@ -659,7 +659,7 @@ final class WingLabModel {
         var w = Wing(elements: [
             WingElement(airfoil: s, chord: 0.30, angle: 3, leadingEdge: .zero, inverted: true),
             WingElement(airfoil: s, chord: 0.14, angle: 25, leadingEdge: SIMD2(0.27, 0.025), inverted: true),
-        ], span: 1.0)
+        ], span: 1.0, endplateHeight: 0.25)  // span and endplates: placeholders for the team's own
         w.setGap(0.012, of: 1)
         return w
     }

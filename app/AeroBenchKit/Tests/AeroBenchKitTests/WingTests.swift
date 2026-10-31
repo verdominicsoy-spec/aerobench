@@ -385,3 +385,22 @@ final class AirfoilReshapeTests: XCTestCase {
         XCTAssertEqual(again.elements[1].airfoil.name, "NACA 0012 (camber +2.0%, thickness 100%)")
     }
 }
+
+final class FiniteWingTests: XCTestCase {
+    func testEstimatedAndTypedFactors() throws {
+        let s = try XCTUnwrap(Airfoil.naca4("4412"))
+        var w = Wing(elements: [WingElement(airfoil: s, chord: 0.30), WingElement(airfoil: s, chord: 0.14)], span: 1.0, factor3D: 0.8)
+        XCTAssertNil(w.finite3D)
+        XCTAssertEqual(w.carContribution(cl: -2, cd: 0.04).cla, 2 * 0.44 * 0.8, accuracy: 1e-12)  // as typed, as before
+        w.endplateHeight = 0.25
+        let f = try XCTUnwrap(w.finite3D)
+        XCTAssertEqual(f.aspectRatio, 1 / 0.44, accuracy: 1e-9)
+        XCTAssertEqual(f.effectiveAspectRatio, 1 / 0.44 * 1.475, accuracy: 1e-9)
+        XCTAssertEqual(w.liftFactor3D, f.effectiveAspectRatio / (f.effectiveAspectRatio + 2), accuracy: 1e-12)
+        // The same numbers as the engine's wing/finite.py test.
+        let car = w.carContribution(cl: -2, cd: 0.04)
+        let cl3 = 2 * w.liftFactor3D
+        XCTAssertEqual(car.cla, cl3 * 0.44, accuracy: 1e-12)
+        XCTAssertEqual(car.cda, (0.04 + cl3 * cl3 / (Double.pi * f.effectiveAspectRatio)) * 0.44, accuracy: 1e-12)
+    }
+}

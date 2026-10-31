@@ -123,18 +123,23 @@ public struct Wing: Codable, Equatable, Sendable {
     public var minGap: Double  // m, closer than this is flagged
     public var span: Double  // m, for turning 2D coefficients into ClA and CdA
     public var factor3D: Double  // 2D to 3D: below 1 for a finite wing, user's estimate
+    /// Endplate height (m). Set, the 3D factor and induced drag are estimated
+    /// from span, chord and endplates (finite3D); nil, factor3D is used as typed.
+    public var endplateHeight: Double?
     public var speed: Double  // m/s, for the viscous solvers' Reynolds number
     public var rho: Double  // kg/m^3
     public var mu: Double  // Pa s
 
     public init(elements: [WingElement] = [], alpha: Double = 0, rulesBox: RulesBox? = nil, minGap: Double = 0.005,
-                span: Double = 1.0, factor3D: Double = 1.0, speed: Double = 15, rho: Double = 1.225, mu: Double = 1.81e-5) {
+                span: Double = 1.0, factor3D: Double = 1.0, endplateHeight: Double? = nil, speed: Double = 15,
+                rho: Double = 1.225, mu: Double = 1.81e-5) {
         self.elements = elements
         self.alpha = alpha
         self.rulesBox = rulesBox
         self.minGap = minGap
         self.span = span
         self.factor3D = factor3D
+        self.endplateHeight = endplateHeight
         self.speed = speed
         self.rho = rho
         self.mu = mu
@@ -148,6 +153,7 @@ public struct Wing: Codable, Equatable, Sendable {
         minGap = try c.decodeIfPresent(Double.self, forKey: .minGap) ?? 0.005
         span = try c.decodeIfPresent(Double.self, forKey: .span) ?? 1.0
         factor3D = try c.decodeIfPresent(Double.self, forKey: .factor3D) ?? 1.0
+        endplateHeight = try c.decodeIfPresent(Double.self, forKey: .endplateHeight)
         speed = try c.decodeIfPresent(Double.self, forKey: .speed) ?? 15
         rho = try c.decodeIfPresent(Double.self, forKey: .rho) ?? 1.225
         mu = try c.decodeIfPresent(Double.self, forKey: .mu) ?? 1.81e-5
@@ -295,11 +301,30 @@ public struct Wing: Codable, Equatable, Sendable {
 
     // MARK: Lap Sim
 
+    /// The finite wing from span, total chord and endplates (engine:
+    /// wing/finite.py, the same formulas). Endplates raise the effective
+    /// aspect ratio, AR (1 + 1.9 h / b) (Hoerner); lifting-line theory then
+    /// scales the 2D lift by AR_eff / (AR_eff + 2) and adds induced drag
+    /// CL^2 / (pi AR_eff). Nil without an endplate height.
+    public var finite3D: (aspectRatio: Double, effectiveAspectRatio: Double, liftFactor: Double)? {
+        guard let h = endplateHeight else { return nil }
+        let ar = span / refChord
+        let eff = ar * (1 + 1.9 * max(h, 0) / max(span, 1e-9))
+        return (ar, eff, eff / (eff + 2))
+    }
+
+    /// The 2D-to-3D lift factor in use: estimated, or as typed.
+    public var liftFactor3D: Double { finite3D?.liftFactor ?? factor3D }
+
     /// What this wing adds to a car, from 2D coefficients on the reference
     /// chord in the wing frame (y up): downforce ClA, which is -Cl either
-    /// way up (positive for a downforce wing), and CdA.
+    /// way up (positive for a downforce wing), and CdA, with induced drag
+    /// when the 3D factor is estimated.
     public func carContribution(cl: Double, cd: Double) -> (cla: Double, cda: Double) {
-        let area = span * refChord * factor3D
-        return (-cl * area, cd * area)
+        let area = span * refChord
+        guard let f = finite3D else { return (-cl * area * factor3D, cd * area * factor3D) }
+        let cl3 = cl * f.liftFactor
+        let induced = cl3 * cl3 / (Double.pi * f.effectiveAspectRatio)
+        return (-cl3 * area, (cd + induced) * area)
     }
 }

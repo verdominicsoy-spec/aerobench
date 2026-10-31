@@ -1174,7 +1174,15 @@ struct WingInspector: View {
         let add = wing.carContribution(cl: cl, cd: cd)
         Section {
             NumberField(label: "Span", unit: "mm", value: mm({ wing.span }, { v in lab.edit { $0.span = max(v, 0.01) } }))
-            NumberField(label: "2D to 3D factor", value: Binding(get: { wing.factor3D }, set: { v in lab.edit { $0.factor3D = max(v, 0) } }))
+            Toggle("Estimate 3D from span and endplates", isOn: Binding(
+                get: { wing.endplateHeight != nil }, set: { on in lab.edit { $0.endplateHeight = on ? 0.25 : nil } }))
+            if let f = wing.finite3D {
+                NumberField(label: "Endplate height", unit: "mm", value: mm({ wing.endplateHeight ?? 0 }, { v in lab.edit { $0.endplateHeight = max(v, 0) } }))
+                LabeledContent("3D lift factor", value: String(format: "%.2f (aspect ratio %.1f, %.1f with endplates)", f.liftFactor, f.aspectRatio, f.effectiveAspectRatio))
+                    .font(.caption)
+            } else {
+                NumberField(label: "2D to 3D factor", value: Binding(get: { wing.factor3D }, set: { v in lab.edit { $0.factor3D = max(v, 0) } }))
+            }
             if let from {
                 LabeledContent("From the \(from.name)", value: String(format: "Cl %.3f   Cd %.4f", from.cl, from.cd))
             } else {
@@ -1192,7 +1200,7 @@ struct WingInspector: View {
         } header: {
             Text("Use in the Lap Sim")
         } footer: {
-            Text("ClA = −Cl × span × total chord × factor (positive for downforce). A finite wing makes less than the 2D section: endplates help; around 0.7–0.9 is typical, but it is your estimate. Uses converged CFD if there is one, else the quick estimate, else the inviscid preview (optimistic) with the Cd typed in.")
+            Text("ClA = −Cl × span × total chord × 3D factor (positive for downforce). Estimated, the factor is lifting-line theory on the aspect ratio raised by the endplates (Hoerner), AR_eff / (AR_eff + 2), and CdA gains induced drag CL² / (π AR_eff): a first number for a finite wing, not a 3D solution. Uses converged CFD if there is one, else the quick estimate, else the inviscid preview (optimistic) with the Cd typed in.")
         }
     }
 }
@@ -1695,7 +1703,7 @@ struct ResultsSummary: View {
                     let car = wing.carContribution(cl: c.cl, cd: c.cd)
                     card("On the car (\(c.from))", tab: nil,
                          lines: [String(format: "ClA %.3f m²  CdA %.3f m²", car.cla, car.cda),
-                                 String(format: "span %.0f mm, 3D factor %.2f", wing.span * 1000, wing.factor3D)], lab: lab)
+                                 String(format: "span %.0f mm, 3D factor %.2f", wing.span * 1000, wing.liftFactor3D)], lab: lab)
                 }
                 if let a = lab.pinned {
                     card("A, pinned", tab: nil, lines: pinnedLines(a, estimate: estimate, lab: lab), lab: lab)
