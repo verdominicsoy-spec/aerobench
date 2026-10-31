@@ -1145,3 +1145,13 @@ wing at 0 to -9 degrees, over a ground at 300, 150 and 60 mm, and the timed
 design run's check): lift within 2.8% wherever RANS converged, drag within
 9.1%, and both runs RANS never settled called separating.
 
+**SA or SST.** The estimate's corrections were fitted to SU2 with
+Spalart-Allmaras; STAR-CCM+ set-ups for FS wings more often run k-omega
+SST. On the starting wing (quick mesh, 0 degrees) SST gives Cl -2.106 and Cd
+0.0345 against SA's -2.168 and 0.0347: 2.9% less lift, the same drag. The
+estimate (-2.143) sits between them, 1.8% above SST and 1.2% below SA, so
+at attached angles either model is matched within the 5%. Near stall SST
+usually separates earlier than SA; the separation rules were fitted on SA
+runs, so a design the estimate passes close to its limits is worth an SST
+check.
+

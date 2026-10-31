@@ -293,6 +293,7 @@ def compare(case: Case, model_size: str = "large", sweep_max: bool = True) -> di
 # (name, wing angle, ride height m or None, design values or None, RANS Cl, Cd, or None if RANS never settled)
 RANS_REFERENCES = [
     ("starting wing, 0°", 0.0, None, None, -2.1677, 0.03468),
+    ("starting wing, 0°, SST (STAR-CCM+'s usual model)", 0.0, None, None, -2.1058, 0.03451),
     ("starting wing, -3°", -3.0, None, None, -2.4104, 0.04433),
     ("starting wing, -6°", -6.0, None, None, -2.5037, 0.06419),
     ("starting wing, -9°", -9.0, None, None, None, None),
