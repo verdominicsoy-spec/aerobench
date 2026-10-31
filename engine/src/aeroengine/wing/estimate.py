@@ -93,9 +93,12 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
     Returns one row per wing angle with total and per-element coefficients
     on the reference chord (the sum of the element chords by default).
     With a ride height (m, from the wing's lowest point to a ground moving
-    with the flow) the panel method includes the ground; each element's
-    effective angle is still against itself alone in free air, so the
-    ground's effect reaches NeuralFoil as an extra turning of the flow."""
+    with the flow) the panel method includes the ground, and each element's
+    effective angle is measured against itself alone over the same ground:
+    so it holds only what its neighbours do, and the ground's own lift
+    (the image's induced speed, more than any turning of the flow) is
+    applied on top, as the ratio of the element's lift alone over the
+    ground to alone in free air."""
     if not elements:
         raise EngineError("no elements to estimate")
     if ride_height is not None and not ride_height > 0:
@@ -114,22 +117,41 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
         alone.append((c0, (c5 - c0) / 5.0))
 
     # Effective angles for every wing angle first, then one NeuralFoil call
-    # per element for all of them.
+    # per element for all of them. `local` is each element's lift alone in
+    # its surroundings at that wing angle and its slope per degree of
+    # freestream: free air, the linear fit above; over a ground, two solves
+    # of the element alone over the same ground, as placed and turned a
+    # degree about its centroid.
     effective = []  # [row][element] in degrees of freestream
     inviscid = []
+    local = []  # [row][element] (lift alone here, slope)
+    amplify = []  # [row][element] lift alone over the ground / alone in free air (1 in free air)
     for a in alphas:
         if multi is not None:
             r = multi.solve(float(a))
+            here = [(c0 + slope * float(a), slope) for c0, slope in alone]
         else:
             turned, ground = in_ground_effect(placed, float(a), ride_height)
             r = Solver(turned, ref, ground=ground).solve(0.0)
-        row_eff, row_inv = [], []
-        for i, (c0, slope) in enumerate(alone):
+            here = []
+            for xy, c in zip(turned, chords):
+                base = Solver([xy], c, ground=ground).solve(0.0).cl_total
+                mid = xy.mean(axis=0)
+                d = np.radians(1.0)  # one degree more freestream is the element turned one degree nose down
+                rot = np.array([[np.cos(d), np.sin(d)], [-np.sin(d), np.cos(d)]])
+                tilted = Solver([(xy - mid) @ rot.T + mid], c, ground=ground).solve(0.0).cl_total
+                here.append((base, tilted - base))
+        row_eff, row_inv, row_amp = [], [], []
+        for i, ((c0, slope), (base, slope_here)) in enumerate(zip(alone, here)):
             own = r.cl[i] * ref / chords[i]  # this element's lift on its own chord, in place
             row_inv.append(own)
-            row_eff.append((own - c0) / slope if abs(slope) > 1e-9 else float(a))
+            row_eff.append(float(a) + (own - base) / slope_here if abs(slope_here) > 1e-9 else float(a))
+            free = c0 + slope * float(a)
+            row_amp.append(base / free if multi is None and abs(free) > 0.05 else 1.0)
         effective.append(row_eff)
         inviscid.append(row_inv)
+        local.append(here)
+        amplify.append(row_amp)
 
     viscous = []  # per element: NeuralFoil rows, one per wing angle
     scale = []  # per element and wing angle: viscous over inviscid lift (elements with one behind them)
@@ -155,8 +177,9 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
         c0, slope = alone[i]
         cap = (stall[i] + FRONT_LIFT_LIMIT - float(e.get("angle", 0.0))) * sense  # freestream-equivalent angle
         for k in range(len(alphas)):
-            if own[k] > stall[i] + FRONT_LIFT_LIMIT and abs(slope) > 1e-9:
-                inviscid[k][i] = c0 + slope * cap
+            base, slope_here = local[k][i]
+            if own[k] > stall[i] + FRONT_LIFT_LIMIT and abs(slope_here) > 1e-9:
+                inviscid[k][i] = base + slope_here * (cap - float(alphas[k]))
         # The viscous loss in the linear part of the lift curve (6 degrees
         # short of stall onset, or lower if the element sits lower): NeuralFoil
         # over the panel method, the section alone, upright.
@@ -184,8 +207,9 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
             share = chords[i] / ref
             front = scale[i][k] is not None
             in_place = e_angle(elements[i], effective[k][i])
-            cl_own = v["cl"] if not front else inviscid[k][i] * scale[i][k]
-            past_onset = max(0.0, in_place - (stall[i] - 4.0)) if front else 0.0
+            cl_own = v["cl"] * amplify[k][i] if not front else inviscid[k][i] * scale[i][k]
+            # Held at the separation line: past it the element counts as separating and the number means little.
+            past_onset = min(max(0.0, in_place - (stall[i] - 4.0)), FRONT_SEPARATION + 4.0) if front else 0.0
             cd_own = v["cd"] * (1 + DRAG_GROWTH * past_onset**2)
             els.append({"cl": cl_own * share, "cd": cd_own * share, "cm": v["cm"] * share * chords[i] / ref,
                         "cl_own": cl_own, "cd_own": cd_own, "cl_inviscid_own": inviscid[k][i],
