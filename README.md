@@ -35,6 +35,12 @@ fails it says why and opens the last build that worked. Drag it to the right
 side of the Dock to launch from there. The built app lives in `build/` (not
 committed).
 
+The app checks GitHub too: launched from a git checkout, it fetches in the
+background and, if the branch has new commits, shows a banner with Update &
+Restart, which runs `AeroBench.command` in Terminal (the project is saved as
+the app quits). Offline, or with nothing new, it says nothing. A packaged app
+never checks.
+
 The first time, macOS may say it cannot verify the script: right-click it,
 choose Open, then Open again. After that a double-click is enough.
 

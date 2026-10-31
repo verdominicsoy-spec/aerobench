@@ -41,6 +41,10 @@ struct ContentView: View {
         VStack(spacing: 0) {
             ToolDock(selection: $selection)
             Divider().overlay(S37.C.separator)
+            if app.updatesBehind > 0, !app.updateDismissed {
+                UpdateBanner()
+                Divider().overlay(S37.C.separator)
+            }
             Group {
                 switch selection {
                 case .project:
@@ -173,5 +177,27 @@ struct EngineSetupView: View {
         }
         .padding(20)
         .frame(width: 460)
+    }
+}
+
+/// A newer version on GitHub: update now (AeroBench.command in Terminal) or later.
+struct UpdateBanner: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.down.circle").foregroundStyle(S37.C.sageInk)
+            Text(app.updatesBehind == 1 ? "An update is on GitHub." : "\(app.updatesBehind) updates are on GitHub.")
+            Text("Update & Restart pulls it, rebuilds (a minute or two) and reopens; your project is saved first.")
+                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Spacer()
+            Button("Later") { app.updateDismissed = true }
+            Button("Update & Restart") { app.updateAndRestart() }
+                .buttonStyle(S37ButtonStyle(kind: .prominent))
+        }
+        .controlSize(.small)
+        .padding(.horizontal, S37.Space.s3)
+        .padding(.vertical, 6)
+        .background(S37.C.surface)
     }
 }

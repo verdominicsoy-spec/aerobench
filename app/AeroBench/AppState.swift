@@ -29,6 +29,9 @@ final class AppState {
     var alert: AppAlert?
     /// The most recent ping, shown on the project screen.
     var pingJob: JobItem?
+    /// Commits on GitHub this checkout does not have yet (AppState+Update); 0 when up to date.
+    var updatesBehind = 0
+    var updateDismissed = false
 
     /// Lap Sim inputs. Saved to the project's lapsim/setup.json on save.
     var lapSim = LapSimSetup() {
@@ -52,6 +55,7 @@ final class AppState {
             .filter { ProjectStore.isProject($0) }
         jobs.loadHistory(from: jobsRoot)
         showLatestLapSim()
+        checkForUpdates()
         flow.onCalibrationChange = { [weak self] in self?.project?.isDirty = true }
         wingLab.onChange = { [weak self] in self?.scheduleLiveEstimate() }
         terminationObserver = NotificationCenter.default.addObserver(
