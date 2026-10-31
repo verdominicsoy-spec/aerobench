@@ -80,6 +80,8 @@ class Spec:
     seed: int | None = None
     solver: str = "rans"  # what each trial is: "rans" (SU2) or "estimate" (panel method and NeuralFoil)
     lap: LapScore | None = None  # for min_lap_time
+    # Unit coordinates of every section a section variable can choose, by key.
+    sections: dict[str, np.ndarray] | None = None
 
     def __post_init__(self) -> None:
         if self.objective not in OBJECTIVES:
@@ -97,8 +99,17 @@ class Spec:
         if not self.variables:
             raise EngineError("tick at least one design variable")
         for v in self.variables:
-            if v.kind not in ("angle", "gap", "overlap", "camber", "thickness", "height"):
+            if v.kind not in ("angle", "gap", "overlap", "chord", "airfoil", "camber", "thickness", "height"):
                 raise EngineError(f"unknown design variable '{v.kind}'")
+            if v.kind == "airfoil":
+                if len(v.choices) < 2:
+                    raise EngineError(f"{v.name}: a section variable needs two or more sections to choose from")
+                missing = [k for k in v.choices if not self.sections or k not in self.sections]
+                if missing:
+                    raise EngineError(f"{v.name}: no coordinates for {', '.join(missing[:3])}")
+                v.low, v.high = 0.0, float(len(v.choices) - 1)
+            if v.kind == "chord" and v.low <= 0:
+                raise EngineError(f"{v.name}: a chord must stay above zero")
             if v.kind == "thickness" and v.low <= 0:
                 raise EngineError(f"{v.name}: the thickness scale must stay above zero")
             if v.kind == "height" and v.low <= 0:
@@ -127,6 +138,21 @@ def score(spec: Spec, load: float, cd: float) -> tuple[float, bool]:
         return load - PENALTY * over, over == 0
     short = max(0.0, 1 - load / spec.cl_target)  # type: ignore[operator]
     return cd * (1 + PENALTY * short), short == 0
+
+
+def resolve(spec: Spec, values: dict) -> tuple[dict[str, float], dict[int, np.ndarray], dict[int, str]]:
+    """A trial's values split into the numbers apply() takes, the sections
+    its section variables chose (unit coordinates by element) and their keys."""
+    numbers, units, keys = {}, {}, {}
+    for v in spec.variables:
+        if v.name not in values:
+            continue
+        if v.kind == "airfoil":
+            key = v.choices[int(round(values[v.name]))]
+            units[v.element], keys[v.element] = spec.sections[key], key  # type: ignore[index]
+        else:
+            numbers[v.name] = float(values[v.name])
+    return numbers, units, keys
 
 
 def _sampler(spec: Spec, done: int = 0) -> optuna.samplers.BaseSampler:
@@ -169,7 +195,9 @@ def run(base: Wing, spec: Spec, evaluate: Evaluate, storage: Path, name: str, wo
     if any(v.kind in ("camber", "thickness") for v in spec.variables) and "base_sections" not in study.user_attrs:
         study.set_user_attr("base_sections", [np.round(e.unit, 6).tolist() for e in base.elements])
     inverted = base.elements[0].inverted
-    dists = {v.name: optuna.distributions.FloatDistribution(v.low, v.high) for v in spec.variables}
+    # A section is a choice, not a number on a scale: categorical, by index.
+    dists = {v.name: optuna.distributions.CategoricalDistribution(list(range(len(v.choices)))) if v.kind == "airfoil"
+             else optuna.distributions.FloatDistribution(v.low, v.high) for v in spec.variables}
 
     # Trials an earlier session left running were cut off: mark them, and
     # queue the same values again. They do not count towards the total.
@@ -214,7 +242,11 @@ def run(base: Wing, spec: Spec, evaluate: Evaluate, storage: Path, name: str, wo
         attrs: dict = {}
         state, value = optuna.trial.TrialState.FAIL, None
         try:
-            wing = apply(base, values)
+            numbers, units, keys = resolve(spec, values)
+            wing = apply(base, numbers, units)
+            if keys:
+                attrs["airfoils"] = {str(i): k for i, k in keys.items()}
+            attrs["chords"] = [e.chord for e in wing.elements]
             attrs["placement"] = [{"angle": e.angle, "leading_edge": e.leading_edge.tolist()} for e in wing.elements]
             attrs["gaps"] = [wing.gap(i) for i in range(1, len(wing.elements))]
             attrs["overlaps"] = [wing.overlap(i) for i in range(1, len(wing.elements))]
@@ -331,13 +363,18 @@ def _current(base: Wing, variables: list[Variable]) -> dict[str, float]:
             out[v.name] = base.overlap(v.element)
         elif v.kind == "height":
             out[v.name] = base.ride_height if base.ride_height is not None else v.low
+        elif v.kind == "chord":
+            out[v.name] = base.elements[v.element].chord
+        elif v.kind == "airfoil":
+            out[v.name] = 0  # the element's own section is the first choice
         else:  # the drawn shape: no camber added, thickness as it is
             out[v.name] = 0.0 if v.kind == "camber" else 1.0
     return out
 
 
 def _spec_dict(spec: Spec) -> dict:
-    return {"variables": [{"element": v.element, "kind": v.kind, "low": v.low, "high": v.high} for v in spec.variables],
+    return {"variables": [{"element": v.element, "kind": v.kind, "low": v.low, "high": v.high,
+                           **({"choices": list(v.choices)} if v.choices else {})} for v in spec.variables],
             "objective": spec.objective, "cd_cap": spec.cd_cap, "cl_target": spec.cl_target, "sampler": spec.sampler,
             "solver": spec.solver}
 
@@ -350,8 +387,8 @@ def summary(study: optuna.Study, spec: Spec) -> dict:
         trials.append({"number": t.number, "state": state, "value": t.value if state == "complete" else None,
                        "params": t.params,
                        **{k: a.get(k) for k in ("cl", "cd", "cm", "load", "element_cl", "feasible", "converged",
-                                                "reason", "placement", "gaps", "overlaps", "seconds", "iterations",
-                                                "cells")}})
+                                                "reason", "placement", "gaps", "overlaps", "chords", "airfoils",
+                                                "seconds", "iterations", "cells")}})
     good = [t for t in trials if t["state"] == "complete" and t["feasible"]]
     best = None
     if good:
@@ -416,7 +453,7 @@ def check(base: Wing, spec: Spec, storage: Path, name: str, evaluate: Evaluate, 
         folder.mkdir(parents=True, exist_ok=True)
         rec: dict = {"number": t["number"], "estimate_value": t["value"]}
         try:
-            res = evaluate(apply(base, t["params"]), folder)
+            res = evaluate(apply(base, *resolve(spec, t["params"])[:2]), folder)
             load = -res["cl"] if inverted else res["cl"]
             rec.update(cl=res["cl"], cd=res["cd"], load=load, converged=bool(res["converged"]), reason=res.get("reason"))
             if res["converged"] and res.get("scheme", "jst") == "jst":

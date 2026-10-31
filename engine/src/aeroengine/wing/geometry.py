@@ -151,12 +151,15 @@ def inside(p: np.ndarray, poly: np.ndarray) -> bool:
 @dataclass
 class Variable:
     """One design variable: an element's angle (degrees), gap or overlap (m),
-    or its shape: camber added (fraction of chord) and thickness (scale);
-    or the whole wing's ride height over a ground (m, element 0)."""
+    chord (m), section (one of `choices`, library keys, the element's own
+    first), or its shape: camber added (fraction of chord) and thickness
+    (scale); or the whole wing's ride height over a ground (m, element 0).
+    A section variable's value is the index of its choice."""
     element: int
-    kind: str  # "angle", "gap", "overlap", "camber", "thickness" or "height"
+    kind: str  # "angle", "gap", "overlap", "chord", "airfoil", "camber", "thickness" or "height"
     low: float
     high: float
+    choices: tuple[str, ...] = ()
     name: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -191,17 +194,21 @@ def reshape(unit: np.ndarray, camber: float = 0.0, thickness: float = 1.0) -> np
 SHAPE_KINDS = ("camber", "thickness")
 
 
-def apply(base: Wing, values: dict[str, float]) -> Wing:
-    """The base wing with design values applied. Shapes change first; angles
-    turn each element about its leading edge; then, element by element from
-    the front, each flap's gap and overlap go to the design value, or back
-    to what the base wing had, so turning an element does not drag the slot
-    with it."""
+def apply(base: Wing, values: dict[str, float], sections: dict[int, np.ndarray] | None = None) -> Wing:
+    """The base wing with design values applied. Sections swap first (unit
+    coordinates by element), then shapes change; chords grow or shrink from
+    the leading edge; angles turn each element about its leading edge; then,
+    element by element from the front, each flap's gap and overlap go to the
+    design value, or back to what the base wing had, so turning or resizing
+    an element does not drag the slot with it."""
     w = base.copy()
     if "height_0" in values:
         w.ride_height = values["height_0"]
     targets = [(base.gap(i), base.overlap(i)) if i else (0.0, 0.0) for i in range(len(base.elements))]
     for i, e in enumerate(w.elements):
+        if sections and i in sections:
+            e.unit = np.asarray(sections[i], float)
+        e.chord = values.get(f"chord_{i}", e.chord)
         if f"camber_{i}" in values or f"thickness_{i}" in values:
             e.unit = reshape(e.unit, values.get(f"camber_{i}", 0.0), values.get(f"thickness_{i}", 1.0))
         e.angle = values.get(f"angle_{i}", e.angle)

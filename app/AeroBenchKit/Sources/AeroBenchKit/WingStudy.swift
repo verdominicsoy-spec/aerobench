@@ -5,15 +5,18 @@ import Foundation
 public struct WingStudy: Codable, Equatable, Sendable {
     public struct Variable: Codable, Equatable, Sendable {
         public var element: Int
-        public var kind: String  // angle (degrees), gap or overlap (m)
+        public var kind: String  // angle (degrees), gap, overlap or chord (m), airfoil (an index into choices), ...
         public var low: Double
         public var high: Double
+        /// A section variable's library keys, the element's own first.
+        public var choices: [String]?
 
-        public init(element: Int, kind: String, low: Double, high: Double) {
+        public init(element: Int, kind: String, low: Double, high: Double, choices: [String]? = nil) {
             self.element = element
             self.kind = kind
             self.low = low
             self.high = high
+            self.choices = choices
         }
 
         public var name: String { "\(kind)_\(element)" }
@@ -61,6 +64,9 @@ public struct WingStudy: Codable, Equatable, Sendable {
         public var placement: [Placement]?
         public var gaps: [Double]?
         public var overlaps: [Double]?
+        /// Each element's chord (m), and the sections section variables chose (library keys by element).
+        public var chords: [Double]?
+        public var airfoils: [String: String]?
         public var seconds: Double?
         public var iterations: Int?
         public var cells: Int?
@@ -70,7 +76,7 @@ public struct WingStudy: Codable, Equatable, Sendable {
 
         enum CodingKeys: String, CodingKey {
             case number, state, value, params, cl, cd, cm, load, feasible, converged, reason, placement, gaps, overlaps,
-                 seconds, iterations, cells
+                 chords, airfoils, seconds, iterations, cells
             case elementCl = "element_cl"
         }
     }
@@ -189,15 +195,22 @@ extension Wing {
     /// A trial's camber and thickness are relative to the sections the study
     /// started from, so shapes are applied to `sections` (one per element),
     /// never to what is on the canvas: that may already be a trial's shape.
-    public func applying(_ trial: WingStudy.Trial, sections: [Airfoil]? = nil) -> Wing? {
+    /// A section the trial chose comes from `library` (by key) and its shape
+    /// is applied to that; chords are the trial's.
+    public func applying(_ trial: WingStudy.Trial, sections: [Airfoil]? = nil,
+                         library: ((String) -> Airfoil?)? = nil) -> Wing? {
         guard let placement = trial.placement, placement.count == elements.count else { return nil }
         var w = self
         for (i, p) in placement.enumerated() where p.leadingEdge.count == 2 {
+            let chosen = trial.airfoils?["\(i)"].flatMap { library?($0) }
             let camber = trial.params["camber_\(i)"], thickness = trial.params["thickness_\(i)"]
             if camber != nil || thickness != nil {
-                let base = sections.flatMap { $0.indices.contains(i) ? $0[i] : nil } ?? w.elements[i].airfoil
+                let base = chosen ?? sections.flatMap { $0.indices.contains(i) ? $0[i] : nil } ?? w.elements[i].airfoil
                 w.elements[i].airfoil = base.reshaped(camber: camber ?? 0, thickness: thickness ?? 1)
+            } else if let chosen {
+                w.elements[i].airfoil = chosen
             }
+            if let chords = trial.chords, chords.indices.contains(i) { w.elements[i].chord = chords[i] }
             w.elements[i].angle = p.angle
             w.elements[i].leadingEdge = SIMD2(p.leadingEdge[0], p.leadingEdge[1])
         }

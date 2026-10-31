@@ -321,7 +321,7 @@ final class WingLabModel {
         return order.indices.contains(i) ? order[i] : nil
     }
     /// The canvas wing during a time-lapse.
-    var replayWing: Wing? { replayTrial.flatMap { wing.applying($0, sections: studySections) } }
+    var replayWing: Wing? { replayTrial.flatMap { wing.applying($0, sections: studySections, library: { self.airfoil($0) }) } }
 
     /// The best value among the trials up to the one on show.
     var replayBestSoFar: Double? {
@@ -439,7 +439,7 @@ final class WingLabModel {
 
     /// Puts a trial's wing on the canvas (undoable).
     func load(trial: WingStudy.Trial) {
-        guard let w = wing.applying(trial, sections: studySections) else { return }
+        guard let w = wing.applying(trial, sections: studySections, library: { self.airfoil($0) }) else { return }
         edit { $0 = w }
         selectedTrial = trial.number
     }

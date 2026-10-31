@@ -208,6 +208,24 @@ def wing_starter(ctx: JobContext) -> dict:
                    progress=lambda pct, msg: ctx.emit.progress(pct, msg))
 
 
+@command("wing-shortlist")
+def wing_shortlist(ctx: JobContext) -> dict:
+    """Each element's sections for a design search to choose between: its own
+    first, then the library's best by maximum lift at its Reynolds number."""
+    from ..wing.airfoils import data_dir
+    from ..wing.design import shortlist
+
+    p = ctx.params
+    chords = [float(c) for c in p.get("chords") or []]
+    if not chords:
+        raise EngineError("params.chords must give each element's chord")
+    lists = shortlist((_root(ctx) or data_dir()) / "airfoils", chords, [k or None for k in p.get("current") or []],
+                      float(p.get("speed", 15)), float(p.get("rho", 1.225)), float(p.get("mu", 1.81e-5)),
+                      float(p.get("n_crit", 9.0)), float(p.get("min_thickness", 0.08)), int(p.get("size", 0)),
+                      progress=lambda pct, msg: ctx.emit.progress(pct, msg))
+    return {"shortlists": lists}
+
+
 def _lap_score(raw, base):
     """The fastest-lap objective's car and track: params.lap holds the Lap
     Sim's car (as in a lapsim job), its track, the wing's span and endplate
@@ -247,10 +265,24 @@ def wing_optimise(ctx: JobContext) -> dict:
         base = Wing([Element.from_dict(e) for e in raw], min_gap=float(p.get("min_gap", 0.005)),
                     rules_box=tuple(float(v) for v in box) if box else None, alpha=float(p.get("alpha", 0.0)),
                     ride_height=None if p.get("ride_height") is None else float(p["ride_height"]))
-        variables = [Variable(int(v["element"]), str(v["kind"]), float(v["low"]), float(v["high"]))
+        variables = [Variable(int(v["element"]), str(v["kind"]), float(v.get("low", 0.0)), float(v.get("high", 0.0)),
+                              tuple(str(k) for k in v.get("choices") or ()))
                      for v in p.get("variables", [])]
     except (KeyError, TypeError, ValueError) as exc:
         raise EngineError(f"bad wing or design variables: {exc}") from None
+    # With chords searched, every trial's coefficients go on the starting
+    # wing's total chord: comparable between trials (a bigger wing shows as
+    # more lift), and the chord the fastest-lap objective turns them into ClA with.
+    if any(v.kind == "chord" for v in variables) and p.get("ref_chord") is None:
+        p = {**p, "ref_chord": sum(e.chord for e in base.elements)}
+    # The sections a section variable can choose, from the library.
+    wanted = sorted({k for v in variables if v.kind == "airfoil" for k in v.choices})
+    sections = None
+    if wanted:
+        from ..wing.airfoils import data_dir
+        from ..wing.design import units
+
+        sections = units((_root(ctx) or data_dir()) / "airfoils", wanted)
     for v in variables:
         if v.kind == "height" and base.ride_height is None:
             raise EngineError("the ride height is a variable only over a ground", "set a ride height first")
@@ -259,7 +291,7 @@ def wing_optimise(ctx: JobContext) -> dict:
     spec = optimise.Spec(variables, objective=str(p.get("objective", "max_cl")), cd_cap=p.get("cd_cap"),
                          cl_target=p.get("cl_target"), sampler=str(p.get("sampler", "tpe")),
                          trials=int(p.get("trials", 40)), parallel=max(1, int(p.get("parallel", 1))),
-                         seed=p.get("seed"), solver=str(p.get("solver", "rans")),
+                         seed=p.get("seed"), solver=str(p.get("solver", "rans")), sections=sections,
                          lap=_lap_score(p.get("lap"), base) if p.get("objective") == "min_lap_time" else None)
     checks = int(p.get("check", 0)) if spec.solver == "estimate" else 0
     if spec.solver == "estimate":

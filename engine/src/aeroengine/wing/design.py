@@ -48,6 +48,65 @@ def _sections(root: Path | None, min_thickness: float) -> list[tuple[str, str, n
     return [(f"naca/{code}", f"NACA {code}", naca(code)) for code in NACA_SET if int(code[-2:]) / 100 >= min_thickness]
 
 
+def units(root: Path | None, keys: list[str]) -> dict[str, np.ndarray]:
+    """Unit coordinates of library sections by key: from the library index,
+    and the NACA codes ("naca/4412") from their equations when it has none."""
+    out: dict[str, np.ndarray] = {}
+    index = root / "index.sqlite" if root else None
+    if index and index.exists() and keys:
+        db = sqlite3.connect(index)
+        try:
+            marks = ",".join("?" * len(keys))
+            for k, c in db.execute(f"SELECT key, coords FROM airfoils WHERE key IN ({marks})", list(keys)):
+                out[k] = np.asarray(json.loads(c), float)
+        finally:
+            db.close()
+    for k in keys:
+        if k not in out and k.startswith("naca/"):
+            try:
+                out[k] = naca(k.split("/", 1)[1])
+            except Exception:  # noqa: BLE001 - not a code the generator knows
+                pass
+    missing = [k for k in keys if k not in out]
+    if missing:
+        raise EngineError(f"no section {missing[0]} in the library" + (f" (and {len(missing) - 1} more)" if len(missing) > 1 else ""))
+    return out
+
+
+def rank(secs: list[tuple[str, str, np.ndarray]], re: float, n_crit: float) -> list[tuple[float, str]]:
+    """(maximum lift, key) of every section NeuralFoil is sure of at this
+    Reynolds number, best first (about 2 ms a section)."""
+    scored = []
+    for key, _, unit in secs:
+        try:
+            s = library_polars.summary(unit, re, n_crit)
+        except Exception:  # noqa: BLE001 - an odd section: skip it
+            continue
+        if s["trusted"]:
+            scored.append((s["cl_max"], key))
+    return sorted(scored, key=lambda r: -r[0])
+
+
+def shortlist(root: Path | None, chords: list[float], current: list[str | None], speed: float = 15.0,
+              rho: float = 1.225, mu: float = 1.81e-5, n_crit: float = 9.0, min_thickness: float = 0.08,
+              size: int = 0, progress=lambda pct, msg: None) -> list[list[dict]]:
+    """Each element's sections to choose between: its own first (when it is
+    in the library), then the best others by maximum lift at that element's
+    Reynolds number."""
+    size = size or SHORTLIST
+    secs = _sections(root, min_thickness)
+    names = {k: n for k, n, _ in secs}
+    out = []
+    for i, chord in enumerate(chords):
+        re = reynolds(speed, chord, rho, mu)
+        progress(100 * i / max(len(chords), 1), f"ranking {len(secs)} sections for {label(i).lower()} at Re {re:.3g}")
+        order = [k for _, k in rank(secs, re, n_crit)]
+        own = current[i] if i < len(current) else None
+        keys = ([own] if own else []) + [k for k in order if k != own]
+        out.append([{"key": k, "name": names.get(k, k)} for k in keys[:size]])
+    return out
+
+
 def layout(units: list[np.ndarray], chord_total: float, inverted: bool, rules_box=None, min_gap: float = 0.005) -> Wing:
     """The standard arrangement, scaled down until it fits the rules box."""
     n = len(units)
@@ -74,9 +133,14 @@ def layout(units: list[np.ndarray], chord_total: float, inverted: bool, rules_bo
     return w  # the best it could do; the optimiser treats what breaks the box as invalid
 
 
-def variables(wing: Wing) -> list[Variable]:
+SHORTLIST = 6  # sections per element the design search chooses between
+CHORD_RANGE = 0.25  # each chord searched this far either side of the starting one
+
+
+def variables(wing: Wing, shortlists: list[list[str]] | None = None) -> list[Variable]:
     """What the optimiser searches from the start: every angle, every slot's
-    gap and overlap. Ranges are wide enough to hold the usual FS wings. The
+    gap and overlap, every chord (within CHORD_RANGE; the rules box keeps the
+    total in check) and, given shortlists, each element's section. Ranges are wide enough to hold the usual FS wings. The
     overlap stays positive: the estimate's slot rule was fitted on overlapped
     slots, and with the flap's nose behind the trailing edge in front there is
     no slot to feed its boundary layer. The estimate still credits the gap
@@ -89,6 +153,11 @@ def variables(wing: Wing) -> list[Variable]:
         out.append(Variable(i, "angle", lo, hi))
         out.append(Variable(i, "gap", max(wing.min_gap + 0.001, 0.006), 0.022))
         out.append(Variable(i, "overlap", MIN_OVERLAP, 0.020))
+    for i, e in enumerate(wing.elements):
+        out.append(Variable(i, "chord", round(e.chord * (1 - CHORD_RANGE), 4), round(e.chord * (1 + CHORD_RANGE), 4)))
+    for i, keys in enumerate(shortlists or []):
+        if len(keys) > 1:
+            out.append(Variable(i, "airfoil", 0.0, float(len(keys) - 1), tuple(keys)))
     return out
 
 
@@ -114,6 +183,7 @@ def starter(root: Path | None, elements: int = 2, chord_total: float = 0.44, inv
         if k % 200 == 0:
             progress(5 + 60 * k / len(secs), f"{k} of {len(secs)} sections")
     ranked.sort(key=lambda r: -r[0])
+    trusted = {key for _, key, _, _ in ranked}
     tried, best = [], None
     for j, (clmax, key, name, unit) in enumerate(ranked[:candidates]):
         progress(70 + 25 * j / candidates, f"trying {name}")
@@ -130,13 +200,29 @@ def starter(root: Path | None, elements: int = 2, chord_total: float = 0.44, inv
         raise EngineError("none of the best sections made a valid starting wing",
                           "widen the rules box, lower the minimum thickness or use fewer elements")
     _, key, name, w = best
+    # Each element's shortlist: its own section first, then the best others
+    # by maximum lift at that element's Reynolds number (a flap runs slower
+    # than the main: a different ranking).
+    names = {k: n for k, n, _ in secs}
+    by_unit = {k: u for k, _, u in secs}
+    shortlists = []
+    for i, e in enumerate(w.elements):
+        re_i = reynolds(speed, e.chord, rho, mu)
+        if i == 0:
+            order = [k for _, k, _, _ in ranked]
+        else:
+            progress(95, f"ranking sections for {label(i).lower()} at Re {re_i:.3g}")
+            order = [k for _, k in rank([(k, names[k], by_unit[k]) for k in trusted], re_i, n_crit)]
+        shortlists.append([key] + [k for k in order if k != key][: SHORTLIST - 1])
     return {
         "section": {"key": key, "name": name},
         "elements": [{"key": key, "name": name, "unit": e.unit.tolist(), "chord": e.chord, "angle": e.angle,
                       "leading_edge": e.leading_edge.tolist(), "inverted": e.inverted} for e in w.elements],
-        "variables": [{"element": v.element, "kind": v.kind, "low": v.low, "high": v.high} for v in variables(w)]
+        "variables": [{"element": v.element, "kind": v.kind, "low": v.low, "high": v.high,
+                       **({"choices": list(v.choices)} if v.choices else {})} for v in variables(w, shortlists)]
         + ([{"element": 0, "kind": "height", "low": max(0.5 * ride_height, 0.03), "high": 2.0 * ride_height}]
            if ride_height is not None else []),
+        "shortlists": [[{"key": k, "name": names.get(k, k)} for k in keys] for keys in shortlists],
         "re": re, "ranked": len(ranked), "tried": tried, "seconds": time.time() - t0,
         "labels": [label(i) for i in range(len(w.elements))],
     }

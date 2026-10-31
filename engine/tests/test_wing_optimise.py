@@ -390,3 +390,38 @@ def test_calibration_changes_which_designs_rans_checks(tmp_path):
     assert numbers[0] == first and angles[numbers[1]] < angles[first]
     optimise.record_anchor(tmp_path / "s.db", "s", spec, {"cl_scale": 1.0, "cd_scale": 2.0, "converged": True})
     assert json.loads((tmp_path / "s.json").read_text())["anchor"]["cd_scale"] == 2.0
+
+
+def test_sections_and_chords_are_design_variables(tmp_path):
+    """A section variable chooses between library sections (categorical, the
+    element's own first), a chord variable resizes from the leading edge;
+    the slot behind stays where the design puts it."""
+    from aeroengine.wing.airfoils import naca4
+
+    keys = ("naca/4412", "naca/2412", "naca/6412")
+    sections = {k: naca4(k.split("/")[1]) for k in keys}
+
+    def evaluate(wing, folder):
+        # More camber on the flap and a longer main make more load here.
+        camber = float(np.max(wing.elements[1].unit[:, 1]))
+        load = 1.0 + 4 * camber + 2 * wing.elements[0].chord
+        return {"cl": -load, "cd": 0.03, "cm": 0.0, "converged": True, "reason": None,
+                "elements": [{"cl": -0.6 * load}, {"cl": -0.4 * load}]}
+
+    spec = optimise.Spec([Variable(1, "airfoil", 0, 0, keys), Variable(0, "chord", 0.25, 0.35)], trials=40, seed=4,
+                         solver="estimate", sections=sections)
+    out = optimise.run(_starter(), spec, evaluate, tmp_path / "s.db", "s", tmp_path / "w")
+    first = out["trials"][0]
+    assert first["params"] == {"airfoil_1": 0, "chord_0": pytest.approx(0.30)}  # the wing as drawn
+    assert first["airfoils"] == {"1": "naca/4412"} and first["chords"][0] == pytest.approx(0.30)
+    best = out["trials"][out["best"]]
+    assert best["airfoils"] == {"1": "naca/6412"} and best["chords"][0] > 0.33
+    assert out["spec"]["variables"][0]["choices"] == list(keys)
+    # The study's best wing: the flap's slot as on the drawn wing, the chosen section in place.
+    w = apply(_starter(), *optimise.resolve(spec, best["params"])[:2])
+    assert w.gap(1) == pytest.approx(_starter().gap(1), abs=1e-6)
+    assert np.allclose(w.elements[1].unit, sections["naca/6412"])
+    with pytest.raises(EngineError, match="no coordinates"):
+        optimise.Spec([Variable(1, "airfoil", 0, 0, ("naca/4412", "x/unknown"))], sections=sections)
+    with pytest.raises(EngineError, match="two or more"):
+        optimise.Spec([Variable(1, "airfoil", 0, 0, ("naca/4412",))], sections=sections)
