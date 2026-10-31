@@ -192,7 +192,7 @@ final class WingLabModel {
     // Optimisation
     struct DesignVariable: Codable, Equatable, Identifiable {
         enum Kind: String, Codable, CaseIterable {
-            case angle, gap, overlap, camber, thickness
+            case angle, gap, overlap, camber, thickness, height
             static let placement: [Kind] = [.angle, .gap, .overlap]
             static let shape: [Kind] = [.camber, .thickness]
         }
@@ -205,7 +205,7 @@ final class WingLabModel {
         var unit: String {
             switch kind {
             case .angle: "°"
-            case .gap, .overlap: "mm"
+            case .gap, .overlap, .height: "mm"
             case .camber: "% chord"
             case .thickness: "% as drawn"
             }
@@ -214,7 +214,7 @@ final class WingLabModel {
         var engineScale: Double {
             switch kind {
             case .angle: 1
-            case .gap, .overlap: 0.001
+            case .gap, .overlap, .height: 0.001
             case .camber, .thickness: 0.01
             }
         }
@@ -384,6 +384,9 @@ final class WingLabModel {
             v = DesignVariable(element: element, kind: .camber, low: 0, high: 3)
         case .thickness:
             v = DesignVariable(element: element, kind: .thickness, low: 80, high: 120)
+        case .height:
+            let h = (wing.rideHeight ?? 0.05) * 1000
+            v = DesignVariable(element: 0, kind: .height, low: max((h * 0.5).rounded(), 30), high: (h * 2).rounded())
         }
         optimise.variables.append(v)
         optimise.variables.sort { ($0.element, $0.kind.rawValue) < ($1.element, $1.kind.rawValue) }
@@ -404,6 +407,9 @@ final class WingLabModel {
         }
         if let v = vars.first(where: { !($0.high > $0.low) }) { return "\(v.id): the upper bound must be above the lower." }
         if let v = vars.first(where: { $0.kind == .gap && $0.low < 0 }) { return "\(v.id): a gap cannot be negative." }
+        if vars.contains(where: { $0.kind == .height }) && wing.rideHeight == nil {
+            return "The ride height is a variable only over a ground: turn on Ground in Flow."
+        }
         if let v = vars.first(where: { $0.kind == .thickness && $0.low <= 0 }) {
             return "\(v.id): the thickness must stay above 0% (its lower bound is the structural limit)."
         }

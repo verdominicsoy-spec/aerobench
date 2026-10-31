@@ -360,7 +360,7 @@ extension AppState {
         lab.ransResult = nil
         lab.ransField = nil
         lab.resultsTab = .cfd
-        guard lab.sweepOn else {
+        guard lab.sweepOn && wing.rideHeight == nil else {  // over a ground: one angle, its own mesh
             lab.sweep = nil
             lab.ransJob = jobs.submit(command: "wing-rans", params: params, in: jobsRoot) { [weak self] item in
                 guard let self, item.status == .succeeded, let text = item.resultText else { return }
@@ -435,6 +435,7 @@ extension AppState {
         if let b = wing.rulesBox {
             params["rules_box"] = .array([.double(b.minX), .double(b.minY), .double(b.maxX), .double(b.maxY)])
         }
+        if let h = wing.rideHeight { params["ride_height"] = .double(h) }
         lab.designStage = "Choosing sections from the library"
         lab.designJob = jobs.submit(command: "wing-starter", params: params, in: jobsRoot) { [weak self] item in
             guard let self else { return }
@@ -465,7 +466,7 @@ extension AppState {
                 elements.append(WingElement(airfoil: airfoil, chord: e.chord, angle: e.angle,
                                             leadingEdge: SIMD2(e.leadingEdge[0], e.leadingEdge[1]), inverted: e.inverted))
             }
-            lab.edit { $0.elements = elements; $0.alpha = 0 }
+            lab.edit { $0.elements = elements; $0.alpha = 0 }  // span, endplates and ride height stay
             lab.optimise.variables = r.variables.compactMap { v in
                 guard let kind = WingLabModel.DesignVariable.Kind(rawValue: v.kind) else { return nil }
                 var dv = WingLabModel.DesignVariable(element: v.element, kind: kind, low: 0, high: 0)

@@ -404,3 +404,27 @@ final class FiniteWingTests: XCTestCase {
         XCTAssertEqual(car.cda, (0.04 + cl3 * cl3 / (Double.pi * f.effectiveAspectRatio)) * 0.44, accuracy: 1e-12)
     }
 }
+
+final class GroundEffectTests: XCTestCase {
+    /// The image method equals solving the mirrored wing as a real body, as in the engine's test.
+    func testImagesAreTheMirroredWing() throws {
+        var w = Wing(elements: [WingElement(airfoil: Airfoil.naca4("4412")!, chord: 0.3, angle: 4)])
+        let wing = w.elements[0].placed()
+        let g = (wing.map(\.y).min() ?? 0) - 0.06
+        let mirror = Array(wing.map { SIMD2($0.x, 2 * g - $0.y) }.reversed())
+        let pair = try XCTUnwrap(PanelSolver(elements: [wing, mirror], refChord: 0.3)).solve(alphaDeg: 0)
+        let image = try XCTUnwrap(PanelSolver(elements: [wing], refChord: 0.3, ground: g)).solve(alphaDeg: 0)
+        XCTAssertEqual(image.cl[0], pair.cl[0], accuracy: 1e-6 * abs(pair.cl[0]))
+
+        // Through the wing model: more downforce over the ground, and the line drawn along the flow.
+        let free = try XCTUnwrap(PanelSolver(elements: [wing], refChord: 0.3)).solve(alphaDeg: 0).clTotal
+        w.rideHeight = 0.06
+        let ge = try XCTUnwrap(w.inGroundEffect)
+        let near = try XCTUnwrap(PanelSolver(elements: ge.elements, refChord: 0.3, ground: ge.ground)).solve(alphaDeg: 0).clTotal
+        XCTAssertLessThan(near, free)
+        XCTAssertLessThan(free, 0)
+        w.alpha = 3
+        let line = try XCTUnwrap(w.groundLine)
+        XCTAssertEqual(line.direction.y / line.direction.x, tan(3 * Double.pi / 180), accuracy: 1e-12)
+    }
+}

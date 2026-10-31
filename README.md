@@ -141,7 +141,14 @@ from My Airfoils (your imports) or to hide a built-in one.
 
 **Flow** (inspector, right): the wing's angle to the flow, speed, air
 density and viscosity (with each element's Reynolds number), and Ncrit for
-how turbulent the oncoming air is. Every solver uses them.
+how turbulent the oncoming air is. Every solver uses them. *Ground* puts a
+front wing in ground effect at a ride height (from its lowest point): a
+ground moving with the flow, as on track, drawn under the wing. The quick
+solvers model it as an image wing (the panel method then matches a solve
+with the mirrored wing as a real body to six figures), RANS as a slip wall
+along the flow; the wing is turned by its angle instead of the flow. Ride
+height can be an optimiser variable. A RANS angle sweep is not available
+over a ground, as each angle needs its own mesh.
 
 **Solvers** (inspector, under Flow): pick one; its settings and run button
 appear under it, and the results below switch to its tab.

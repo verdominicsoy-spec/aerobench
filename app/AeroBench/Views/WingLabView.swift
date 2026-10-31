@@ -1045,6 +1045,12 @@ struct WingInspector: View {
                 }
                 .disabled(running)
             }
+            if lab.wing.rideHeight != nil {
+                Toggle("Ride height", isOn: Binding(
+                    get: { lab.variable(.height, of: 0) != nil }, set: { _ in lab.toggleVariable(.height, of: 0) }))
+                    .toggleStyle(.checkbox)
+                    .disabled(running)
+            }
             ForEach(lab.optimise.variables) { v in
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(WingIssue.label(v.element)) \(v.kind.rawValue)").font(.caption)
@@ -1160,7 +1166,9 @@ struct WingInspector: View {
     }
 
     @ViewBuilder private func ransSweepControls(_ lab: WingLabModel) -> some View {
-        Toggle("Sweep the wing angle", isOn: Binding(get: { lab.sweepOn }, set: { lab.sweepOn = $0 }))
+        Toggle("Sweep the wing angle", isOn: Binding(get: { lab.sweepOn && lab.wing.rideHeight == nil }, set: { lab.sweepOn = $0 }))
+            .disabled(lab.wing.rideHeight != nil)
+            .help(lab.wing.rideHeight != nil ? "Over a ground each angle needs its own mesh, so there is no sweep" : "")
         if lab.sweepOn {
             FittingPicker(title: "Sweep", selection: Binding(get: { lab.sweepRising }, set: { lab.sweepRising = $0 })) {
                 Text("Quick, within 5 min").tag(false)
