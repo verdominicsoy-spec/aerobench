@@ -1155,3 +1155,14 @@ usually separates earlier than SA; the separation rules were fitted on SA
 runs, so a design the estimate passes close to its limits is worth an SST
 check.
 
+## Ideas for later
+
+Not built yet; noted so they are not lost.
+
+**Custom tracks drawn with Bézier curves.** Today a Lap Sim track is
+generated (seeded FS layouts), one of the built-in or fssim layouts, or a
+CSV of centreline points. A track editor would let a team draw its own: a
+closed or open chain of cubic Bézier segments with draggable handles on a
+canvas, checked live against the rules (turning diameter, straight
+lengths) and handed to the engine as resampled centreline points, so the
+solver side needs nothing new. Saved with the project like the CSV track.
