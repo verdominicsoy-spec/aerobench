@@ -132,7 +132,7 @@ density and viscosity (with each element's Reynolds number), and Ncrit for
 how turbulent the oncoming air is. Every solver uses them.
 
 **Solvers** (inspector, under Flow): pick one; its settings and run button
-appear under it.
+appear under it, and the results below switch to its tab.
 
 | Solver | For | Speed |
 | --- | --- | --- |
@@ -202,8 +202,7 @@ sections.
 (positive for downforce) and CdA, from converged CFD if there is one, else
 the quick estimate, else the inviscid preview with a Cd you type in (the
 same rule as the results strip). *Compare in the Lap Sim* makes car B car A
-with this wing in place of the one it replaces. The Estimate and CFD tabs
-also have *Use for the Lap Sim* for their own numbers.
+with this wing in place of the one it replaces.
 
 **Export**: each element as a .dat, or all points as CSV, in mm in the wing's
 frame, for CATIA.

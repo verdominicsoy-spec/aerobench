@@ -592,8 +592,6 @@ struct PolarPlots: View {
                         Text(String(format: "At this element's angle (%.1f°): Cl %.3f, Cd %.4f, L/D %.0f, turbulent from %.0f%% chord on the suction side",
                                     here.alpha, here.cl, here.cd, here.liftToDrag, here.transitionSuction * 100))
                             .font(.caption.monospacedDigit())
-                        Button("Use this Cd for the Lap Sim") { lab.cdEstimate = here.cd }
-                            .buttonStyle(.link).font(.caption)
                     }
                 }
             }
@@ -669,13 +667,6 @@ struct CFDResults: View {
                             .font(.caption2).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                     }
                     HStack {
-                        if r.converged {
-                            Button("Use for the Lap Sim") {
-                                lab.cdEstimate = r.cd
-                                app.sendWingToLapSim(cl: r.cl, cd: r.cd, replacedCla: lab.replacedCla, replacedCda: lab.replacedCda)
-                            }
-                            .help("Car B becomes car A with this wing (see Use in the Lap Sim for span and the 3D factor)")
-                        }
                         if let folder = lab.ransFolder, let field = r.field {
                             Button("Show Flow Field") { NSWorkspace.shared.activateFileViewerSelecting([folder.appendingPathComponent(field)]) }
                                 .help("flow.vtu, for ParaView")
@@ -1633,11 +1624,6 @@ struct EstimateResults: View {
                     }
                     Text("Panel method and NeuralFoil: lift within about 2% of RANS on a main-and-flap wing until the flap nears separation, drag about 10% high. For trends and screening; RANS CFD for numbers to keep.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    Button("Use for the Lap Sim") {
-                        lab.cdEstimate = here.cd
-                        app.sendWingToLapSim(cl: here.cl, cd: here.cd, replacedCla: lab.replacedCla, replacedCda: lab.replacedCda)
-                    }
-                    .buttonStyle(.link).font(.caption)
                 }
                 .frame(width: 290, alignment: .leading)
                 .scrollableColumn()

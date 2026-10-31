@@ -42,6 +42,16 @@ final class WingLabModel {
 
         var id: String { rawValue }
 
+        /// Where this solver's results show.
+        var resultsTab: ResultsTab {
+            switch self {
+            case .preview: .pressure
+            case .quickViscous: .polar
+            case .quickEstimate: .estimate
+            case .rans: .cfd
+            }
+        }
+
         var purpose: String {
             switch self {
             case .preview: "Live while you drag, every element together. No viscosity: lift trends and how the load splits, no drag."
@@ -51,7 +61,9 @@ final class WingLabModel {
             }
         }
     }
-    var solver: Solver = .preview
+    var solver: Solver = .preview {
+        didSet { if solver != oldValue { resultsTab = solver.resultsTab } }
+    }
     enum ResultsTab: String, CaseIterable, Identifiable {
         case pressure = "Pressure"
         case polar = "Polar"
