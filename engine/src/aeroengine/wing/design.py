@@ -29,6 +29,7 @@ SHARES = {2: (0.68, 0.32), 3: (0.55, 0.27, 0.18)}
 ANGLES = {2: (3.0, 25.0), 3: (2.0, 20.0, 40.0)}
 GAP = 0.012  # m, each flap's slot to start with
 OVERLAP = 0.005  # m
+MIN_OVERLAP = 0.002  # m, the least overlap the design search tries (see variables)
 
 
 def _sections(root: Path | None, min_thickness: float) -> list[tuple[str, str, np.ndarray]]:
@@ -75,14 +76,19 @@ def layout(units: list[np.ndarray], chord_total: float, inverted: bool, rules_bo
 
 def variables(wing: Wing) -> list[Variable]:
     """What the optimiser searches from the start: every angle, every slot's
-    gap and overlap. Ranges are wide enough to hold the usual FS wings."""
+    gap and overlap. Ranges are wide enough to hold the usual FS wings. The
+    overlap stays positive: the estimate's slot rule was fitted on overlapped
+    slots, and with the flap's nose behind the trailing edge in front there is
+    no slot to feed its boundary layer. The estimate still credits the gap
+    there and the panel method likes the longer chord, so a design search let
+    loose below zero settled on a wing that separated in RANS."""
     n = len(wing.elements)
     out = [Variable(0, "angle", -4.0, 12.0)]
     flap_ranges = {2: [(12.0, 45.0)], 3: [(10.0, 35.0), (25.0, 60.0)]}[n]
     for i, (lo, hi) in enumerate(flap_ranges, start=1):
         out.append(Variable(i, "angle", lo, hi))
         out.append(Variable(i, "gap", max(wing.min_gap + 0.001, 0.006), 0.022))
-        out.append(Variable(i, "overlap", -0.005, 0.020))
+        out.append(Variable(i, "overlap", MIN_OVERLAP, 0.020))
     return out
 
 

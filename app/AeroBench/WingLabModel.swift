@@ -285,8 +285,8 @@ final class WingLabModel {
         var elements = 2
         var objective: Objective = .minLapTime
         var minThickness = 8.0  // % of chord, the thinnest section allowed
-        var checks = 2  // best designs run with RANS on the quick mesh at the end
-        var trials = 300
+        var checks = 2  // RANS on the quick mesh at the end: the best, and the next distinct design if it fails
+        var trials = 150  // the estimate study is within 0.01 % of its best by 50
     }
     var design = DesignSetup()
     var designStage: String?  // what the running design is doing, shown over the canvas

@@ -245,8 +245,13 @@ def test_the_best_designs_are_checked_with_another_solver(tmp_path):
 
     out = optimise.check(_starter(), spec, tmp_path / "s.db", "s", rans, 3, tmp_path / "w")
     assert len(out["checks"]) == 3 and len(set(checked)) == 3  # three distinct designs
-    best_by_estimate = sorted([t for t in out["trials"] if t["state"] == "complete"], key=lambda t: -t["value"])[:3]
-    assert [c["number"] for c in out["checks"]] == [t["number"] for t in best_by_estimate]
+    # The best by the estimate, skipping any within 5% of a range of one already picked.
+    spans = {"angle_1": 25.0, "gap_1": 0.014}
+    expected = []
+    for t in sorted([t for t in out["trials"] if t["state"] == "complete"], key=lambda t: -t["value"]):
+        if all(any(abs(t["params"][k] - p["params"][k]) >= optimise.DISTINCT * s for k, s in spans.items()) for p in expected):
+            expected.append(t)
+    assert [c["number"] for c in out["checks"]] == [t["number"] for t in expected[:3]]
     assert out["checks"][1]["value"] == 2.0 and out["checks"][1]["converged"]
     assert out["solver"] == "estimate"
     # Checking again does not rerun what is already checked.
@@ -256,6 +261,33 @@ def test_the_best_designs_are_checked_with_another_solver(tmp_path):
     with pytest.raises(EngineError, match="another solver"):
         optimise.run(_starter(), optimise.Spec(spec.variables, trials=25, solver="rans"), evaluate, tmp_path / "s.db", "s",
                      tmp_path / "w")
+
+
+def test_checks_skip_near_copies_and_stop_at_the_first_that_holds(tmp_path):
+    """The top of a converged study is one design many times over: checking
+    two of them costs two RANS runs to learn one thing. The next check is a
+    design apart from it, and a design run stops once one holds."""
+    spec = optimise.Spec([Variable(1, "angle", 15, 45), Variable(1, "gap", 0.006, 0.02)], trials=60, seed=3,
+                         solver="estimate")
+    evaluate, _ = _fake()
+    optimise.run(_starter(), spec, evaluate, tmp_path / "s.db", "s", tmp_path / "w")
+    checked = []
+
+    def rans(wing, folder):
+        checked.append((wing.elements[1].angle, wing.gap(1)))
+        first = len(checked) == 1
+        return {"cl": -2.0, "cd": 0.05, "converged": not first, "reason": "Cl still moving" if first else None}
+
+    out = optimise.check(_starter(), spec, tmp_path / "s.db", "s", rans, 3, tmp_path / "w", until_pass=True)
+    assert len(checked) == 2  # the first failed, the second held: no third
+    (a0, g0), (a1, g1) = checked
+    assert abs(a1 - a0) >= 0.05 * 30 or abs(g1 - g0) >= 0.05 * 0.014
+    assert [c["converged"] for c in out["checks"]] == [False, True]
+    best = sorted([t for t in out["trials"] if t["state"] == "complete"], key=lambda t: -t["value"])
+    assert out["checks"][0]["number"] == best[0]["number"]
+    near = [t for t in best[1:] if abs(t["params"]["angle_1"] - best[0]["params"]["angle_1"]) < 1.5
+            and abs(t["params"]["gap_1"] - best[0]["params"]["gap_1"]) < 0.0007]
+    assert near and out["checks"][1]["number"] not in [t["number"] for t in near]  # near copies were passed over
 
 
 def test_reshaping_a_section():

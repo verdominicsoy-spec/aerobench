@@ -36,8 +36,10 @@ of 2.6 to 6.9% of the main chord and is held at its ends outside that.
 
 What it misses: the slot's effect on lift before separation (it ranks gaps
 by whether the flap stays attached, not by the extra lift a good slot
-gives), and a slot so narrow it chokes. RANS gets those; this is for trends
-and screening."""
+gives), a slot so narrow it chokes, and a flap whose nose sits behind the
+trailing edge in front (no overlap, so no slot: the line still credits the
+gap, every fitted case overlapped by 29 mm). RANS gets those; this is for
+trends and screening."""
 
 from __future__ import annotations
 

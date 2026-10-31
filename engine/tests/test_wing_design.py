@@ -15,6 +15,8 @@ def test_layout_fits_the_rules_box():
     assert sum(e.chord for e in w.elements) < 0.60
     v = variables(w)
     assert [x.name for x in v] == ["angle_0", "angle_1", "gap_1", "overlap_1", "angle_2", "gap_2", "overlap_2"]
+    # Every slot stays overlapped: the estimate's slot rule knows nothing else.
+    assert all(x.low > 0 for x in v if x.kind == "overlap")
 
 
 def test_starter_picks_a_high_lift_section(engine, tmp_path: Path):

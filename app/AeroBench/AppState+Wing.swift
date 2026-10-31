@@ -228,7 +228,10 @@ extension AppState {
         params["solver"] = .string(setup.solver)
         params["check"] = .int(setup.solver == "estimate" ? setup.checkBest : 0)
         if lab.calibrateNextStudy {
+            // A design run: calibrate on the starting wing, and stop checking
+            // once RANS confirms one design (the next is only a fallback).
             params["anchor"] = .bool(true)
+            params["until_pass"] = .bool(true)
             lab.calibrateNextStudy = false
         }
         if setup.objective == .minLapTime {

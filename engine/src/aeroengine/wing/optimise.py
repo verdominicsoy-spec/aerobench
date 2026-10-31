@@ -38,6 +38,7 @@ OBJECTIVES = {
 # (or 10 % in Cd). The sampler steers away; feasible says which trials hold.
 PENALTY = 10.0
 INVALID = 1e6  # what a wing that breaks a constraint scores (negated when maximising)
+DISTINCT = 0.05  # of a variable's range: how far apart two checked designs must be in at least one
 
 
 @dataclass
@@ -368,12 +369,13 @@ def summary(study: optuna.Study, spec: Spec) -> dict:
 
 def check(base: Wing, spec: Spec, storage: Path, name: str, evaluate: Evaluate, count: int, workroot: Path,
           progress: Callable[[float, str], None] = lambda p, m: None, log: Callable[..., None] = lambda *a, **k: None,
-          scale: tuple[float, float] = (1.0, 1.0)) -> dict:
+          scale: tuple[float, float] = (1.0, 1.0), until_pass: bool = False) -> dict:
     """Runs the best `count` designs of a study again with `evaluate` (RANS
     after a quick-estimate study) and records what it says beside them, so
     the ranking can be checked where the estimate is least sure. `scale`
     multiplies each trial's lift and drag before ranking: the estimate's
-    calibration against a RANS run of the same wing family."""
+    calibration against a RANS run of the same wing family. until_pass:
+    stop at the first design RANS confirms (the next is only a fallback)."""
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     rdb = optuna.storages.RDBStorage(f"sqlite:///{storage}", engine_kwargs={"connect_args": {"timeout": 60}})
     study = optuna.load_study(study_name=name, storage=rdb)
@@ -387,16 +389,26 @@ def check(base: Wing, spec: Spec, storage: Path, name: str, evaluate: Evaluate, 
         return score(spec, t["load"] * scale[0], t["cd"] * scale[1])[0]
 
     good.sort(key=ranked, reverse=spec.direction == "maximize")
-    picked, seen = [], set()
-    for t in good:  # distinct designs only
-        key = tuple(round(v, 6) for v in t["params"].values())
-        if key not in seen:
-            seen.add(key)
+    # Distinct designs only: each pick differs from every earlier one by at
+    # least DISTINCT of some variable's range. The top of a converged study is
+    # one design many times over (two picks a hundredth of a degree apart
+    # cost two RANS runs and say the same thing).
+    spans = {v.name: v.high - v.low for v in spec.variables}
+
+    def apart(a: dict, b: dict) -> bool:
+        return any(abs(a["params"][k] - b["params"].get(k, a["params"][k])) >= DISTINCT * spans.get(k, 0.0)
+                   for k in a["params"] if spans.get(k))
+
+    picked: list[dict] = []
+    for t in good:
+        if all(apart(t, p) for p in picked):
             picked.append(t)
         if len(picked) == count:
             break
     done = {c["number"]: c for c in study.user_attrs.get("checks", [])}
     for k, t in enumerate(picked):
+        if until_pass and any(done.get(p["number"], {}).get("value") is not None for p in picked[:k]):
+            break  # one design held in RANS: that is the answer
         progress(100 * k / max(len(picked), 1), f"checking trial {t['number']} ({k + 1} of {len(picked)})")
         if t["number"] in done:
             continue
