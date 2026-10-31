@@ -93,3 +93,13 @@ def test_survey_of_every_clean_uiuc_run():
     assert s["runs"] >= 150 and s["sections"] >= 45
     assert s["lift_median"] <= 0.09 and s["lift_signed_median"] > 0  # reads high, by about 8% in the middle
     assert s["drag_median"] <= 0.10 and s["drag_within_target"] >= 0.8
+
+
+def test_the_estimate_matches_rans():
+    """The estimate is held to RANS (and so to the STAR-CCM+ run after it),
+    not to the tunnel: lift within 5% on every SU2 reference run that
+    converged, drag within 10%, and the ones that never settled called
+    separating."""
+    r = v.against_rans()
+    assert r["all_agree"] and r["lift_error_max"] <= 0.05 and r["drag_error_max"] <= 0.10
+    assert sum(c["cl_rans"] is None for c in r["cases"]) == 2

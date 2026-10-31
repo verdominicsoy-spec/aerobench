@@ -1,4 +1,10 @@
-"""The quick methods against published wind-tunnel measurements.
+"""The quick methods against RANS and against published wind-tunnel data.
+
+The quick estimate is meant to match RANS, and so the STAR-CCM+ run that
+follows it (Dominic's call): against_rans() holds it to the SU2 runs its
+corrections were fitted to, within TARGET_LIFT. The wind-tunnel cases
+below say how far the estimate, and the RANS it matches, sit from
+measurement; they are not tuned to.
 
 Each case is a section measured in a wind tunnel at a known Reynolds number,
 with the model's coordinates as built where the source gives them. The
@@ -280,6 +286,51 @@ def compare(case: Case, model_size: str = "large", sweep_max: bool = True) -> di
     }
 
 
+# The estimate against SU2 RANS (Spalart-Allmaras, quick mesh, 15 m/s) on the
+# NACA 6212 main-and-flap starting wing that the design search lays out: the
+# runs its corrections were fitted to and checked on. The estimate is meant
+# to match RANS (and so the STAR-CCM+ run that follows it), not the tunnel.
+# (name, wing angle, ride height m or None, design values or None, RANS Cl, Cd, or None if RANS never settled)
+RANS_REFERENCES = [
+    ("starting wing, 0°", 0.0, None, None, -2.1677, 0.03468),
+    ("starting wing, -3°", -3.0, None, None, -2.4104, 0.04433),
+    ("starting wing, -6°", -6.0, None, None, -2.5037, 0.06419),
+    ("starting wing, -9°", -9.0, None, None, None, None),
+    ("300 mm over a ground", 0.0, 0.30, None, -2.8274, 0.04758),
+    ("150 mm over a ground", 0.0, 0.15, None, -3.4836, 0.07074),
+    ("60 mm over a ground", 0.0, 0.06, None, None, None),
+    ("design check (main 7.3°, flap 32.1°, 21 mm gap)", 0.0, None,
+     {"angle_0": 7.2759, "angle_1": 32.0653, "gap_1": 0.0213, "overlap_1": 0.0073}, -2.4377, 0.05448),
+]
+
+
+def against_rans() -> dict:
+    """The estimate against the RANS reference runs: lift and drag errors
+    where RANS converged, and whether the estimate called the rest separating."""
+    from .wing.airfoils import naca4
+    from .wing.design import layout
+    from .wing.estimate import estimate
+    from .wing.geometry import apply
+
+    base = layout([naca4("6212")] * 2, 0.44, True)
+    out = []
+    for name, alpha, height, values, cl, cd in RANS_REFERENCES:
+        w = apply(base, values) if values else base
+        els = [{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "chord": e.chord, "angle": e.angle,
+                "inverted": e.inverted} for e in w.elements]
+        r = estimate(els, [alpha], 15.0, ride_height=height)["rows"][0]
+        row = {"name": name, "cl_rans": cl, "cd_rans": cd, "cl": r["cl"], "cd": r["cd"], "separating": r["separating"],
+               "why": r["why"]}
+        if cl is not None:
+            row["lift_error"] = abs(r["cl"] / cl - 1)
+            row["drag_error"] = abs(r["cd"] / cd - 1)
+        row["agrees"] = (not r["separating"] and row["lift_error"] <= TARGET_LIFT) if cl is not None else r["separating"]
+        out.append(row)
+    held = [x for x in out if x["cl_rans"] is not None]
+    return {"cases": out, "lift_error_max": max(x["lift_error"] for x in held),
+            "drag_error_max": max(x["drag_error"] for x in held), "all_agree": all(x["agrees"] for x in out)}
+
+
 def run(keys: list[str] | None = None, progress=lambda pct, msg: None, uiuc_folder: Path | None = None,
         with_survey: bool = True) -> dict:
     cases = [ladson_case()]
@@ -296,6 +347,8 @@ def run(keys: list[str] | None = None, progress=lambda pct, msg: None, uiuc_fold
         results.append(compare(c))
     out = {"cases": results, "skipped": skipped, "targets": {"lift": TARGET_LIFT, "drag": TARGET_DRAG},
            "lift_floor": LIFT_FLOOR, "stall_backoff": STALL_BACKOFF}
+    if not keys:
+        out["rans"] = against_rans()
     if with_survey and not keys:
         out["survey"] = survey(progress=lambda pct, msg: progress(50 + pct / 2, msg))
     return out
