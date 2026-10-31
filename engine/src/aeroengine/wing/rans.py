@@ -175,9 +175,12 @@ def sweep(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     limit = float(p.get("time_limit") or float("inf"))  # 0 or none: no limit
     max_iterations = int(p.get("iterations", 4000))
     if p.get("order") == "rising":
-        # A polar through stall: the lowest angle from rest, each next from the
-        # one below, so the angles near maximum lift start from an attached flow.
-        order = [(alphas[0], None)] + [(alphas[k], alphas[k - 1]) for k in range(1, len(alphas))]
+        # A polar through stall: the least loaded angle from rest, each next
+        # from the one before, so the angles near maximum lift start from an
+        # attached flow. Least loaded is the lowest angle upright and the
+        # highest inverted (a bigger wing angle unloads an inverted wing).
+        seq = alphas[::-1] if any(e.get("inverted") for e in p.get("elements", [])) else alphas
+        order = [(seq[0], None)] + [(seq[k], seq[k - 1]) for k in range(1, len(seq))]
     else:
         mid = min(range(len(alphas)), key=lambda k: abs(alphas[k] - 0.5 * (alphas[0] + alphas[-1])))
         order = [(alphas[mid], None)]

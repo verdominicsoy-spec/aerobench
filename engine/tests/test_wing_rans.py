@@ -326,3 +326,8 @@ def test_a_rising_sweep_climbs_without_a_time_limit(monkeypatch, tmp_path):
                      None, 1, None, lambda *a: None, lambda *a, **k: None)
     assert calls == [(0.0, None), (4.0, "a0"), (8.0, "a4"), (12.0, "a8"), (16.0, "a12")]
     assert out["skipped"] == [] and out["time_limit"] == 0.0
+    # Inverted, a bigger wing angle unloads the wing: it climbs from the top down.
+    calls.clear()
+    rans.sweep({"alphas": [0, -4, -8], "order": "rising", "time_limit": 0, "elements": [{"inverted": True}]}, tmp_path / "inv",
+               tmp_path / "m.su2", None, 1, None, lambda *a: None, lambda *a, **k: None)
+    assert calls == [(0.0, None), (-4.0, "a0"), (-8.0, "a-4")]
