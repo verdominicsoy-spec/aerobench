@@ -7,7 +7,6 @@ import simd
 struct WingLabView: View {
     @Environment(AppState.self) private var app
     @Environment(\.openWindow) private var openWindow
-    @State private var showDesign = false
 
     var body: some View {
         let lab = app.wingLab
@@ -34,10 +33,6 @@ struct WingLabView: View {
                     .help(lab.showLibrary ? "Hide the airfoil library" : "Show the airfoil library")
             }
             ToolbarItemGroup {
-                Button { showDesign = true } label: { Label("Design a Wing", systemImage: "wand.and.stars") }
-                    .help("From here to an optimised wing in a few minutes: sections from the library, a quick-estimate study, the best checked with RANS")
-                    .disabled(lab.designStage != nil)
-                    .popover(isPresented: $showDesign, arrowEdge: .bottom) { DesignWingSheet(dismiss: { showDesign = false }) }
                 Menu {
                     Button(lab.pinned == nil ? "Pin This Wing as A" : "Pin This Wing as A Instead") { lab.pinCurrent() }
                         .disabled(lab.wing.elements.isEmpty)
@@ -367,14 +362,16 @@ struct WingCanvas: View {
             .buttonStyle(.borderless)
             if let stage = lab.designStage {
                 HStack(spacing: 8) {
-                    Text("DESIGNING").font(.caption2.bold()).foregroundStyle(S37.C.sageInk)
+                    Text("SETTING UP").font(.caption2.bold()).foregroundStyle(S37.C.sageInk)
                     Text(stage).font(.caption).lineLimit(1)
-                    if let job = lab.optimiseJob, lab.designAwaitingStudy, !job.status.isFinished {
-                        ProgressView(value: job.progress, total: 100).frame(width: 120)
-                        Text(job.progressMessage).font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
-                    } else {
-                        ProgressView().controlSize(.small)
-                    }
+                    ProgressView().controlSize(.small)
+                }
+            }
+            if let job = lab.optimiseJob, !job.status.isFinished {
+                HStack(spacing: 8) {
+                    Text("OPTIMISING").font(.caption2.bold()).foregroundStyle(S37.C.sageInk)
+                    ProgressView(value: job.progress, total: 100).frame(width: 120)
+                    Text(job.progressMessage).font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             if let t = lab.replayTrial, let i = lab.replayIndex {
@@ -1093,123 +1090,202 @@ struct WingInspector: View {
         }
     }
 
-    private func variableToggle(_ lab: WingLabModel, _ kind: WingLabModel.DesignVariable.Kind, _ i: Int) -> some View {
-        Toggle(kind.rawValue.capitalized, isOn: Binding(
-            get: { lab.variable(kind, of: i) != nil }, set: { _ in lab.toggleVariable(kind, of: i) }))
-            .toggleStyle(.checkbox)
+    /// One box of the variables grid: tick to search it.
+    private func variableBox(_ lab: WingLabModel, _ kind: WingLabModel.DesignVariable.Kind, _ i: Int) -> some View {
+        Toggle(isOn: Binding(get: { lab.variable(kind, of: i) != nil }, set: { _ in
+            lab.toggleVariable(kind, of: i)
+            if kind == .airfoil, lab.shortlists[i] == nil { app.findShortlists() }
+        })) { EmptyView() }
+            .toggleStyle(.checkbox).labelsHidden()
+            .help("\(WingIssue.label(i)): search its \(kind.title.lowercased())")
     }
 
     @ViewBuilder private func optimiseSection(_ lab: WingLabModel) -> some View {
         let running = lab.optimiseJob.map { !$0.status.isFinished } ?? false
         Section {
-            ForEach(Array(lab.wing.elements.enumerated()), id: \.element.id) { i, _ in
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Text(WingIssue.label(i)).frame(width: 50, alignment: .leading)
-                        ForEach(WingLabModel.DesignVariable.Kind.placement, id: \.self) { kind in
-                            if kind == .angle || i > 0 { variableToggle(lab, kind, i) }
-                        }
+            FittingPicker(title: "Start from", selection: Binding(get: { lab.design.startFrom }, set: { lab.design.startFrom = $0 })) {
+                ForEach(WingLabModel.StartFrom.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .disabled(running)
+            if lab.design.startFrom == .scratch {
+                scratchControls(lab)
+            } else {
+                variablesGrid(lab, running: running)
+                studyControls(lab, running: running)
+            }
+        } header: {
+            Text("Optimise")
+        } footer: {
+            Text(lab.design.startFrom == .scratch
+                 ? "Set Up replaces the canvas with the engine's starting wing (Undo brings yours back) and ticks every section, chord, angle, gap and overlap. Nothing runs until Start Study."
+                 : "Wings that break the minimum gap or the rules box are never run. Trials that fail or do not converge are recorded as failed and the study carries on. Stopping is safe: Resume picks up where it left off.")
+        }
+    }
+
+    @ViewBuilder private func scratchControls(_ lab: WingLabModel) -> some View {
+        FittingPicker(title: "Elements", selection: Binding(get: { lab.design.elements }, set: { lab.design.elements = $0 })) {
+            Text("2").tag(2)
+            Text("3").tag(3)
+        }
+        NumberField(label: "Thinnest section", unit: "%", value: Binding(get: { lab.design.minThickness },
+                                                                          set: { lab.design.minThickness = min(max($0, 2), 30) }))
+        Text("The library's sections are ranked by maximum lift at your Reynolds number (NeuralFoil, a few seconds), the best few laid out as a standard \(lab.design.elements)-element wing inside the rules box, and the one the quick estimate likes best kept. Each element gets a shortlist of six sections to choose between."
+             + (lab.library.isEmpty ? " No library downloaded: only the NACA set is ranked." : ""))
+            .font(.caption).foregroundStyle(lab.library.isEmpty ? Color.orange : Color.secondary).fixedSize(horizontal: false, vertical: true)
+        Button("Set Up From Scratch") { app.setUpFromScratch() }
+            .buttonStyle(S37ButtonStyle(kind: .prominent))
+            .disabled(lab.designStage != nil)
+        if let job = lab.designJob, !job.status.isFinished || job.status == .failed { JobInlineStatus(job: job) }
+    }
+
+    /// What to search: a row per element, a column per variable.
+    @ViewBuilder private func variablesGrid(_ lab: WingLabModel, running: Bool) -> some View {
+        HStack {
+            Text("Search").font(.caption).bold()
+            Spacer()
+            Menu("Preset") {
+                ForEach(WingLabModel.Preset.allCases) { preset in
+                    Button(preset.rawValue) {
+                        lab.apply(preset)
+                        if preset.kinds.contains(.airfoil), lab.shortlists.isEmpty { app.findShortlists() }
                     }
-                    HStack {
-                        Text("shape").font(.caption).foregroundStyle(.secondary).frame(width: 50, alignment: .trailing)
-                        ForEach(WingLabModel.DesignVariable.Kind.shape, id: \.self) { kind in variableToggle(lab, kind, i) }
+                }
+                Divider()
+                Button("Clear") { lab.optimise.variables = [] }
+            }
+            .menuStyle(.borderlessButton).fixedSize()
+        }
+        .disabled(running)
+        let kinds = WingLabModel.DesignVariable.Kind.grid
+        Grid(alignment: .center, horizontalSpacing: 4, verticalSpacing: 4) {
+            GridRow {
+                Text("")
+                ForEach(kinds, id: \.self) { Text($0.title).font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.7) }
+            }
+            ForEach(Array(lab.wing.elements.indices), id: \.self) { i in
+                GridRow {
+                    Text(WingIssue.label(i)).font(.caption).gridColumnAlignment(.leading)
+                    ForEach(kinds, id: \.self) { kind in
+                        if kind.applies(to: i) { variableBox(lab, kind, i) } else { Text("–").foregroundStyle(.tertiary) }
                     }
+                }
+            }
+        }
+        .disabled(running)
+        if lab.wing.rideHeight != nil {
+            Toggle("Ride height", isOn: Binding(get: { lab.variable(.height, of: 0) != nil }, set: { _ in lab.toggleVariable(.height, of: 0) }))
+                .toggleStyle(.checkbox).disabled(running)
+        }
+        let sections = lab.optimise.variables.filter { $0.kind == .airfoil }
+        if !sections.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(sections) { v in
+                    let names = (v.choices ?? []).map { lab.airfoil($0)?.name ?? $0 }
+                    Text("\(WingIssue.label(v.element)): " + (names.count > 1 ? names.joined(separator: ", ") : "finding sections…"))
+                        .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                }
+                HStack {
+                    Button("Find Sections Again") { app.findShortlists() }
+                        .buttonStyle(.link).font(.caption)
+                        .disabled(lab.shortlistJob.map { !$0.status.isFinished } ?? false)
+                        .help("Rank the library again at each element's Reynolds number (after changing chords or speed)")
+                    if let job = lab.shortlistJob, !job.status.isFinished { ProgressView().controlSize(.small) }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func studyControls(_ lab: WingLabModel, running: Bool) -> some View {
+        Picker("Objective", selection: Binding(get: { lab.optimise.objective }, set: { lab.optimise.objective = $0 })) {
+            ForEach(WingLabModel.Objective.allCases) { Text($0.title).tag($0) }
+        }
+        .disabled(running)
+        if lab.optimise.objective == .maxClCdCap {
+            NumberField(label: "Cd cap", value: Binding(get: { lab.optimise.cdCap }, set: { lab.optimise.cdCap = $0 }))
+        }
+        if lab.optimise.objective == .minCdClTarget {
+            NumberField(label: "Downforce Cl target", value: Binding(get: { lab.optimise.clTarget }, set: { lab.optimise.clTarget = $0 }))
+        }
+        if lab.optimise.objective == .minLapTime {
+            Text("Each trial is a lap of the Lap Sim's track (\(app.lapSim.track.kind.title)) in car A, with this wing in place of the one under Use in the Lap Sim, using the 3D settings there.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        Picker("Each trial", selection: Binding(get: { lab.optimise.solver }, set: { lab.optimise.solver = $0 })) {
+            Text("Quick estimate (seconds)").tag("estimate")
+            Text("RANS CFD (minutes)").tag("rans")
+        }
+        .disabled(running)
+        HStack {
+            Stepper("Trials: \(lab.optimise.trials)", value: Binding(get: { lab.optimise.trials }, set: { lab.optimise.trials = $0 }),
+                    in: 2...2000, step: 10)
+            if lab.optimise.trials != lab.optimise.suggestedTrials {
+                Button("Use \(lab.optimise.suggestedTrials)") { lab.optimise.trials = lab.optimise.suggestedTrials }
+                    .buttonStyle(.link).font(.caption)
+                    .help("About 25 quick-estimate trials a variable (\(lab.optimise.variables.count) ticked)")
+            }
+        }
+        if lab.optimise.solver == "estimate" {
+            Stepper(lab.optimise.checkBest == 0 ? "RANS check: off" : lab.optimise.checkBest == 1 ? "RANS check: the best"
+                    : "RANS check: up to \(lab.optimise.checkBest) designs",
+                    value: Binding(get: { lab.optimise.checkBest }, set: { lab.optimise.checkBest = $0 }), in: 0...10)
+                .disabled(running)
+            if lab.optimise.checkBest > 1 {
+                Toggle("Stop at the first design RANS confirms", isOn: Binding(get: { lab.optimise.untilPass }, set: { lab.optimise.untilPass = $0 }))
+                    .toggleStyle(.checkbox).font(.caption)
+            }
+        }
+        Toggle("Put the best on the canvas when done", isOn: Binding(get: { lab.optimise.loadBest }, set: { lab.optimise.loadBest = $0 }))
+            .toggleStyle(.checkbox).font(.caption)
+        DisclosureGroup("Advanced") {
+            ForEach(lab.optimise.variables.filter { $0.kind != .airfoil }) { v in
+                HStack {
+                    Text("\(WingIssue.label(v.element)) \(v.kind.title.lowercased())").font(.caption).frame(width: 96, alignment: .leading)
+                    TextField("from", value: Binding(get: { v.low }, set: { lab.setBounds(of: v.id, low: $0) }),
+                              format: .number.precision(.fractionLength(0...2)))
+                        .multilineTextAlignment(.trailing)
+                    Text("to").foregroundStyle(.secondary)
+                    TextField("to", value: Binding(get: { v.high }, set: { lab.setBounds(of: v.id, high: $0) }),
+                              format: .number.precision(.fractionLength(0...2)))
+                        .multilineTextAlignment(.trailing)
+                    Text(v.unit).foregroundStyle(.secondary).font(.caption).frame(width: 64, alignment: .leading)
                 }
                 .disabled(running)
             }
-            if lab.wing.rideHeight != nil {
-                Toggle("Ride height", isOn: Binding(
-                    get: { lab.variable(.height, of: 0) != nil }, set: { _ in lab.toggleVariable(.height, of: 0) }))
-                    .toggleStyle(.checkbox)
-                    .disabled(running)
-            }
-            ForEach(lab.optimise.variables) { v in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(WingIssue.label(v.element)) \(v.kind.rawValue)").font(.caption)
-                    HStack {
-                        TextField("from", value: Binding(get: { v.low }, set: { lab.setBounds(of: v.id, low: $0) }),
-                                  format: .number.precision(.fractionLength(0...2)))
-                            .multilineTextAlignment(.trailing)
-                        Text("to").foregroundStyle(.secondary)
-                        TextField("to", value: Binding(get: { v.high }, set: { lab.setBounds(of: v.id, high: $0) }),
-                                  format: .number.precision(.fractionLength(0...2)))
-                            .multilineTextAlignment(.trailing)
-                        Text(v.unit).foregroundStyle(.secondary).fixedSize()
-                    }
-                }
-                .disabled(running)
-            }
-            Picker("Objective", selection: Binding(get: { lab.optimise.objective }, set: { lab.optimise.objective = $0 })) {
-                ForEach(WingLabModel.Objective.allCases) { Text($0.title).tag($0) }
-            }
-            .disabled(running)
-            if lab.optimise.objective == .maxClCdCap {
-                NumberField(label: "Cd cap", value: Binding(get: { lab.optimise.cdCap }, set: { lab.optimise.cdCap = $0 }))
-            }
-            if lab.optimise.objective == .minCdClTarget {
-                NumberField(label: "Downforce Cl target", value: Binding(get: { lab.optimise.clTarget }, set: { lab.optimise.clTarget = $0 }))
-            }
-            if lab.optimise.objective == .minLapTime {
-                Text("Each trial is a lap of the Lap Sim's track (\(app.lapSim.track.kind.title)) in car A, with this wing in place of the one under Use in the Lap Sim, using the 3D settings there. Downforce against drag is weighed by the track, not by a ratio.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
-            Picker("Each trial", selection: Binding(get: { lab.optimise.solver }, set: { lab.optimise.solver = $0 })) {
-                Text("Quick estimate (seconds)").tag("estimate")
-                Text("RANS CFD (minutes)").tag("rans")
-            }
-            .disabled(running)
-            if lab.optimise.solver == "estimate" {
-                Stepper(lab.optimise.checkBest == 0 ? "Check the best with RANS: off" : "Check the best \(lab.optimise.checkBest) with RANS CFD",
-                        value: Binding(get: { lab.optimise.checkBest }, set: { lab.optimise.checkBest = $0 }), in: 0...10)
-                    .disabled(running)
-                if lab.optimise.variables.contains(where: { $0.kind == .gap || $0.kind == .overlap }) {
-                    Text("The quick estimate sees the gap only through when the flap separates (a narrower slot keeps it attached to a steeper angle, fitted on one main-and-flap wing), not through the extra lift a good slot gives. It finds angles well; for gaps and overlaps, check the best with RANS.")
-                        .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-                }
-                if lab.optimise.variables.contains(where: { $0.kind == .camber || $0.kind == .thickness }) {
-                    Text("Shape: camber added at mid-chord (0 at the ends) and thickness scaled about the camber line. The thickness's lower bound is the structural limit. The estimate is NeuralFoil per section, so check the best with RANS.")
-                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Picker("Search", selection: Binding(get: { lab.optimise.sampler }, set: { lab.optimise.sampler = $0 })) {
+            Picker("Sampler", selection: Binding(get: { lab.optimise.sampler }, set: { lab.optimise.sampler = $0 })) {
                 Text("TPE (default)").tag("tpe")
                 Text("CMA-ES").tag("cmaes")
             }
             .disabled(running)
-            Stepper("Trials: \(lab.optimise.trials)", value: Binding(get: { lab.optimise.trials }, set: { lab.optimise.trials = $0 }),
-                    in: 2...2000, step: 10)
             LabeledContent("Study") {
                 TextField("name", text: Binding(get: { lab.optimise.studyName }, set: { lab.optimise.studyName = $0 }))
                     .multilineTextAlignment(.trailing)
                     .onSubmit { lab.reloadStudy(project: app.project?.url) }
             }
             .disabled(running)
-            Text(lab.optimise.solver == "estimate"
-                 ? "Each trial is a quick estimate: a few hundred take about a minute. A flap turned more than 25° past the element in front, or a main far past its stall angle, counts as separating and the search steers away." + (lab.optimise.checkBest > 0 ? " The RANS checks use the model and mesh above." : "")
-                 : "\(app.settings.parallelTrials) trials at a time on \(app.settings.coresPerJob) cores each (Settings). Each trial is one RANS run with the model and mesh above.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            if let problem = lab.optimiseProblem {
-                Text(problem).font(.caption).foregroundStyle(.orange)
-            }
-            if lab.optimise.needsSU2 && app.settings.su2Executable == nil {
-                Text("RANS needs SU2: install it under Solvers, RANS CFD.").font(.caption).foregroundStyle(.orange)
-            }
-            HStack {
-                let resume = lab.study.map { $0.study == WingLabModel.studyFile(project: app.project?.url ?? URL(fileURLWithPath: "/"), name: lab.optimise.studyName).deletingPathExtension().lastPathComponent } ?? false
-                Button(resume ? "Resume Study" : "Start Study") { app.runWingOptimise() }
-                    .buttonStyle(S37ButtonStyle(kind: .prominent))
-                    .disabled(running || lab.optimiseProblem != nil || app.project == nil
-                              || (lab.optimise.needsSU2 && app.settings.su2Executable == nil))
-                if app.project == nil {
-                    Text("Save the project first: studies live in it.").font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            if let job = lab.optimiseJob { JobInlineStatus(job: job) }
-        } header: {
-            Text("Optimise")
-        } footer: {
-            Text("Tick the angles, gaps and overlaps to search, and their ranges. Wings that break the minimum gap or the rules box are never run. Trials whose mesh fails or whose run diverges or does not converge are recorded as failed and the study carries on. Stopping is safe: Resume picks up where it left off.")
+            Text("Ranges start at sensible defaults when a box is ticked (angles ±5°, gaps half to one and a half times, chords ±25%). Camber is added at mid-chord; the thickness's lower bound is the structural limit. CMA-ES does not handle section choices: they are sampled at random under it.")
+                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
+        Text(lab.optimise.solver == "estimate"
+             ? "Each trial is a quick estimate, a few tenths of a second. A flap turned more than 25° past the element in front, or a main far past its stall angle, counts as separating and the search steers away." + (lab.optimise.checkBest > 0 ? " RANS checks run on the model and mesh under Solvers, 2 to 5 minutes each on 4 cores." : "")
+             : "\(app.settings.parallelTrials) trials at a time on \(app.settings.coresPerJob) cores each (Settings), each one RANS run with the model and mesh under Solvers.")
+            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        if let problem = lab.optimiseProblem {
+            Text(problem).font(.caption).foregroundStyle(.orange)
+        }
+        if lab.optimise.needsSU2 && app.settings.su2Executable == nil {
+            Text("RANS needs SU2: install it under Solvers, RANS CFD.").font(.caption).foregroundStyle(.orange)
+        }
+        HStack {
+            let resume = lab.study.map { $0.study == WingLabModel.studyFile(project: app.project?.url ?? URL(fileURLWithPath: "/"), name: lab.optimise.studyName).deletingPathExtension().lastPathComponent } ?? false
+            Button(resume ? "Resume Study" : "Start Study") { app.runWingOptimise() }
+                .buttonStyle(S37ButtonStyle(kind: .prominent))
+                .disabled(running || lab.optimiseProblem != nil || app.project == nil
+                          || (lab.optimise.needsSU2 && app.settings.su2Executable == nil))
+            if app.project == nil {
+                Text("Save the project first: studies live in it.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        if let job = lab.optimiseJob { JobInlineStatus(job: job) }
     }
 
     @ViewBuilder private func quickEstimateControls(_ lab: WingLabModel) -> some View {
@@ -1480,7 +1556,15 @@ struct StudyResults: View {
         s.trials.filter { $0.state != "invalid" }.map { t in
             let design = s.spec.variables.map { v -> String in
                 guard let x = t.params[v.name] else { return "" }
-                return v.kind == "angle" ? String(format: "%@ %.1f°", short(v), x) : String(format: "%@ %.1f mm", short(v), x * 1000)
+                switch v.kind {
+                case "angle": return String(format: "%@ %.1f°", short(v), x)
+                case "airfoil":
+                    let key = v.choices.flatMap { c in c.indices.contains(Int(x.rounded())) ? c[Int(x.rounded())] : nil } ?? "?"
+                    return "\(short(v)) \(app.wingLab.airfoil(key)?.name ?? key)"
+                case "camber": return String(format: "%@ +%.1f%%", short(v), x * 100)
+                case "thickness": return String(format: "%@ %.0f%%", short(v), x * 100)
+                default: return String(format: "%@ %.1f mm", short(v), x * 1000)  // gap, overlap, chord, height
+                }
             }.joined(separator: "  ")
             let load = t.load ?? -.infinity, cd = t.cd ?? .infinity
             return Row(id: t.number, number: t.number, state: t.state == "complete" && t.feasible == false ? "over limit" : t.state,
@@ -1491,7 +1575,9 @@ struct StudyResults: View {
     }
 
     private func short(_ v: WingStudy.Variable) -> String {
-        "\(v.kind == "angle" ? "α" : v.kind == "gap" ? "gap" : "ovl")\(v.element)"
+        let names = ["angle": "α", "gap": "gap", "overlap": "ovl", "chord": "c", "airfoil": "sec",
+                     "camber": "cmb", "thickness": "thk", "height": "h"]
+        return "\(names[v.kind] ?? v.kind)\(v.element)"
     }
 
     private func fmt(_ x: Double, _ f: String) -> String { x.isFinite ? String(format: f, x) : "–" }
@@ -1832,58 +1918,5 @@ struct FittingPicker<Value: Hashable, Content: View>: View {
             Picker(title, selection: $selection, content: content)
                 .pickerStyle(.menu)
         }
-    }
-}
-
-/// Design a wing: what to aim for, then the whole run is hands-off.
-struct DesignWingSheet: View {
-    @Environment(AppState.self) private var app
-    let dismiss: () -> Void
-
-    var body: some View {
-        let lab = app.wingLab
-        let haveSU2 = app.settings.su2Executable != nil
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Design a wing").font(.headline)
-            Text("Replaces the wing on the canvas (undo brings it back). Sections come from the library, ranked by maximum lift at your Reynolds number; a quick-estimate study tunes angles, gaps and overlaps\(lab.wing.rulesBox == nil ? "" : " inside the rules box"); the best are checked with RANS on the quick mesh and RANS's pick is loaded.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Form {
-                Picker("Elements", selection: Binding(get: { lab.design.elements }, set: { lab.design.elements = $0 })) {
-                    Text("2").tag(2)
-                    Text("3").tag(3)
-                }
-                .pickerStyle(.segmented)
-                Picker("Aim for", selection: Binding(get: { lab.design.objective }, set: { lab.design.objective = $0 })) {
-                    Text("Fastest lap (\(app.lapSim.track.kind.title))").tag(WingLabModel.Objective.minLapTime)
-                    Text("Most downforce").tag(WingLabModel.Objective.maxCl)
-                    Text("Best L/D").tag(WingLabModel.Objective.maxLD)
-                }
-                NumberField(label: "Thinnest section", unit: "%", value: Binding(get: { lab.design.minThickness }, set: { lab.design.minThickness = min(max($0, 2), 30) }))
-                Stepper(haveSU2 ? (lab.design.checks == 0 ? "RANS check: off" : lab.design.checks == 1 ? "Check the best with RANS"
-                                 : "Check with RANS, up to \(lab.design.checks) designs") : "RANS check: SU2 not installed",
-                        value: Binding(get: { lab.design.checks }, set: { lab.design.checks = $0 }), in: 0...4)
-                    .disabled(!haveSU2)
-            }
-            .formStyle(.grouped)
-            Text(haveSU2 && lab.design.checks > 0
-                 ? "About a minute of quick estimates, then 2 to 5 minutes a RANS check on 4 cores. Checking stops at the first design RANS confirms; the next is a fallback in case it separates."
-                 : "About a minute of quick estimates.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            if lab.library.isEmpty {
-                Text("No airfoil library yet: only the NACA set will be tried. Download the library (left) for the high-lift sections.")
-                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-            }
-            HStack {
-                Spacer()
-                Button("Cancel", action: dismiss).buttonStyle(S37ButtonStyle(kind: .plain))
-                Button("Design") {
-                    dismiss()
-                    app.designWing()
-                }
-                .buttonStyle(S37ButtonStyle(kind: .prominent))
-            }
-        }
-        .padding(16)
-        .frame(width: 420)
     }
 }

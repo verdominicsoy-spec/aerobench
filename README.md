@@ -103,22 +103,20 @@ only if Keep mesh was ticked.
 A multi-element wing in its own plane (not placed on the car), analysed by
 the solver that suits the question.
 
-**Design a wing** (the wand in the toolbar): from whatever is on the canvas
-to an optimised wing in a few minutes, hands-off. Pick 2 or 3 elements, what
-to aim for (the fastest lap on the Lap Sim's track, most downforce or best
-L/D), the thinnest section allowed and how many designs RANS should check.
-The engine ranks the library's sections by NeuralFoil's maximum lift at your
-Reynolds number and lays the best few out as a standard wing (inside the
-rules box if there is one), the quick estimate picks the starting wing, an
-estimate study tunes every angle, gap and overlap (150 designs, under a
-minute), the best runs with RANS on the quick mesh, and the wing is loaded.
-If RANS says it separates, the next best design that differs from it is
-checked instead. Undo brings the old wing back; the study stays in the Study
-tab like any other. On 4 cores a design took 7½ minutes with a fastest-lap
-aim: 52 seconds of estimates, a minute waiting on a calibration run since
-dropped, and 5½ minutes for the one RANS check (lap time within 0.02 s of
-the estimate's, lift 2.6% under, drag 0.6% over). The RANS check is most of
-it: it scales with cores.
+**From an empty project to an optimised wing**: in Optimise (inspector)
+pick *From scratch*, 2 or 3 elements and the thinnest section allowed, and
+*Set Up From Scratch*. The engine ranks the library's sections by
+NeuralFoil's maximum lift at your Reynolds number, lays the best few out as
+a standard wing (inside the rules box if there is one), keeps the one the
+quick estimate likes best and gives each element a shortlist of six sections
+ranked at its own Reynolds number. The canvas gets the wing (Undo brings the
+old one back) and Optimise gets every section, chord, angle, gap and overlap
+ticked, quick-estimate trials, RANS checks that stop at the first design RANS
+confirms, and the best put on the canvas at the end. Nothing runs until
+*Start Study*, so anything can be changed first. On 4 cores the angles, gaps
+and overlaps alone took 52 seconds of estimates and 5½ minutes for the one
+RANS check (lap time within 0.02 s of the estimate's, lift 2.6% under, drag
+0.6% over); the RANS check is most of it and scales with cores.
 
 **Library** (left; the toolbar's sidebar buttons hide or show it and the inspector). The NACA 4 and 5-digit set is always there; *Download the
 Library* fetches the UIUC database (about 1,600 sections, not shipped with
@@ -212,17 +210,29 @@ are drawn dashed beside the current wing's, and the results strip shows A's
 numbers and the difference from the best solver both have (CFD, else the
 estimate, else the preview). *Swap* puts A back on the canvas (undoable).
 
-**Optimise** (inspector): tick the angles, gaps and overlaps to search and
-give each a range, pick an objective (most downforce, best L/D, most
-downforce under a Cd cap, least drag for a downforce target, or the fastest
-lap: each trial is a lap of the Lap Sim's track in car A with this wing in
-place of the one it replaces, about 10 ms a lap) and TPE or
-CMA-ES, and start. Each trial is a quick estimate by default (a few hundred
-in about a minute; it finds element angles well, counts a flap turned more
-than 25° past the element in front as separated, and sees the gap only
-through the panel method, so check the best few with RANS or run the
-study with RANS for gaps and overlaps), or a RANS run with the model and mesh set under Solvers; *Settings* sets how many run at once (each on the per-job
-cores). Wings that break the minimum gap or the rules box are skipped
+**Optimise** (inspector), starting from *This wing*: a grid with a row per
+element and a box per variable: its *Section* (chosen from a shortlist of
+library sections ranked by maximum lift at that element's Reynolds number,
+its own first; *Find Sections Again* re-ranks after a change of chord or
+speed), *Chord* (from the leading edge, the slots behind kept), *Angle*,
+*Gap* and *Overlap* (flaps), *Camber* and *Thickness*; and *Ride height*
+over a ground. *Preset* ticks the usual sets at once. Each box starts with a
+sensible range (angles ±5°, gaps half to one and a half times, chords
+±25%); *Advanced* has the exact ranges, the sampler (TPE, or CMA-ES, which
+samples section choices at random) and the study's name. Pick an objective
+(most downforce, best L/D, most downforce under a Cd cap, least drag for a
+downforce target, or the fastest lap: each trial is a lap of the Lap Sim's
+track in car A with this wing in place of the one it replaces, about 10 ms a
+lap), how many trials (*Use N* suggests about 25 a variable), whether each
+is a quick estimate (a few tenths of a second; it finds angles well, counts
+a flap turned more than 25° past the element in front as separated, and sees
+the gap only through the panel method) or a RANS run with the model and mesh
+under Solvers (*Settings* sets how many run at once), how many of the best
+RANS checks after an estimate study (stopping at the first it confirms, if
+ticked; each next one differs from those before), and whether to put the
+best on the canvas when done. With chords searched, every trial's
+coefficients are on the starting wing's total chord, so a bigger wing shows
+as more lift. Wings that break the minimum gap or the rules box are skipped
 without a run; failed or unconverged runs are recorded as failed and the
 study carries on. The *Study* results tab has a sortable table of trials,
 the best so far, and Cl against Cd with the Pareto front; click a trial to

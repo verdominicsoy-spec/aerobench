@@ -193,29 +193,47 @@ final class WingLabModel {
     // Optimisation
     struct DesignVariable: Codable, Equatable, Identifiable {
         enum Kind: String, Codable, CaseIterable {
-            case angle, gap, overlap, camber, thickness, height
-            static let placement: [Kind] = [.angle, .gap, .overlap]
-            static let shape: [Kind] = [.camber, .thickness]
+            case airfoil, chord, angle, gap, overlap, camber, thickness, height
+            /// The grid's columns, in order: what the element is, how big, where, its shape.
+            static let grid: [Kind] = [.airfoil, .chord, .angle, .gap, .overlap, .camber, .thickness]
+
+            var title: String {
+                switch self {
+                case .airfoil: "Section"
+                case .chord: "Chord"
+                case .angle: "Angle"
+                case .gap: "Gap"
+                case .overlap: "Overlap"
+                case .camber: "Camber"
+                case .thickness: "Thickness"
+                case .height: "Ride height"
+                }
+            }
+            /// Gap and overlap belong to an element with one in front.
+            func applies(to element: Int) -> Bool { !((self == .gap || self == .overlap) && element == 0) }
         }
         var element: Int
         var kind: Kind
-        var low: Double  // degrees, mm for gap and overlap, % for camber added and thickness
+        var low: Double  // degrees, mm for gap, overlap and chord, % for camber added and thickness
         var high: Double
+        /// A section variable: the library keys to choose between, the element's own first.
+        var choices: [String]? = nil
 
         var id: String { "\(kind.rawValue)_\(element)" }
         var unit: String {
             switch kind {
             case .angle: "°"
-            case .gap, .overlap, .height: "mm"
+            case .gap, .overlap, .height, .chord: "mm"
             case .camber: "% chord"
             case .thickness: "% as drawn"
+            case .airfoil: ""
             }
         }
         /// In the engine's units: degrees, metres, or fractions.
         var engineScale: Double {
             switch kind {
-            case .angle: 1
-            case .gap, .overlap, .height: 0.001
+            case .angle, .airfoil: 1
+            case .gap, .overlap, .height, .chord: 0.001
             case .camber, .thickness: 0.01
             }
         }
@@ -252,6 +270,10 @@ final class WingLabModel {
         var solver = "estimate"
         /// After a quick-estimate study, run this many of the best designs with RANS (0: none).
         var checkBest = 0
+        /// Stop the RANS checks at the first design RANS confirms (the rest are fallbacks).
+        var untilPass = true
+        /// When the study ends, put its best on the canvas (RANS's pick if it checked any).
+        var loadBest = false
 
         init() {}
 
@@ -268,6 +290,16 @@ final class WingLabModel {
             // Set-ups saved before the choice ran RANS.
             solver = try c.decodeIfPresent(String.self, forKey: .solver) ?? "rans"
             checkBest = try c.decodeIfPresent(Int.self, forKey: .checkBest) ?? d.checkBest
+            untilPass = try c.decodeIfPresent(Bool.self, forKey: .untilPass) ?? d.untilPass
+            loadBest = try c.decodeIfPresent(Bool.self, forKey: .loadBest) ?? d.loadBest
+        }
+
+        /// Trials worth running for this many variables: the estimate study
+        /// levels off by about 25 a variable (it was within 0.01% of its best by
+        /// 50 with four), RANS ones cost minutes each.
+        var suggestedTrials: Int {
+            let n = max(variables.count, 1)
+            return solver == "estimate" ? min(max(25 * n, 100), 600) : min(max(6 * n, 20), 80)
         }
 
         /// Whether this set-up needs SU2 to run.
@@ -280,21 +312,24 @@ final class WingLabModel {
     var study: WingStudy?
     var optimiseJob: JobItem?
 
-    // Design a wing from scratch: a starting wing from the library, a quick-estimate
-    // study from it, the best few checked with RANS, and RANS's pick loaded.
+    // Where a study starts: the wing on the canvas, or one the engine lays out
+    // from the library (sections ranked by maximum lift, a standard arrangement).
+    enum StartFrom: String, CaseIterable, Identifiable {
+        case thisWing = "This wing"
+        case scratch = "From scratch"
+        var id: String { rawValue }
+    }
     struct DesignSetup: Equatable {
+        var startFrom: StartFrom = .thisWing
         var elements = 2
-        var objective: Objective = .minLapTime
         var minThickness = 8.0  // % of chord, the thinnest section allowed
-        var checks = 2  // RANS on the quick mesh at the end: the best, and the next distinct design if it fails
-        var trials = 150  // the estimate study is within 0.01 % of its best by 50
     }
     var design = DesignSetup()
-    var designStage: String?  // what the running design is doing, shown over the canvas
+    var designStage: String?  // what setting up or a running study is doing, shown over the canvas
     var designJob: JobItem?
-    @ObservationIgnored var designAwaitingStudy = false
-    /// The next study is a design run's: its RANS checks stop at the first that holds.
-    @ObservationIgnored var designRunNext = false
+    /// Each element's sections to choose between, from the engine (the element's own first).
+    var shortlists: [Int: [String]] = [:]
+    var shortlistJob: JobItem?
     var selectedTrial: Int?
 
     // Panels (kept per Mac)
@@ -369,8 +404,16 @@ final class WingLabModel {
             optimise.variables.remove(at: i)
             return
         }
-        let v: DesignVariable
+        var v: DesignVariable
         switch kind {
+        case .airfoil:
+            let own = wing.elements[element].airfoil.key
+            let keys = shortlists[element].map { [own] + $0.filter { $0 != own } } ?? [own]
+            v = DesignVariable(element: element, kind: .airfoil, low: 0, high: Double(max(keys.count - 1, 0)))
+            v.choices = keys
+        case .chord:
+            let c = wing.elements[element].chord * 1000
+            v = DesignVariable(element: element, kind: .chord, low: (c * 0.75).rounded(), high: (c * 1.25).rounded())
         case .angle:
             let a = wing.elements[element].angle
             v = DesignVariable(element: element, kind: .angle, low: (a - 5).rounded(), high: (a + 5).rounded())
@@ -393,6 +436,41 @@ final class WingLabModel {
         optimise.variables.sort { ($0.element, $0.kind.rawValue) < ($1.element, $1.kind.rawValue) }
     }
 
+    /// A preset of variables for every element: replaces what is ticked.
+    enum Preset: String, CaseIterable, Identifiable {
+        case placement = "Angles, gaps and overlaps"
+        case sizes = "Plus chords"
+        case everything = "Plus sections"
+        var id: String { rawValue }
+        var kinds: [DesignVariable.Kind] {
+            switch self {
+            case .placement: [.angle, .gap, .overlap]
+            case .sizes: [.chord, .angle, .gap, .overlap]
+            case .everything: [.airfoil, .chord, .angle, .gap, .overlap]
+            }
+        }
+    }
+
+    func apply(_ preset: Preset) {
+        let keepHeight = optimise.variables.first { $0.kind == .height }
+        optimise.variables = []
+        for i in wing.elements.indices {
+            for kind in preset.kinds where kind.applies(to: i) { toggleVariable(kind, of: i) }
+        }
+        if let keepHeight { optimise.variables.append(keepHeight) }
+    }
+
+    /// New shortlists from the engine: section variables already ticked take them.
+    func setShortlists(_ lists: [Int: [String]]) {
+        shortlists = lists
+        for (k, v) in optimise.variables.enumerated() where v.kind == .airfoil {
+            let own = wing.elements.indices.contains(v.element) ? wing.elements[v.element].airfoil.key : v.choices?.first ?? ""
+            let keys = [own] + (lists[v.element] ?? []).filter { $0 != own }
+            optimise.variables[k].choices = keys
+            optimise.variables[k].high = Double(max(keys.count - 1, 0))
+        }
+    }
+
     func setBounds(of id: String, low: Double? = nil, high: Double? = nil) {
         guard let i = optimise.variables.firstIndex(where: { $0.id == id }) else { return }
         if let low { optimise.variables[i].low = low }
@@ -406,7 +484,13 @@ final class WingLabModel {
         if let v = vars.first(where: { $0.element >= wing.elements.count || (($0.kind == .gap || $0.kind == .overlap) && $0.element == 0) }) {
             return "\(v.id) refers to an element that is not there any more."
         }
-        if let v = vars.first(where: { !($0.high > $0.low) }) { return "\(v.id): the upper bound must be above the lower." }
+        if let v = vars.first(where: { $0.kind == .airfoil && ($0.choices?.count ?? 0) < 2 }) {
+            return shortlistJob.map { !$0.status.isFinished } ?? false
+                ? "Finding sections for \(WingIssue.label(v.element).lowercased()) to choose between…"
+                : "\(WingIssue.label(v.element)) section: no other sections to choose between yet (Find Sections)."
+        }
+        if let v = vars.first(where: { $0.kind != .airfoil && !($0.high > $0.low) }) { return "\(v.id): the upper bound must be above the lower." }
+        if let v = vars.first(where: { $0.kind == .chord && $0.low <= 0 }) { return "\(v.id): a chord must stay above zero." }
         if let v = vars.first(where: { $0.kind == .gap && $0.low < 0 }) { return "\(v.id): a gap cannot be negative." }
         if vars.contains(where: { $0.kind == .height }) && wing.rideHeight == nil {
             return "The ride height is a variable only over a ground: turn on Ground in Flow."

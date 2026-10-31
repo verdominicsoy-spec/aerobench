@@ -1085,3 +1085,20 @@ the run's surface within a millimetre: an edited wing never sits on an old
 flow, which would be worse than no picture. The results tab keeps the
 surface Cp.
 
+**One optimiser, every variable.** Designing a wing had its own toolbar
+button and sheet beside the Optimise section, two ways into one study. It
+is now one section: *From scratch* has the engine lay out a starting wing
+and fills in the set-up (nothing runs until Start Study, so it can be
+changed first); *This wing* is a grid of what to search, a row per element:
+section, chord, angle, gap, overlap, camber, thickness. Sections are chosen
+from a shortlist per element, ranked by maximum lift at that element's own
+Reynolds number (a flap runs slower than the main, so its ranking differs);
+in Optuna a section is a categorical choice by index, not a number on a
+scale, so TPE does not assume neighbouring sections are alike. A chord
+grows from the leading edge with the slots behind kept. With chords
+searched, coefficients go on the starting wing's total chord (else a bigger
+wing would read as the same Cl and the fastest-lap objective would turn it
+into the wrong ClA). Defaults are the safe ones (ranges a box starts with,
+about 25 estimate trials a variable, checks that stop at the first RANS
+confirms); exact ranges, sampler and study name sit under Advanced.
+

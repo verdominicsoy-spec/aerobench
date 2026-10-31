@@ -216,8 +216,10 @@ extension AppState {
             params["rules_box"] = .array([.double(b.minX), .double(b.minY), .double(b.maxX), .double(b.maxY)])
         }
         params["variables"] = .array(setup.variables.map { v in
-            .object(["element": .int(v.element), "kind": .string(v.kind.rawValue),
-                     "low": .double(v.low * v.engineScale), "high": .double(v.high * v.engineScale)])
+            var o: [String: JSONValue] = ["element": .int(v.element), "kind": .string(v.kind.rawValue),
+                                          "low": .double(v.low * v.engineScale), "high": .double(v.high * v.engineScale)]
+            if let c = v.choices { o["choices"] = .array(c.map { .string($0) }) }
+            return .object(o)
         })
         params["objective"] = .string(setup.objective.rawValue)
         params["cd_cap"] = .double(setup.cdCap)
@@ -227,14 +229,10 @@ extension AppState {
         params["parallel"] = .int(settings.parallelTrials)
         params["solver"] = .string(setup.solver)
         params["check"] = .int(setup.solver == "estimate" ? setup.checkBest : 0)
-        if lab.designRunNext {
-            // A design run: stop checking once RANS confirms one design (the
-            // next is only a fallback). No calibration run: the check measures
-            // the estimate on the wing that matters, and waiting for it cost a
-            // minute without changing which design was checked.
-            params["until_pass"] = .bool(true)
-            lab.designRunNext = false
-        }
+        // Stop checking once RANS confirms a design (the next is only a fallback).
+        // No calibration run: the check measures the estimate on the wing that
+        // matters, and waiting for it cost a minute without changing the pick.
+        params["until_pass"] = .bool(setup.untilPass)
         if setup.objective == .minLapTime {
             do {
                 params["lap"] = try lapObjectiveParams()
@@ -254,7 +252,8 @@ extension AppState {
             } else {
                 self.wingLab.reloadStudy(project: self.project?.url)
             }
-            if self.wingLab.designAwaitingStudy { self.finishDesign(succeeded: item.status == .succeeded) }
+            self.wingLab.designStage = nil
+            if setup.loadBest { self.loadStudyBest(succeeded: item.status == .succeeded) }
         }
         lab.optimiseJob = job
         // The engine rewrites the export after every trial; follow it.
@@ -414,21 +413,55 @@ extension AppState {
             var kind: String
             var low: Double
             var high: Double
+            var choices: [String]?
         }
         var elements: [Element]
         var variables: [Variable]
     }
 
-    /// From whatever is on the canvas to an optimised wing: the engine picks a
-    /// starting wing from the library (seconds), a quick-estimate study tunes
-    /// it (about a minute), the best few run with RANS on the quick mesh
-    /// (about 1½ minutes each) and RANS's pick is loaded.
-    func designWing() {
-        let lab = wingLab
-        guard project != nil else {
-            show("Save the project first", WingLabError("The design's study is stored in the project."))
-            return
+    private struct ShortlistResult: Decodable {
+        struct Entry: Decodable {
+            var key: String
+            var name: String
         }
+        var shortlists: [[Entry]]
+    }
+
+    /// Each element's sections to choose between: its own, then the library's
+    /// best by maximum lift at that element's Reynolds number (a few seconds an element).
+    func findShortlists() {
+        let lab = wingLab
+        let wing = lab.wing
+        guard !wing.elements.isEmpty, !(lab.shortlistJob.map { !$0.status.isFinished } ?? false) else { return }
+        let params: [String: JSONValue] = [
+            "chords": .array(wing.elements.map { .double($0.chord) }),
+            "current": .array(wing.elements.map { .string($0.airfoil.key) }),
+            "speed": .double(wing.speed), "rho": .double(wing.rho), "mu": .double(wing.mu),
+            "n_crit": .double(lab.nCrit), "min_thickness": .double(lab.design.minThickness / 100),
+        ]
+        lab.shortlistJob = jobs.submit(command: "wing-shortlist", params: params, in: jobsRoot) { [weak self] item in
+            guard let self else { return }
+            let d = JSONDecoder()
+            d.keyDecodingStrategy = .convertFromSnakeCase
+            struct Wrapper: Decodable { var data: ShortlistResult }
+            guard item.status == .succeeded, let text = item.resultText,
+                  let r = try? d.decode(Wrapper.self, from: Data(text.utf8)).data else {
+                if item.status == .failed { self.show("Could not find sections", WingLabError(item.message ?? "The shortlist failed.")) }
+                return
+            }
+            self.wingLab.setShortlists(Dictionary(uniqueKeysWithValues: r.shortlists.enumerated().map { ($0.offset, $0.element.map(\.key)) }))
+        }
+    }
+
+    /// A wing from scratch, ready to optimise: the engine ranks the library
+    /// by maximum lift, lays the best few out as a standard wing (inside the
+    /// rules box), keeps the one the quick estimate likes best, and gives each
+    /// element a shortlist of sections. The canvas and the Optimise settings
+    /// are filled in (every section, chord, angle, gap and overlap, quick
+    /// estimates, RANS checks to the first that holds, the best loaded at the
+    /// end); nothing runs until Start Study. Undo brings the old wing back.
+    func setUpFromScratch() {
+        let lab = wingLab
         let wing = lab.wing
         var params: [String: JSONValue] = [
             "elements": .int(lab.design.elements), "chord_total": .double(wing.elements.isEmpty ? 0.44 : wing.refChord),
@@ -444,21 +477,20 @@ extension AppState {
         lab.designJob = jobs.submit(command: "wing-starter", params: params, in: jobsRoot) { [weak self] item in
             guard let self else { return }
             let lab = self.wingLab
+            lab.designStage = nil
             let d = JSONDecoder()
             d.keyDecodingStrategy = .convertFromSnakeCase
             struct Wrapper: Decodable { var data: StarterResult }
             guard item.status == .succeeded, let text = item.resultText,
                   let r = try? d.decode(Wrapper.self, from: Data(text.utf8)).data else {
-                lab.designStage = nil
-                if item.status == .failed { self.show("Could not start the design", WingLabError(item.message ?? "The starting wing failed.")) }
+                if item.status == .failed { self.show("Could not set up a wing", WingLabError(item.message ?? "The starting wing failed.")) }
                 return
             }
             var elements: [WingElement] = []
             for e in r.elements {
                 let coords = e.unit.compactMap { $0.count == 2 ? SIMD2($0[0], $0[1]) : nil }
                 guard e.leadingEdge.count == 2, coords.count > 10 else {
-                    lab.designStage = nil
-                    self.show("Could not start the design", WingLabError("The engine sent an unreadable section."))
+                    self.show("Could not set up a wing", WingLabError("The engine sent an unreadable section."))
                     return
                 }
                 // The library's own entry when there is one; else (the NACA set without
@@ -471,39 +503,30 @@ extension AppState {
                                             leadingEdge: SIMD2(e.leadingEdge[0], e.leadingEdge[1]), inverted: e.inverted))
             }
             lab.edit { $0.elements = elements; $0.alpha = 0 }  // span, endplates and ride height stay
+            var lists: [Int: [String]] = [:]
             lab.optimise.variables = r.variables.compactMap { v in
                 guard let kind = WingLabModel.DesignVariable.Kind(rawValue: v.kind) else { return nil }
-                var dv = WingLabModel.DesignVariable(element: v.element, kind: kind, low: 0, high: 0)
+                var dv = WingLabModel.DesignVariable(element: v.element, kind: kind, low: 0, high: 0, choices: v.choices)
                 dv.low = v.low / dv.engineScale
                 dv.high = v.high / dv.engineScale
+                if let c = v.choices { lists[v.element] = c }
                 return dv
             }
-            lab.optimise.objective = lab.design.objective
+            lab.shortlists = lists
             lab.optimise.solver = "estimate"
-            lab.optimise.trials = lab.design.trials
-            let checks = self.settings.su2Executable == nil ? 0 : lab.design.checks
-            lab.optimise.checkBest = checks
+            lab.optimise.trials = lab.optimise.suggestedTrials
+            lab.optimise.checkBest = self.settings.su2Executable == nil ? 0 : 2
+            lab.optimise.untilPass = true
+            lab.optimise.loadBest = true
             lab.meshLevel = "quick"
             lab.optimise.studyName = self.nextDesignName()
-            lab.designStage = checks > 0
-                ? "Tuning \(lab.design.trials) designs on quick estimates, then checking the best with RANS"
-                : "Tuning \(lab.design.trials) designs on quick estimates (SU2 is not installed, so no RANS check)"
-            lab.designAwaitingStudy = true
-            lab.designRunNext = checks > 0
-            let before = lab.optimiseJob
-            self.runWingOptimise()
-            if lab.optimiseJob === before {  // it could not start (the reason has been shown)
-                lab.designAwaitingStudy = false
-                lab.designStage = nil
-            }
+            lab.design.startFrom = .thisWing  // set up: from here on it is this wing
         }
     }
 
-    /// Loads RANS's pick (or the estimate's best without a check) once the study ends.
-    func finishDesign(succeeded: Bool) {
+    /// The study's best on the canvas: RANS's pick if it checked any, else the estimate's.
+    func loadStudyBest(succeeded: Bool) {
         let lab = wingLab
-        lab.designAwaitingStudy = false
-        lab.designStage = nil
         guard succeeded, let s = lab.study else { return }
         let pick = s.bestCheck.flatMap { c in s.trials.first { $0.number == c.number } } ?? s.bestTrial
         if let pick { lab.load(trial: pick) }
