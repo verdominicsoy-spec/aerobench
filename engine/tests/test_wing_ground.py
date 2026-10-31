@@ -54,3 +54,25 @@ def test_the_estimate_in_ground_effect():
     assert near[0]["cl"] < free[0]["cl"] < 0  # more downforce near the ground
     assert far[0]["cl"] == pytest.approx(free[0]["cl"], rel=0.01)  # twenty chords up it is free air (at 3 m it still adds 2%)
     assert near[1]["cl"] > near[0]["cl"]  # turning the inverted wing nose-up still unloads it
+
+
+def test_the_ground_estimate_against_rans():
+    """The NACA 6212 main-and-flap starting wing over a moving ground, RANS on
+    the quick mesh (SA): Cl -2.8274 at 300 mm and -3.4836 at 150 mm (-2.1677
+    in free air); at 60 mm it never settled. The image method's gain alone
+    was 42% and 77%, RANS's 30% and 61%: the estimate keeps GROUND_LIFT of it."""
+    from aeroengine.wing.design import layout
+    from aeroengine.wing.estimate import estimate
+
+    w = layout([naca4("6212")] * 2, 0.44, True)
+    els = [{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "chord": e.chord, "angle": e.angle,
+            "inverted": e.inverted} for e in w.elements]
+    for h, (cl, cd) in {0.30: (-2.8274, 0.04758), 0.15: (-3.4836, 0.07074)}.items():
+        r = estimate(els, [0.0], 15.0, ride_height=h)["rows"][0]
+        assert r["cl"] == pytest.approx(cl, rel=0.04)
+        assert r["cd"] == pytest.approx(cd, rel=0.12)
+        assert not r["separating"]
+        assert r["cl_free_air"] == pytest.approx(-2.1677, rel=0.03)
+        assert sum(e["cl"] for e in r["elements"]) == pytest.approx(r["cl"])
+    low = estimate(els, [0.0], 15.0, ride_height=0.06)["rows"][0]
+    assert low["separating"] and low["why"].startswith("Main")

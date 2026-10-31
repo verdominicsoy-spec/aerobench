@@ -1053,3 +1053,17 @@ section; RANS checks the pick.
 rulebook's layout limits, read from the rulebook into
 data/rules/fs2027_tracks.json. Load transfer and tyre load sensitivity are
 off (zero) for projects from before them so their results do not move.
+
+**Ground effect against RANS.** The quick methods put the ground in as an
+image wing; RANS as a slip wall along the flow under the wing. On the NACA
+6212 starting wing (quick mesh, SA, 15 m/s) RANS gave Cl -2.83 at 300 mm
+ride height and -3.48 at 150 mm against -2.17 in free air, and never
+settled at 60 mm (Cd 0.21 and still moving: the main separating). The
+estimate's gain over free air was 42% and 77% against RANS's 30% and 61%,
+so it keeps GROUND_LIFT = 0.75 of the gain on every element (0.73 and 0.78
+measured): lift within 0.5% and 2.9%, drag 9% high and 2% low. At 60 mm the
+main element is 16 degrees past its stall angle in place and the estimate
+calls it separating, as RANS did. The drag needed nothing: the estimate's
+ratio over free air was already RANS's. One wing, two heights; the live
+panel preview still shows the image's whole gain.
+

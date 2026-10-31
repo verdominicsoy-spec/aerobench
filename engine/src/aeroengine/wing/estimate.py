@@ -66,6 +66,13 @@ DRAG_GROWTH = 0.0087  # per degree squared past stall onset
 # effective angle: the overnight wing held to 25.2 and separated from 26.0,
 # the NACA 6212 wing held at 22 and separated at 42 and 46 (see above).
 MAX_DEFLECTION = 25.0
+# Over a ground the panel method's image overstates the lift the ground adds:
+# against RANS (NACA 6212 main and flap, quick mesh, SA) at ride heights of
+# 300 and 150 mm the estimate's gain over free air was 42% and 77%, RANS's
+# 30% and 61%. Each element's lift keeps this share of the estimate's gain
+# (0.73 and 0.78 measured). At 60 mm RANS never settled and the estimate has
+# the main separating.
+GROUND_LIFT = 0.75
 
 
 def in_ground_effect(placed: list[np.ndarray], alpha: float, ride_height: float) -> tuple[list[np.ndarray], float]:
@@ -89,7 +96,9 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
     so it holds only what its neighbours do, and the ground's own lift
     (the image's induced speed, more than any turning of the flow) is
     applied on top, as the ratio of the element's lift alone over the
-    ground to alone in free air."""
+    ground to alone in free air. Each element then keeps GROUND_LIFT of the
+    lift the ground adds over the same wing in free air (the image method
+    overstates it against RANS); each row also gives cl_free_air."""
     if not elements:
         raise EngineError("no elements to estimate")
     if ride_height is not None and not ride_height > 0:
@@ -224,6 +233,14 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
         rows.append({"alpha": float(a), "cl": sum(x["cl"] for x in els), "cd": sum(x["cd"] for x in els),
                      "trusted": all(x["trusted"] for x in els), "separating": bool(why),
                      "why": "; ".join(why) or None, "elements": els})
+    if ride_height is not None:
+        free = estimate(elements, alphas, speed, rho, mu, n_crit, ref_chord, model_size, stall_margin)["rows"]
+        for row, base in zip(rows, free):
+            for el, b in zip(row["elements"], base["elements"]):
+                el["cl"] = b["cl"] + GROUND_LIFT * (el["cl"] - b["cl"])
+                el["cl_own"] = b["cl_own"] + GROUND_LIFT * (el["cl_own"] - b["cl_own"])
+            row["cl"] = sum(el["cl"] for el in row["elements"])
+            row["cl_free_air"] = base["cl"]
     return {"ref_chord": ref, "rows": rows, "ride_height": ride_height,
             "re": [reynolds(speed, c, rho, mu) for c in chords]}
 

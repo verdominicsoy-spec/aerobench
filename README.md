@@ -151,8 +151,12 @@ front wing in ground effect at a ride height (from its lowest point): a
 ground moving with the flow, as on track, drawn under the wing. The quick
 solvers model it as an image wing (the panel method then matches a solve
 with the mirrored wing as a real body to six figures), RANS as a slip wall
-along the flow; the wing is turned by its angle instead of the flow. Ride
-height can be an optimiser variable. A RANS angle sweep is not available
+along the flow; the wing is turned by its angle instead of the flow. The
+image overstates the lift the ground adds, so the quick estimate keeps three
+quarters of it: against RANS on a NACA 6212 main and flap that puts its lift
+within 3% at 300 and 150 mm ride height (drag within 9%), and at 60 mm both
+have the main separating (the live preview shows the image's full gain).
+Ride height can be an optimiser variable. A RANS angle sweep is not available
 over a ground, as each angle needs its own mesh.
 
 **Solvers** (inspector, under Flow): pick one; its settings and run button
