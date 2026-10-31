@@ -201,7 +201,8 @@ def sweep(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
         left = limit - (time.time() - start)
         if done:
             expected = restart_time if restart_time is not None else 0.5 * next(iter(done.values()))["seconds"]
-            cap = int(left / per_iteration) if per_iteration else max_iterations
+            # No time limit (left is infinite): every angle gets the full iterations.
+            cap = min(int(left / per_iteration), max_iterations) if per_iteration and left != float("inf") else max_iterations
             if expected > left or cap < 200:
                 skipped = sorted(x for x, _ in order[n:])
                 log(f"time limit: {len(skipped)} angle(s) not run", level="warning")
@@ -222,7 +223,8 @@ def sweep(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
                 raise
             # A restart that will not settle: try that angle once from rest.
             log(f"{a:g}° from {near:g}°'s solution failed ({exc.msg}); from rest", level="warning")
-            q["iterations"] = min(max_iterations, int((limit - (time.time() - start)) / per_iteration)) if per_iteration else max_iterations
+            left = limit - (time.time() - start)
+            q["iterations"] = min(max_iterations, int(left / per_iteration)) if per_iteration and left != float("inf") else max_iterations
             restart = None
             r = solve(q, folder, mesh_file, su2_hint, cores, env, report, log, mesh_ready=ready)
         r.pop("history_columns", None)

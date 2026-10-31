@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import json
 import os
 import shutil
@@ -318,6 +320,7 @@ def test_a_rising_sweep_climbs_without_a_time_limit(monkeypatch, tmp_path):
     def fake_solve(p, workdir, mesh_file, su2_hint, cores, env, progress, log, field=True, mesh_ready=None, restart=None):
         calls.append((p["alpha"], restart.parent.name if restart else None))
         (workdir / "restart.dat").write_text("x")
+        time.sleep(0.06)  # a real run takes time (rounded to 0.1 s), so the sweep works out a time per iteration
         return {"alpha": p["alpha"], "cl": 1.0, "cd": 0.01, "converged": True, "iterations": 100,
                 "mesh": {"cells": 1}, "transition": [[0.0, 0.0]]}
 
