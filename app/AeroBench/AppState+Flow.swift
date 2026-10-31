@@ -112,8 +112,8 @@ extension AppState {
         }
     }
 
-    /// With `firstLook`, a fresh build opens with something to see: one
-    /// isosurface at the middle of the range and the object.
+    /// With `firstLook`, a fresh build opens on the geometry: the object, and
+    /// the CAD Viewer's car if one is open. Isosurfaces wait to be added.
     func loadFlowVolume(from item: JobItem, firstLook: Bool = false) {
         guard item.status == .succeeded else { return }
         let folder = item.workdir
@@ -122,8 +122,8 @@ extension AppState {
                 let volume = try await Task.detached(priority: .userInitiated) { try FlowVolume.load(folder: folder) }.value
                 self.flow.setVolume(volume, folder: folder)
                 if firstLook {
-                    self.addIsosurface()
                     self.setFlowObject(true)
+                    if self.cad.model != nil { self.setFlowCAD(true) }
                 }
             } catch {
                 self.show("Could not read the reconstructed volume", error)
