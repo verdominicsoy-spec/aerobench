@@ -106,6 +106,15 @@ class _Physics:
     def __init__(self, car: Car) -> None:
         self.car = car
         self.axles = car.axles
+        if car.axles:
+            # The same sums as axle_ratio, in plain floats: it runs per node.
+            self.axle_terms = [
+                (car.mass * G * w, car.cla * a, car.mass * w, car.mass * G * w / 2)
+                for w, a in ((1 - car.driven_axle_fraction, 1 - car.aero_balance_driven),
+                             (car.driven_axle_fraction, car.aero_balance_driven)) if w > 0
+            ]
+            self.h_over_t = car.cog_height / car.track_width if car.track_width > 0 else 0.0
+            self.sens = car.tyre_load_sensitivity
         self.transfer = car.cog_height / car.wheelbase if car.axles and car.wheelbase > 0 else 0.0
         self.m = car.mass
         self.half_rho = 0.5 * car.rho
@@ -116,9 +125,23 @@ class _Physics:
         self.bal = car.aero_balance_driven
         self.roll = car.crr * car.mass * G  # static weight only, see DECISIONS.md
 
+    def _axle_ratio(self, v: float, k: float, q: float) -> float:
+        ay = v * v * abs(k)
+        worst = 0.0
+        mu, sens, h_t = self.mu_lat, self.sens, self.h_over_t
+        for weight, aero, mass_w, static in self.axle_terms:
+            fz = weight + q * aero
+            fy = mass_w * ay
+            shift = fy * h_t
+            outer = min(fz / 2 + shift, fz)
+            inner = max(fz / 2 - shift, 0.0)
+            grip = mu * (max(1 - sens * (outer / static - 1), 0.0) * outer + max(1 - sens * (inner / static - 1), 0.0) * inner)
+            worst = max(worst, fy / max(grip, 1e-9))
+        return worst
+
     def _long_share(self, v: float, k: float, q: float) -> float:
         if self.axles:
-            r = float(axle_ratio(self.car, v, k))
+            r = self._axle_ratio(v, k, q)
         else:
             lat = self.m * v * v * abs(k)
             grip = self.mu_lat * (self.m * G + q * self.cla)

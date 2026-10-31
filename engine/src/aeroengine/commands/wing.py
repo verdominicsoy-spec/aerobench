@@ -219,7 +219,9 @@ def _lap_score(raw, base):
     if not isinstance(raw, dict):
         raise EngineError("the fastest-lap objective needs params.lap: car, track, span")
     endplate = raw.get("endplate")
-    return LapScore(car=Car.from_dict(raw.get("car"), "lap.car"), track=resolve(raw.get("track"), float(raw.get("ds", DEFAULT_DS))),
+    # A 1 m step at least: plenty to rank wings by, and each lap runs in a few tens of ms.
+    ds = max(float(raw.get("ds", DEFAULT_DS)), 1.0)
+    return LapScore(car=Car.from_dict(raw.get("car"), "lap.car"), track=resolve(raw.get("track"), ds),
                     span=float(raw.get("span", 1.0)), chord=sum(e.chord for e in base.elements),
                     endplate=None if endplate is None else float(endplate), factor=float(raw.get("factor", 1.0)),
                     replaced_cla=float(raw.get("replaced_cla", 0.0)), replaced_cda=float(raw.get("replaced_cda", 0.0)),
