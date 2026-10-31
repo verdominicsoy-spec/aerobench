@@ -19,7 +19,19 @@ final class LapSimModelTests: XCTestCase {
         XCTAssertEqual(setup.carA.tyreLoadSensitivity, 0)
         XCTAssertGreaterThan(CarParameters.placeholder.cogHeight, 0)  // a new car has load transfer on
         XCTAssertTrue(setup.compare)
-        XCTAssertEqual(setup.track.kind, .testTrack)
+        XCTAssertEqual(setup.track.kind, .endurance)  // no track saved at all: a new project's default
+        // A saved track from before generated layouts keeps what it was.
+        let old = try AeroJSON.decoder().decode(LapSimTrack.self, from: Data(#"{"skidpadRadius": 9}"#.utf8))
+        XCTAssertEqual(old.kind, .testTrack)
+    }
+
+    func testGeneratedTracksAskTheEngineByNumber() {
+        var track = LapSimTrack()
+        XCTAssertEqual(track.kind, .endurance)
+        track.seed = 7
+        XCTAssertEqual(track.jobValue(lapsimFolder: nil), .object(["generated": .int(7), "event": .string("endurance")]))
+        track.kind = .autocross
+        XCTAssertEqual(track.jobValue(lapsimFolder: nil), .object(["generated": .int(7), "event": .string("autocross")]))
     }
 
     func testJobParamsOnlyIncludeCarBWhenComparing() throws {

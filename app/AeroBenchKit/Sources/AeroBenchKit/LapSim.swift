@@ -90,9 +90,14 @@ public enum LapSimTrackKind: String, Codable, CaseIterable, Sendable {
     case skidpad
     case acceleration
     case csv
+    /// Generated within the FS layout rules (data/rules/fs2027_tracks.json); `seed` picks which.
+    case endurance = "generated_endurance"
+    case autocross = "generated_autocross"
 
     public var title: String {
         switch self {
+        case .endurance: "estimated endurance lap"
+        case .autocross: "estimated autocross lap"
         case .testTrack: "test track"
         case .fsg: "FSG Hockenheim"
         case .fsi: "FSI Varano"
@@ -107,7 +112,9 @@ public struct LapSimTrack: Codable, Equatable, Sendable {
     public static let defaultSkidpadRadius = 9.125
     public static let defaultAccelerationLength = 75.0
 
-    public var kind: LapSimTrackKind = .testTrack
+    public var kind: LapSimTrackKind = .endurance
+    /// Which generated layout (the same number always gives the same track).
+    public var seed = 1
     public var skidpadRadius = LapSimTrack.defaultSkidpadRadius  // m
     public var accelerationLength = LapSimTrack.defaultAccelerationLength  // m
     /// Relative to the project's lapsim/ folder, or absolute when no project was open.
@@ -122,12 +129,13 @@ public struct LapSimTrack: Codable, Equatable, Sendable {
     public init() {}
 
     enum CodingKeys: String, CodingKey {
-        case kind, skidpadRadius, accelerationLength, csvPath, csvClosed, csvScale, smoothing
+        case kind, seed, skidpadRadius, accelerationLength, csvPath, csvClosed, csvScale, smoothing
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        kind = try c.decodeIfPresent(LapSimTrackKind.self, forKey: .kind) ?? .testTrack
+        kind = try c.decodeIfPresent(LapSimTrackKind.self, forKey: .kind) ?? .testTrack  // what older projects ran
+        seed = try c.decodeIfPresent(Int.self, forKey: .seed) ?? 1
         skidpadRadius = try c.decodeIfPresent(Double.self, forKey: .skidpadRadius) ?? Self.defaultSkidpadRadius
         accelerationLength = try c.decodeIfPresent(Double.self, forKey: .accelerationLength) ?? Self.defaultAccelerationLength
         csvPath = try c.decodeIfPresent(String.self, forKey: .csvPath)
@@ -152,6 +160,10 @@ public struct LapSimTrack: Codable, Equatable, Sendable {
             return .object(["builtin": .string("test_track")])
         case .fsg, .fsi:
             return .object(["builtin": .string(kind.rawValue)])
+        case .endurance:
+            return .object(["generated": .int(seed), "event": .string("endurance")])
+        case .autocross:
+            return .object(["generated": .int(seed), "event": .string("autocross")])
         case .csv:
             var obj: [String: JSONValue] = [
                 "csv": .string(csvURL(lapsimFolder: lapsimFolder)?.path ?? ""),

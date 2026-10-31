@@ -69,6 +69,8 @@ struct LapSimSetupView: View {
 
             Section("Track") {
                 Picker("Track", selection: $app.lapSim.track.kind) {
+                    Text("Estimated endurance lap (about 1 km)").tag(LapSimTrackKind.endurance)
+                    Text("Estimated autocross (standing start)").tag(LapSimTrackKind.autocross)
                     Text("FSG Hockenheim, trackdrive (309 m)").tag(LapSimTrackKind.fsg)
                     Text("FSI Varano, trackdrive (218 m)").tag(LapSimTrackKind.fsi)
                     Text("Test track (synthetic)").tag(LapSimTrackKind.testTrack)
@@ -77,6 +79,14 @@ struct LapSimSetupView: View {
                     Text("Imported CSV").tag(LapSimTrackKind.csv)
                 }
                 switch setup.track.kind {
+                case .endurance, .autocross:
+                    HStack {
+                        Stepper("Layout \(setup.track.seed)", value: $app.lapSim.track.seed, in: 1...9999)
+                        Spacer()
+                        Button("Another Layout") { app.lapSim.track.seed += 1 }
+                    }
+                    Text("Generated within the 2027 FS rules for the event (straights under 80 m, a slalom at the rules' cone spacing, nothing tighter than the 9 m turning diameter, about 1 km for endurance), with corners like the FSG and FSI layouts but a little more open. The same number always gives the same track. For comparing cars on a typical layout, not predicting an event time.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 case .testTrack:
                     Text("Closed loop of about 381 m with a 12.4 m tightest radius. For checking the sim, not a real event.")
                         .font(.caption).foregroundStyle(.secondary)

@@ -181,8 +181,12 @@ def resolve(spec: Any, ds: float = DEFAULT_DS) -> Track:
     if kind is not None:
         raise EngineError(f"unknown built-in track '{kind}'",
                           "expected skidpad, acceleration, test_track, " + ", ".join(EVENT_TRACKS))
+    if "generated" in spec:
+        from .generate import generate
+
+        return generate(int(spec["generated"]), str(spec.get("event", "endurance")), ds)
     if "csv" in spec:
         path = Path(spec["csv"]).expanduser()
         x, y = read_points(path, float(spec.get("scale", 1.0)))
         return from_points(x, y, spec.get("closed"), ds, float(spec.get("smoothing", 0.05)), name=path.stem)
-    raise EngineError("track needs either 'builtin' or 'csv'")
+    raise EngineError("track needs 'builtin', 'generated' or 'csv'")

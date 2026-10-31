@@ -229,10 +229,15 @@ the estimate polar and the RANS flow field.
 
 ## Lap Sim
 
-Quasi-steady point-mass lap sim. Pick a track (real event layouts: FSG
-Hockenheim and FSI Varano trackdrive, from AMZ's MIT-licensed fssim, see
-data/tracks; or the built-in test track, skidpad,
-75 m acceleration run, or an imported centreline CSV), set car A and
+Quasi-steady point-mass lap sim. Pick a track (an estimated endurance or autocross lap, the default:
+generated within the 2027 FS layout rules in data/rules/fs2027_tracks.json,
+with straights under 80 m, a slalom at the rules' cone spacing, nothing
+tighter than the 9 m turning diameter, about 1 km for endurance, and
+corners like the real layouts but a little more open; each layout number
+always gives the same track. Or real event layouts: FSG Hockenheim and FSI
+Varano trackdrive, from AMZ's MIT-licensed fssim, see data/tracks; or the
+built-in test track, skidpad, 75 m acceleration run, or an imported
+centreline CSV), set car A and
 optionally car B, and Run (⌘R). Results show, in this order: lap time,
 endurance time and energy; dt/dClA and dt/dCdA with the ClA-for-CdA exchange
 rate; along the lap, the speed trace and the B minus A time delta; then on

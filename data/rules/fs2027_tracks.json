@@ -1,0 +1,23 @@
+{
+  "name": "Formula Student Rules 2027 v1.0: dynamic event track layouts",
+  "note": "Layout guidelines the Lap Sim's generated tracks keep to. Values are data, not code: edit or add a file for a new season. The rules give limits, not a layout; corner sizes and how often they come are the generator's choice.",
+  "sources": [
+    {"title": "Formula Student Rules 2027 v1.0", "url": "https://www.formulastudent.de/fileadmin/user_upload/all/2027/rules/FS_Rules_2027_v1.0.pdf"}
+  ],
+  "endurance": {
+    "straight_max_m": {"value": 80, "rule": "FS D 7.1.1"},
+    "slalom_spacing_m": {"value": [9, 15], "rule": "FS D 7.1.1"},
+    "track_width_min_m": {"value": 3, "rule": "FS D 7.1.1"},
+    "turning_diameter_min_m": {"value": 9, "rule": "FS D 7.1.1, D 1.1.10"},
+    "lap_length_m": {"value": 1000, "rule": "FS D 7.1.2, approximately"},
+    "closed": {"value": true, "rule": "FS D 7.1.1, a closed lap circuit"}
+  },
+  "autocross": {
+    "straight_max_m": {"value": 80, "rule": "FS D 6.1.1"},
+    "slalom_spacing_m": {"value": [7.5, 12], "rule": "FS D 6.1.1"},
+    "track_width_min_m": {"value": 3, "rule": "FS D 6.1.1"},
+    "turning_diameter_min_m": {"value": 9, "rule": "FS D 6.1.1, D 1.1.10"},
+    "lap_length_max_m": {"value": 1500, "rule": "FS D 6.1.2, less than"},
+    "closed": {"value": false, "rule": "FS D 6.2.1, a single lap from a standing start"}
+  }
+}
