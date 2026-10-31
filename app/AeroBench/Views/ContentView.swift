@@ -187,7 +187,7 @@ struct UpdateBanner: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "arrow.down.circle").foregroundStyle(S37.C.sageInk)
-            Text(app.updatesBehind == 1 ? "An update is on GitHub." : "\(app.updatesBehind) updates are on GitHub.")
+            Text(app.updatesBehind == 1 ? "There is an update since this build." : "There are \(app.updatesBehind) updates since this build.")
             Text("Update & Restart pulls it, rebuilds (a minute or two) and reopens; your project is saved first.")
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             Spacer()

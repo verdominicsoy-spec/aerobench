@@ -48,7 +48,8 @@ main() {
 
   step "Building the app (only what changed; the first build takes a minute or two)"
   if xcodebuild -project app/AeroBench.xcodeproj -scheme AeroBench -configuration Release \
-       -derivedDataPath build/DerivedData -destination 'platform=macOS,arch=arm64' build >"$LOG" 2>&1; then
+       -derivedDataPath build/DerivedData -destination 'platform=macOS,arch=arm64' \
+       AEROBENCH_COMMIT="$(git rev-parse HEAD 2>/dev/null)" build >"$LOG" 2>&1; then
     echo "Built."
   else
     fail "The build failed. The first errors:"

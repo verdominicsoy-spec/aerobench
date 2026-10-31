@@ -2,9 +2,9 @@ import AppKit
 import Foundation
 
 /// A development checkout updating itself: at launch the app asks GitHub
-/// whether the branch has moved on, and if so offers AeroBench.command, which
-/// pulls, syncs the engine, rebuilds and reopens. A packaged app (no git
-/// checkout behind its engine) never checks.
+/// whether the branch has moved on since this build, and if so offers
+/// AeroBench.command, which pulls, syncs the engine, rebuilds and reopens. A
+/// packaged app (no git checkout behind its engine) never checks.
 extension AppState {
     /// The checkout the engine folder sits in, if AeroBench.command is there to update it.
     var repoRoot: URL? {
@@ -16,12 +16,23 @@ extension AppState {
         return root
     }
 
+    /// The commit this build was made from (AeroBench.command stamps it); nil from Xcode.
+    nonisolated static var builtCommit: String? {
+        let c = Bundle.main.object(forInfoDictionaryKey: "AeroBenchCommit") as? String ?? ""
+        return c.isEmpty || c.hasPrefix("$(") ? nil : c
+    }
+
     func checkForUpdates() {
         guard let root = repoRoot else { return }
         Task.detached(priority: .utility) {
-            // Offline or no upstream: say nothing.
-            guard Self.git(["fetch", "--quiet"], in: root) != nil,
-                  let count = Self.git(["rev-list", "--count", "HEAD..@{u}"], in: root).flatMap({ Int($0) }) else { return }
+            let online = Self.git(["fetch", "--quiet"], in: root) != nil
+            // A stamped build counts every commit since it was built, on GitHub
+            // or only here (committed but not rebuilt); otherwise what GitHub has
+            // that this checkout does not. Offline, only the local ones.
+            let since = Self.builtCommit.map { ["^" + $0] } ?? ["^HEAD"]
+            let tips = (Self.builtCommit != nil ? ["HEAD"] : []) + (online ? ["@{u}"] : [])
+            guard !tips.isEmpty,
+                  let count = Self.git(["rev-list", "--count"] + tips + since, in: root).flatMap({ Int($0) }) else { return }
             await MainActor.run { self.updatesBehind = count }
         }
     }
