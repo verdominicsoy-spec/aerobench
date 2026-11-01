@@ -25,8 +25,11 @@ from .viscous import reynolds
 
 # Chord shares and in-place angles of the standard arrangement: a common
 # starting point for FS rear wings (main nearly flat, each flap steeper).
-SHARES = {2: (0.68, 0.32), 3: (0.55, 0.27, 0.18)}
-ANGLES = {2: (3.0, 25.0), 3: (2.0, 20.0, 40.0)}
+SHARES = {2: (0.68, 0.32), 3: (0.55, 0.27, 0.18), 4: (0.46, 0.24, 0.17, 0.13), 5: (0.40, 0.21, 0.16, 0.13, 0.10)}
+ANGLES = {2: (3.0, 25.0), 3: (2.0, 20.0, 40.0), 4: (2.0, 16.0, 32.0, 48.0), 5: (2.0, 14.0, 28.0, 42.0, 56.0)}
+# Each flap's angle range for the design search; later flaps sit steeper.
+FLAP_RANGES = {2: [(12.0, 45.0)], 3: [(10.0, 35.0), (25.0, 60.0)], 4: [(8.0, 30.0), (20.0, 50.0), (35.0, 65.0)],
+               5: [(6.0, 26.0), (16.0, 42.0), (28.0, 56.0), (40.0, 70.0)]}
 GAP = 0.012  # m, each flap's slot to start with
 OVERLAP = 0.005  # m
 MIN_OVERLAP = 0.002  # m, the least overlap the design search tries (see variables)
@@ -111,7 +114,7 @@ def layout(units: list[np.ndarray], chord_total: float, inverted: bool, rules_bo
     """The standard arrangement, scaled down until it fits the rules box."""
     n = len(units)
     if n not in SHARES:
-        raise EngineError("a starting wing has 2 or 3 elements")
+        raise EngineError("a starting wing has 2 to 5 elements")
     scale = 1.0
     for _ in range(12):
         chords = [chord_total * scale * s for s in SHARES[n]]
@@ -148,8 +151,7 @@ def variables(wing: Wing, shortlists: list[list[str]] | None = None) -> list[Var
     loose below zero settled on a wing that separated in RANS."""
     n = len(wing.elements)
     out = [Variable(0, "angle", -4.0, 12.0)]
-    flap_ranges = {2: [(12.0, 45.0)], 3: [(10.0, 35.0), (25.0, 60.0)]}[n]
-    for i, (lo, hi) in enumerate(flap_ranges, start=1):
+    for i, (lo, hi) in enumerate(FLAP_RANGES[n], start=1):
         out.append(Variable(i, "angle", lo, hi))
         out.append(Variable(i, "gap", max(wing.min_gap + 0.001, 0.006), 0.022))
         out.append(Variable(i, "overlap", MIN_OVERLAP, 0.020))

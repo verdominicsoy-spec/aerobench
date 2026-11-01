@@ -192,7 +192,7 @@ def wing_sweep(ctx: JobContext) -> dict:
 def wing_starter(ctx: JobContext) -> dict:
     """A starting wing for designing one from scratch: the library's sections
     ranked by maximum lift at the main element's Reynolds number, the best few
-    laid out as a 2 or 3-element wing (in the rules box if given) and the one
+    laid out as a 2 to 5-element wing (in the rules box if given) and the one
     the quick estimate likes best returned, with design variables to search."""
     from ..wing.airfoils import data_dir
     from ..wing.design import starter

@@ -1187,8 +1187,7 @@ struct WingInspector: View {
 
     @ViewBuilder private func scratchControls(_ lab: WingLabModel) -> some View {
         FittingPicker(title: "Elements", selection: Binding(get: { lab.design.elements }, set: { lab.design.elements = $0 })) {
-            Text("2").tag(2)
-            Text("3").tag(3)
+            ForEach(2...5, id: \.self) { Text("\($0)").tag($0) }
         }
         NumberField(label: "Thinnest section", unit: "%", value: Binding(get: { lab.design.minThickness },
                                                                           set: { lab.design.minThickness = min(max($0, 2), 30) }))

@@ -112,7 +112,7 @@ A multi-element wing in its own plane (not placed on the car), analysed by
 the solver that suits the question.
 
 **From an empty project to an optimised wing**: in Optimise (inspector)
-pick *From scratch*, 2 or 3 elements and the thinnest section allowed, and
+pick *From scratch*, 2 to 5 elements and the thinnest section allowed, and
 *Set Up From Scratch*. The engine ranks the library's sections by
 NeuralFoil's maximum lift at your Reynolds number, lays the best few out as
 a standard wing (inside the rules box if there is one), keeps the one the

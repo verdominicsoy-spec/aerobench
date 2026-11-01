@@ -20,6 +20,16 @@ def test_layout_fits_the_rules_box():
     assert all(x.low > 0 for x in v if x.kind == "overlap")
 
 
+def test_four_and_five_element_layouts():
+    box = (-0.05, -0.05, 0.40, 0.25)
+    for n in (4, 5):
+        w = layout([naca4("4412")] * n, 0.60, True, box)
+        assert not w.issues() and len(w.elements) == n
+        # Flaps step steeper, each starting where the one before ends.
+        assert [e.angle for e in w.elements] == sorted(e.angle for e in w.elements)
+        assert len(variables(w)) == 1 + 3 * (n - 1) + n
+
+
 def test_starter_picks_a_high_lift_section(engine, tmp_path: Path):
     build_index(tmp_path)  # the NACA set
     out = starter(tmp_path / "airfoils", elements=2, chord_total=0.44, min_thickness=0.10)
