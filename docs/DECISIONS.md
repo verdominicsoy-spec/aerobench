@@ -1187,11 +1187,44 @@ over 80 m. The drawn track is saved in lapsim/setup.json and kept when
 another track is picked.
 
 **Five-element wings from scratch.** Asked for: up to 5 elements when
-setting up a wing from scratch (was 2 or 3). Layouts for 4 and 5 follow the
-same pattern: chord shares falling (0.46 to 0.13, 0.40 to 0.10), each flap
-starting 14 to 16 degrees steeper than the one before, design-search flap
-ranges stepping up likewise. Not yet checked: how the quick estimate's slot
-rule, fitted on 2 and 3-element RANS runs, holds on 4 and 5 (see below).
+setting up a wing from scratch (was 2 or 3). Chord shares fall along the
+wing (0.55 to 0.18 for 3, 0.46 to 0.13 for 4, 0.40 to 0.10 for 5).
+
+**The estimate against RANS on 3 to 5 elements.** Checked after adding 4
+and 5: SU2, SA, quick mesh, 15 m/s, NACA 6212 on every element, 0.44 m
+total chord, free air at 0 degrees, with reverse flow measured within 4 mm
+of each element. The first layouts (each flap 14 to 20 degrees steeper than
+the one in front, the last 38 to 54 past the main) all separated their last
+flaps, and so did the 3-element start the app had shipped (2, 20, 40): RANS
+Cl -1.69 and Cd 0.071 there, the estimate -2.33, 38% high on lift. Every
+element read high, the main most in absolute terms: two or more flaps load
+it to 27 degrees in place, and the rule that holds a front element up past
+stall was fitted on main and flap only.
+
+What splits them is how far the last flap is turned past the main, not past
+the one in front. Last flap 24 degrees past the main: attached on 3, 4 and
+5 elements, the estimate 3% low, 7% low and 2% high. 30 degrees on 4
+elements (10-degree steps): Cl fell from -1.77 to -1.41, the estimate 27%
+high. 32 on 3 elements: the last flap separated, Cl -1.19, the estimate 65%
+high. Laying the main flatter to keep it below stall made things worse (main
+at -6 and -10: Cl -1.13 to -0.74, the estimate 29 to 87% high). On 5
+elements with 8-degree steps the limit sits higher: 28 and 30 degrees past
+the main held (Cl -1.54 and -1.67, the last flap fading) with the estimate
+9 to 10% high.
+
+So the estimate now also calls a flap separating when it is more than
+MAX_DEFLECTION, 25 degrees, past the main (two elements: unchanged, and the
+2-element RANS references still agree within 2.8% on lift). It is cautious
+on 5 elements with small steps, where 28 to 30 degrees held; a limit that
+grows as the steps shrink would need more runs. The starting layouts put
+the last flap 24 degrees past the main with the main at -2: (-2, 10, 22),
+(-2, 6, 14, 22) and (-2, 4, 10, 16, 22), RANS Cl -1.78, -1.77 and -1.50 at
+Cd 0.027 to 0.029. The new 3-element start gives more lift than the old one
+at less than half the drag. The design search's flap ranges were moved to
+hold these starts. Still unchecked on 3 to 5 elements: other angles of
+attack, a ground, and sections other than NACA 6212; a study's RANS
+calibration of the starting wing and its closing RANS checks cover a
+design, as before.
 
 ## Ideas for later
 
@@ -1204,10 +1237,10 @@ more open than the rules allow, which may be part of why they come out more
 open than FSG and FSI. Fixing it changes every seed's layout, so it wants a
 version on the rules file or a new seed range.
 
-**Estimate against RANS on 4 and 5 elements.** Run the starting 4 and
-5-element wings through RANS at a few angles and ground heights and compare
-with the quick estimate before trusting a design search on them; refit the
-slot rule if it drifts past the 5%.
+**More RANS on 3 to 5 elements.** Free air at 0 degrees with NACA 6212 is
+all that was checked (see the estimate against RANS on 3 to 5 elements):
+sweep the angle, add a ground, try the library's high-lift sections, and
+find how the past-the-main limit grows as flap steps shrink.
 
 **Racing line inside the track width.** The Lap Sim drives the centreline.
 A minimum-curvature line within the 3 m (or drawn) width would give lap

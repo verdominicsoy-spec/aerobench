@@ -93,3 +93,26 @@ def test_a_main_element_past_stall_against_rans():
         assert rows[a]["cd"] == pytest.approx(cd, rel=0.10)
         assert not rows[a]["separating"]
     assert rows[-9.0]["separating"] and rows[-9.0]["elements"][0]["past_stall"]  # RANS: Cl -1.55, Cd 0.25, never settled
+
+
+def test_flaps_separate_past_the_main_as_rans_found():
+    """RANS (quick mesh, SA, 15 m/s, NACA 6212 starting layouts): a last flap
+    24 degrees past the main held; 30 to 38 degrees past it lost its lift or
+    separated, with every flap within 25 degrees of the one in front."""
+    import aeroengine.wing.design as D
+    from aeroengine.wing.airfoils import naca4
+    from aeroengine.wing.estimate import estimate
+
+    def separates(n, main, step):
+        angles = tuple([float(main)] + [main + step * i for i in range(1, n)])
+        old, D.ANGLES[n] = D.ANGLES[n], angles
+        try:
+            w = D.layout([naca4("6212")] * n, 0.44, True)
+        finally:
+            D.ANGLES[n] = old
+        els = [{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "chord": e.chord, "angle": e.angle,
+                "inverted": e.inverted} for e in w.elements]
+        return estimate(els, [0.0], 15.0)["rows"][0]["separating"]
+
+    assert not separates(3, -2, 12) and not separates(4, -2, 8)  # 24 degrees: RANS attached
+    assert separates(3, -2, 16) and separates(4, -2, 10) and separates(3, 2, 19)  # 32, 30, 38 degrees

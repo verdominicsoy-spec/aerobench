@@ -19,8 +19,8 @@ NeuralFoil gives in the linear part of its lift curve, and its drag is NeuralFoi
 angle or just below the section's stall onset, whichever is lower.
 
 An element behind another separates, as on the real wing, once it is turned
-too far past the one in front: more than MAX_DEFLECTION, 25 degrees chord
-line to chord line. Every RANS case so far splits on that. On the overnight
+too far past the one in front or past the main: more than MAX_DEFLECTION, 25
+degrees chord line to chord line. Every RANS case so far splits on that. On the overnight
 two-element study (main fixed, flap angle and gap free) the flap held to 25.2
 degrees and separated from 26.0 whatever the gap; on the NACA 6212 starting
 wing it held at 22 and separated at 42 and 46 with the main free to move.
@@ -29,8 +29,12 @@ heavily loaded main's downwash keeps the flap's effective angle low in the
 panel method (9 to 13 degrees on the wings that separated) while the flap,
 recovering pressure in the main's wake, separates; and an effective-angle
 line moved by the gap, fitted earlier on the overnight study, marked two of
-its attached trials separating. A single element separates at its stall
-angle less STALL_MARGIN. Each row says why in `why`.
+its attached trials separating. With three to five elements (RANS, NACA
+6212, quick mesh, November 2026) a last flap 24 degrees past the main held
+however the turn was split, and from 30 degrees past it lost its lift or
+separated even with each flap within 25 degrees of the one in front: the
+estimate read those wings 27 to 87% high. A single element separates at its
+stall angle less STALL_MARGIN. Each row says why in `why`.
 
 What it misses: the slot's effect on lift beyond what the panel method's
 interaction gives, a slot so narrow it chokes, how the deflection limit
@@ -64,7 +68,8 @@ DRAG_GROWTH = 0.0087  # per degree squared past stall onset
 # An element behind another separates once it is turned more than this past
 # the one in front (degrees, chord line to chord line), whatever its
 # effective angle: the overnight wing held to 25.2 and separated from 26.0,
-# the NACA 6212 wing held at 22 and separated at 42 and 46 (see above).
+# the NACA 6212 wing held at 22 and separated at 42 and 46 (see above). The
+# same limit holds from the main to any flap on three to five elements.
 MAX_DEFLECTION = 25.0
 # Over a ground the panel method's image overstates the lift the ground adds:
 # against RANS (NACA 6212 main and flap, quick mesh, SA) at ride heights of
@@ -193,12 +198,17 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
 
     deflection = [None] + [float(elements[i].get("angle", 0.0)) - float(elements[i - 1].get("angle", 0.0))
                            for i in range(1, len(elements))]
+    past_main = [None] + [float(elements[i].get("angle", 0.0)) - float(elements[0].get("angle", 0.0))
+                          for i in range(1, len(elements))]
 
     def separation(i: int, in_place: float, front: bool) -> str | None:
         """Why element i separates here, or None."""
         name = label(i)
         if deflection[i] is not None and deflection[i] > MAX_DEFLECTION:
             return (f"{name} is turned {deflection[i]:.1f}° past {label(i - 1).lower()}, more than the "
+                    f"{MAX_DEFLECTION:.0f}° RANS has held: it separates")
+        if past_main[i] is not None and past_main[i] > MAX_DEFLECTION:
+            return (f"{name} is turned {past_main[i]:.1f}° past the main, more than the "
                     f"{MAX_DEFLECTION:.0f}° RANS has held: it separates")
         if front and in_place > stall[i] + FRONT_SEPARATION:
             return (f"{name} is {in_place:.1f}° in place, more than {FRONT_SEPARATION:.0f}° past its stall angle "
