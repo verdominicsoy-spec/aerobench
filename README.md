@@ -299,8 +299,8 @@ tighter than the 9 m turning diameter, about 1 km for endurance, and
 corners like the real layouts but a little more open; each layout number
 always gives the same track. Or real event layouts: FSG Hockenheim and FSI
 Varano trackdrive, from AMZ's MIT-licensed fssim, see data/tracks; or the
-built-in test track, skidpad, 75 m acceleration run, or an imported
-centreline CSV), set car A and
+built-in test track, skidpad, 75 m acceleration run, an imported
+centreline CSV, or one you draw), set car A and
 optionally car B, and Run (⌘R). Results show, in this order: lap time,
 endurance time and energy; dt/dClA and dt/dCdA with the ClA-for-CdA exchange
 rate; along the lap, the speed trace and the B minus A time delta; then on
@@ -325,6 +325,19 @@ comment lines are skipped; commas, semicolons, tabs or spaces all work. Pick m
 or mm in the app. Whether the loop is closed is detected from whether the ends
 meet, or set it by hand. With a project open, imported CSVs are copied into
 `lapsim/tracks/`.
+
+**Drawn tracks**: *Edit a Copy…* under any track opens the track editor on
+it, fitted with Bézier curves (a point every 25 m of straight or 35° of turn,
+more where needed to stay within 0.1 m of the line; a copy laps within 1%
+of a generated layout and 1.4% of FSG, inside FSG's own data noise). Drag a point to move it; click a point and drag its
+handles to bend the line through it; click the line to add a point, Delete to
+remove one; Reverse drives it the other way. Turns tighter than the rules'
+9 m outside hairpin diameter allows (3 m on the centreline of a 3 m wide
+track) show red, straights over 80 m orange, with where and how much in the
+side panel; the Lap Sim still runs a track that breaks the rules. Done keeps
+it as the *Drawn* track, saved in `lapsim/setup.json`; the engine gets it as
+centreline points about a metre apart (`{"points": {"x": [...], "y": [...]},
+"closed": true}`).
 
 The engine side can be run by hand too:
 

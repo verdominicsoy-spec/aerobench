@@ -32,7 +32,16 @@ def _wing_estimate(params: dict) -> dict:
     return estimate_from_params(params)
 
 
-HANDLERS: dict[str, Callable[[dict], dict]] = {"wing-estimate": _wing_estimate}
+def _lapsim_track(params: dict) -> dict:
+    """A track's centreline, for the app's track editor to start from."""
+    from .lapsim.track import DEFAULT_DS, resolve
+
+    t = resolve(params.get("track"), float(params.get("ds", DEFAULT_DS)))
+    return {"name": t.name, "closed": t.closed, "length": t.length,
+            "x": [round(float(v), 4) for v in t.x], "y": [round(float(v), 4) for v in t.y]}
+
+
+HANDLERS: dict[str, Callable[[dict], dict]] = {"wing-estimate": _wing_estimate, "lapsim-track": _lapsim_track}
 
 
 def _warm_up() -> None:

@@ -1155,14 +1155,79 @@ usually separates earlier than SA; the separation rules were fitted on SA
 runs, so a design the estimate passes close to its limits is worth an SST
 check.
 
+## Drawn tracks and five-element wings
+
+**Track editor.** Asked for: custom Lap Sim tracks drawn with Bézier curves
+(noted under Ideas for later). Dominic's calls: a track starts as a copy of
+an existing one (generated, FSG, FSI, test track, skidpad, acceleration or
+the imported CSV), not a blank canvas or a traced image; a track that breaks
+the layout rules is highlighted but still runs.
+
+The engine takes a new track kind, `{"points": {"x": [...], "y": [...]},
+"closed": ...}`, fitted like a CSV with no smoothing, so the solver is
+unchanged. The warm engine (serve) answers `lapsim-track` with any track's
+centreline in milliseconds, which the editor fits in Swift
+(AeroBenchKit/DrawnTrack.swift). Each node has two handles kept in line, so
+the line never kinks, with their own lengths. Nodes go every 25 m of
+straight or 35 degrees of turn (turning either way counts, or S-bends
+flatten), handle lengths by least squares through the points between
+(Schneider's curve fitting, Graphics Gems 1990), and any segment more than
+0.1 m off the line is split. Checked by lap time: a copy laps within 1% of
+the generated endurance and autocross layouts and 1.4% of FSG, which is the
+FSG line's own noise (its lap moves 21.76 to 22.37 s between 0.03 and 0.08
+m of CSV smoothing; the copy lands on the 0.08 m figure). An earlier fit
+with arc-rule handles and no refinement ran 2 to 8% fast.
+
+Rule checks: a turn is too tight under a 3.0 m centreline radius, the 9 m
+outside hairpin diameter (FS D 7.1.1, D 6.1.1) less half the 3 m minimum
+width, as the FSG and FSI notes above read it. Checking 4.5 m on the
+centreline, as the generator does, flagged FSG's legal hairpins. Straights
+count as flatter than 150 m radius, as in the generator, and break the rule
+over 80 m. The drawn track is saved in lapsim/setup.json and kept when
+another track is picked.
+
+**Five-element wings from scratch.** Asked for: up to 5 elements when
+setting up a wing from scratch (was 2 or 3). Layouts for 4 and 5 follow the
+same pattern: chord shares falling (0.46 to 0.13, 0.40 to 0.10), each flap
+starting 14 to 16 degrees steeper than the one before, design-search flap
+ranges stepping up likewise. Not yet checked: how the quick estimate's slot
+rule, fitted on 2 and 3-element RANS runs, holds on 4 and 5 (see below).
+
 ## Ideas for later
 
 Not built yet; noted so they are not lost.
 
-**Custom tracks drawn with Bézier curves.** Today a Lap Sim track is
-generated (seeded FS layouts), one of the built-in or fssim layouts, or a
-CSV of centreline points. A track editor would let a team draw its own: a
-closed or open chain of cubic Bézier segments with draggable handles on a
-canvas, checked live against the rules (turning diameter, straight
-lengths) and handed to the engine as resampled centreline points, so the
-solver side needs nothing new. Saved with the project like the CSV track.
+**Generated layouts at the real hairpin limit.** The generator keeps the
+centreline radius over 4.5 m, but the rule is a 9 m outside diameter, about
+3 m on the centreline (see Drawn tracks). Generated layouts are therefore
+more open than the rules allow, which may be part of why they come out more
+open than FSG and FSI. Fixing it changes every seed's layout, so it wants a
+version on the rules file or a new seed range.
+
+**Estimate against RANS on 4 and 5 elements.** Run the starting 4 and
+5-element wings through RANS at a few angles and ground heights and compare
+with the quick estimate before trusting a design search on them; refit the
+slot rule if it drifts past the 5%.
+
+**Racing line inside the track width.** The Lap Sim drives the centreline.
+A minimum-curvature line within the 3 m (or drawn) width would give lap
+times nearer a driver's and change how much downforce is worth in slow
+corners. Track width per node would go on the drawn track first.
+
+**Logged laps against the sim.** Import a data-logger or GPS lap (time,
+speed, position), lay its speed trace over the sim's on the same distance,
+and fit grip and ClA to it. This is the step that turns the sim from
+comparing cars into predicting them.
+
+**Cones out of a drawn track.** Export left and right cone positions at the
+rules' spacing (CSV, and a printable plan with distances) so a team can set
+the drawn layout out on a car park for a test day.
+
+**Self-crossing and several tracks.** The editor does not yet warn when a
+line crosses itself (the generator's crossing check could be reused), and a
+project holds one drawn track; a named list would let a team keep a few
+test-day layouts.
+
+**Tracing over an image.** Offered and not picked for now: load a site plan
+or satellite picture under the editor, set its scale with two points, and
+draw over it.

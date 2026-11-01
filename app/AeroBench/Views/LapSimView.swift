@@ -52,6 +52,7 @@ struct CarField: Identifiable {
 
 struct LapSimSetupView: View {
     @Environment(AppState.self) private var app
+    @State private var editor: TrackEditorRequest?
 
     var body: some View {
         @Bindable var app = app
@@ -77,6 +78,7 @@ struct LapSimSetupView: View {
                     Text("Skidpad").tag(LapSimTrackKind.skidpad)
                     Text("Acceleration").tag(LapSimTrackKind.acceleration)
                     Text("Imported CSV").tag(LapSimTrackKind.csv)
+                    Text("Drawn").tag(LapSimTrackKind.drawn)
                 }
                 switch setup.track.kind {
                 case .endurance, .autocross:
@@ -119,6 +121,30 @@ struct LapSimSetupView: View {
                     }
                     NumberRow(label: "Point scatter (smoothing)", unit: "m", value: $app.lapSim.track.smoothing, isDefault: false)
                     NumberRow(label: "Start speed (open tracks)", unit: "km/h", value: scaled($app.lapSim.startSpeed, 3.6), isDefault: false)
+                case .drawn:
+                    if let drawn = setup.track.drawn, drawn.isUsable {
+                        let samples = drawn.samples()
+                        let issues = drawn.issues(samples)
+                        LabeledContent(drawn.source.map { "From \($0)" } ?? "Drawn") {
+                            Text("\(samples.last?.s ?? 0, format: .number.precision(.fractionLength(0))) m, \(drawn.closed ? "closed" : "open"), \(drawn.nodes.count) points")
+                        }
+                        if !issues.isEmpty {
+                            Label("\(issues.count) \(issues.count == 1 ? "place breaks" : "places break") the FS layout rules (it still runs)", systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.orange)
+                        }
+                    } else {
+                        Text("Nothing drawn yet. Open the editor and copy a track to start from.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Button("Edit Track…") { editor = TrackEditorRequest() }
+                    if setup.track.drawn?.closed == false {
+                        NumberRow(label: "Start speed", unit: "km/h", value: scaled($app.lapSim.startSpeed, 3.6), isDefault: false)
+                    }
+                }
+                if setup.track.kind != .drawn {
+                    Button("Edit a Copy…") { editor = TrackEditorRequest(copyFrom: setup.track.kind) }
+                        .help("Opens this track in the track editor. Done replaces the drawn track; Cancel leaves it.")
+                        .disabled(setup.track.kind == .csv && setup.track.csvPath == nil)
                 }
             }
 
@@ -175,6 +201,7 @@ struct LapSimSetupView: View {
             }
         }
         .formStyle(.grouped)
+        .sheet(item: $editor) { TrackEditorView(request: $0) }
     }
 
     private var isRunning: Bool {

@@ -189,4 +189,11 @@ def resolve(spec: Any, ds: float = DEFAULT_DS) -> Track:
         path = Path(spec["csv"]).expanduser()
         x, y = read_points(path, float(spec.get("scale", 1.0)))
         return from_points(x, y, spec.get("closed"), ds, float(spec.get("smoothing", 0.05)), name=path.stem)
-    raise EngineError("track needs 'builtin', 'generated' or 'csv'")
+    if "points" in spec:
+        # A track drawn in the app: its Bézier curves sampled densely, so no smoothing is needed.
+        pts = spec["points"]
+        if not isinstance(pts, dict):
+            raise EngineError("track points must be an object with x and y arrays")
+        return from_points(pts.get("x", []), pts.get("y", []), spec.get("closed"), ds,
+                           float(spec.get("smoothing", 0.0)), name=str(spec.get("name", "Drawn track")))
+    raise EngineError("track needs 'builtin', 'generated', 'csv' or 'points'")

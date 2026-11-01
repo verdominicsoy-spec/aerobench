@@ -90,6 +90,8 @@ public enum LapSimTrackKind: String, Codable, CaseIterable, Sendable {
     case skidpad
     case acceleration
     case csv
+    /// Drawn in the app as Bézier curves (`LapSimTrack.drawn`).
+    case drawn
     /// Generated within the FS layout rules (data/rules/fs2027_tracks.json); `seed` picks which.
     case endurance = "generated_endurance"
     case autocross = "generated_autocross"
@@ -104,6 +106,7 @@ public enum LapSimTrackKind: String, Codable, CaseIterable, Sendable {
         case .skidpad: "skidpad"
         case .acceleration: "acceleration"
         case .csv: "imported track"
+        case .drawn: "drawn track"
         }
     }
 }
@@ -125,11 +128,13 @@ public struct LapSimTrack: Codable, Equatable, Sendable {
     public var csvScale = 1.0
     /// Expected scatter of the centreline points, m.
     public var smoothing = 0.05
+    /// The track drawn in the app, kept when another kind is picked.
+    public var drawn: DrawnTrack?
 
     public init() {}
 
     enum CodingKeys: String, CodingKey {
-        case kind, seed, skidpadRadius, accelerationLength, csvPath, csvClosed, csvScale, smoothing
+        case kind, seed, skidpadRadius, accelerationLength, csvPath, csvClosed, csvScale, smoothing, drawn
     }
 
     public init(from decoder: Decoder) throws {
@@ -142,6 +147,7 @@ public struct LapSimTrack: Codable, Equatable, Sendable {
         csvClosed = try c.decodeIfPresent(Bool.self, forKey: .csvClosed)
         csvScale = try c.decodeIfPresent(Double.self, forKey: .csvScale) ?? 1
         smoothing = try c.decodeIfPresent(Double.self, forKey: .smoothing) ?? 0.05
+        drawn = try c.decodeIfPresent(DrawnTrack.self, forKey: .drawn)
     }
 
     public func csvURL(lapsimFolder: URL?) -> URL? {
@@ -172,6 +178,8 @@ public struct LapSimTrack: Codable, Equatable, Sendable {
             ]
             if let csvClosed { obj["closed"] = .bool(csvClosed) }
             return .object(obj)
+        case .drawn:
+            return (drawn ?? DrawnTrack()).jobValue()
         }
     }
 }

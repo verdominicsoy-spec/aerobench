@@ -217,6 +217,10 @@ final class AppState {
                 return
             }
         }
+        if lapSim.track.kind == .drawn, lapSim.track.drawn?.isUsable != true {
+            alert = AppAlert(title: "No drawn track", message: "Open the track editor and copy a track to start from.")
+            return
+        }
         do {
             let params = try lapSim.jobParams(lapsimFolder: lapSimFolder)
             lapSimJob = jobs.submit(command: "lapsim", params: params, in: jobsRoot) { [weak self] item in

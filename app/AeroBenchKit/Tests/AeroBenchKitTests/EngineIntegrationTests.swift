@@ -96,6 +96,34 @@ final class EngineIntegrationTests: XCTestCase {
         XCTAssertEqual(result.deltas[2]?.count, result.track.s.count)
     }
 
+    /// A track copied into the editor laps like the original: the Bézier fit
+    /// keeps the line, its turns and so the lap time.
+    func testDrawnCopyLapsLikeTheOriginal() async throws {
+        let engine = WarmEngine(executableURL: executable)
+        defer { engine.stop() }
+        for kind in [LapSimTrackKind.fsg, .endurance, .autocross] {
+            var setup = LapSimSetup()
+            setup.track.kind = kind
+            let reply = try await engine.request("lapsim-track", params: .object(["track": setup.track.jobValue(lapsimFolder: nil)]))
+            let drawn = try DrawnTrack.fit(engineReply: reply, source: kind.title)
+            XCTAssertLessThan(Double(drawn.nodes.count), drawn.length / 6, "\(kind)")  // few enough to drag
+            var times: [Double] = []
+            for copy in [false, true] {
+                if copy {
+                    setup.track.kind = .drawn
+                    setup.track.drawn = drawn
+                }
+                let job = try makeJob(JobSpec(command: "lapsim", params: try setup.jobParams(lapsimFolder: nil)))
+                guard case .succeeded(let url) = await job.run(onEvent: { _ in }) else { return XCTFail("\(kind)") }
+                let result = try LapSimResult.decode(resultFile: Data(contentsOf: url))
+                times.append(result.a.lapTime)
+                XCTAssertEqual(result.track.closed, kind != .autocross)
+            }
+            // FSG's cone-derived line alone moves its lap time 1.4% between 0.03 and 0.08 m of smoothing.
+            XCTAssertEqual(times[1], times[0], accuracy: (kind == .fsg ? 0.02 : 0.01) * times[0], "\(kind)")
+        }
+    }
+
     /// Phase 2 acceptance check, automated: STEP through the engine to glb
     /// and into Swift, then measure known dimensions vertex to vertex.
     func testSTEPTessellatesAndMeasuresWithinATenthOfAMillimetre() async throws {

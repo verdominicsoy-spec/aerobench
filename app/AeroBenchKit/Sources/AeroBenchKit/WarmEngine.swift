@@ -9,6 +9,11 @@ public final class WarmEngine: @unchecked Sendable {
         public var message: String
         public var detail: String?
         public var errorDescription: String? { message }
+
+        public init(message: String, detail: String?) {
+            self.message = message
+            self.detail = detail
+        }
     }
 
     private let executableURL: URL
