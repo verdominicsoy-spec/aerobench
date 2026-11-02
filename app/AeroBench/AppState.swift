@@ -54,6 +54,7 @@ final class AppState {
             .map { URL(fileURLWithPath: $0) }
             .filter { ProjectStore.isProject($0) }
         jobs.loadHistory(from: jobsRoot)
+        wingLab.reloadStudy(project: workFolder)
         showLatestLapSim()
         checkForUpdates()
         flow.onCalibrationChange = { [weak self] in self?.project?.isDirty = true }
@@ -71,23 +72,25 @@ final class AppState {
 
     // MARK: Where jobs go
 
-    /// Jobs live in the open project's jobs/ folder, or in the app's cache
-    /// when no project is open. Nothing is written anywhere else.
-    var jobsRoot: URL {
-        if let project { return ProjectStore.jobsURL(for: project.url) }
-        return Self.cacheJobsRoot
-    }
+    /// Runs write into the open project, or into a scratch folder laid out
+    /// like one when no project is open: a project is only needed to save.
+    var workFolder: URL { project?.url ?? Self.scratchFolder }
 
-    static var cacheJobsRoot: URL {
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        return caches
-            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "AeroBench")
-            .appendingPathComponent("jobs")
+    var jobsRoot: URL { ProjectStore.jobsURL(for: workFolder) }
+
+    /// In Application Support, not Caches: the system may empty Caches, and
+    /// studies and the Jobs list read back from here.
+    static var scratchFolder: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("AeroBench")
+            .appendingPathComponent("Scratch")
     }
 
     // MARK: Projects
 
-    func newProjectPanel() {
+    /// Creates a project. Keeping the work moves what is on screen into it
+    /// (for Save with no project), instead of starting from defaults.
+    func newProjectPanel(keepingWork: Bool = false) {
         let panel = NSSavePanel()
         panel.title = "New Project"
         panel.nameFieldLabel = "Project name:"
@@ -97,7 +100,23 @@ final class AppState {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let manifest = try ProjectStore.create(at: url, name: url.lastPathComponent)
-            setProject(url: url, manifest: manifest)
+            if keepingWork {
+                // Studies run without a project come along so they can be resumed;
+                // their job folders stay in the scratch folder.
+                let studies = ProjectStore.toolURL(for: Self.scratchFolder, tool: "wing").appendingPathComponent("studies")
+                if FileManager.default.fileExists(atPath: studies.path) {
+                    let dest = ProjectStore.toolURL(for: url, tool: "wing").appendingPathComponent("studies")
+                    try FileManager.default.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try FileManager.default.copyItem(at: studies, to: dest)
+                }
+                project = OpenProject(url: url, manifest: manifest)
+                noteRecent(url)
+                saveProject()
+                wingLab.reloadStudy(project: url)
+                jobs.loadHistory(from: jobsRoot)
+            } else {
+                setProject(url: url, manifest: manifest)
+            }
         } catch {
             show("Could not create project", error)
         }
@@ -126,6 +145,24 @@ final class AppState {
         }
     }
 
+    /// Save from the menu: with no project open, ask for one first.
+    func save() {
+        guard project == nil else { return saveProject() }
+        let ask = NSAlert()
+        ask.messageText = "Saving needs a project"
+        ask.informativeText = "Create a project to keep this work in it. Opening a project loads that project's own work in place of this."
+        ask.addButton(withTitle: "New Project…")
+        ask.addButton(withTitle: "Open Project…")
+        ask.addButton(withTitle: "Cancel")
+        switch ask.runModal() {
+        case .alertFirstButtonReturn: newProjectPanel(keepingWork: true)
+        case .alertSecondButtonReturn: openProjectPanel()
+        default: break
+        }
+    }
+
+    /// Writes the open project; does nothing without one (runs and quitting
+    /// call it too, and must not stop to ask).
     func saveProject() {
         guard let project else { return }
         do {
@@ -144,7 +181,7 @@ final class AppState {
         if hasUnsavedChanges { saveProject() }
         project = nil
         pingJob = nil
-        wingLab.study = nil
+        wingLab.reloadStudy(project: workFolder)
         jobs.loadHistory(from: jobsRoot)
         showLatestLapSim()
     }
@@ -178,13 +215,17 @@ final class AppState {
         wingLab.markSaved()
         scheduleLiveEstimate()
         project?.isDirty = false
+        noteRecent(url)
+        jobs.loadHistory(from: jobsRoot)
+        showLatestLapSim()
+        loadFlowState(fromProject: url)
+    }
+
+    private func noteRecent(_ url: URL) {
         recentProjects.removeAll { $0.standardizedFileURL == url.standardizedFileURL }
         recentProjects.insert(url, at: 0)
         recentProjects = Array(recentProjects.prefix(10))
         storeRecents()
-        jobs.loadHistory(from: jobsRoot)
-        showLatestLapSim()
-        loadFlowState(fromProject: url)
     }
 
     private func storeRecents() {

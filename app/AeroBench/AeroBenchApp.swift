@@ -52,9 +52,8 @@ struct AeroBenchCommands: Commands {
                 .disabled(app.project == nil)
         }
         CommandGroup(replacing: .saveItem) {
-            Button("Save Project") { app.saveProject() }
+            Button("Save Project") { app.save() }
                 .keyboardShortcut("s")
-                .disabled(app.project == nil)
         }
         CommandGroup(after: .help) {
             Button("How Accurate Is Each Solver?") { openWindow(id: "accuracy") }

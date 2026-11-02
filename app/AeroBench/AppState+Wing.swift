@@ -202,10 +202,6 @@ extension AppState {
     func runWingOptimise() {
         let lab = wingLab
         let wing = lab.wing
-        guard let project else {
-            show("Save the project first", WingLabError("Studies are stored in the project, so they can be resumed."))
-            return
-        }
         if let problem = lab.optimiseProblem {
             show("The study cannot start", WingLabError(problem))
             return
@@ -248,9 +244,9 @@ extension AppState {
                 return
             }
         }
-        let file = WingLabModel.studyFile(project: project.url, name: setup.studyName)
+        let file = WingLabModel.studyFile(project: workFolder, name: setup.studyName)
         // The wing it starts from, once: a resumed study keeps its first start.
-        let start = WingLabModel.startFile(project: project.url, name: setup.studyName)
+        let start = WingLabModel.startFile(project: workFolder, name: setup.studyName)
         if !FileManager.default.fileExists(atPath: start.path), let data = try? AeroJSON.encoder().encode(wing) {
             try? FileManager.default.createDirectory(at: start.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? data.write(to: start, options: .atomic)
@@ -263,7 +259,7 @@ extension AppState {
             if item.status == .succeeded, let text = item.resultText, let s = try? WingStudy.decode(resultFile: Data(text.utf8)) {
                 self.wingLab.study = s
             } else {
-                self.wingLab.reloadStudy(project: self.project?.url)
+                self.wingLab.reloadStudy(project: self.workFolder)
             }
             self.wingLab.designStage = nil
             if setup.loadBest { self.loadStudyBest(succeeded: item.status == .succeeded) }
@@ -510,8 +506,7 @@ extension AppState {
     /// The wing a study started from: saved beside it, or for a study from
     /// before that, rebuilt from its first optimise job's input on the canvas wing.
     func studyStartWing(_ name: String) -> Wing? {
-        guard let project else { return nil }
-        let file = WingLabModel.startFile(project: project.url, name: name)
+        let file = WingLabModel.startFile(project: workFolder, name: name)
         if let data = try? Data(contentsOf: file), let wing = try? AeroJSON.decoder().decode(Wing.self, from: data) { return wing }
         struct Job: Decodable {
             struct Element: Decodable { var unit: [[Double]]; var chord, angle: Double; var leading_edge: [Double]; var inverted: Bool }
@@ -602,9 +597,8 @@ extension AppState {
     }
 
     private func nextDesignName() -> String {
-        guard let project else { return "design-1" }
         var n = 1
-        while FileManager.default.fileExists(atPath: WingLabModel.studyFile(project: project.url, name: "design-\(n)").path) { n += 1 }
+        while FileManager.default.fileExists(atPath: WingLabModel.studyFile(project: workFolder, name: "design-\(n)").path) { n += 1 }
         return "design-\(n)"
     }
 

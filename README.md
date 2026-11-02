@@ -102,7 +102,13 @@ My Project/
     log.txt           everything the engine printed
 ```
 
-With no project open, jobs go to `~/Library/Caches/dev.aerobench.AeroBench/jobs`.
+A project is only needed to save. With no project open every tool still
+runs: jobs and Wing Lab studies go to a scratch folder laid out like a
+project, `~/Library/Application Support/AeroBench/Scratch` (`jobs/`,
+`wing/studies/`). Save (⌘S) with no project open asks you to create one,
+which keeps the work on screen and copies the scratch studies into it, or to
+open one, which loads that project's own work instead. Jobs run without a
+project stay in the scratch folder.
 Intermediates (`scratch/`, `mesh/`) are deleted when a job ends; `mesh/` is kept
 only if Keep mesh was ticked.
 

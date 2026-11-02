@@ -1335,19 +1335,16 @@ struct WingInspector: View {
             TextField("name", text: Binding(get: { lab.optimise.studyName }, set: { lab.optimise.studyName = $0 }))
                 .labelsHidden()
                 .multilineTextAlignment(.trailing)
-                .onSubmit { lab.reloadStudy(project: app.project?.url) }
+                .onSubmit { lab.reloadStudy(project: app.workFolder) }
         }
         .disabled(running)
         .help("A new name starts a new study; a saved study's name resumes it")
         HStack {
-            let resume = lab.study.map { $0.study == WingLabModel.studyFile(project: app.project?.url ?? URL(fileURLWithPath: "/"), name: lab.optimise.studyName).deletingPathExtension().lastPathComponent } ?? false
+            let resume = lab.study.map { $0.study == WingLabModel.studyFile(project: app.workFolder, name: lab.optimise.studyName).deletingPathExtension().lastPathComponent } ?? false
             Button(resume ? "Resume Study" : "Start Study") { app.runWingOptimise() }
                 .buttonStyle(S37ButtonStyle(kind: .prominent))
-                .disabled(running || lab.optimiseProblem != nil || app.project == nil
+                .disabled(running || lab.optimiseProblem != nil
                           || (lab.optimise.needsSU2 && app.settings.su2Executable == nil))
-            if app.project == nil {
-                Text("Save the project first: studies live in it.").font(.caption).foregroundStyle(.secondary)
-            }
         }
         if let job = lab.optimiseJob { JobInlineStatus(job: job) }
     }

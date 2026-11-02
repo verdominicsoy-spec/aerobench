@@ -824,7 +824,7 @@ final class WingLabModel {
         return try? JSONDecoder().decode(OptimiseSetup.self, from: data)
     }
 
-    /// Studies live in the project: <project>/wing/studies/<name>.db (Optuna)
+    /// Studies live in the project (or the scratch folder): <project>/wing/studies/<name>.db (Optuna)
     /// and <name>.json (the engine's export after every trial).
     static func studyFile(project: URL, name: String) -> URL {
         let safe = name.trimmingCharacters(in: .whitespaces).map { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" ? $0 : "_" }
@@ -838,11 +838,7 @@ final class WingLabModel {
     }
 
     /// Reads the study's export, if there is one.
-    func reloadStudy(project: URL?) {
-        guard let project else {
-            study = nil
-            return
-        }
+    func reloadStudy(project: URL) {
         let url = Self.studyFile(project: project, name: optimise.studyName).deletingPathExtension().appendingPathExtension("json")
         study = (try? Data(contentsOf: url)).flatMap { try? WingStudy.decode(exportFile: $0) }
     }
