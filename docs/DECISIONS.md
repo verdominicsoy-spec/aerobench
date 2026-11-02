@@ -1285,14 +1285,15 @@ take sage as their tint rather than custom sage37 controls. The window's
 minimum height went from 560 to 680 to fit the header and dock round Wing
 Lab's panes.
 
-**A quiet line drawing per tool, and Prism Layer answer-first.** The dot
-grid and the shared airfoil bloom competed with the panes, so each tool now
-has its own motif, faded out before the content and cross-faded on a tool
-switch: streamlines round an inverted Joukowski wing (Wing Lab), a circuit's
-contour lines and a skidpad (Lap Sim), a perspective floor (CAD), a vortex
-street (Flow Field), prism layers growing off the bottom edge (Prism Layer),
-and plain charcoal for Project and Jobs. They are drawn in code, since the
-design system's streamline SVGs aren't in the repo. Prism Layer now leads
+**A faint space-filling curve per tool, and Prism Layer answer-first.**
+The dot grid and the shared airfoil bloom competed with the panes, so each
+tool now has its own space-filling curve, run edge to edge in bone at 7%
+with turns about 18 points apart, cross-faded on a tool switch: Hilbert
+(Project), Sierpiński arrowhead (Wing Lab), Moore, a closed loop like a
+circuit (Lap Sim), Peano (CAD), Gosper's flowsnake (Flow Field), the
+Sierpiński square curve (Prism Layer) and the Heighway dragon (Jobs). A
+first pass with a picture per tool (streamlines, contour lines, a floor
+grid) was dropped as too busy. Prism Layer now leads
 with its answer: the live result is the header's takeaway, then the
 near-wall spotlight beside a strip of layers, total and Reynolds, then the
 inputs beside STAR's console. The console takes the wider column, against

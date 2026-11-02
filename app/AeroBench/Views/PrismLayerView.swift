@@ -41,13 +41,13 @@ struct PrismLayerView: View {
                 }
                 row {
                     inputs(layer)
-                        .frame(width: wide ? 320 : nil)
+                        .frame(width: wide ? 340 : nil)
                     // STAR's names run long: the console takes the rest of the row
                     if let layer { StarConsole(layer: layer).frame(minWidth: 500) }
                 }
             }
             .padding(6)
-            .onGeometryChange(for: Bool.self) { $0.size.width >= 860 } action: { wide = $0 }
+            .onGeometryChange(for: Bool.self) { $0.size.width >= 880 } action: { wide = $0 }
         }
         .scrollIndicators(.never)
         .preference(key: ToolTakeawayKey.self, value: layer.map {
@@ -107,7 +107,7 @@ struct PrismLayerView: View {
             }
             group("Also needed", note: "Air at 15 °C is 1.81e-5 Pa·s.",
                   help: "Air at 15 °C is 1.81e-5 Pa·s. Stretching sets only the number of layers.") {
-                field("Dynamic viscosity", "Pa·s", $viscosity)
+                field("Viscosity", "Pa·s", $viscosity)
                 field("Stretching", "", $stretching)
             }
             DisclosureGroup(isExpanded: $showWorking) {

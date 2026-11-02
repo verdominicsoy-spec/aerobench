@@ -55,15 +55,16 @@ enum Tool: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The line drawing behind the tool
+    /// The space-filling curve behind the tool
     var motif: S37Motif {
         switch self {
-        case .project, .jobs: .plain
-        case .wingLab: .wing
-        case .lapSim: .track
-        case .cadViewer: .floor
-        case .flowField: .vortex
-        case .prismLayer: .prism
+        case .project: .hilbert
+        case .wingLab: .arrowhead
+        case .lapSim: .moore  // a closed loop, like a circuit
+        case .cadViewer: .peano
+        case .flowField: .gosper  // the flowsnake
+        case .prismLayer: .sierpinski
+        case .jobs: .dragon
         }
     }
 

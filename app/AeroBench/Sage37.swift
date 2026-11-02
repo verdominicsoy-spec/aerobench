@@ -167,9 +167,9 @@ struct S37PaneKey: PreferenceKey {
     static func reduce(value: inout [S37PaneFrame], nextValue: () -> [S37PaneFrame]) { value += nextValue() }
 }
 
-/// Root of the window: the tool's motif, bent under every glass pane, content on top
+/// Root of the window: the tool's curve, bent under every glass pane, content on top
 struct S37Root<Content: View>: View {
-    var motif: S37Motif = .plain
+    var motif: S37Motif = .hilbert
     @ViewBuilder var content: Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
