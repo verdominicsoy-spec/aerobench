@@ -7,12 +7,14 @@ struct PrismLayerView: View {
     @AppStorage("prism.density") private var density = 1.225
     @AppStorage("prism.yPlus") private var yPlus = 1.0
     @AppStorage("prism.viscosity") private var viscosity = 1.81e-5
-    @AppStorage("prism.length") private var length = 1.0
+    @AppStorage("prism.chord") private var chord = 0.3
+    @AppStorage("prism.slotGap") private var slotGap = 0.0  // 0: a single element, no slot
     @AppStorage("prism.stretching") private var stretching = 1.2
 
     var body: some View {
         let layer = PrismLayer(velocity: velocity, density: density, yPlus: yPlus,
-                               viscosity: viscosity, length: length, stretching: stretching)
+                               viscosity: viscosity, chord: chord,
+                               slotGap: slotGap > 0 ? slotGap / 1000 : nil, stretching: stretching)
         Form {
             Section {
                 field("Velocity", "m/s", $velocity)
@@ -20,21 +22,38 @@ struct PrismLayerView: View {
                 field("Target y+", "", $yPlus)
             } header: {
                 Text("Flow")
+            } footer: {
+                Text("y+ sets only the first cell. The total thickness comes from the chord and the Reynolds number.")
+            }
+            Section {
+                field("Chord", "m", $chord)
+                field("Slot gap", "mm", $slotGap)
+            } header: {
+                Text("Element")
+            } footer: {
+                Text("The element you are meshing: the boundary layer grows along the chord. The slot gap is the narrowest gap to the next element; 0 for a single element.")
             }
             Section {
                 field("Dynamic viscosity", "Pa·s", $viscosity)
-                field("Reference length", "m", $length)
                 field("Stretching", "", $stretching)
             } header: {
                 Text("Also needed")
             } footer: {
-                Text("The reference length sets the Reynolds number and how thick the boundary layer grows: use the chord, or the car's length. Air at 15 °C is 1.81e-5 Pa·s.")
+                Text("Air at 15 °C is 1.81e-5 Pa·s. Stretching sets only the number of layers.")
             }
             Section {
                 if let layer {
                     result("Total thickness (absolute)", millimetres(layer.total))
+                    if layer.cappedBySlot {
+                        Text("Capped at 0.4 of the slot gap; the boundary layer is \(millimetres(layer.boundaryLayer)).")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     result("First cell thickness", millimetres(layer.firstCell))
                     result("Number of layers", "\(layer.layers)")
+                    if layer.layers < 10 {
+                        Text("Under 10 layers leaves the boundary layer under-resolved: lower the stretching, or open the slot.")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
                     result("Wall distance y", millimetres(layer.wallDistance))
                     result("Reynolds number", layer.reynolds.formatted(.number.notation(.scientific).precision(.significantDigits(3))))
                 } else {
@@ -43,7 +62,7 @@ struct PrismLayerView: View {
             } header: {
                 Text("Prism layer")
             } footer: {
-                Text("Flat-plate estimates: Cf = 0.026 Re^-1/7 for the wall distance, 0.37 L Re^-0.2 for the total. STAR is cell-centred, so the first cell is twice the wall distance y; SU2 meshes take y itself.")
+                Text("Flat-plate estimates: Cf = 0.026 Re^-1/7 for the wall distance, 0.37 c Re^-0.2 for the total, at the trailing edge, where it is thickest. STAR is cell-centred, so the first cell is twice the wall distance y; SU2 meshes take y itself.")
             }
         }
         .formStyle(.grouped)
