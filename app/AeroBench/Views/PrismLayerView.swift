@@ -43,16 +43,19 @@ struct PrismLayerView: View {
             }
             Section {
                 if let layer {
-                    result("Total thickness (absolute)", millimetres(layer.total))
-                    if layer.cappedBySlot {
-                        Text("Capped at 0.4 of the slot gap; the boundary layer is \(millimetres(layer.boundaryLayer)).")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    result("First cell thickness", millimetres(layer.firstCell))
-                    result("Number of layers", "\(layer.layers)")
+                    result("Minimum Thickness Percentage", percent(layer.minimumThicknessPercentage))
+                    result("Gap Fill Percentage", percent(layer.gapFillPercentage))
+                    result("Prism Layer Reduction Percentage", percent(layer.reductionPercentage))
+                    result("Number of Prism Layers", "\(layer.layers)")
+                    result("Prism Layer Near Wall Thickness", PrismLayer.starLength(layer.firstCell))
+                    result("Prism Layer Total Thickness (absolute)", PrismLayer.starLength(layer.total))
                     if layer.layers < 10 {
-                        Text("Under 10 layers leaves the boundary layer under-resolved: lower the stretching, or open the slot.")
+                        Text("Under 10 layers leaves the boundary layer under-resolved: lower the stretching.")
                             .font(.caption).foregroundStyle(.orange)
+                    }
+                    if layer.slotShare < 1 {
+                        Text("The slot holds \(percent(layer.gapFillPercentage)) % a side, so the layer thins there to \((100 * layer.slotShare).formatted(.number.precision(.fractionLength(0)))) % of the total. The reduction and minimum thickness percentages sit below that, so every layer is kept.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                     result("Wall distance y", millimetres(layer.wallDistance))
                     result("Reynolds number", layer.reynolds.formatted(.number.notation(.scientific).precision(.significantDigits(3))))
@@ -60,9 +63,9 @@ struct PrismLayerView: View {
                     Text("Every value must be above zero, and stretching above 1.").foregroundStyle(.secondary)
                 }
             } header: {
-                Text("Prism layer")
+                Text("STAR prism layer mesher")
             } footer: {
-                Text("Flat-plate estimates: Cf = 0.026 Re^-1/7 for the wall distance, 0.37 c Re^-0.2 for the total, at the trailing edge, where it is thickest. STAR is cell-centred, so the first cell is twice the wall distance y; SU2 meshes take y itself.")
+                Text("Flat-plate estimates: Cf = 0.026 Re^-1/7 for the wall distance, 0.37 c Re^-0.2 for the total, at the trailing edge, where it is thickest. Gap fill is the prism share of the slot on each side, at least STAR's 25 and at most 40, as in the engine's meshes. STAR is cell-centred, so the first cell is twice the wall distance y; SU2 meshes take y itself.")
             }
         }
         .formStyle(.grouped)
@@ -80,6 +83,10 @@ struct PrismLayerView: View {
 
     private func result(_ label: String, _ value: String) -> some View {
         LabeledContent(label) { Text(value).monospacedDigit().textSelection(.enabled) }
+    }
+
+    private func percent(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(1)))
     }
 
     private func millimetres(_ metres: Double) -> String {

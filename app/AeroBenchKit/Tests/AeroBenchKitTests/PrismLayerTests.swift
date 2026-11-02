@@ -11,7 +11,6 @@ final class PrismLayerTests: XCTestCase {
         XCTAssertEqual(p.wallDistance, 1 / (p.reynolds * (cf / 2).squareRoot()), accuracy: 1e-12)
         XCTAssertEqual(p.firstCell, 2 * p.wallDistance)
         XCTAssertEqual(p.total, 0.37 * pow(p.reynolds, -0.2), accuracy: 1e-12)
-        XCTAssertFalse(p.cappedBySlot)
         // Enough layers to reach the total, one fewer falls short.
         let reach = { (n: Int) in p.firstCell * (pow(1.2, Double(n)) - 1) / 0.2 }
         XCTAssertGreaterThanOrEqual(reach(p.layers), p.total)
@@ -26,11 +25,31 @@ final class PrismLayerTests: XCTestCase {
         XCTAssertEqual(coarse.firstCell, 30 * main.firstCell, accuracy: 1e-12)
     }
 
-    func testANarrowSlotCapsTheTotal() throws {
+    func testNoSlotKeepsStarDefaults() throws {
+        let p = try XCTUnwrap(PrismLayer(velocity: 15, density: 1.225, yPlus: 1, chord: 0.3))
+        XCTAssertEqual([p.gapFillPercentage, p.reductionPercentage, p.minimumThicknessPercentage], [25, 50, 10])
+    }
+
+    func testAWideSlotRaisesGapFillToFitTheLayer() throws {
+        // 8.9 mm in a 30 mm slot needs 30 % a side.
+        let p = try XCTUnwrap(PrismLayer(velocity: 15, density: 1.225, yPlus: 1, chord: 0.3, slotGap: 0.030))
+        XCTAssertEqual(p.gapFillPercentage, 30)
+        XCTAssertEqual(p.slotShare, 1)
+        XCTAssertEqual(p.reductionPercentage, 50)
+    }
+
+    func testANarrowSlotKeepsEveryLayer() throws {
+        // A 12 mm slot holds 40 % a side, 4.8 mm, about 54 % of the total.
         let p = try XCTUnwrap(PrismLayer(velocity: 15, density: 1.225, yPlus: 1, chord: 0.3, slotGap: 0.012))
-        XCTAssertTrue(p.cappedBySlot)
-        XCTAssertEqual(p.total, 0.4 * 0.012, accuracy: 1e-12)
-        XCTAssertGreaterThan(p.boundaryLayer, p.total)
+        XCTAssertEqual(p.gapFillPercentage, 40)
+        XCTAssertEqual(p.slotShare, 0.4 * 0.012 / p.total, accuracy: 1e-12)
+        XCTAssertLessThan(p.reductionPercentage, 100 * p.slotShare)  // no layer dropped in the slot
+        XCTAssertLessThan(p.minimumThicknessPercentage, p.reductionPercentage)
+    }
+
+    func testStarLengthFormat() {
+        XCTAssertEqual(PrismLayer.starLength(3.677e-5), "3.677E-5 m")
+        XCTAssertEqual(PrismLayer.starLength(0.0089), "8.900E-3 m")
     }
 
     func testRejectsInputsWithNoAnswer() {
