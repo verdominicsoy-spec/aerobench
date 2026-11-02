@@ -47,11 +47,6 @@ final class PrismLayerTests: XCTestCase {
         XCTAssertLessThan(p.minimumThicknessPercentage, p.reductionPercentage)
     }
 
-    func testStarLengthFormat() {
-        XCTAssertEqual(PrismLayer.starLength(3.677e-5), "3.677E-5 m")
-        XCTAssertEqual(PrismLayer.starLength(0.0089), "8.900E-3 m")
-    }
-
     func testRejectsInputsWithNoAnswer() {
         XCTAssertNil(PrismLayer(velocity: 0, density: 1.225, yPlus: 1, chord: 0.3))
         XCTAssertNil(PrismLayer(velocity: 15, density: 1.225, yPlus: 1, chord: 0.3, stretching: 1))

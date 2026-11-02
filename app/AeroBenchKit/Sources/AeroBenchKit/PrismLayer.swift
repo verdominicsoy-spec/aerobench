@@ -52,10 +52,4 @@ public struct PrismLayer: Equatable, Sendable {
         reductionPercentage = min(50, (80 * slotShare).rounded(.down))
         minimumThicknessPercentage = max(1, min(10, (reductionPercentage / 2).rounded(.down)))
     }
-
-    /// A length as STAR shows it, 3.677E-5 m.
-    public static func starLength(_ metres: Double) -> String {
-        let parts = String(format: "%.3E", metres).split(separator: "E")
-        return "\(parts[0])E\(Int(parts[1]) ?? 0) m"
-    }
 }

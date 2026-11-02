@@ -1,4 +1,5 @@
 import AeroBenchKit
+import AppKit
 import SwiftUI
 
 /// Prism layer sizes for a target y+, to type into STAR's mesher.
@@ -43,12 +44,12 @@ struct PrismLayerView: View {
             }
             Section {
                 if let layer {
-                    result("Minimum Thickness Percentage", percent(layer.minimumThicknessPercentage))
-                    result("Gap Fill Percentage", percent(layer.gapFillPercentage))
-                    result("Prism Layer Reduction Percentage", percent(layer.reductionPercentage))
+                    result("Minimum Thickness Percentage", percent(layer.minimumThicknessPercentage), "%")
+                    result("Gap Fill Percentage", percent(layer.gapFillPercentage), "%")
+                    result("Prism Layer Reduction Percentage", percent(layer.reductionPercentage), "%")
                     result("Number of Prism Layers", "\(layer.layers)")
-                    result("Prism Layer Near Wall Thickness", PrismLayer.starLength(layer.firstCell))
-                    result("Prism Layer Total Thickness (absolute)", PrismLayer.starLength(layer.total))
+                    result("Prism Layer Near Wall Thickness", millimetres(layer.firstCell), "mm")
+                    result("Prism Layer Total Thickness (absolute)", millimetres(layer.total), "mm")
                     if layer.layers < 10 {
                         Text("Under 10 layers leaves the boundary layer under-resolved: lower the stretching.")
                             .font(.caption).foregroundStyle(.orange)
@@ -57,7 +58,7 @@ struct PrismLayerView: View {
                         Text("The slot holds \(percent(layer.gapFillPercentage)) % a side, so the layer thins there to \((100 * layer.slotShare).formatted(.number.precision(.fractionLength(0)))) % of the total. The reduction and minimum thickness percentages sit below that, so every layer is kept.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    result("Wall distance y", millimetres(layer.wallDistance))
+                    result("Wall distance y", millimetres(layer.wallDistance), "mm")
                     result("Reynolds number", layer.reynolds.formatted(.number.notation(.scientific).precision(.significantDigits(3))))
                 } else {
                     Text("Every value must be above zero, and stretching above 1.").foregroundStyle(.secondary)
@@ -81,8 +82,22 @@ struct PrismLayerView: View {
         }
     }
 
-    private func result(_ label: String, _ value: String) -> some View {
-        LabeledContent(label) { Text(value).monospacedDigit().textSelection(.enabled) }
+    /// The value with its unit and a button that copies the bare number, to paste into STAR.
+    private func result(_ label: String, _ value: String, _ unit: String = "") -> some View {
+        LabeledContent(label) {
+            HStack {
+                Text(value).monospacedDigit().textSelection(.enabled)
+                Text(unit).foregroundStyle(.secondary).frame(width: 26, alignment: .leading)
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(value, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                }
+                .buttonStyle(.borderless)
+                .help("Copy \(value)")
+            }
+        }
     }
 
     private func percent(_ value: Double) -> String {
@@ -90,6 +105,6 @@ struct PrismLayerView: View {
     }
 
     private func millimetres(_ metres: Double) -> String {
-        (metres * 1000).formatted(.number.precision(.significantDigits(3))) + " mm"
+        String(format: "%.4g", metres * 1000)  // plain digits, no grouping, so it pastes as a number
     }
 }
