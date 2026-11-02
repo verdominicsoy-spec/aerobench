@@ -5,12 +5,12 @@ import SwiftUI
 // sage37, Dominic's design system (tokens v5, October 2026), as the
 // sage37-swift skill translates it. The values are the design system's; if
 // it changes, regenerate them from it rather than editing here. AeroBench
-// ships dark only, so each token is its dark value. The window is the
-// airfoil bloom bent under clear glass panes, one per working region; the
-// dock at the bottom switches tools. Machine output sits in glassout
-// consoles (Glassout.swift). It leans a little toward glassout to set it
-// apart from Pit Wall: the phosphor dot grid under the bloom, the meta line
-// in mono caps, and glassout's dock (inverse-video sage, mono caps labels).
+// ships dark only, so each token is its dark value. The window is a quiet
+// line drawing per tool (S37Motifs.swift) bent under clear glass panes, one
+// per working region; the dock at the bottom switches tools. Machine output
+// sits in glassout consoles (Glassout.swift). It leans a little toward
+// glassout to set it apart from Pit Wall: the meta line in mono caps, and
+// glassout's dock (inverse-video sage, mono caps labels).
 
 extension Color {
     /// 0xRRGGBB with optional opacity, sRGB
@@ -84,6 +84,7 @@ enum S37 {
         static let lens = Animation.timingCurve(0.3, 1.35, 0.5, 1, duration: 0.38)
         static let colour = Animation.easeInOut(duration: 0.2)
         static let viewRise = 0.34
+        static let motifCrossfade = 0.36  // the web's bloom crossfade
         static let lensHold = 0.18
         static let lensDrag: CGFloat = 6
     }
@@ -147,98 +148,14 @@ extension Font {
 
 // MARK: backdrop
 
-/// The airfoil bloom: NACA-section petals in sage line art round ochre
-/// seeds, drawn once per window size.
+/// The current tool's motif (S37Motifs.swift), drawn once per window size
+/// and tool.
 struct S37Backdrop: View, Equatable {
-    nonisolated static func == (a: Self, b: Self) -> Bool { true }
+    let motif: S37Motif
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.motif == b.motif }
     var body: some View {
-        Canvas(rendersAsynchronously: true) { ctx, size in S37Bloom.airfoil(&ctx, size) }
+        Canvas(rendersAsynchronously: true) { ctx, size in S37Motifs.draw(&ctx, size, motif) }
             .drawingGroup()
-    }
-}
-
-enum S37Bloom {
-    static let sage = (150.0, 183.0, 127.0), sageInk = (177.0, 207.0, 157.0)
-    static let ochre = (230.0, 177.0, 78.0), bone = (183.0, 176.0, 163.0)
-    static func c(_ t: (Double, Double, Double), _ a: Double) -> Color { Color(t.0, t.1, t.2, a) }
-
-    static func petal(_ ctx: inout GraphicsContext, _ x: Double, _ y: Double, _ a: Double, _ len: Double,
-                      _ t: Double, _ m: Double, _ color: Color, _ lw: Double) {
-        let n = 28, ca = cos(a), sa = sin(a)
-        var up: [CGPoint] = [], lo: [CGPoint] = []
-        for k in 0...n {
-            let s = (1 - cos(Double.pi * Double(k) / Double(n))) / 2
-            let yt = 5 * t * (0.2969 * s.squareRoot() - 0.126 * s - 0.3516 * s * s + 0.2843 * s * s * s - 0.1036 * s * s * s * s)
-            let yc = m * 4 * s * (1 - s)
-            up.append(CGPoint(x: s, y: yc + yt)); lo.append(CGPoint(x: s, y: yc - yt))
-        }
-        func P(_ p: CGPoint) -> CGPoint { CGPoint(x: x + (p.x * ca - p.y * sa) * len, y: y + (p.x * sa + p.y * ca) * len) }
-        var path = Path(); path.move(to: P(up[0]))
-        for p in up.dropFirst() { path.addLine(to: P(p)) }
-        for p in lo.reversed() { path.addLine(to: P(p)) }
-        path.closeSubpath()
-        ctx.stroke(path, with: .color(color), lineWidth: lw)
-    }
-
-    static func camber(_ ctx: inout GraphicsContext, _ x: Double, _ y: Double, _ a: Double, _ len: Double, _ m: Double) {
-        let ca = cos(a), sa = sin(a); var path = Path()
-        for k in 0...20 {
-            let u = Double(k) / 20, v = m * 4 * u * (1 - u)
-            let p = CGPoint(x: x + (u * ca - v * sa) * len, y: y + (u * sa + v * ca) * len)
-            k == 0 ? path.move(to: p) : path.addLine(to: p)
-        }
-        ctx.stroke(path, with: .color(c(sage, 0.16)), lineWidth: 0.6)
-    }
-
-    static func airfoil(_ ctx: inout GraphicsContext, _ size: CGSize) {
-        let w = size.width, h = size.height, tau = 2 * Double.pi
-        ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(hex: 0x100e0b)))
-        // AeroBench leans toward glassout: its phosphor dot grid (16 pitch) under the petals
-        var gy: Double = 0
-        while gy < h {
-            var gx: Double = 0
-            while gx < w {
-                ctx.fill(Path(ellipseIn: CGRect(x: gx + 0.7, y: gy + 0.7, width: 2.6, height: 2.6)), with: .color(Color(150, 183, 127, 0.14)))
-                gx += 16
-            }
-            gy += 16
-        }
-        let wide = w > 720
-        let cx = wide ? min(w * 0.8, w / 2 + 470) : w * 0.74
-        let cy = h * (wide ? 0.3 : 0.2)
-        let R = min(max(w, h) * (wide ? 0.34 : 0.4), 540)
-        ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .radialGradient(
-            Gradient(stops: [.init(color: c(ochre, 0.075), location: 0), .init(color: c(ochre, 0.03), location: 0.45),
-                             .init(color: c(ochre, 0), location: 1)]),
-            center: CGPoint(x: cx, y: cy), startRadius: 0, endRadius: R * 1.35))
-        for (i, k) in [0.36, 0.7, 1.02, 1.34].enumerated() {
-            ctx.stroke(Path(ellipseIn: CGRect(x: cx - R * k, y: cy - R * k, width: 2 * R * k, height: 2 * R * k)),
-                       with: .color(c(bone, 0.05 - Double(i) * 0.008)), lineWidth: 0.75)
-        }
-        let style: [((Double, Double, Double), Double, Double)] = [(sage, 0.38, 1.15), (sageInk, 0.24, 0.8), (bone, 0.17, 0.6)]
-        let thick = [0.2, 0.17, 0.15]
-        func level(_ x: Double, _ y: Double, _ r: Double, _ n: Int, _ d: Int, _ rot: Double) {
-            for i in 0..<n {
-                let a = rot + Double(i) * tau / Double(n)
-                let (col, al, lw) = style[d]
-                let px = x + cos(a) * r * 0.1, py = y + sin(a) * r * 0.1
-                petal(&ctx, px, py, a + 0.16, r * 0.9, thick[d], 0.07, c(col, al), lw)
-                if d == 0 { camber(&ctx, px, py, a + 0.16, r * 0.9, 0.07) }
-                let tx = x + cos(a + 0.05) * r, ty = y + sin(a + 0.05) * r
-                if d < 2 {
-                    level(tx, ty, r * (d == 0 ? 0.33 : 0.36), d == 0 ? 7 : 5, d + 1, a + 0.35)
-                } else {
-                    ctx.fill(Path(ellipseIn: CGRect(x: tx - 1.1, y: ty - 1.1, width: 2.2, height: 2.2)), with: .color(c(ochre, 0.38)))
-                }
-            }
-        }
-        level(cx, cy, R * 0.66, 9, 0, -0.2)
-        for k in 1...160 {
-            let f = Double(k) / 160, rr = R * 0.12 * f.squareRoot(), th = Double(k) * 2.39996
-            let dot = 0.7 + 1.3 * f
-            ctx.fill(Path(ellipseIn: CGRect(x: cx + rr * cos(th) - dot, y: cy + rr * sin(th) - dot, width: 2 * dot, height: 2 * dot)),
-                     with: .color(c(ochre, 0.22 + 0.3 * (1 - f))))
-        }
     }
 }
 
@@ -250,9 +167,11 @@ struct S37PaneKey: PreferenceKey {
     static func reduce(value: inout [S37PaneFrame], nextValue: () -> [S37PaneFrame]) { value += nextValue() }
 }
 
-/// Root of the window: the bloom, bent under every glass pane, content on top
+/// Root of the window: the tool's motif, bent under every glass pane, content on top
 struct S37Root<Content: View>: View {
+    var motif: S37Motif = .plain
     @ViewBuilder var content: Content
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var panes: [S37PaneFrame] = []
@@ -265,7 +184,10 @@ struct S37Root<Content: View>: View {
                 } else {
                     let screen = CGRect(origin: .zero, size: geo.size)
                     let visible = Array(panes.filter { $0.rect.intersects(screen) && $0.rect.width >= 1 }.prefix(16))
-                    S37Backdrop().equatable()
+                    ZStack {
+                        S37Backdrop(motif: motif).equatable().id(motif).transition(.opacity)
+                    }
+                    .animation(reduceMotion ? nil : .easeInOut(duration: S37.Motion.motifCrossfade), value: motif)
                         .layerEffect(ShaderLibrary.sage37Refract(
                             .float2(geo.size),
                             .floatArray(visible.flatMap { [Float($0.rect.minX), Float($0.rect.minY), Float($0.rect.width), Float($0.rect.height)] }),

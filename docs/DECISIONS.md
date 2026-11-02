@@ -1284,3 +1284,18 @@ colours, and system controls inside forms (toggles, pickers, fields), which
 take sage as their tint rather than custom sage37 controls. The window's
 minimum height went from 560 to 680 to fit the header and dock round Wing
 Lab's panes.
+
+**A quiet line drawing per tool, and Prism Layer answer-first.** The dot
+grid and the shared airfoil bloom competed with the panes, so each tool now
+has its own motif, faded out before the content and cross-faded on a tool
+switch: streamlines round an inverted Joukowski wing (Wing Lab), a circuit's
+contour lines and a skidpad (Lap Sim), a perspective floor (CAD), a vortex
+street (Flow Field), prism layers growing off the bottom edge (Prism Layer),
+and plain charcoal for Project and Jobs. They are drawn in code, since the
+design system's streamline SVGs aren't in the repo. Prism Layer now leads
+with its answer: the live result is the header's takeaway, then the
+near-wall spotlight beside a strip of layers, total and Reynolds, then the
+inputs beside STAR's console. The console takes the wider column, against
+sage37's rule, because STAR's names have to stay whole. Spec and plan:
+docs/superpowers/specs/2026-11-02-backdrop-prism-design.md,
+docs/superpowers/plans/2026-11-02-backdrop-prism.md.

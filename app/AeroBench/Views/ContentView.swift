@@ -55,6 +55,18 @@ enum Tool: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The line drawing behind the tool
+    var motif: S37Motif {
+        switch self {
+        case .project, .jobs: .plain
+        case .wingLab: .wing
+        case .lapSim: .track
+        case .cadViewer: .floor
+        case .flowField: .vortex
+        case .prismLayer: .prism
+        }
+    }
+
     /// The dock's tools; the project sits in the header.
     static let docked: [Tool] = [.wingLab, .lapSim, .cadViewer, .flowField, .prismLayer, .jobs]
 
@@ -65,11 +77,12 @@ enum Tool: String, CaseIterable, Identifiable {
 struct ContentView: View {
     @Environment(AppState.self) private var app
     @SceneStorage("tool") private var selection: Tool = .project
+    @State private var takeaway: String?
 
     var body: some View {
-        S37Root {
+        S37Root(motif: selection.motif) {
             VStack(alignment: .leading, spacing: 0) {
-                ToolHeader(selection: $selection)
+                ToolHeader(selection: $selection, takeaway: takeaway)
                     .padding(.horizontal, S37.Space.s6)
                     .padding(.top, S37.Space.s2)
                     .padding(.bottom, S37.Space.s1)
@@ -98,6 +111,7 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onPreferenceChange(ToolTakeawayKey.self) { takeaway = $0 }
                 Dock(selection: $selection, tools: Tool.docked) { tool in
                     tool == .jobs && app.jobs.runningCount > 0 ? "Jobs · \(app.jobs.runningCount)" : tool.dockTitle
                 }
@@ -146,11 +160,19 @@ struct ContentView: View {
 }
 
 
-/// Meta line and Fraunces title on the left, a one-line note about the
-/// tool beside it, and on the right the project, which opens its screen.
+/// A tool's live takeaway for the header, in place of its note
+struct ToolTakeawayKey: PreferenceKey {
+    static let defaultValue: String? = nil
+    static func reduce(value: inout String?, nextValue: () -> String?) { value = nextValue() ?? value }
+}
+
+/// Meta line and Fraunces title on the left, the tool's takeaway (or a
+/// one-line note about it) beside it, and on the right the project, which
+/// opens its screen.
 struct ToolHeader: View {
     @Environment(AppState.self) private var app
     @Binding var selection: Tool
+    var takeaway: String?
 
     var body: some View {
         HStack(alignment: .lastTextBaseline, spacing: S37.Space.s6) {
@@ -160,7 +182,7 @@ struct ToolHeader: View {
                 Text(selection.title).font(.fraunces(32)).tracking(-0.32).foregroundStyle(S37.C.ink)
                     .lineLimit(1).fixedSize()
             }
-            Text(selection.note).font(.system(size: 14, weight: .medium)).foregroundStyle(S37.C.inkSecondary)
+            Text(takeaway ?? selection.note).font(.system(size: 14, weight: .medium)).foregroundStyle(S37.C.inkSecondary)
                 .lineLimit(2).frame(maxWidth: 520, alignment: .leading)
             Spacer(minLength: S37.Space.s3)
             Button { selection = .project } label: {
