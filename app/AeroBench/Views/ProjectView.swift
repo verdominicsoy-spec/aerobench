@@ -46,6 +46,8 @@ struct WelcomeView: View {
             }
         }
         .formStyle(.grouped)
+        .s37Region()
+        .frame(maxWidth: 760)
     }
 }
 
@@ -76,6 +78,8 @@ struct ProjectDetailView: View {
             }
         }
         .formStyle(.grouped)
+        .s37Region()
+        .frame(maxWidth: 760)
         .toolbar {
             Button("Save", systemImage: "square.and.arrow.down") { app.saveProject() }
                 .disabled(!app.hasUnsavedChanges)
@@ -96,7 +100,7 @@ struct EngineChecksView: View {
         if !app.settings.engineIsReady {
             Label("Engine not found. Set the engine folder in Settings (⌘,) and run `uv sync` in it.",
                   systemImage: "exclamationmark.triangle")
-                .foregroundStyle(.orange)
+                .foregroundStyle(S37.C.clayInk)
         }
         LabeledContent("Ping") {
             HStack {
@@ -130,10 +134,10 @@ struct PingResultView: View {
             let data = job.resultData ?? [:]
             Label("pong from Python \(data["python"] as? String ?? "?"), engine \(data["engine_version"] as? String ?? "?")",
                   systemImage: "checkmark.circle")
-                .foregroundStyle(.green)
+                .foregroundStyle(S37.C.sageInk)
         case .failed:
             Label(job.message ?? "failed", systemImage: "xmark.octagon")
-                .foregroundStyle(.red)
+                .foregroundStyle(S37.C.critical)
                 .help(job.detail ?? "")
         case .cancelled:
             Label("cancelled", systemImage: "stop.circle")

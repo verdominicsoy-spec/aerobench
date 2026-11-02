@@ -43,7 +43,7 @@ struct FlowQuickSetupPanel: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let error = flow.loadError {
-                Label(error, systemImage: "xmark.octagon").foregroundStyle(.red)
+                Label(error, systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
             }
             if let job = flow.detectJob, !job.status.isFinished {
                 HStack {
@@ -81,7 +81,7 @@ struct FlowQuickSetupPanel: View {
                 get: { cal.valueRange.last ?? 1 }, set: { flow.calibration.valueRange[1] = $0 }))
             if !(cal.valueRange.count == 2 && cal.valueRange[1] > cal.valueRange[0]) {
                 Label("The high end must be bigger than the low end.", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange).font(.caption)
+                    .foregroundStyle(S37.C.clayInk).font(.caption)
             }
         } header: {
             Text("2  Legend")
@@ -119,7 +119,7 @@ struct FlowQuickSetupPanel: View {
                 ForEach(FlowCalibration.Axes.choices, id: \.self) { Text(axisLabel($0, horizontal: false)).tag($0) }
             }
             if !cal.axes.isValid {
-                Label("Right and up must be different axes.", systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.caption)
+                Label("Right and up must be different axes.", systemImage: "exclamationmark.triangle").foregroundStyle(S37.C.clayInk).font(.caption)
             }
         } header: {
             Text("3  Axes")
@@ -156,12 +156,12 @@ struct FlowQuickSetupPanel: View {
             if let m = cal.measure, m.pixelLength >= 2, m.pixelLength < 250 {
                 Label("That line is only \(Int(m.pixelLength)) px long, so a few pixels out is a few percent. Measure something bigger, or on a frame where it looks bigger.",
                       systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange).font(.caption)
+                    .foregroundStyle(S37.C.clayInk).font(.caption)
             }
             if !cal.ground.track && cal.spatial.frames.count < 2 {
                 Label("No ground line was found, so the size can drift between planes. All Settings can calibrate a second frame.",
                       systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange).font(.caption)
+                    .foregroundStyle(S37.C.clayInk).font(.caption)
             }
         } header: {
             Text("4  Size")
@@ -203,7 +203,7 @@ struct FlowQuickSetupPanel: View {
             ForEach(steps) { step in
                 HStack(alignment: .firstTextBaseline) {
                     Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(step.done ? .green : .secondary)
+                        .foregroundStyle(step.done ? S37.C.sageInk : .secondary)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(step.title)
                         if !step.done { Text(step.hint).font(.caption).foregroundStyle(.secondary) }
@@ -211,7 +211,7 @@ struct FlowQuickSetupPanel: View {
                 }
             }
             if !ready, steps.allSatisfy(\.done) {
-                ForEach(cal.problems, id: \.self) { Label($0, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.caption) }
+                ForEach(cal.problems, id: \.self) { Label($0, systemImage: "exclamationmark.triangle").foregroundStyle(S37.C.clayInk).font(.caption) }
             }
             HStack {
                 Button("Check This Frame") { app.checkFlowFrame() }

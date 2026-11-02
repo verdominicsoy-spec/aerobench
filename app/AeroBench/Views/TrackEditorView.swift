@@ -116,7 +116,7 @@ struct TrackEditorView: View {
             Divider()
             HStack {
                 if let status, !copying {
-                    Label(status, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).lineLimit(2)
+                    Label(status, systemImage: "exclamationmark.triangle").foregroundStyle(S37.C.clayInk).lineLimit(2)
                 }
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
@@ -175,7 +175,7 @@ struct TrackEditorView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             ForEach(Array(issues.enumerated()), id: \.offset) { _, issue in
                                 Label(describe(issue), systemImage: "exclamationmark.triangle")
-                                    .foregroundStyle(issue.kind == .tooTight ? .red : .orange)
+                                    .foregroundStyle(issue.kind == .tooTight ? S37.C.critical : S37.C.clayInk)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             Text("FS rules D 7.1.1 and D 6.1.1. The Lap Sim still runs a track that breaks them.")
@@ -239,7 +239,7 @@ struct TrackEditorView: View {
         ctx.stroke(line, with: .color(S37.C.ink), lineWidth: 1.5)
         let pts = track.closed ? samples.count - 1 : samples.count
         for issue in issues {
-            let colour: Color = issue.kind == .tooTight ? .red : .orange
+            let colour: Color = issue.kind == .tooTight ? S37.C.critical : S37.C.clayInk
             ctx.stroke(path(samples, issue.start, issue.count, m, wrap: pts), with: .color(colour), lineWidth: 4)
             let mid = samples[(issue.start + issue.count / 2) % pts]
             let label = issue.kind == .tooTight

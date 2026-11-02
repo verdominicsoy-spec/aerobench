@@ -4,11 +4,13 @@ import SwiftUI
 struct AeroBenchApp: App {
     @State private var app = AppState()
 
+    init() { Fonts.register() }
+
     var body: some Scene {
         Window("AeroBench", id: "main") {
             ContentView()
                 .environment(app)
-                .frame(minWidth: 900, minHeight: 560)
+                .frame(minWidth: 900, minHeight: 680)  // room for the header and dock round Wing Lab's panes
                 .preferredColorScheme(.dark)  // sage37 ships dark
                 .tint(S37.C.sage)
         }

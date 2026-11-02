@@ -11,12 +11,7 @@ struct FlowFieldView: View {
         @Bindable var flow = app.flow
         VStack(spacing: 0) {
             HStack {
-                Picker("Mode", selection: $flow.mode) {
-                    ForEach(FlowFieldModel.Mode.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 220)
+                S37Segmented(options: FlowFieldModel.Mode.allCases.map { ($0, $0.rawValue) }, selection: $flow.mode)
                 Spacer()
                 if let url = flow.sourceURL {
                     Text(url.lastPathComponent).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
@@ -24,7 +19,6 @@ struct FlowFieldView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            Divider()
             switch flow.mode {
             case .calibrate: FlowCalibrateView()
             case .explore: FlowExploreView()
@@ -55,8 +49,10 @@ struct FlowCalibrateView: View {
                     FlowQuickSetupPanel()
                 }
             }
+            .s37Region()
             .frame(minWidth: 340, idealWidth: 400, maxWidth: 500)
             FlowFramePane()
+                .s37Region()
                 .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -86,7 +82,7 @@ struct FlowCalibrationPanel: View {
                     .help("A synthetic sweep with a known answer and a matching calibration")
                 }
                 if let error = flow.loadError {
-                    Label(error, systemImage: "xmark.octagon").foregroundStyle(.red)
+                    Label(error, systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
                 }
                 if flow.frameCount > 0 {
                     LabeledContent("Frames", value: "\(flow.frameCount), \(Int(flow.frameSize.width)) × \(Int(flow.frameSize.height))")
@@ -161,7 +157,7 @@ struct FlowCalibrationPanel: View {
                 }
                 Text(axes.isValid ? "Planes step along \(axes.sweepLetter). Read the axes off STAR's triad: rear view +y / +z, front view −y / +z, side view +x / +z (car facing left) or −x / +z."
                                   : "Right and up must be different axes.")
-                    .font(.caption).foregroundStyle(axes.isValid ? Color.secondary : Color.orange)
+                    .font(.caption).foregroundStyle(axes.isValid ? Color.secondary : S37.C.clayInk)
                 Toggle("Track the ground line", isOn: $flow.calibration.ground.track)
                     .disabled(axes.up != "+z")
                     .help("Finds where the ground meets the flow in every frame and pins z = 0 to it, so the planes cannot drift.")
@@ -293,7 +289,7 @@ struct FlowCalibrationPanel: View {
             }
 
             Section("7  Run") {
-                ForEach(cal.problems, id: \.self) { Label($0, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.caption) }
+                ForEach(cal.problems, id: \.self) { Label($0, systemImage: "exclamationmark.triangle").foregroundStyle(S37.C.clayInk).font(.caption) }
                 HStack {
                     Button("Check This Frame") { app.checkFlowFrame() }
                         .disabled(flow.sourceURL == nil || !cal.problems.isEmpty)
@@ -335,7 +331,7 @@ struct ImpliedCameraNote: View {
                 Text("These plane positions mean a camera view angle of \(vertical, format: .number.precision(.fractionLength(1)))° across the height (\(horizontal, format: .number.precision(.fractionLength(1)))° across the width), \(distance, format: .number.precision(.fractionLength(2))) m from the first plane. If STAR's view angle differs, the planes are spaced wrongly and the volume is stretched or squashed along \(sweep).")
                 if cam["planes_run_away_from_camera"] as? Bool == false {
                     Text("The positions run towards the camera, but the planes get smaller, so they move away: swap the first and last positions, or check the axes.")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(S37.C.clayInk)
                 }
             }
             .font(.caption)
@@ -379,13 +375,13 @@ struct JobInlineStatus: View {
             }
         case .failed:
             VStack(alignment: .leading) {
-                Label(job.message ?? "Failed", systemImage: "xmark.octagon").foregroundStyle(.red)
+                Label(job.message ?? "Failed", systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
                 if let d = job.detail { Text(d).font(.caption.monospaced()).lineLimit(4).textSelection(.enabled) }
             }
         case .cancelled:
             Label("Cancelled", systemImage: "stop.circle").foregroundStyle(.secondary)
         case .succeeded:
-            Label("Done", systemImage: "checkmark.circle").foregroundStyle(.green)
+            Label("Done", systemImage: "checkmark.circle").foregroundStyle(S37.C.sageInk)
         }
     }
 }
@@ -455,7 +451,7 @@ struct FlowFramePane: View {
                     Button("Cancel") { flow.tool = .none }
                 }
                 .padding(8)
-                .background(.yellow.opacity(0.2))
+                .background(S37.C.ochreWash)
             }
             FrameCanvas()
             if flow.frameCount > 0 {
@@ -602,7 +598,7 @@ struct FrameCanvas: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.background)  // black only behind frames, as the CAD Viewer's empty state
+                .background(S37.C.surface)  // black only behind frames, as the CAD Viewer's empty state
             }
         }
         .background(Color.black.opacity(0.85))
@@ -615,8 +611,8 @@ struct FrameCanvas: View {
         }
         for r in cal.exclude {
             let rect = m.toView(rect: r)
-            ctx.fill(Path(rect), with: .color(.red.opacity(0.25)))
-            ctx.stroke(Path(rect), with: .color(.red), lineWidth: 1.5)
+            ctx.fill(Path(rect), with: .color(S37.C.critical.opacity(0.25)))
+            ctx.stroke(Path(rect), with: .color(S37.C.critical), lineWidth: 1.5)
         }
         if let legend = cal.colormap.legend, legend.p0.count == 2, legend.p1.count == 2 {
             var line = Path()
@@ -643,7 +639,7 @@ struct FrameCanvas: View {
                 line.move(to: CGPoint(x: end.x, y: end.y - 8))
                 line.addLine(to: CGPoint(x: end.x, y: end.y + 8))
             }
-            let colour = Color.orange.opacity(here ? 1 : 0.4)
+            let colour = S37.C.clayInk.opacity(here ? 1 : 0.4)
             ctx.stroke(line, with: .color(colour), lineWidth: 2.5)
             let label = measure.width > 0 ? "\(Int((measure.width * 1000).rounded())) mm" : "type the width"
             ctx.draw(Text(here ? label : "\(label), on frame \(measure.frame)").font(.caption.bold()).foregroundStyle(colour),
@@ -692,6 +688,7 @@ struct FlowExploreView: View {
     var body: some View {
         HSplitView {
             FlowExplorePanel()
+                .s37Region()
                 .frame(minWidth: 300, idealWidth: 340, maxWidth: 440)
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
@@ -715,13 +712,14 @@ struct FlowExploreView: View {
                     if app.flow.volume == nil {
                         ContentUnavailableView("No Volume", systemImage: "cube.transparent",
                                                description: Text("Calibrate a video and press Reconstruct."))
-                            .background(.background)
+                            .background(S37.C.surface)
                     }
                 }
                 Divider()
                 SliceCompare()
                     .frame(height: 240)
             }
+            .s37Region()
             .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -783,7 +781,7 @@ struct FlowExplorePanel: View {
                     Toggle("Show the object", isOn: Binding(get: { flow.objectOn }, set: { app.setFlowObject($0) }))
                     if flow.objectComputing { ProgressView().controlSize(.small) }
                     if let error = flow.objectError {
-                        Text(error).font(.caption).foregroundStyle(.orange)
+                        Text(error).font(.caption).foregroundStyle(S37.C.clayInk)
                     }
                     if flow.objectOn {
                         LabeledContent("Opacity") {

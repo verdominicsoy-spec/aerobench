@@ -19,11 +19,11 @@ struct SettingsView: View {
                 }
                 if settings.engineIsReady {
                     Label("Found \(settings.engineExecutable?.path ?? "")", systemImage: "checkmark.circle")
-                        .foregroundStyle(.green)
+                        .foregroundStyle(S37.C.sageInk)
                 } else {
                     Label("No engine at <folder>/.venv/bin/aeroengine. Run `uv sync` in the engine folder.",
                           systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(S37.C.clayInk)
                 }
             } header: {
                 Text("Engine")
@@ -37,11 +37,11 @@ struct SettingsView: View {
                     }
                 }
                 if let su2 = settings.su2Executable {
-                    Label("Found \(su2.path)", systemImage: "checkmark.circle").foregroundStyle(.green)
+                    Label("Found \(su2.path)", systemImage: "checkmark.circle").foregroundStyle(S37.C.sageInk)
                 } else {
                     Label("No SU2_CFD found. Install it from Wing Lab, Solvers, RANS CFD, or choose one here.",
                           systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(S37.C.clayInk)
                 }
             } header: {
                 Text("SU2")

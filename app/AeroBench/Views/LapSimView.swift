@@ -7,8 +7,10 @@ struct LapSimView: View {
     var body: some View {
         HSplitView {
             LapSimSetupView()
+                .s37Region()
                 .frame(minWidth: 400, idealWidth: 440, maxWidth: 560)
             LapSimResultsView()
+                .s37Region()
                 .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -64,7 +66,7 @@ struct LapSimSetupView: View {
                 Section {
                     Label("Values marked est. are placeholder estimates, not team data. Every value here is editable and saved with the project.",
                           systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(S37.C.clayInk)
                 }
             }
 
@@ -130,7 +132,7 @@ struct LapSimSetupView: View {
                         }
                         if !issues.isEmpty {
                             Label("\(issues.count) \(issues.count == 1 ? "place breaks" : "places break") the FS layout rules (it still runs)", systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(S37.C.clayInk)
                         }
                     } else {
                         Text("Nothing drawn yet. Open the editor and copy a track to start from.")
@@ -192,7 +194,7 @@ struct LapSimSetupView: View {
                 }
                 if let job = app.lapSimJob, job.status == .failed || job.status == .cancelled {
                     Label(job.message ?? job.status.rawValue, systemImage: "xmark.octagon")
-                        .foregroundStyle(.red)
+                        .foregroundStyle(S37.C.critical)
                         .textSelection(.enabled)
                     if let detail = job.detail {
                         Text(detail).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(6).textSelection(.enabled)
@@ -243,7 +245,7 @@ struct PlaceholderTag: View {
     var body: some View {
         Text(compact ? "●" : "est.")
             .font(compact ? .system(size: 6) : .caption2)
-            .foregroundStyle(.orange)
+            .foregroundStyle(S37.C.clayInk)
             .fixedSize()
             .help("Placeholder estimate, not team data")
     }
@@ -311,6 +313,7 @@ struct LapSimResultsView: View {
                         }
                         .chartXAxisLabel("Distance (m)")
                         .chartYAxisLabel("Speed (km/h)")
+                        .chartForegroundStyleScale(range: S37.series)
                         .frame(height: 240)
                     }
                     if !output.delta.isEmpty {
@@ -324,6 +327,7 @@ struct LapSimResultsView: View {
                             }
                             .chartXAxisLabel("Distance (m)")
                             .chartYAxisLabel("Car − A (s), negative means ahead of A")
+                            .chartForegroundStyleScale(range: S37.series)
                             .frame(height: 200)
                         }
                     }
@@ -447,7 +451,7 @@ struct SummaryGrid: View {
                             Text("")
                         } else {
                             Text(signed(named.config.lapTime - result.a.lapTime) + " s")
-                                .foregroundStyle(named.config.lapTime <= result.a.lapTime ? .green : .red)
+                                .foregroundStyle(named.config.lapTime <= result.a.lapTime ? S37.C.sageInk : S37.C.critical)
                         }
                     }
                 }

@@ -1264,3 +1264,23 @@ test-day layouts.
 **Tracing over an image.** Offered and not picked for now: load a site plan
 or satellite picture under the editor, set its scale with two points, and
 draw over it.
+
+**sage37 in full, leaning toward glassout.** This replaces "sage37,
+lightly". The window is the airfoil bloom over glassout's phosphor dot grid,
+bent by sage37's refraction shader under a clear glass pane per working
+region (forms, canvas, 3D views, charts). Each tool has a mono-caps meta
+line, its title in Fraunces (bundled, OFL) and a one-line note; the project
+is a glass capsule on the right (⌘1). The tool switcher is a frosted dock
+along the bottom in glassout's dress: mono caps labels, the current tool in
+inverse-video sage, sage37's press-and-slide lens. The lean toward glassout
+is deliberate, to set AeroBench apart from Pit Wall, which shares sage37.
+Machine output is glassout consoles: a job's log in Jobs, and STAR's prism
+settings in Prism Layer, where the near-wall thickness is the spotlight.
+System colours became tokens: warnings clay, errors critical, success and
+running sage, the pinned design A slate, non-converged chart points rust,
+chart series the sage37 palette. Left as they were: the A4 wing report (a
+light document), overlays drawn on flow video frames, the x/y/z axis
+colours, and system controls inside forms (toggles, pickers, fields), which
+take sage as their tint rather than custom sage37 controls. The window's
+minimum height went from 560 to 680 to fit the header and dock round Wing
+Lab's panes.

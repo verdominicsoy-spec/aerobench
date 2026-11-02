@@ -13,17 +13,21 @@ struct WingLabView: View {
         HSplitView {
             if lab.showLibrary {
                 AirfoilLibraryPanel()
+                    .s37Region()
                     .frame(minWidth: 240, idealWidth: 280, maxWidth: 380)
             }
             VSplitView {
                 WingCanvas()
-                    .frame(minHeight: 240, maxHeight: .infinity)
+                    .s37Region()
+                    .frame(minHeight: 200, maxHeight: .infinity)
                 WingResultsPane()
-                    .frame(minHeight: 220, idealHeight: 300)
+                    .s37Region()
+                    .frame(minHeight: 200, idealHeight: 300)
             }
             .frame(minWidth: 440, maxWidth: .infinity)
             if lab.showInspector {
                 WingInspector()
+                    .s37Region()
                     .frame(minWidth: 320, idealWidth: 350, maxWidth: 440)
             }
         }
@@ -180,7 +184,7 @@ struct AirfoilLibraryPanel: View {
         if let p = lab.libraryPolars {
             let stale = abs(p.re - lab.libraryRe) / p.re > 0.2
             Text(String(format: "Polars at Re %.2g%@", p.re, stale ? ", the main element is now at a different Re" : ""))
-                .font(.caption2).foregroundStyle(stale ? Color.orange : Color.secondary)
+                .font(.caption2).foregroundStyle(stale ? S37.C.clayInk : Color.secondary)
         }
         if let job = lab.polarsJob, !job.status.isFinished || job.status == .failed {
             JobInlineStatus(job: job)
@@ -225,14 +229,14 @@ struct AirfoilRow: View {
                     .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
                 if let p = polar {
                     Text(String(format: "Cl max %.2f at %.0f°  L/D %.0f", p.clMax, p.alphaClMax, p.ldMax) + (p.trusted ? "" : " ?"))
-                        .font(.caption2.monospacedDigit()).foregroundStyle(p.trusted ? Color.secondary : Color.orange)
+                        .font(.caption2.monospacedDigit()).foregroundStyle(p.trusted ? Color.secondary : S37.C.clayInk)
                         .help(p.trusted ? "NeuralFoil, this section alone" : "NeuralFoil is unsure here, or maximum lift is past 24°")
                 }
             }
             Spacer()
             Button(action: toggleFavourite) { Image(systemName: favourite ? "star.fill" : "star") }
                 .buttonStyle(.borderless)
-                .foregroundStyle(favourite ? .yellow : .secondary)
+                .foregroundStyle(favourite ? S37.C.ochre : .secondary)
             Button(action: add) { Image(systemName: "plus.circle") }
                 .buttonStyle(.borderless)
                 .help("Add as the next element (or drag it onto the canvas)")
@@ -352,7 +356,7 @@ struct WingCanvas: View {
                 Text((lab.pinned != nil && lab.replayIndex == nil ? "B: " : "") + lab.shownVersion)
                     .font(.caption.monospacedDigit()).lineLimit(1)
                 if let a = lab.pinned, lab.replayIndex == nil {
-                    Text("A: " + a.version).font(.caption).foregroundStyle(.purple).lineLimit(1)
+                    Text("A: " + a.version).font(.caption).foregroundStyle(S37.C.chart6).lineLimit(1)
                 }
             }
             .help("Which version of the wing is on the canvas: a study trial, the from-scratch starter, or your own. \"Edited\" means changed since; Undo goes back.")
@@ -389,10 +393,10 @@ struct WingCanvas: View {
             }
             if let t = lab.replayTrial, let i = lab.replayIndex {
                 HStack(spacing: 8) {
-                    Text("TIME-LAPSE").font(.caption2.bold()).foregroundStyle(.orange)
+                    Text("TIME-LAPSE").font(.caption2.bold()).foregroundStyle(S37.C.clayInk)
                     Text("trial \(t.number) (\(i + 1) of \(lab.replayOrder.count))").font(.caption.monospacedDigit())
                     if t.state == "fail" {
-                        Text(t.reason ?? "failed").font(.caption).foregroundStyle(.red).lineLimit(1)
+                        Text(t.reason ?? "failed").font(.caption).foregroundStyle(S37.C.critical).lineLimit(1)
                     } else if let load = t.load {
                         Text(String(format: "downforce Cl %.3f", load)).font(.caption.monospacedDigit())
                     }
@@ -403,20 +407,20 @@ struct WingCanvas: View {
                 }
             }
             if lab.pinned != nil, lab.replayIndex == nil {
-                Text("Dashed purple: A, the pinned design. The wing you edit is B.").font(.caption2).foregroundStyle(.purple)
+                Text("Dashed slate: A, the pinned design. The wing you edit is B.").font(.caption2).foregroundStyle(S37.C.chart6)
             }
             if let error = lab.previewError {
-                Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(S37.C.clayInk)
             }
             ForEach(Array(lab.wing.issues.enumerated()), id: \.offset) { _, issue in
-                Label(issue.message, systemImage: "exclamationmark.octagon").font(.caption).foregroundStyle(.red)
+                Label(issue.message, systemImage: "exclamationmark.octagon").font(.caption).foregroundStyle(S37.C.critical)
             }
             if let r = lab.ransResult, lab.ransField != nil, lab.fieldOnCanvas {
                 if !lab.fieldIsCurrent {
                     Text("Flow field hidden: the wing has changed since the last RANS run.")
                         .font(.caption2).foregroundStyle(.secondary)
                 } else if !r.converged {
-                    Text("This RANS run did not converge: the field is not a result.").font(.caption2).foregroundStyle(.orange)
+                    Text("This RANS run did not converge: the field is not a result.").font(.caption2).foregroundStyle(S37.C.clayInk)
                 }
             }
             Spacer()
@@ -481,8 +485,8 @@ struct WingCanvas: View {
         if let a = lab.pinned {
             for e in a.wing.elements {
                 let path = Self.outline(e, m)
-                ctx.fill(path, with: .color(.purple.opacity(0.08)))
-                ctx.stroke(path, with: .color(.purple.opacity(0.8)), style: StrokeStyle(lineWidth: 1.2, dash: [5, 3]))
+                ctx.fill(path, with: .color(S37.C.chart6.opacity(0.08)))
+                ctx.stroke(path, with: .color(S37.C.chart6.opacity(0.8)), style: StrokeStyle(lineWidth: 1.2, dash: [5, 3]))
             }
         }
         let wing = lab.wing
@@ -491,8 +495,8 @@ struct WingCanvas: View {
         if let b = wing.rulesBox {
             let a = m.view(SIMD2(b.minX, b.maxY)), c = m.view(SIMD2(b.maxX, b.minY))
             let rect = CGRect(x: a.x, y: a.y, width: c.x - a.x, height: c.y - a.y)
-            ctx.stroke(Path(rect), with: .color(.purple), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
-            ctx.draw(Text("Rules box").font(.caption2).foregroundStyle(.purple), at: CGPoint(x: rect.minX + 30, y: rect.minY - 8))
+            ctx.stroke(Path(rect), with: .color(S37.C.chart6), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+            ctx.draw(Text("Rules box").font(.caption2).foregroundStyle(S37.C.chart6), at: CGPoint(x: rect.minX + 30, y: rect.minY - 8))
         }
         if let g = wing.groundLine {
             // The ground, along the flow, hatched underneath.
@@ -519,7 +523,7 @@ struct WingCanvas: View {
             }
             path.closeSubpath()
             let selected = lab.selection == i
-            let colour: Color = flagged.contains(i) ? .red : (outside.contains(i) ? .purple : (selected ? .accentColor : .gray))
+            let colour: Color = flagged.contains(i) ? S37.C.critical : (outside.contains(i) ? S37.C.chart6 : (selected ? S37.C.sage : S37.C.inkTertiary))
             // Over the field the elements are solid, so the wing reads against the colours.
             ctx.fill(path, with: onField ? GraphicsContext.Shading.color(Color(white: selected ? 0.7 : 0.55))
                                      : GraphicsContext.Shading.color(colour.opacity(selected ? 0.35 : 0.2)))
@@ -529,9 +533,9 @@ struct WingCanvas: View {
             if selected {
                 let le = m.view(e.leadingEdge), te = m.view(e.trailingEdge)
                 let beyond = m.view(e.trailingEdge + 0.12 * e.chord * e.chordDirection)
-                ctx.fill(Path(ellipseIn: CGRect(x: le.x - 4, y: le.y - 4, width: 8, height: 8)), with: .color(.accentColor))
-                ctx.stroke(Path(ellipseIn: CGRect(x: te.x - 7, y: te.y - 7, width: 14, height: 14)), with: .color(.accentColor), lineWidth: 2)
-                ctx.fill(Path(CGRect(x: beyond.x - 6, y: beyond.y - 6, width: 12, height: 12)), with: .color(.accentColor))
+                ctx.fill(Path(ellipseIn: CGRect(x: le.x - 4, y: le.y - 4, width: 8, height: 8)), with: .color(S37.C.sage))
+                ctx.stroke(Path(ellipseIn: CGRect(x: te.x - 7, y: te.y - 7, width: 14, height: 14)), with: .color(S37.C.sage), lineWidth: 2)
+                ctx.fill(Path(CGRect(x: beyond.x - 6, y: beyond.y - 6, width: 12, height: 12)), with: .color(S37.C.sage))
             }
         }
     }
@@ -579,7 +583,7 @@ struct WingCanvas: View {
             ctx.stroke(outline(e), with: .color(.secondary.opacity(0.6)), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
         }
         let failed = lab.replayTrial?.state == "fail"
-        let colour: Color = failed ? .red : .orange
+        let colour: Color = failed ? S37.C.critical : S37.C.clayInk
         for e in replay.elements {
             let path = outline(e)
             ctx.fill(path, with: .color(colour.opacity(0.3)))
@@ -689,7 +693,7 @@ struct PolarPlots: View {
                         .font(.caption).foregroundStyle(.secondary)
                     if rows.contains(where: { !$0.trusted }) {
                         Label("Hollow points: NeuralFoil is not confident there (usually past stall).", systemImage: "exclamationmark.triangle")
-                            .font(.caption).foregroundStyle(.orange)
+                            .font(.caption).foregroundStyle(S37.C.clayInk)
                     }
                 }
                 HStack(spacing: 12) {
@@ -711,6 +715,7 @@ struct PolarPlots: View {
                             .foregroundStyle(by: .value("Side", "Pressure side"))
                     }
                     .chartXAxisLabel("α (°)").chartYAxisLabel("Transition x/c")
+                    .chartForegroundStyleScale(range: S37.series)
                     .chartYScale(domain: 0...1)
                 }
                 if let i = lab.polarElement, lab.wing.elements.indices.contains(i),
@@ -790,9 +795,9 @@ struct CFDResults: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     if r.converged {
-                        Label("Converged", systemImage: "checkmark.seal").foregroundStyle(.green)
+                        Label("Converged", systemImage: "checkmark.seal").foregroundStyle(S37.C.sageInk)
                     } else {
-                        Label("Not converged: not a result", systemImage: "xmark.octagon").foregroundStyle(.red)
+                        Label("Not converged: not a result", systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
                         Text(r.reason ?? "").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     Text("\(r.modelName), \(r.meshLevel) mesh, Re \(String(format: "%.0f", r.re))").font(.caption)
@@ -826,7 +831,7 @@ struct CFDResults: View {
                     }
                     if r.scheme == "fds" {
                         Text("Finished only on the upwind fallback scheme, which is more dissipative: drag reads high (about 40% at 10° on NACA 0012). Lift is fine for comparisons.")
-                            .font(.caption2).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                            .font(.caption2).foregroundStyle(S37.C.clayInk).fixedSize(horizontal: false, vertical: true)
                     }
                     HStack {
                         if let folder = lab.ransFolder, let field = r.field {
@@ -852,6 +857,7 @@ struct CFDResults: View {
                             .foregroundStyle(by: .value("Element", p.element))
                     }
                     .chartXAxisLabel("x (mm)").chartYAxisLabel("−Cp")
+                    .chartForegroundStyleScale(range: S37.series)
                 }
                 .opacity(r.converged ? 1 : 0.35)
             }
@@ -867,7 +873,7 @@ struct CFDResults: View {
             VStack(spacing: 8) {
                 Text("No CFD yet: a 2D RANS run of the whole wing with SU2, 2 to 5 minutes.").foregroundStyle(.secondary)
                 if app.settings.su2Executable == nil {
-                    Text("Needs SU2: install it under Solvers, RANS CFD.").font(.caption).foregroundStyle(.orange)
+                    Text("Needs SU2: install it under Solvers, RANS CFD.").font(.caption).foregroundStyle(S37.C.clayInk)
                 }
                 Button("Run CFD") {
                     app.wingLab.solver = .rans
@@ -918,6 +924,7 @@ struct CpPlot: View {
             } else {
                 Chart(points) { p in mark(p) }
                     .chartLineStyleScale(domain: ["B", "A"], range: Self.lineStyles)
+                    .chartForegroundStyleScale(range: S37.series)
                     .chartXAxisLabel("x (mm)")
             }
         }
@@ -973,7 +980,7 @@ struct WingInspector: View {
                         Text(WingIssue.label(i)).bold().frame(width: 50, alignment: .leading)
                         Text(e.airfoil.name).lineLimit(1)
                         Spacer()
-                        if lab.selection == i { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
+                        if lab.selection == i { Image(systemName: "checkmark").foregroundStyle(S37.C.sage) }
                     }
                     .contentShape(Rectangle())
                     .onTapGesture { lab.selection = i }
@@ -1138,7 +1145,7 @@ struct WingInspector: View {
             .disabled(!haveSU2 || lab.wing.elements.isEmpty || !lab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty
                       || (lab.ransJob.map { !$0.status.isFinished } ?? false))
         if !lab.wing.issues.filter({ $0.kind != .outsideRules }).isEmpty {
-            Text("Fix the overlapping or touching elements first.").font(.caption).foregroundStyle(.orange)
+            Text("Fix the overlapping or touching elements first.").font(.caption).foregroundStyle(S37.C.clayInk)
         }
         let needsSU2 = lab.ransJob.map { $0.status == .failed && ($0.message ?? "").contains("SU2 is not installed") } ?? false
         if let job = lab.ransJob, !job.status.isFinished || job.status == .failed {
@@ -1193,7 +1200,7 @@ struct WingInspector: View {
                                                                           set: { lab.design.minThickness = min(max($0, 2), 30) }))
         Text("The library's sections are ranked by maximum lift at your Reynolds number (NeuralFoil, a few seconds), the best few laid out as a standard \(lab.design.elements)-element wing inside the rules box, and the one the quick estimate likes best kept. Each element gets a shortlist of six sections to choose between."
              + (lab.library.isEmpty ? " No library downloaded: only the NACA set is ranked." : ""))
-            .font(.caption).foregroundStyle(lab.library.isEmpty ? Color.orange : Color.secondary).fixedSize(horizontal: false, vertical: true)
+            .font(.caption).foregroundStyle(lab.library.isEmpty ? S37.C.clayInk : Color.secondary).fixedSize(horizontal: false, vertical: true)
         Button("Set Up From Scratch") { app.setUpFromScratch() }
             .buttonStyle(S37ButtonStyle(kind: .prominent))
             .disabled(lab.designStage != nil)
@@ -1326,10 +1333,10 @@ struct WingInspector: View {
              : "\(app.settings.parallelTrials) trials at a time on \(app.settings.coresPerJob) cores each (Settings), each one RANS run with the model and mesh under Solvers.")
             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         if let problem = lab.optimiseProblem {
-            Text(problem).font(.caption).foregroundStyle(.orange)
+            Text(problem).font(.caption).foregroundStyle(S37.C.clayInk)
         }
         if lab.optimise.needsSU2 && app.settings.su2Executable == nil {
-            Text("RANS needs SU2: install it under Solvers, RANS CFD.").font(.caption).foregroundStyle(.orange)
+            Text("RANS needs SU2: install it under Solvers, RANS CFD.").font(.caption).foregroundStyle(S37.C.clayInk)
         }
         LabeledContent("Study name") {
             TextField("name", text: Binding(get: { lab.optimise.studyName }, set: { lab.optimise.studyName = $0 }))
@@ -1656,7 +1663,7 @@ struct StudyResults: View {
         Table(rows(s).sorted(using: order), selection: $selection, sortOrder: $order) {
             TableColumn("#", value: \.number) { Text("\($0.number)").monospacedDigit() }.width(32)
             TableColumn("State", value: \.state) { r in
-                Text(r.state).foregroundStyle(r.state == "complete" ? Color.primary : r.state == "fail" ? Color.red : Color.secondary)
+                Text(r.state).foregroundStyle(r.state == "complete" ? Color.primary : r.state == "fail" ? S37.C.critical : Color.secondary)
                     .help(r.note)
             }
             .width(70)
@@ -1701,7 +1708,7 @@ struct StudyResults: View {
                 LineMark(x: .value("Trial", b.trial), y: .value("Score", b.value)).interpolationMethod(.stepEnd)
             }
             if let t = lab.replayTrial {
-                RuleMark(x: .value("Trial", t.number)).foregroundStyle(Color.orange.opacity(0.7))
+                RuleMark(x: .value("Trial", t.number)).foregroundStyle(S37.C.chart5.opacity(0.7))
             }
         }
         .chartXScale(domain: 0...max(s.trials.last?.number ?? 1, 1))
@@ -1718,12 +1725,12 @@ struct StudyResults: View {
             ForEach(ran) { t in
                 PointMark(x: .value("Cd", t.cd!), y: .value("−Cl", t.load!))
                     .symbolSize(t.number == current ? 80 : 20)
-                    .foregroundStyle(t.number == current ? (lab.replayTrial != nil ? Color.orange : Color.accentColor)
-                                     : t.feasible == false ? Color.orange.opacity(0.5) : Color.gray)
+                    .foregroundStyle(t.number == current ? (lab.replayTrial != nil ? S37.C.chart5 : S37.C.sage)
+                                     : t.feasible == false ? S37.C.chart5.opacity(0.5) : Color.gray)
             }
             ForEach(front) { t in
                 LineMark(x: .value("Cd", t.cd!), y: .value("−Cl", t.load!), series: .value("", "front"))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(S37.C.sageInk)
             }
         }
         .chartXAxisLabel("Cd").chartYAxisLabel("Downforce Cl (lift upright)")
@@ -1811,9 +1818,9 @@ struct SweepStrip: View {
                 .pickerStyle(.segmented).labelsHidden()
                 Text(String(format: "%.0f s in all", sweep.seconds)
                      + (sweep.skipped.isEmpty ? "" : "; not run, out of time: " + sweep.skipped.map { String(format: "%g°", $0) }.joined(separator: ", ")))
-                    .font(.caption2).foregroundStyle(sweep.skipped.isEmpty ? Color.secondary : Color.orange)
+                    .font(.caption2).foregroundStyle(sweep.skipped.isEmpty ? Color.secondary : S37.C.chart5)
                 if rows.contains(where: { !$0.element.converged }) {
-                    Text("Orange points did not converge: not results.").font(.caption2).foregroundStyle(.orange)
+                    Text("Rust points did not converge: not results.").font(.caption2).foregroundStyle(S37.C.chart5)
                 }
             }
             .frame(width: 260, alignment: .leading)
@@ -1831,7 +1838,7 @@ struct SweepStrip: View {
                 LineMark(x: .value("α", p.0), y: .value(name, p.1)).foregroundStyle(.gray)
                 PointMark(x: .value("α", p.0), y: .value(name, p.1))
                     .symbolSize(p.2 ? 40 : 30)
-                    .foregroundStyle(p.2 ? Color.accentColor : Color.orange)
+                    .foregroundStyle(p.2 ? S37.C.sage : S37.C.chart5)
                     .opacity(p.2 ? 1 : 0.5)
             }
         }
@@ -1872,12 +1879,12 @@ struct EstimateResults: View {
                     .font(.caption.monospacedDigit())
                     if !here.trusted {
                         Label("NeuralFoil is unsure of one or more sections here: check with RANS.", systemImage: "exclamationmark.triangle")
-                            .font(.caption).foregroundStyle(.orange)
+                            .font(.caption).foregroundStyle(S37.C.chart5)
                     }
                     if here.separating == true {
                         Label((here.why.map { "\($0). " } ?? "An element separates here. ") + "Check with RANS.",
                               systemImage: "exclamationmark.triangle")
-                            .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                            .font(.caption).foregroundStyle(S37.C.chart5).fixedSize(horizontal: false, vertical: true)
                     }
                     Text("Panel method and NeuralFoil: lift within about 2% of RANS on a main-and-flap wing until the flap nears separation, drag about 10% high. For trends and screening; RANS CFD for numbers to keep.")
                         .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -1899,14 +1906,14 @@ struct EstimateResults: View {
         Chart {
             ForEach(Array((pinned ?? []).enumerated()), id: \.offset) { _, p in
                 LineMark(x: .value("α", p.0), y: .value(name, p.1), series: .value("Design", "A"))
-                    .foregroundStyle(.purple.opacity(0.8))
+                    .foregroundStyle(S37.C.chart6.opacity(0.8))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
             }
             ForEach(Array(points.enumerated()), id: \.offset) { _, p in
                 LineMark(x: .value("α", p.0), y: .value(name, p.1), series: .value("Design", "B"))
                 PointMark(x: .value("α", p.0), y: .value(name, p.1))
                     .symbolSize(p.2 ? 16 : 24)
-                    .foregroundStyle(p.2 ? Color.accentColor : Color.orange)
+                    .foregroundStyle(p.2 ? S37.C.sage : S37.C.chart5)
             }
             RuleMark(x: .value("wing", mark)).foregroundStyle(.secondary.opacity(0.5))
         }
@@ -1980,14 +1987,14 @@ struct ResultsSummary: View {
 
     private func card(_ title: String, tab: WingLabModel.ResultsTab?, lines: [String], warn: Bool = false, lab: WingLabModel) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption2.bold()).foregroundStyle(warn ? Color.orange : Color.secondary)
+            Text(title).font(.caption2.bold()).foregroundStyle(warn ? S37.C.clayInk : Color.secondary)
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                 Text(line).font(.caption.monospacedDigit()).lineLimit(1)
             }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(RoundedRectangle(cornerRadius: 6).fill(lab.resultsTab == tab ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.08)))
+        .background(RoundedRectangle(cornerRadius: 6).fill(lab.resultsTab == tab ? S37.C.sage.opacity(0.12) : Color.secondary.opacity(0.08)))
         .contentShape(Rectangle())
         .onTapGesture { if let tab { lab.resultsTab = tab } }
     }

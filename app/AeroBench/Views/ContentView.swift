@@ -32,7 +32,33 @@ enum Tool: String, CaseIterable, Identifiable {
         }
     }
 
-    /// ⌘1 to ⌘7, in dock order.
+    /// Short label under the icon in the dock
+    var dockTitle: String {
+        switch self {
+        case .cadViewer: "CAD"
+        case .flowField: "Flow"
+        case .prismLayer: "Prism"
+        default: title
+        }
+    }
+
+    /// What the tool is for, in one plain line beside its title
+    var note: String {
+        switch self {
+        case .project: "A project is a folder: project.json, a subfolder per tool and jobs/ for every run."
+        case .wingLab: "Draw the wing element by element, then score it with the panel solver, RANS or the optimiser."
+        case .lapSim: "What the aero is worth on the lap: ClA and CdA against lap time on the event tracks."
+        case .cadViewer: "Open the car's CAD and check it is watertight and clean before it meshes."
+        case .flowField: "Turn STAR's plane-sweep videos into a 3D flow field you can slice."
+        case .prismLayer: "Prism layer sizes for a target y+, ready to type into STAR's mesher."
+        case .jobs: "Every engine run: its progress, its log and its result."
+        }
+    }
+
+    /// The dock's tools; the project sits in the header.
+    static let docked: [Tool] = [.wingLab, .lapSim, .cadViewer, .flowField, .prismLayer, .jobs]
+
+    /// ⌘1 to ⌘7: the project, then the dock in order.
     var key: KeyEquivalent { KeyEquivalent(Character(String((Tool.allCases.firstIndex(of: self) ?? 0) + 1))) }
 }
 
@@ -41,33 +67,46 @@ struct ContentView: View {
     @SceneStorage("tool") private var selection: Tool = .project
 
     var body: some View {
-        VStack(spacing: 0) {
-            ToolDock(selection: $selection)
-            Divider().overlay(S37.C.separator)
-            if app.updatesBehind > 0, !app.updateDismissed {
-                UpdateBanner()
-                Divider().overlay(S37.C.separator)
-            }
-            Group {
-                switch selection {
-                case .project:
-                    ProjectView()
-                case .wingLab:
-                    WingLabView()
-                case .cadViewer:
-                    CADViewerView()
-                case .flowField:
-                    FlowFieldView()
-                case .lapSim:
-                    LapSimView()
-                case .prismLayer:
-                    PrismLayerView()
-                case .jobs:
-                    JobsView()
+        S37Root {
+            VStack(alignment: .leading, spacing: 0) {
+                ToolHeader(selection: $selection)
+                    .padding(.horizontal, S37.Space.s6)
+                    .padding(.top, S37.Space.s2)
+                    .padding(.bottom, S37.Space.s1)
+                if app.updatesBehind > 0, !app.updateDismissed {
+                    UpdateBanner()
+                        .padding(.horizontal, S37.Space.s4)
+                        .padding(.bottom, S37.Space.s2)
                 }
+                Group {
+                    switch selection {
+                    case .project:
+                        ProjectView()
+                    case .wingLab:
+                        WingLabView()
+                    case .cadViewer:
+                        CADViewerView()
+                    case .flowField:
+                        FlowFieldView()
+                    case .lapSim:
+                        LapSimView()
+                    case .prismLayer:
+                        PrismLayerView()
+                    case .jobs:
+                        JobsView()
+                    }
+                }
+                .padding(.horizontal, 10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Dock(selection: $selection, tools: Tool.docked) { tool in
+                    tool == .jobs && app.jobs.runningCount > 0 ? "Jobs · \(app.jobs.runningCount)" : tool.dockTitle
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, S37.Space.s1)
+                .padding(.bottom, S37.Space.s3)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .foregroundStyle(S37.C.ink)
         .navigationTitle(windowTitle)
         .task { app.setUpBundledEngineIfNeeded() }
         .sheet(isPresented: Binding(get: { app.engineSetup.map { $0.phase != .done } ?? false },
@@ -107,40 +146,38 @@ struct ContentView: View {
 }
 
 
-/// The dock across the top: the project, the tools, the engine's jobs.
-struct ToolDock: View {
+/// Meta line and Fraunces title on the left, a one-line note about the
+/// tool beside it, and on the right the project, which opens its screen.
+struct ToolHeader: View {
     @Environment(AppState.self) private var app
     @Binding var selection: Tool
 
     var body: some View {
-        HStack(spacing: 6) {
-            item(.project, title: app.project?.manifest.name ?? "No Project")
-            Divider().frame(height: 18).padding(.horizontal, 4)
-            ForEach([Tool.wingLab, .lapSim, .cadViewer, .flowField, .prismLayer]) { item($0, title: $0.title) }
-            Spacer(minLength: 12)
-            item(.jobs, title: app.jobs.runningCount > 0 ? "Jobs · \(app.jobs.runningCount) running" : "Jobs")
+        HStack(alignment: .lastTextBaseline, spacing: S37.Space.s6) {
+            VStack(alignment: .leading, spacing: S37.Space.s1) {
+                Text(meta).font(.system(size: 12, weight: .medium, design: .monospaced)).tracking(0.96)
+                    .textCase(.uppercase).foregroundStyle(GO.C.phosphorFaint).lineLimit(1)
+                Text(selection.title).font(.fraunces(32)).tracking(-0.32).foregroundStyle(S37.C.ink)
+                    .lineLimit(1).fixedSize()
+            }
+            Text(selection.note).font(.system(size: 14, weight: .medium)).foregroundStyle(S37.C.inkSecondary)
+                .lineLimit(2).frame(maxWidth: 520, alignment: .leading)
+            Spacer(minLength: S37.Space.s3)
+            Button { selection = .project } label: {
+                Label(app.project?.manifest.name ?? "No project", systemImage: Tool.project.symbol).lineLimit(1)
+            }
+            .buttonStyle(S37ButtonStyle())
+            .keyboardShortcut(Tool.project.key, modifiers: .command)
+            .help("Project (⌘1)")
+            .alignmentGuide(.lastTextBaseline) { $0[VerticalAlignment.center] + 4 }
         }
-        .padding(.horizontal, S37.Space.s3)
-        .padding(.vertical, 6)
-        .background(S37.C.surface)
+        .s37HeaderShadow()
     }
 
-    private func item(_ tool: Tool, title: String) -> some View {
-        let on = selection == tool
-        return Button { selection = tool } label: {
-            Label(title, systemImage: tool.symbol)
-                .labelStyle(.titleAndIcon)
-                .lineLimit(1)
-                .font(.system(size: 12.5, weight: on ? .semibold : .regular))
-                .foregroundStyle(on ? S37.C.onSage : S37.C.ink)
-                .padding(.horizontal, 12)
-                .frame(minHeight: 26)
-                .background { if on { Capsule().fill(S37.C.sage) } }
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .keyboardShortcut(tool.key, modifiers: .command)
-        .help("\(tool.title) (⌘\(String(tool.key.character)))")
+    private var meta: String {
+        var parts = ["AeroBench", app.project.map { app.hasUnsavedChanges ? "\($0.manifest.name), edited" : $0.manifest.name } ?? "No project open"]
+        if app.jobs.runningCount > 0 { parts.append(app.jobs.runningCount == 1 ? "1 job running" : "\(app.jobs.runningCount) jobs running") }
+        return parts.joined(separator: " · ")
     }
 }
 
@@ -167,7 +204,7 @@ struct EngineSetupView: View {
                     Button("Later") { app.engineSetup = nil }
                 }
             case .failed(let why):
-                Text("The setup did not finish.").foregroundStyle(.red)
+                Text("The setup did not finish.").foregroundStyle(S37.C.critical)
                 ScrollView { Text(why).font(.caption.monospaced()).textSelection(.enabled) }.frame(maxHeight: 160)
                 HStack {
                     Button("Try Again") {
@@ -197,12 +234,11 @@ struct UpdateBanner: View {
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             Spacer()
             Button("Later") { app.updateDismissed = true }
+                .buttonStyle(S37ButtonStyle(kind: .plain))
+            // glass, not prominent: the tool below keeps the screen's one prominent button
             Button("Update & Restart") { app.updateAndRestart() }
-                .buttonStyle(S37ButtonStyle(kind: .prominent))
+                .buttonStyle(S37ButtonStyle())
         }
-        .controlSize(.small)
-        .padding(.horizontal, S37.Space.s3)
-        .padding(.vertical, 6)
-        .background(S37.C.surface)
+        .s37Pane(radius: S37.Radius.lgIn, padding: S37.Space.s2)
     }
 }

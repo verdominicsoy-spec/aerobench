@@ -8,6 +8,7 @@ struct CADViewerView: View {
     var body: some View {
         HSplitView {
             CADSidePanel()
+                .s37Region()
                 .frame(minWidth: 240, idealWidth: 290, maxWidth: 420)
             VStack(spacing: 0) {
                 CADToolbar()
@@ -24,6 +25,7 @@ struct CADViewerView: View {
                 Divider()
                 CADStatusBar()
             }
+            .s37Region()
             .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -38,7 +40,7 @@ struct CADViewerView: View {
             } actions: {
                 Button("Open…") { app.openCADPanel() }
             }
-            .background(.background)
+            .background(S37.C.surface)
         case .loading(let message):
             VStack(spacing: 8) {
                 if let job = app.cad.job, !job.status.isFinished {
@@ -60,7 +62,7 @@ struct CADViewerView: View {
             } actions: {
                 Button("Open…") { app.openCADPanel() }
             }
-            .background(.background)
+            .background(S37.C.surface)
         case .ready:
             EmptyView()
         }
@@ -225,18 +227,18 @@ struct GeometryCheckSection: View {
                     Text(job.progressMessage).font(.caption).lineLimit(1)
                 }
             } else if let job = cad.checkJob, job.status == .failed {
-                Label(job.message ?? "The check failed", systemImage: "xmark.octagon").foregroundStyle(.red)
+                Label(job.message ?? "The check failed", systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
             }
             if let report = cad.report {
                 if report.problems == 0 {
-                    Label("No problems found", systemImage: "checkmark.seal").foregroundStyle(.green)
+                    Label("No problems found", systemImage: "checkmark.seal").foregroundStyle(S37.C.sageInk)
                 } else {
-                    Label("\(report.problems) problems", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                    Label("\(report.problems) problems", systemImage: "exclamationmark.triangle").foregroundStyle(S37.C.clayInk)
                 }
                 LabeledContent("Bodies", value: "\(report.mesh.bodies)")
                 LabeledContent("Closed", value: report.mesh.closed ? "yes, watertight" : "no")
                 if report.mesh.intersectionsComplete == false {
-                    Text("The pierced-face check stopped early on this model.").font(.caption).foregroundStyle(.orange)
+                    Text("The pierced-face check stopped early on this model.").font(.caption).foregroundStyle(S37.C.clayInk)
                 }
                 ForEach(report.allIssues.filter { $0.count > 0 }) { issue in
                     IssueRow(issue: issue)
@@ -258,7 +260,7 @@ struct GeometryCheckSection: View {
                     Text(summary).font(.caption)
                 }
                 if let job = cad.repairJob, job.status == .failed {
-                    Label(job.message ?? "Repair failed", systemImage: "xmark.octagon").foregroundStyle(.red)
+                    Label(job.message ?? "Repair failed", systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
                 }
             }
         } header: {
@@ -283,7 +285,7 @@ struct IssueRow: View {
                     Text(issue.title)
                     Spacer()
                     Text("\(issue.count)").monospacedDigit()
-                        .foregroundStyle(issue.severity == "error" ? .red : issue.severity == "warning" ? .orange : .secondary)
+                        .foregroundStyle(issue.severity == "error" ? S37.C.critical : issue.severity == "warning" ? S37.C.clayInk : .secondary)
                 }
             }
             .toggleStyle(.checkbox)

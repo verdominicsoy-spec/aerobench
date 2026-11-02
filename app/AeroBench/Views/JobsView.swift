@@ -11,16 +11,19 @@ struct JobsView: View {
             List(app.jobs.jobs, selection: $selectedID) { job in
                 JobRow(job: job)
             }
+            .scrollContentBackground(.hidden)
+            .s37Region()
             .frame(minWidth: 260, idealWidth: 320, maxWidth: 420)
 
             Group {
                 if let job = app.jobs.jobs.first(where: { $0.id == selectedID }) {
                     JobDetailView(job: job)
-                } else {
+                } else if !app.jobs.jobs.isEmpty {  // with no jobs at all, the one empty state below says so
                     ContentUnavailableView("No Job Selected", systemImage: "list.bullet.rectangle",
                                            description: Text("Pick a job to see its progress, log and result."))
                 }
             }
+            .s37Region()
             .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
         }
         .overlay {
@@ -38,9 +41,9 @@ struct JobStatusIcon: View {
     var body: some View {
         switch status {
         case .queued: Image(systemName: "clock").foregroundStyle(.secondary)
-        case .running: Image(systemName: "play.circle").foregroundStyle(.blue)
-        case .succeeded: Image(systemName: "checkmark.circle").foregroundStyle(.green)
-        case .failed: Image(systemName: "xmark.octagon").foregroundStyle(.red)
+        case .running: Image(systemName: "play.circle").foregroundStyle(S37.C.sageInk)
+        case .succeeded: Image(systemName: "checkmark.circle").foregroundStyle(S37.C.sageInk)
+        case .failed: Image(systemName: "xmark.octagon").foregroundStyle(S37.C.critical)
         case .cancelled: Image(systemName: "stop.circle").foregroundStyle(.secondary)
         }
     }
@@ -109,7 +112,7 @@ struct JobDetailView: View {
             if job.status == .failed, let message = job.message {
                 GroupBox {
                     VStack(alignment: .leading, spacing: 6) {
-                        Label(message, systemImage: "xmark.octagon").foregroundStyle(.red)
+                        Label(message, systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
                         if let detail = job.detail {
                             ScrollView {
                                 Text(detail)
@@ -147,33 +150,38 @@ struct JobDetailView: View {
                 }
             }
 
-            GroupBox("Log") {
-                LogView(lines: job.log)
-            }
+            LogView(lines: job.log)
         }
         .padding()
     }
 }
 
+/// A job's log as glassout prints it: machine output, one console per screen.
 struct LogView: View {
     let lines: [LogLine]
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 1) {
-                    ForEach(lines) { line in
-                        Text(line.level == "saved" ? line.text : "[\(line.level)] \(line.text)")
-                            .font(.caption.monospaced())
-                            .foregroundStyle(color(for: line))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .id(line.id)
+        GOScreen {
+            VStack(alignment: .leading, spacing: 8) {
+                GOMeta(text: "Console · log · \(lines.count) \(lines.count == 1 ? "line" : "lines")")
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 2) {
+                            ForEach(lines) { line in
+                                Text(line.level == "saved" ? line.text : "[\(line.level)] \(line.text)")
+                                    .foregroundStyle(color(for: line))
+                                    .modifier(GOGlow(kind: line.level == "warning" ? .clay : .body))
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .id(line.id)
+                            }
+                        }
+                    }
+                    .scrollIndicators(.automatic)
+                    .onChange(of: lines.count) {
+                        if let last = lines.last { proxy.scrollTo(last.id, anchor: .bottom) }
                     }
                 }
-            }
-            .onChange(of: lines.count) {
-                if let last = lines.last { proxy.scrollTo(last.id, anchor: .bottom) }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -181,9 +189,10 @@ struct LogView: View {
 
     private func color(for line: LogLine) -> Color {
         switch line.level {
-        case "error", "stderr": .red
-        case "warning": .orange
-        default: .primary
+        case "error", "stderr": GO.C.critical
+        case "warning": GO.C.clayInk
+        case "saved": GO.C.phosphorBright
+        default: GO.C.phosphor
         }
     }
 }
