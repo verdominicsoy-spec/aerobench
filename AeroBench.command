@@ -1,7 +1,8 @@
 #!/bin/bash
 # Double-click to update and launch AeroBench: pulls the latest code, syncs
 # the engine, rebuilds the app (incrementally) and opens it. If a step fails
-# it says why and launches the last build that worked.
+# it says why and launches the last build that worked. A clean run closes
+# its Terminal window; one with a warning leaves it open to read.
 #
 #   ./AeroBench.command               update, build, launch
 #   ./AeroBench.command --no-pull     skip git pull
@@ -27,8 +28,9 @@ main() {
   mkdir -p build
 
   step() { printf '\n\033[1m%s\033[0m\n' "$1"; }
-  warn() { printf '\033[33m%s\033[0m\n' "$1"; }
-  fail() { printf '\033[31m%s\033[0m\n' "$1"; }
+  PROBLEM=0
+  warn() { PROBLEM=1; printf '\033[33m%s\033[0m\n' "$1"; }
+  fail() { PROBLEM=1; printf '\033[31m%s\033[0m\n' "$1"; }
 
   if [ "$PULL" = 1 ]; then
     step "Getting the latest version"
@@ -70,6 +72,12 @@ main() {
     sleep 1
     open "$APP"
     step "AeroBench is open. You can close this window."
+    if [ "$PROBLEM" = 0 ] && [ "$TERM_PROGRAM" = Apple_Terminal ]; then
+      # Found by tty while this shell runs (a finished tab has none), closed once
+      # it has exited so Terminal does not ask about running processes.
+      WIN=$(osascript -e "tell application \"Terminal\" to get id of first window whose tty of selected tab is \"$(tty)\"" 2>/dev/null)
+      [ -n "$WIN" ] && (sleep 1; osascript -e "tell application \"Terminal\" to close window id $WIN") </dev/null >/dev/null 2>&1 &
+    fi
   fi
 }
 
