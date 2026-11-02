@@ -2,9 +2,10 @@ import AeroBenchKit
 import SwiftUI
 
 /// The tools, in working order: design the wing, see what it is worth on a
-/// lap, check it on the car, then look at the flow from STAR.
+/// lap, check it on the car, then look at the flow from STAR, with the
+/// prism layer sizes for STAR's mesher alongside.
 enum Tool: String, CaseIterable, Identifiable {
-    case project, wingLab, lapSim, cadViewer, flowField, jobs
+    case project, wingLab, lapSim, cadViewer, flowField, prismLayer, jobs
     var id: String { rawValue }
 
     var title: String {
@@ -14,6 +15,7 @@ enum Tool: String, CaseIterable, Identifiable {
         case .lapSim: "Lap Sim"
         case .cadViewer: "CAD Viewer"
         case .flowField: "Flow Field"
+        case .prismLayer: "Prism Layer"
         case .jobs: "Jobs"
         }
     }
@@ -25,11 +27,12 @@ enum Tool: String, CaseIterable, Identifiable {
         case .lapSim: "flag.checkered"
         case .cadViewer: "cube"
         case .flowField: "wind"
+        case .prismLayer: "square.stack.3d.up"
         case .jobs: "list.bullet.rectangle"
         }
     }
 
-    /// ⌘1 to ⌘6, in dock order.
+    /// ⌘1 to ⌘7, in dock order.
     var key: KeyEquivalent { KeyEquivalent(Character(String((Tool.allCases.firstIndex(of: self) ?? 0) + 1))) }
 }
 
@@ -57,6 +60,8 @@ struct ContentView: View {
                     FlowFieldView()
                 case .lapSim:
                     LapSimView()
+                case .prismLayer:
+                    PrismLayerView()
                 case .jobs:
                     JobsView()
                 }
@@ -102,7 +107,7 @@ struct ContentView: View {
 }
 
 
-/// The dock across the top: the project, the four tools, the engine's jobs.
+/// The dock across the top: the project, the tools, the engine's jobs.
 struct ToolDock: View {
     @Environment(AppState.self) private var app
     @Binding var selection: Tool
@@ -111,7 +116,7 @@ struct ToolDock: View {
         HStack(spacing: 6) {
             item(.project, title: app.project?.manifest.name ?? "No Project")
             Divider().frame(height: 18).padding(.horizontal, 4)
-            ForEach([Tool.wingLab, .lapSim, .cadViewer, .flowField]) { item($0, title: $0.title) }
+            ForEach([Tool.wingLab, .lapSim, .cadViewer, .flowField, .prismLayer]) { item($0, title: $0.title) }
             Spacer(minLength: 12)
             item(.jobs, title: app.jobs.runningCount > 0 ? "Jobs · \(app.jobs.runningCount) running" : "Jobs")
         }
