@@ -44,7 +44,7 @@ NU = 1.81e-5 / 1.225
 CONTACT_M = 0.005
 
 PRESETS = {  # wall size on body and wheels (m), wing surface size (fraction of chord), growth away from walls
-    "coarse": {"wall": 0.02, "wing": 0.01, "far": 0.6},
+    "coarse": {"wall": 0.012, "wing": 0.01, "far": 0.6},
     "medium": {"wall": 0.008, "wing": 0.006, "far": 0.5},
     "maxed": {"wall": 0.003, "wing": 0.004, "far": 0.4},
 }

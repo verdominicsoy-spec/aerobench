@@ -56,6 +56,10 @@ class Case:
     restart: str | None = None  # a solution to start from (restart.dat of a run on the same mesh)
     ground: bool = False  # the mesh has a "ground" marker: a slip wall, a ground moving with the flow
 
+    def cfg(self, mesh: str) -> str:
+        """The config file; other cases (the car's) write their own."""
+        return config(self, mesh)
+
 
 def find_su2(hint: str | None = None) -> Path:
     """SU2_CFD from a setting (the binary or its folder), $AEROBENCH_SU2, or PATH."""
@@ -292,7 +296,7 @@ def _run_once(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
         shutil.copyfile(case.restart, workdir / RESTART_COPY)
         case = replace(case, restart=RESTART_COPY)
     rel = mesh.resolve().relative_to(workdir.resolve()) if mesh.resolve().is_relative_to(workdir.resolve()) else mesh.resolve()
-    (workdir / "su2.cfg").write_text(config(case, str(rel)))
+    (workdir / "su2.cfg").write_text(case.cfg(str(rel)))
     cmd = [str(su2), "su2.cfg"]
     mpirun = shutil.which("mpirun", path=str(su2.parent)) or shutil.which("mpirun")
     if cores > 1 and mpirun:
