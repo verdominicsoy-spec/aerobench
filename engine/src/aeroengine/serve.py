@@ -59,8 +59,22 @@ def _part_edit(params: dict) -> dict:
     return reply
 
 
+def _car_section(params: dict) -> dict:
+    """The base car cut at y, for the Car tool's live section view."""
+    from pathlib import Path
+
+    from .car.section import cut
+    from .cad.edit.refs import load_part
+
+    setup = params.get("setup") or {}
+    path = Path(setup.get("step") or "").expanduser()
+    if not path.is_file():
+        raise EngineError(f"file not found: {path}")
+    return cut(load_part(path, None)[0], float(params.get("y", 0.0)), setup)
+
+
 HANDLERS: dict[str, Callable[[dict], dict]] = {"wing-estimate": _wing_estimate, "lapsim-track": _lapsim_track,
-                                               "part-edit": _part_edit}
+                                               "part-edit": _part_edit, "car-section": _car_section}
 
 
 def _warm_up() -> None:
