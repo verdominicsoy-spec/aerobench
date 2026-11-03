@@ -115,7 +115,7 @@ extension AppState {
     }
 
     /// Asks where to save a repair job's output, then opens it.
-    private func saveRepaired(_ item: JobItem, name: String, beside source: URL) {
+    func saveRepaired(_ item: JobItem, name: String, beside source: URL) {
         let panel = NSSavePanel()
         panel.title = "Save Repaired File"
         panel.nameFieldStringValue = name

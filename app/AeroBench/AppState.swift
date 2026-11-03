@@ -20,6 +20,7 @@ final class AppState {
     let settings: AppSettings
     let jobs: JobManager
     let cad: CADViewerModel
+    let partEdit = PartEditModel()
     let flow: FlowFieldModel
     let wingLab: WingLabModel
     var project: OpenProject?

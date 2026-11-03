@@ -153,6 +153,14 @@ final class CADViewerModel {
         if sectionOn { centreSection() }
     }
 
+    /// A rebuilt part from Edit Part mode: shown without moving the camera.
+    func showEdited(_ model: Model3D) {
+        self.model = model
+        viewer.show(model, resetCamera: false)
+        visibleBounds = model.bounds()
+        status = .ready
+    }
+
     func clear() {
         model = nil
         fileURL = nil
