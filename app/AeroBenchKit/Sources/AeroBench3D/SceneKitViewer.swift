@@ -333,6 +333,12 @@ public final class SceneKitViewer: Viewer3D {
         return EditPointer(screen: SIMD2(Double(p.x), Double(p.y)), hit: pick)
     }
 
+    /// Like projectToScreen, with the depth (0 near, 1 far) in z.
+    public func projectWithDepth(_ p: SIMD3<Double>) -> SIMD3<Double> {
+        let v = scnView.projectPoint(SCNVector3(Float(p.x), Float(p.y), Float(p.z)))
+        return SIMD3(Double(v.x), Double(v.y), Double(v.z))
+    }
+
     /// A world point (metres) in view points, origin bottom left, as clicks report.
     public func projectToScreen(_ p: SIMD3<Double>) -> SIMD2<Double> {
         let v = scnView.projectPoint(SCNVector3(Float(p.x), Float(p.y), Float(p.z)))

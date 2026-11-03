@@ -164,4 +164,23 @@ public enum EdgePick {
         }
         return best?.0
     }
+
+    /// The same, with each point's depth (0 near, 1 far) in z: an edge whose
+    /// nearest point lies behind the surface under the pointer is hidden and
+    /// cannot be picked. Nil depth (nothing under the pointer): every edge counts.
+    public static func nearest(_ polylines: [[SIMD3<Double>]], to p: SIMD2<Double>, within: Double,
+                               surfaceDepth: Double?) -> Int? {
+        var best: (Int, Double)?
+        for (k, line) in polylines.enumerated() {
+            for (a, b) in zip(line, line.dropFirst()) {
+                let a2 = SIMD2(a.x, a.y), ab = SIMD2(b.x - a.x, b.y - a.y)
+                let t = simd_dot(ab, ab) > 0 ? min(max(simd_dot(p - a2, ab) / simd_dot(ab, ab), 0), 1) : 0
+                let d = simd_length(p - (a2 + t * ab))
+                let depth = a.z + t * (b.z - a.z)
+                if let surface = surfaceDepth, depth > surface + 1e-3 { continue }
+                if d <= within && d < (best?.1 ?? .infinity) { best = (k, d) }
+            }
+        }
+        return best?.0
+    }
 }

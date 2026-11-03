@@ -29,10 +29,13 @@ final class PartEditModel {
     @ObservationIgnored var showModel: ((Model3D) -> Void)?
     @ObservationIgnored var showError: ((String, Error) -> Void)?
     @ObservationIgnored private var runner: LatestOnly<JSONValue, PartEditReply>?
+    @ObservationIgnored private weak var undoManager: UndoManager?
+    @ObservationIgnored private var generation = 0  // the newest rebuild; older results are dropped
 
     // MARK: Session
 
     func start(step url: URL, engine: WarmEngine) {
+        undoManager?.removeAllActions(withTarget: self)  // edits to another file must not undo into this one
         step = url
         self.engine = engine
         runner = LatestOnly { params in try PartEditReply.decode(try await engine.request("part-edit", params: params)) }
@@ -49,6 +52,8 @@ final class PartEditModel {
     }
 
     func stop() {
+        undoManager?.removeAllActions(withTarget: self)
+        generation += 1  // a rebuild still running must not draw over the reloaded file
         on = false
         tool = nil
         reply = nil
@@ -66,6 +71,7 @@ final class PartEditModel {
 
     func set(_ features: [EditFeature], actionName: String, undo: UndoManager?) {
         let old = file.features
+        undoManager = undo
         undo?.registerUndo(withTarget: self) { model in
             MainActor.assumeIsolated { model.set(old, actionName: actionName, undo: undo) }
         }
@@ -153,33 +159,53 @@ final class PartEditModel {
             return
         }
         busy = true
+        generation += 1
+        let mine = generation
         Task { @MainActor in
             guard let result = await runner.submit(.object(params)) else { return }  // a newer edit replaced it
+            guard mine == generation, on else { return }  // superseded, or edit mode was left
             busy = false
             switch result {
-            case .success(let r): await show(r)
+            case .success(let r): await show(r, generation: mine)
             case .failure(let e): status = e.localizedDescription
             }
         }
     }
 
-    private func show(_ r: PartEditReply) async {
+    private func show(_ r: PartEditReply, generation mine: Int) async {
         reply = r
         if r.parts.count > 1 && file.part == nil {
             status = "This file has several parts: pick one to edit"
             return
         }
+        if file.fingerprint != nil && file.fingerprint != r.fingerprint {
+            // The STEP was exported again: its old picks may now point at other faces. Mark them
+            // stale (the engine reports them lost) and take the new fingerprint, so new picks work.
+            file.features = file.features.map { f in
+                var f = f
+                f.refs = f.refs.map { ref in
+                    var ref = ref
+                    if ref.src == "part" { ref.src = "stale" }
+                    if ref.tangent?.src == "part" { ref.tangent?.src = "stale" }
+                    return ref
+                }
+                return f
+            }
+            file.fingerprint = r.fingerprint
+            save()
+            status = "The STEP changed since these edits: edit the features marked lost and pick again"
+            rebuild()
+            return
+        }
         if file.fingerprint == nil {
             file.fingerprint = r.fingerprint
             save()
-        } else if file.fingerprint != r.fingerprint {
-            status = "The STEP changed since these edits: pick the lost references again"
-        } else {
-            status = r.features.first { $0.status != "ok" }.map { "\($0.id): \($0.message ?? $0.status)" }
         }
+        status = r.features.first { $0.status != "ok" }.map { "\($0.id): \($0.message ?? $0.status)" }
         do {
             let url = URL(fileURLWithPath: r.glb)
             let model = try await Task.detached(priority: .userInitiated) { try ModelLoader.load(url, units: .metre) }.value
+            guard mine == generation, on else { return }  // a newer rebuild finished loading first
             showModel?(model)
         } catch {
             status = "Could not show the rebuilt part: \(error.localizedDescription)"
@@ -189,10 +215,11 @@ final class PartEditModel {
 
     // MARK: Picking
 
-    private func edgeIndex(at screen: SIMD2<Double>) -> Int? {
+    private func edgeIndex(at pointer: EditPointer) -> Int? {
         guard let reply, let viewer else { return nil }
-        let lines = reply.edges.map { $0.points.compactMap { p in p.count == 3 ? viewer.projectToScreen(SIMD3(p[0], p[1], p[2])) : nil } }
-        return EdgePick.nearest(lines, to: screen, within: 6)
+        let lines = reply.edges.map { $0.points.compactMap { p in p.count == 3 ? viewer.projectWithDepth(SIMD3(p[0], p[1], p[2])) : nil } }
+        return EdgePick.nearest(lines, to: pointer.screen, within: 6,
+                                surfaceDepth: pointer.hit.map { viewer.projectWithDepth($0.point).z })
     }
 
     private func pointRef(at screen: SIMD2<Double>) -> EditRef? {
@@ -209,7 +236,7 @@ final class PartEditModel {
     }
 
     func hover(_ pointer: EditPointer) {
-        let e = edgeIndex(at: pointer.screen)
+        let e = edgeIndex(at: pointer)
         if e != hoveredEdge {
             hoveredEdge = e
             drawOverlay()
@@ -218,7 +245,7 @@ final class PartEditModel {
 
     func pick(_ pointer: EditPointer) {
         guard var d = draft else { return }
-        let edge = edgeIndex(at: pointer.screen).flatMap { reply?.edges[$0].ref }
+        let edge = edgeIndex(at: pointer).flatMap { reply?.edges[$0].ref }
         switch d.kind {
         case .point:
             guard let host = edge ?? faceRef(pointer), let hit = pointer.hit?.point else { return }
@@ -235,7 +262,7 @@ final class PartEditModel {
         case .fill:
             guard var e = edge else { return }
             // A part edge stays tangent to the face the pointer is over; click it from the other side to flip.
-            if e.src != "std", let f = faceRef(pointer), f.kind == "face" { e.tangent = f }
+            if e.src == "part", let f = faceRef(pointer), f.kind == "face" { e.tangent = f }
             if let i = d.refs.firstIndex(where: { $0.src == e.src && $0.kind == e.kind && $0.i == e.i }) { d.refs[i] = e } else { d.refs.append(e) }
         case .add:
             if let f = faceRef(pointer), f.kind == "surface", !d.refs.contains(f) { d.refs.append(f) }

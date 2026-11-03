@@ -50,6 +50,14 @@ final class PartEditTests: XCTestCase {
         XCTAssertEqual(EdgePick.nearest(lines, to: SIMD2(-3, 1), within: 6), 0)  // past the end, near its corner
     }
 
+    func testAHiddenEdgeIsNotPicked() {
+        // Two edges a few points apart on screen; the nearer one is behind the surface under the pointer.
+        let behind: [SIMD3<Double>] = [SIMD3(0, 0, 0.9), SIMD3(100, 0, 0.9)]
+        let front: [SIMD3<Double>] = [SIMD3(0, 4, 0.4), SIMD3(100, 4, 0.4)]
+        XCTAssertEqual(EdgePick.nearest([behind, front], to: SIMD2(50, 1), within: 6, surfaceDepth: 0.5), 1)
+        XCTAssertEqual(EdgePick.nearest([behind, front], to: SIMD2(50, 1), within: 6, surfaceDepth: nil), 0)
+    }
+
     func testLatestOnlyDropsSupersededInputs() async {
         let ran = Recorder()
         let runner = LatestOnly<Int, Int> { n in
