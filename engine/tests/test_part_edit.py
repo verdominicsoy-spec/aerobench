@@ -314,3 +314,41 @@ def test_endplate_edit_end_to_end(tmp_path):
     assert r["valid"] and r["closed"]
     assert volume(rebuild.final_shape(step, None, pts + lines + [plane] + ext + [top, bottom, add], None)) == \
         pytest.approx(300 * 8 * 200 + 180 * 8 * 20, rel=1e-4)
+
+
+# Engine entry points ----------------------------------------------------------
+
+import io  # noqa: E402
+import json  # noqa: E402
+
+
+def test_serve_answers_part_edit(box_step, tmp_path):
+    from aeroengine.events import Emitter
+    from aeroengine.serve import serve
+
+    out = io.StringIO()
+    e0 = edge_index(part_topology(box_step), (50, 0, 0))
+    req = {"id": 7, "command": "part-edit", "params": {"path": str(box_step), "out_dir": str(tmp_path / "g"),
+           "features": [F("f1", "fillet", [R("part", "edge", e0)], radius=10)]}}
+    serve(Emitter(out), io.StringIO(json.dumps(req) + "\n"), warm=False)
+    reply = next(json.loads(line) for line in out.getvalue().splitlines() if '"reply"' in line)
+    assert reply["id"] == 7 and reply["data"]["features"][0]["status"] == "ok"
+    assert Path(reply["data"]["glb"]).exists()
+
+
+def test_part_save_writes_the_edited_part(engine, box_step, tmp_path):
+    e0 = edge_index(part_topology(box_step), (50, 0, 0))
+    code, events, err = engine.run("part-save", {"params": {"path": str(box_step),
+                                   "features": [F("f1", "fillet", [R("part", "edge", e0)], radius=10)]}}, tmp_path / "w", timeout=120)
+    assert code == 0, (events, err)
+    r = json.loads((tmp_path / "w" / "result.json").read_text())["data"]
+    assert r["output"] == "Box_edited.step" and r["valid"] and r["closed"]
+    from test_bodyrepair import read_back
+    assert volume(read_back(tmp_path / "w" / r["output"])) == pytest.approx(1e6 - (1 - math.pi / 4) * 1e4, rel=1e-3)
+
+
+def test_part_save_refuses_a_failed_feature(engine, box_step, tmp_path):
+    e0 = edge_index(part_topology(box_step), (50, 0, 0))
+    code, events, _ = engine.run("part-save", {"params": {"path": str(box_step),
+                                 "features": [F("f1", "fillet", [R("part", "edge", e0)], radius=150)]}}, tmp_path / "w", timeout=120)
+    assert code != 0 and any("before saving" in (ev.get("msg") or "") for ev in events)

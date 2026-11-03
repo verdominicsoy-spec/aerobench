@@ -41,7 +41,26 @@ def _lapsim_track(params: dict) -> dict:
             "x": [round(float(v), 4) for v in t.x], "y": [round(float(v), 4) for v in t.y]}
 
 
-HANDLERS: dict[str, Callable[[dict], dict]] = {"wing-estimate": _wing_estimate, "lapsim-track": _lapsim_track}
+def _part_edit(params: dict) -> dict:
+    """The part editor's rebuild: the whole feature list in, the result out."""
+    import tempfile
+    from pathlib import Path
+
+    from .cad.edit.build import build
+
+    path = Path(params.get("path") or "").expanduser()
+    if not path.is_file():
+        raise EngineError(f"file not found: {path}")
+    out_dir = Path(params.get("out_dir") or Path(tempfile.gettempdir()) / "aerobench-part-edit")
+    reply = build(path, params.get("part"), list(params.get("features") or []), params.get("fingerprint"), out_dir)
+    # The app loads each GLB once; keep the last few in case one is still loading.
+    for old in sorted(out_dir.glob("*.glb"), key=lambda p: p.stat().st_mtime)[:-8]:
+        old.unlink(missing_ok=True)
+    return reply
+
+
+HANDLERS: dict[str, Callable[[dict], dict]] = {"wing-estimate": _wing_estimate, "lapsim-track": _lapsim_track,
+                                               "part-edit": _part_edit}
 
 
 def _warm_up() -> None:

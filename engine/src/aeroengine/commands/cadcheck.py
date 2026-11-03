@@ -137,3 +137,23 @@ def cad_repair_body(ctx: JobContext) -> dict:
     return repair_body(path, ctx.workdir / f"{path.stem}_repaired.step", limit,
                        None if accept is None else set(map(str, accept)),
                        Path(decisions).expanduser() if decisions else None, ctx.emit.progress)
+
+
+@command("part-save")
+def part_save(ctx: JobContext) -> dict:
+    from OCP.BRepCheck import BRepCheck_Analyzer
+
+    from ..cad.bodyrepair import _write, free_edges
+    from ..cad.edit.build import final_shape
+    from ..cad.edit.refs import load_part
+
+    path = _source(ctx)
+    part = ctx.params.get("part")
+    _, names, _ = load_part(path, part)
+    name = part or names[0]
+    ctx.emit.progress(20, "rebuilding")
+    shape = final_shape(path, part, list(ctx.params.get("features") or []), ctx.params.get("fingerprint"))
+    out = ctx.workdir / f"{name}_edited.step"
+    ctx.emit.progress(80, "writing")
+    _write(out, [(name, shape)])
+    return {"output": out.name, "valid": bool(BRepCheck_Analyzer(shape).IsValid()), "closed": not free_edges(shape)}
