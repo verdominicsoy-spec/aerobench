@@ -27,6 +27,20 @@ public struct PickResult: Sendable {
     public var point: SIMD3<Double>  // world, metres
     public var nodeID: Int?
     public var snapped: Bool
+    public var faceIndex: Int? = nil  // the triangle hit, in its mesh
+
+    public init(point: SIMD3<Double>, nodeID: Int?, snapped: Bool, faceIndex: Int? = nil) {
+        self.point = point
+        self.nodeID = nodeID
+        self.snapped = snapped
+        self.faceIndex = faceIndex
+    }
+}
+
+/// The pointer in edit mode: where it is on screen, and what is under it.
+public struct EditPointer: Sendable {
+    public var screen: SIMD2<Double>  // view points, origin bottom left
+    public var hit: PickResult?
 }
 
 /// The renderer-neutral 3D core: shared by the CAD Viewer and, later, the

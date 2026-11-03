@@ -15,6 +15,7 @@ public final class SceneKitViewer: Viewer3D {
     private let modelRoot = SCNNode()
     private let markerRoot = SCNNode()
     private let previewRoot = SCNNode()
+    private let editRoot = SCNNode()
     private let overlayRoot = SCNNode()
     private let pointsNode = SCNNode()
     private let sliceNode = SCNNode()
@@ -30,6 +31,10 @@ public final class SceneKitViewer: Viewer3D {
     private let doubleClickTarget = ClickTarget()
 
     public var onPick: ((PickResult) -> Void)?
+    /// Edit mode: hover and click report the screen point even with nothing
+    /// under it, so an edge on a silhouette can still be picked.
+    public var onEditHover: ((EditPointer) -> Void)?
+    public var onEditClick: ((EditPointer) -> Void)?
     public var snapToVertices = true
     /// Screen size of points shown with setPoints, in points.
     public var pointSize: CGFloat = 3
@@ -84,6 +89,7 @@ public final class SceneKitViewer: Viewer3D {
         scene.rootNode.addChildNode(modelRoot)
         scene.rootNode.addChildNode(markerRoot)
         scene.rootNode.addChildNode(previewRoot)
+        scene.rootNode.addChildNode(editRoot)
         scene.rootNode.addChildNode(overlayRoot)
         overlayRoot.addChildNode(pointsNode)
         overlayRoot.addChildNode(sliceNode)
@@ -112,6 +118,7 @@ public final class SceneKitViewer: Viewer3D {
         modelRoot.childNodes.forEach { $0.removeFromParentNode() }
         markerRoot.childNodes.forEach { $0.removeFromParentNode() }
         previewRoot.childNodes.forEach { $0.removeFromParentNode() }
+        editRoot.childNodes.forEach { $0.removeFromParentNode() }
         nodesByID = [:]
         self.model = model
         if let model {
@@ -274,6 +281,9 @@ public final class SceneKitViewer: Viewer3D {
             orbit.orbit(dx: dx, dy: dy, about: pivot)
         case .pan(let dx, let dy):
             orbit.pan(dx: dx, dy: dy, viewHeight: Double(scnView.bounds.height))
+        case .hover(let location):
+            onEditHover?(editPointer(at: location))
+            return
         case .zoom(let factor, let location, let phase):
             if phase == .began || phase == .discrete || gestureAnchor == nil {
                 gestureAnchor = pointUnder(location)
@@ -311,7 +321,70 @@ public final class SceneKitViewer: Viewer3D {
 
     // MARK: Picking and markers
 
+    private func editPointer(at p: CGPoint) -> EditPointer {
+        let hit = scnView.hitTest(p, options: [
+            .searchMode: SCNHitTestSearchMode.closest.rawValue, .ignoreHiddenNodes: true, .rootNode: modelRoot,
+        ]).first
+        let pick = hit.map { h -> PickResult in
+            let w = h.simdWorldCoordinates
+            return PickResult(point: SIMD3(Double(w.x), Double(w.y), Double(w.z)), nodeID: h.node.name.flatMap { Int($0) },
+                              snapped: false, faceIndex: h.faceIndex)
+        }
+        return EditPointer(screen: SIMD2(Double(p.x), Double(p.y)), hit: pick)
+    }
+
+    /// A world point (metres) in view points, origin bottom left, as clicks report.
+    public func projectToScreen(_ p: SIMD3<Double>) -> SIMD2<Double> {
+        let v = scnView.projectPoint(SCNVector3(Float(p.x), Float(p.y), Float(p.z)))
+        return SIMD2(Double(v.x), Double(v.y))
+    }
+
+    /// Edit mode's drawing over the part: every edge thin, the hovered ones
+    /// brighter, the picked ones in sage, and the points placed so far.
+    public func setEditOverlay(edges: [[SIMD3<Double>]], highlighted: Set<Int>, selected: Set<Int>, points: [SIMD3<Double>]) {
+        editRoot.childNodes.forEach { $0.removeFromParentNode() }
+        func lines(_ ids: [Int], _ color: NSColor, order: Int) {
+            var vertices: [SCNVector3] = [], indices: [Int32] = []
+            for k in ids where edges[k].count > 1 {
+                let base = Int32(vertices.count)
+                vertices += edges[k].map { SCNVector3(Float($0.x), Float($0.y), Float($0.z)) }
+                for j in 0..<Int32(edges[k].count - 1) { indices += [base + j, base + j + 1] }
+            }
+            guard !indices.isEmpty else { return }
+            let m = SCNMaterial()
+            m.lightingModel = .constant
+            m.diffuse.contents = color
+            m.readsFromDepthBuffer = order > 0
+            let g = SCNGeometry(sources: [SCNGeometrySource(vertices: vertices)],
+                                elements: [SCNGeometryElement(indices: indices, primitiveType: .line)])
+            g.materials = [m]
+            let node = SCNNode(geometry: g)
+            node.renderingOrder = 100 + order
+            editRoot.addChildNode(node)
+        }
+        let all = Array(edges.indices)
+        lines(all.filter { !highlighted.contains($0) && !selected.contains($0) }, NSColor(white: 0.1, alpha: 0.6), order: 1)
+        lines(all.filter { highlighted.contains($0) && !selected.contains($0) }, NSColor(red: 0.95, green: 0.93, blue: 0.89, alpha: 1), order: 2)
+        lines(Array(selected), NSColor(red: 0.59, green: 0.72, blue: 0.5, alpha: 1), order: 3)
+        let m = SCNMaterial()
+        m.lightingModel = .constant
+        m.diffuse.contents = NSColor(red: 0.9, green: 0.69, blue: 0.31, alpha: 1)
+        m.readsFromDepthBuffer = false
+        for p in points {
+            let sphere = SCNSphere(radius: CGFloat(radius * 0.006))
+            sphere.materials = [m]
+            let node = SCNNode(geometry: sphere)
+            node.simdPosition = SIMD3(Float(p.x), Float(p.y), Float(p.z))
+            node.renderingOrder = 104
+            editRoot.addChildNode(node)
+        }
+    }
+
     private func handleClick(_ gesture: NSClickGestureRecognizer) {
+        if let onEditClick, model != nil {
+            onEditClick(editPointer(at: gesture.location(in: scnView)))
+            return
+        }
         guard let onPick, model != nil else { return }
         let p = gesture.location(in: scnView)
         let hits = scnView.hitTest(p, options: [
@@ -501,6 +574,7 @@ final class OrbitSCNView: SCNView {
         case orbit(dx: Double, dy: Double)
         case pan(dx: Double, dy: Double)
         case zoom(factor: Double, at: CGPoint, phase: Phase)
+        case hover(at: CGPoint)
     }
 
     var onInput: ((Input) -> Void)?
@@ -508,6 +582,14 @@ final class OrbitSCNView: SCNView {
     private var panning = false
 
     override var acceptsFirstResponder: Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self))
+    }
+
+    override func mouseMoved(with event: NSEvent) { onInput?(.hover(at: location(event))) }
 
     private func location(_ event: NSEvent) -> CGPoint { convert(event.locationInWindow, from: nil) }
 
