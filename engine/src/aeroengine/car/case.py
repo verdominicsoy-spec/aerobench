@@ -58,6 +58,9 @@ def config(markers: list[str], setup: dict, flow: dict, mesh_file: str, iteratio
                   f"SURFACE_ROTATION_RATE= ( {fmt(rotation)} )\n"
                   f"SURFACE_TRANSLATION_RATE= ( {fmt(translation)} )\n")
     heatflux = ", ".join(f"{w}, 0.0" for w in walls + ["ground"])
+    # SU2 8.5 goes to NaN at the first iteration with wall functions on a
+    # rotating wall: a turning wheel is a plain no-slip moving wall.
+    modelled = [w for w in modelled if w not in moving]
     wall_functions = ", ".join(f"{w}, STANDARD_WALL_FUNCTION" for w in modelled)
     flow_scheme = {
         "jst": f"CONV_NUM_METHOD_FLOW= JST\nMUSCL_FLOW= NO\nJST_SENSOR_COEFF= ( {su2.JST_DISSIPATION[0]}, {su2.JST_DISSIPATION[1]} )",
@@ -150,7 +153,8 @@ def solve_section(section: dict, wings: list[dict], setup: dict, flow: dict, pre
     out = su2.run(case, mesh_file, workdir, su2.find_su2(su2_hint), cores, progress)
     q = 0.5 * RHO * speed * speed
     lift, drag = out["cl"] * q, out["cd"] * q
-    # Moment about the origin over lift gives where the lift acts (X, m); back to car x in mm.
+    # The moment origin is on the ground line, so moment over lift is the point where the lift alone
+    # would load the axles as the lift and the drag (acting above the ground) do: the axle split needs that.
     x_cp = -1000.0 * (out["cm"] / out["cl"]) if out.get("cm") is not None and abs(out["cl"]) > 1e-9 else float("nan")
     wing_lift, wing_drag = {}, {}
     for row in out["elements"]:

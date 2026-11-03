@@ -169,11 +169,13 @@ def test_config_moves_the_ground_and_turns_the_wheels():
     # rolling: 15 m/s over r 0.23 m, about the wheel's centre (X = 0.4, Y = 0.23 m)
     assert "SURFACE_ROTATION_RATE= ( 0.0, 0.0, 0.0, 0.0, 0.0, 65.2174 )" in text
     assert "SURFACE_MOTION_ORIGIN= ( 0.0, 0.0, 0.0, 0.4, 0.23, 0.0 )" in text
-    assert "MARKER_WALL_FUNCTIONS= ( body, STANDARD_WALL_FUNCTION, wheel_FL, STANDARD_WALL_FUNCTION )" in text
+    # SU2 8.5 goes to NaN with wall functions on a rotating wall: those are plain no-slip moving walls
+    assert "MARKER_WALL_FUNCTIONS= ( body, STANDARD_WALL_FUNCTION )" in text
 
 
 def test_config_without_moving_parts():
     text = car_case.config(["body", "wheel_FL", "wing_front"], SETUP, flow(False, False), "m.su2")
+    assert "MARKER_WALL_FUNCTIONS= ( body, STANDARD_WALL_FUNCTION, wheel_FL, STANDARD_WALL_FUNCTION )" in text
     assert "MARKER_MOVING" not in text and "SURFACE_MOVEMENT" not in text
     assert "wing_front, STANDARD_WALL_FUNCTION" not in text  # wings are resolved to the wall
     assert "MARKER_HEATFLUX= ( body, 0.0, wheel_FL, 0.0, wing_front, 0.0, ground, 0.0 )" in text
@@ -192,3 +194,68 @@ def test_a_section_solves(car_step, tmp_path):
     r = car_case.solve_section(cut, [], s, flow(), "coarse", tmp_path, None, 4, lambda p, m: None, iterations=400)
     assert np.isfinite(r["lift"]) and np.isfinite(r["drag"]) and r["drag"] > 0
     assert isinstance(r["converged"], bool) and np.isfinite(r["x_cp"])
+
+
+# Strips and the car result ---------------------------------------------------------
+
+from aeroengine.car import strips  # noqa: E402
+
+AXLES = {"ground_z": 0.0, "wheels": [{"name": n, "centre": [x, y, 230], "radius": 230, "width": 200}
+                                       for n, x, y in (("FL", -400, 400), ("FR", -400, -400), ("RL", -1950, 400), ("RR", -1950, -400))]}
+Q = 0.5 * 1.225 * 15 ** 2
+
+
+def strip(y, w, lift, x_cp, drag=10.0, converged=True, wing=None):
+    return {"y": y, "width": w, "lift": lift, "drag": drag, "x_cp": x_cp, "converged": converged,
+            "wing_lift": wing or {}, "wing_drag": {k: 1.0 for k in (wing or {})}}
+
+
+def test_strips_cover_half_the_car_finer_outside():
+    p = strips.plan(700, 7)
+    assert sum(w for _, w in p) == pytest.approx(700)
+    ys = [y for y, _ in p]
+    assert ys == sorted(ys) and ys[-1] >= 600 and p[-1][1] < p[0][1]
+
+
+def test_combine_sums_both_halves():
+    r = strips.combine([strip(100, 400, -100, -1175), strip(500, 300, -50, -1175)], AXLES, 15, 1.225, [], "coarse")
+    assert r["cla"] == pytest.approx(2 * 55 / Q, rel=1e-6) and r["cla"] == pytest.approx(0.79819, rel=1e-4)
+    assert r["cda"] == pytest.approx(2 * (10 * 0.4 + 10 * 0.3) / Q, rel=1e-6)
+    assert r["converged"] and r["mesh"] == "coarse"
+
+
+def test_rear_share_follows_where_the_downforce_acts():
+    at = lambda x: strips.combine([strip(100, 400, -100, x)], AXLES, 15, 1.225, [], "coarse")["rear_share"]  # noqa: E731
+    assert at(-400) == pytest.approx(0) and at(-1950) == pytest.approx(1) and at(-1175) == pytest.approx(0.5)
+
+
+def test_one_strip_not_converged_marks_the_car():
+    r = strips.combine([strip(100, 400, -100, -1175), strip(500, 300, -50, -1175, converged=False)], AXLES, 15, 1.225, [], "coarse")
+    assert r["converged"] is False
+
+
+def test_wing_shares_are_corrected_to_3d():
+    wing = {"position": "front", "elements": [[[150, 95], [-150, 95], [0, 110]]], "span": 1.0, "factor3d": 0.8, "endplate": None}
+    s = [strip(100, 400, -150, -300, wing={"front": -60}), strip(600, 300, -50, -1175)]  # the wing reaches y 500: one strip
+    r = strips.combine(s, AXLES, 15, 1.225, [wing], "coarse")
+    two_d = 2 * 60 * 0.4 / Q
+    assert r["cla_2d_wings"] == pytest.approx(2 * (150 * 0.4 + 50 * 0.3) / Q, rel=1e-6)
+    cl = -60 * 0.4 / (Q * 0.3 * 0.4)  # the wing's 2D coefficient over the strips it covers, on its 300 mm chord
+    assert r["wings"][0]["cla"] == pytest.approx(-cl * 1.0 * 0.3 * 0.8, rel=1e-6)  # over its whole 1 m span, factor 0.8
+    front = r["wings"][0]
+    assert front["position"] == "front" and front["cla_2d"] == pytest.approx(two_d, rel=1e-6)
+    assert r["cla"] == pytest.approx(r["cla_2d_wings"] - two_d + front["cla"], rel=1e-6)
+
+
+@pytest.mark.skipif(not (Path(__file__).resolve().parents[2] / "build" / "su2" / "bin" / "SU2_CFD").exists()
+                    and not __import__("shutil").which("SU2_CFD"), reason="SU2 is not installed")
+def test_car_strips_through_the_engine(engine, car_step, tmp_path):
+    import json
+    s = car_setup.setup(car_step)
+    job = {"params": {"setup": s, "preset": "coarse", "planes": [[0, 300], [400, 200]], "iterations": 300,
+                      "flow": flow()}, "options": {"cores": 2}}
+    code, events, err = engine.run("car-strips", job, tmp_path / "w", timeout=300)
+    assert code == 0, (events[-3:], err[-2000:])
+    r = json.loads((tmp_path / "w" / "result.json").read_text())["data"]
+    assert len(r["strips"]) == 2 and r["strips"][1]["width"] == 200 and np.isfinite(r["cda"])
+    assert (tmp_path / "w" / "car_result.json").exists()
