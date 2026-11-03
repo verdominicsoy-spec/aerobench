@@ -1319,3 +1319,24 @@ the result says so. Decisions are saved beside the source as
 next revision needs almost no clicking. Spec and plan:
 docs/superpowers/specs/2026-11-03-step-repair-design.md,
 docs/superpowers/plans/2026-11-03-step-repair.md.
+
+**Edit Part: a feature list on an imported STEP part.** The CAD Viewer's
+Edit Part mode edits one solid part with the GSD-style edits the user makes
+in CATIA: points clicked on the part, splines through them, planes parallel
+to a reference through a point, extrudes along a plane's normal, fills held
+tangent to the part's faces along its edges, Add (new surfaces closed into a
+volume and fused on, the user's way of adding material), fillets, chamfers
+and push/pull on flat faces. The app owns the list as plain data and sends
+all of it to a warm engine on every change; the engine rebuilds from the
+first changed feature (each state cached) and returns the mesh with every
+face and edge labelled by where it came from, so clicks become references.
+The imported part never changes, so its faces and edges are referenced by
+their place in a fixed order and followed through each operation's
+history; a reference that ends as nothing or several pieces is "lost" and
+picked again, never guessed. Clicked points are stored as positions and
+projected onto their edge or face on each rebuild. The list is saved beside
+the STEP with the STEP's fingerprint; a re-exported STEP marks every part
+reference lost. The part is edited and saved in its own frame, alone, as
+`<part>_edited.step`. Push/pull is flat faces only for now. Spec and plan:
+docs/superpowers/specs/2026-11-03-gsd-editor-design.md,
+docs/superpowers/plans/2026-11-03-gsd-editor.md.

@@ -96,6 +96,10 @@ struct CADToolbar: View {
                     .help("Cut the visible parts with a plane and see them in section")
             }
             .disabled(cad.model == nil)
+            Toggle("Edit Part", isOn: Binding(get: { app.partEdit.on },
+                                              set: { $0 ? app.enterPartEdit() : app.exitPartEdit() }))
+                .toggleStyle(.button)
+                .disabled(!cad.isStep || cad.model == nil)
             Button("Check Geometry") { app.checkGeometry() }
                 .disabled(cad.fileURL == nil || (cad.checkJob.map { !$0.status.isFinished } ?? false))
             Toggle("Snap", isOn: $cad.snap)
@@ -115,6 +119,14 @@ struct CADSidePanel: View {
     @Environment(AppState.self) private var app
 
     var body: some View {
+        if app.partEdit.on {
+            PartEditView()
+        } else {
+            inspector
+        }
+    }
+
+    @ViewBuilder private var inspector: some View {
         @Bindable var cad = app.cad
         Form {
             Section("File") {

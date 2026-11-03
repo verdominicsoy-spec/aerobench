@@ -57,6 +57,15 @@ struct AeroBenchCommands: Commands {
             Button("Save Project") { app.save() }
                 .keyboardShortcut("s")
         }
+        CommandMenu("Part") {
+            Button(app.partEdit.on ? "Stop Editing Part" : "Edit Part") {
+                app.partEdit.on ? app.exitPartEdit() : app.enterPartEdit()
+            }
+            .keyboardShortcut("e")
+            .disabled(!app.cad.isStep || app.cad.model == nil)
+            Button("Save Part…") { app.savePartEdit() }
+                .disabled(!app.partEdit.on || app.partEdit.reply == nil)
+        }
         CommandGroup(after: .help) {
             Button("How Accurate Is Each Solver?") { openWindow(id: "accuracy") }
         }
