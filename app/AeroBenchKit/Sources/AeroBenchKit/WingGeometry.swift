@@ -115,11 +115,18 @@ public struct WingIssue: Equatable, Sendable {
     public static func label(_ index: Int) -> String { index == 0 ? "Main" : "Flap \(index)" }
 }
 
+/// Which wing the rules box is for: each keeps its own box.
+public enum WingPosition: String, Codable, CaseIterable, Sendable {
+    case front, rear
+}
+
 /// A multi-element wing in a free plane: not placed on the car.
 public struct Wing: Codable, Equatable, Sendable {
     public var elements: [WingElement]
     public var alpha: Double  // degrees, the whole wing to the freestream
-    public var rulesBox: RulesBox?
+    public var rulesBox: RulesBox?  // the box in force, for `rulesFor`
+    public var rulesFor: WingPosition = .rear
+    public var otherRulesBox: RulesBox?  // the other position's box, kept while it is not in force
     public var minGap: Double  // m, closer than this is flagged
     public var span: Double  // m, for turning 2D coefficients into ClA and CdA
     public var factor3D: Double  // 2D to 3D: below 1 for a finite wing, user's estimate
@@ -153,6 +160,8 @@ public struct Wing: Codable, Equatable, Sendable {
         elements = try c.decodeIfPresent([WingElement].self, forKey: .elements) ?? []
         alpha = try c.decodeIfPresent(Double.self, forKey: .alpha) ?? 0
         rulesBox = try c.decodeIfPresent(RulesBox.self, forKey: .rulesBox)
+        rulesFor = try c.decodeIfPresent(WingPosition.self, forKey: .rulesFor) ?? .rear
+        otherRulesBox = try c.decodeIfPresent(RulesBox.self, forKey: .otherRulesBox)
         minGap = try c.decodeIfPresent(Double.self, forKey: .minGap) ?? 0.005
         span = try c.decodeIfPresent(Double.self, forKey: .span) ?? 1.0
         factor3D = try c.decodeIfPresent(Double.self, forKey: .factor3D) ?? 1.0
@@ -161,6 +170,25 @@ public struct Wing: Codable, Equatable, Sendable {
         speed = try c.decodeIfPresent(Double.self, forKey: .speed) ?? 15
         rho = try c.decodeIfPresent(Double.self, forKey: .rho) ?? 1.225
         mu = try c.decodeIfPresent(Double.self, forKey: .mu) ?? 1.81e-5
+    }
+
+    /// A starting box in the wing's plane (m): the front wing has 700 mm ahead
+    /// of the front tyres and 320 mm from the 30 mm ground clearance up to the
+    /// 350 mm height limit (FS T8.2); the rear wing keeps the app's old default.
+    public static func defaultRulesBox(_ position: WingPosition) -> RulesBox {
+        switch position {
+        case .front: RulesBox(minX: -0.05, minY: -0.05, maxX: 0.65, maxY: 0.27)
+        case .rear: RulesBox(minX: -0.05, minY: -0.05, maxX: 0.6, maxY: 0.4)
+        }
+    }
+
+    /// Puts the other position's box in force and keeps this one for later.
+    public mutating func switchRules(to position: WingPosition) {
+        guard position != rulesFor else { return }
+        let next = otherRulesBox ?? Self.defaultRulesBox(position)
+        otherRulesBox = rulesBox
+        rulesBox = next
+        rulesFor = position
     }
 
     /// Reynolds number on a chord at the wing's flow conditions.

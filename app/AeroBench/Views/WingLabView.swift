@@ -1004,8 +1004,14 @@ struct WingInspector: View {
                 NumberField(label: "Minimum gap", unit: "mm", value: mm({ wing.minGap }, { v in lab.edit { $0.minGap = v } }))
                 Toggle("Rules box", isOn: Binding(
                     get: { wing.rulesBox != nil },
-                    set: { on in lab.edit { $0.rulesBox = on ? RulesBox(minX: -0.05, minY: -0.05, maxX: 0.6, maxY: 0.4) : nil } }))
+                    set: { on in lab.edit { $0.rulesBox = on ? Wing.defaultRulesBox($0.rulesFor) : nil } }))
                 if let box = wing.rulesBox {
+                    Picker("Box for", selection: Binding(get: { wing.rulesFor },
+                                                         set: { p in lab.edit { $0.switchRules(to: p) } })) {
+                        Text("Front wing").tag(WingPosition.front)
+                        Text("Rear wing").tag(WingPosition.rear)
+                    }
+                    .pickerStyle(.segmented)
                     NumberField(label: "Box from x", unit: "mm", value: mm({ box.minX }, { v in lab.edit { $0.rulesBox?.minX = v } }))
                     NumberField(label: "Box to x", unit: "mm", value: mm({ box.maxX }, { v in lab.edit { $0.rulesBox?.maxX = v } }))
                     NumberField(label: "Box from y", unit: "mm", value: mm({ box.minY }, { v in lab.edit { $0.rulesBox?.minY = v } }))

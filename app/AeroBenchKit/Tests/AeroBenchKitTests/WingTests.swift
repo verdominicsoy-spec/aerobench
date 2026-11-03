@@ -6,6 +6,24 @@ import simd
 final class PanelSolverTests: XCTestCase {
     private func naca(_ code: String) -> Airfoil { Airfoil.naca4(code)! }
 
+    func testSwitchingRulesBoxesKeepsEachOne() throws {
+        var w = Wing()
+        w.rulesBox = RulesBox(minX: 0, minY: 0, maxX: 0.5, maxY: 0.3)
+        XCTAssertEqual(w.rulesFor, .rear)
+        w.switchRules(to: .front)
+        XCTAssertEqual(w.rulesFor, .front)
+        XCTAssertEqual(w.rulesBox, Wing.defaultRulesBox(.front))  // a front box not set before starts from the default
+        w.rulesBox?.maxX = 0.7
+        w.switchRules(to: .rear)
+        XCTAssertEqual(w.rulesBox, RulesBox(minX: 0, minY: 0, maxX: 0.5, maxY: 0.3))
+        w.switchRules(to: .front)
+        XCTAssertEqual(w.rulesBox?.maxX, 0.7)
+        w.switchRules(to: .front)  // already front: nothing changes
+        XCTAssertEqual(w.rulesBox?.maxX, 0.7)
+        let back = try JSONDecoder().decode(Wing.self, from: JSONEncoder().encode(w))
+        XCTAssertEqual(back, w)
+    }
+
     func testSingleSectionsMatchTheEngine() throws {
         let s0012 = try XCTUnwrap(PanelSolver(elements: [naca("0012").coords]))
         XCTAssertEqual(s0012.solve(alphaDeg: 5).clTotal, 0.6037127882, accuracy: 1e-6)
