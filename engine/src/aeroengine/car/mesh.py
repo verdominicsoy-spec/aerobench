@@ -283,13 +283,19 @@ def build(section: dict, wings: list[dict], setup: dict, preset: str, out: Path)
 
     xi, xo, top = x0 - 3 * length, x1 + 6 * length, 4 * height
     car_polys = [p for m_, p in shapes if not m_.startswith("wing_")]
+    blocks = []
     for marker, p in shapes:  # wheels on the ground stand on a contact block
         if marker.startswith("wheel_") and p[:, 1].min() < CONTACT_M:
             low = p[p[:, 1] < CONTACT_M]
             xa, xb = float(low[:, 0].min()), float(low[:, 0].max())
             pad = max(xb - xa, 0.004) * 0.5
-            car_polys.append(np.array([[xa - pad, -0.05], [xb + pad, -0.05], [xb + pad, CONTACT_M], [xa - pad, CONTACT_M]]))
+            block = np.array([[xa - pad, -0.05], [xb + pad, -0.05], [xb + pad, CONTACT_M], [xa - pad, CONTACT_M]])
+            car_polys.append(block)
+            blocks.append(block)
     obstacles = [_face(r) for r in _merge_outlines(car_polys, ps["pixel"])] + [_face(p) for _, p, _ in wing_polys]
+    # The contact blocks' walls are fixed body, not the turning tyre: as wheel walls they would get
+    # the tyre's rim speed normal to them and blow air through.
+    shapes += [("body", b) for b in blocks]
     fluid = _cut(_face(np.array([[xi, 0], [xo, 0], [xo, top], [xi, top]])), _solids(obstacles))
     # [outer, hole, hole...] per fluid face. Only the face whose outer edge is
     # the domain is the flow round the car: others are air enclosed inside

@@ -34,12 +34,14 @@ def _chord_m(wing: dict) -> float:
     return sum((max(p[0] for p in el) - min(p[0] for p in el)) for el in wing["elements"]) / 1000.0
 
 
-def combine(strips: list[dict], setup: dict, speed: float, rho: float, wings: list[dict], mesh: str) -> dict:
+def combine(strips: list[dict], setup: dict, speed: float, rho: float, wings: list[dict], mesh: str,
+            flow: dict | None = None, n: int | None = None) -> dict:
     q = 0.5 * rho * speed * speed
     x_front, x_rear = _axles(setup)
+    on_rear = lambda force, x: force * (x_front - x) / (x_front - x_rear)  # noqa: E731 - a force's share on the rear axle
     lift = sum(s["lift"] * s["width"] / 1000.0 for s in strips)  # one half, N
     drag = sum(s["drag"] * s["width"] / 1000.0 for s in strips)
-    rear = sum(s["lift"] * s["width"] / 1000.0 * (x_front - s["x_cp"]) / (x_front - x_rear) for s in strips)
+    rear = sum(on_rear(s["lift"] * s["width"] / 1000.0, s["x_cp"]) for s in strips if s.get("x_cp") is not None)
     cla_2d, cda_2d = -2 * lift / q, 2 * drag / q
     out_wings, cla, cda = [], cla_2d, cda_2d
     for w in wings:
@@ -56,8 +58,17 @@ def combine(strips: list[dict], setup: dict, speed: float, rho: float, wings: li
         w_cla_2d, w_cda_2d = -2 * wl / q, 2 * wd / q
         cla += w_cla - w_cla_2d
         cda += w_cda - w_cda_2d
+        # The 3D correction changes the wing's load where the wing acts, so the axle split follows it.
+        xs = [(s.get("wing_x_cp") or {}).get(pos) for s in covered]
+        xw = [(x, s["wing_lift"][pos] * s["width"]) for x, s in zip(xs, covered) if x is not None]
+        x_wing = sum(x * f for x, f in xw) / sum(f for _, f in xw) if xw and sum(f for _, f in xw) else None
+        delta = -w_cla * q / 2 - wl  # one half, N
+        lift += delta
+        if x_wing is not None:
+            rear += on_rear(delta, x_wing)
         out_wings.append({"position": pos, "cla": w_cla, "cda": w_cda, "cla_2d": w_cla_2d, "cda_2d": w_cda_2d})
-    return {"mesh": mesh, "speed": speed, "cla": cla, "cda": cda, "rear_share": rear / lift if lift else None,
+    return {"mesh": mesh, "speed": speed, "flow": flow, "n": n if n is not None else len(strips), "cla": cla, "cda": cda,
+            "rear_share": rear / lift if abs(lift) > 1e-9 else None,
             "cla_2d_wings": cla_2d, "strips": strips, "converged": all(s["converged"] for s in strips),
             "wings": out_wings}
 
@@ -80,4 +91,4 @@ def run(setup: dict, wings: list[dict], flow: dict, preset: str, workdir: Path, 
                           report, iterations)
         r["width"] = width
         results.append(r)
-    return combine(results, setup, float(flow.get("speed", setup.get("speed", 15.0))), RHO, wings, preset)
+    return combine(results, setup, float(flow.get("speed", setup.get("speed", 15.0))), RHO, wings, preset, flow, len(planes))

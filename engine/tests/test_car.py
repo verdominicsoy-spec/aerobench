@@ -289,3 +289,52 @@ def test_the_base_car_mesh_has_clean_markers(tmp_path):
         car_mesh.build(section.cut(shape, y, s), [], s, "coarse", tmp_path / f"m{y}.su2")
         for tag, (n, zero, loose) in su2_markers_on_cells(tmp_path / f"m{y}.su2").items():
             assert n > 0 and zero == 0 and loose == 0, (y, tag, n, zero, loose)
+
+
+# Final review fixes ---------------------------------------------------------------
+
+
+def test_contact_blocks_are_not_rotating_wheel_walls(car_step, tmp_path):
+    s = car_setup.setup(car_step)
+    cut = section.cut(car_setup.load_part(car_step, None)[0], 400.0, s)
+    out = tmp_path / "m.su2"
+    car_mesh.build(cut, [], s, "coarse", out)
+    lines = out.read_text().split("\n")
+    i = lines.index("NPOIN= " + lines[[k for k, l in enumerate(lines) if l.startswith("NPOIN=")][0]].split("=")[1].strip())
+    n = int(lines[i].split("=")[1].split()[0])
+    pts = [list(map(float, lines[i + 1 + k].split()[:2])) for k in range(n)]
+    k = next(j for j, l in enumerate(lines) if l.strip() == "MARKER_TAG= wheel_FL")
+    m = int(lines[k + 1].split("=")[1])
+    nodes = {int(x) for e in lines[k + 2:k + 2 + m] for x in e.split()[1:]}
+    w = next(w for w in s["wheels"] if w["name"] == "FL")
+    cx, cy, r = -w["centre"][0] / 1000, (w["centre"][2] - s["ground_z"]) / 1000, w["radius"] / 1000
+    off = [abs(np.hypot(pts[j][0] - cx, pts[j][1] - cy) - r) for j in nodes]
+    assert max(off) < 0.003  # every rotating-wall node on the tyre, none on the block
+
+
+def test_the_engine_defaults_to_a_fixed_ground():
+    text = car_case.config(["body"], SETUP, {"speed": 15.0}, "m.su2")
+    assert "MARKER_MOVING= ( ground" not in text
+
+
+def test_rear_share_counts_the_3d_correction_where_the_wing_acts():
+    wing = {"position": "front", "elements": [[[150, 95], [-150, 95], [0, 110]]], "span": 1.0, "factor3d": 0.5, "endplate": None}
+    # Strip total (body and wing) -100 N/m acting midway between the axles; the wing's own -50 N/m at the front axle.
+    s = [{**strip(100, 400, -100, -1175, wing={"front": -50}), "wing_x_cp": {"front": -400.0}}]
+    r = strips.combine(s, AXLES, 15, 1.225, [wing], "coarse")
+    # Half car: total -40 N, rear -20 N. The wing's 2D -20 N becomes -12.5 N in 3D (factor 0.5 over its whole
+    # 1 m span from 0.4 m of strips): +7.5 N at the front axle, so the rear keeps -20 N of -32.5 N.
+    assert r["rear_share"] == pytest.approx(20 / 32.5, rel=1e-6)
+
+
+def test_no_lift_gives_no_centre_of_pressure_not_nan():
+    r = strips.combine([strip(100, 400, 0.0, None)], AXLES, 15, 1.225, [], "coarse")
+    assert r["rear_share"] is None
+    import json
+    json.loads(json.dumps(r, allow_nan=False))
+
+
+def test_the_result_says_how_it_was_run():
+    r = strips.combine([strip(100, 400, -100, -1175)], AXLES, 15, 1.225, [], "coarse",
+                       flow={"speed": 15, "ground": {"moving": False}}, n=7)
+    assert r["flow"]["ground"]["moving"] is False and r["n"] == 7

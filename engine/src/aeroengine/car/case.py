@@ -34,7 +34,8 @@ def config(markers: list[str], setup: dict, flow: dict, mesh_file: str, iteratio
     ground = float(setup.get("ground_z", 0.0))
     speed = float(flow.get("speed", setup.get("speed", 15.0)))
     moving, origins, rotation, translation = [], [], [], []
-    if flow.get("ground", {}).get("moving", True):
+    # Fixed unless asked: on the real car a moving ground gave non-physical forces (CD about 18).
+    if flow.get("ground", {}).get("moving", False):
         moving.append("ground")
         origins += [0.0, 0.0, 0.0]
         rotation += [0.0, 0.0, 0.0]
@@ -155,13 +156,15 @@ def solve_section(section: dict, wings: list[dict], setup: dict, flow: dict, pre
     lift, drag = out["cl"] * q, out["cd"] * q
     # The moment origin is on the ground line, so moment over lift is the point where the lift alone
     # would load the axles as the lift and the drag (acting above the ground) do: the axle split needs that.
-    x_cp = -1000.0 * (out["cm"] / out["cl"]) if out.get("cm") is not None and abs(out["cl"]) > 1e-9 else float("nan")
-    wing_lift, wing_drag = {}, {}
+    x_cp = -1000.0 * (out["cm"] / out["cl"]) if out.get("cm") is not None and abs(out["cl"]) > 1e-9 else None
+    wing_lift, wing_drag, wing_x = {}, {}, {}
     for row in out["elements"]:
         if row["marker"].startswith("wing_") and row["cl"] is not None:
             pos = row["marker"][5:]
             wing_lift[pos] = row["cl"] * q
             wing_drag[pos] = (row["cd"] or 0.0) * q
-    return {"y": float(section["y"]), "lift": float(lift), "drag": float(drag), "x_cp": float(x_cp),
+            if row.get("cmz") is not None and abs(row["cl"]) > 1e-9:
+                wing_x[pos] = -1000.0 * row["cmz"] / row["cl"]
+    return {"y": float(section["y"]), "lift": float(lift), "drag": float(drag), "x_cp": x_cp, "wing_x_cp": wing_x,
             "converged": bool(out["converged"]), "reason": out.get("reason"), "iterations": out["iterations"],
             "wing_lift": wing_lift, "wing_drag": wing_drag, "cells": stats["cells"]}
