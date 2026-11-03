@@ -110,19 +110,106 @@ extension AppState {
             else { return }
             let after = (data["after"] as? [String: Any])?["problems"] as? Int
             self.cad.repairSummary = Self.describe(done: data["done"] as? [String: Any] ?? [:], remaining: after)
-            let panel = NSSavePanel()
-            panel.title = "Save Repaired File"
-            panel.nameFieldStringValue = name
-            panel.directoryURL = url.deletingLastPathComponent()
-            guard panel.runModal() == .OK, let dest = panel.url else { return }
+            self.saveRepaired(item, name: name, beside: url)
+        }
+    }
+
+    /// Asks where to save a repair job's output, then opens it.
+    private func saveRepaired(_ item: JobItem, name: String, beside source: URL) {
+        let panel = NSSavePanel()
+        panel.title = "Save Repaired File"
+        panel.nameFieldStringValue = name
+        panel.directoryURL = source.deletingLastPathComponent()
+        guard panel.runModal() == .OK, let dest = panel.url else { return }
+        do {
+            if FileManager.default.fileExists(atPath: dest.path) { try FileManager.default.removeItem(at: dest) }
+            try FileManager.default.copyItem(at: item.workdir.appendingPathComponent(name), to: dest)
+            openCAD(dest)
+        } catch {
+            show("Could not save the repaired file", error)
+        }
+    }
+
+    // MARK: Repair to one body
+
+    /// Saved accept and skip choices live beside the source, so the next
+    /// revision of the same CAD needs almost no clicking.
+    private func bodyDecisionsURL(_ source: URL) -> URL {
+        source.deletingPathExtension().appendingPathExtension("repair.json")
+    }
+
+    /// The plan run: fixes what is safe, returns the queue. With nothing
+    /// to review its output is final, so it goes straight to saving.
+    func planBodyRepair() {
+        guard let url = cad.fileURL, cad.isStep else { return }
+        cad.setBodyPlan(nil)
+        var params: [String: JSONValue] = ["path": .string(url.path), "limit_mm": .double(cad.bodyLimitMM)]
+        let saved = bodyDecisionsURL(url)
+        if FileManager.default.fileExists(atPath: saved.path) { params["decisions"] = .string(saved.path) }
+        cad.bodyJob = jobs.submit(command: "cad-repair-body", params: params, in: jobsRoot) { [weak self] item in
+            guard let self, self.cad.fileURL == url, item.status == .succeeded, let text = item.resultText else { return }
             do {
-                if FileManager.default.fileExists(atPath: dest.path) { try FileManager.default.removeItem(at: dest) }
-                try FileManager.default.copyItem(at: item.workdir.appendingPathComponent(name), to: dest)
-                self.openCAD(dest)
+                let plan = try BodyRepairResult.decode(resultFile: Data(text.utf8))
+                self.cad.setBodyPlan(plan)
+                if self.cad.pendingBodyItems == 0 {  // nothing to decide: this output is final
+                    self.cad.bodySummary = Self.describe(plan)
+                    self.saveRepaired(item, name: plan.output, beside: url)
+                }
             } catch {
-                self.show("Could not save the repaired file", error)
+                self.show("Could not read the repair plan", error)
             }
         }
+    }
+
+    /// Saves the decisions beside the source, then reruns from the
+    /// original file with the accepted items.
+    func applyBodyRepair() {
+        guard let url = cad.fileURL, cad.isStep, let plan = cad.bodyPlan else { return }
+        let decided = plan.items.filter(\.reviewable).compactMap { item -> [String: Any]? in
+            guard let accepted = cad.bodyDecisions[item.id] else { return nil }
+            return ["kind": item.kind, "part": item.part, "centre_mm": item.centreMM, "size_mm": item.sizeMM as Any,
+                    "decision": accepted ? "accept" : "skip"]
+        }
+        do {
+            let data = try JSONSerialization.data(withJSONObject: ["version": 1, "decisions": decided],
+                                                  options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: bodyDecisionsURL(url))
+        } catch {
+            show("Could not save the repair decisions", error)  // the repair itself still runs
+        }
+        let accept = plan.items.filter { cad.bodyDecisions[$0.id] == true }.map { JSONValue.string($0.id) }
+        cad.bodyJob = jobs.submit(command: "cad-repair-body", params: [
+            "path": .string(url.path), "limit_mm": .double(cad.bodyLimitMM), "accept": .array(accept),
+        ], in: jobsRoot) { [weak self] item in
+            guard let self, item.status == .succeeded, let text = item.resultText else { return }
+            do {
+                let done = try BodyRepairResult.decode(resultFile: Data(text.utf8))
+                self.cad.bodySummary = Self.describe(done)
+                self.saveRepaired(item, name: done.output, beside: url)
+            } catch {
+                self.show("Could not read the repair result", error)
+            }
+        }
+    }
+
+    private static func describe(_ r: BodyRepairResult) -> String {
+        var fixed: [String] = []
+        if r.auto.partsSewn > 0 {
+            fixed.append("\(r.auto.partsSewn) of \(r.auto.parts) parts sewn"
+                         + (r.auto.maxSewMM.map { String(format: " (up to %.2g mm)", $0) } ?? ""))
+        }
+        if r.auto.smallEdgesRemoved > 0 { fixed.append("\(r.auto.smallEdgesRemoved) tiny edges removed") }
+        if r.auto.smallFacesRemoved > 0 { fixed.append("\(r.auto.smallFacesRemoved) sliver faces removed") }
+        let head = fixed.isEmpty ? "Nothing needed fixing automatically." : fixed.joined(separator: ", ") + "."
+        if r.result.closed {
+            return head + " One closed body, \(r.result.solids) solid\(r.result.solids == 1 ? "" : "s")."
+        }
+        var left: [String] = []
+        if !r.result.fused { left.append("the fuse failed, so overlapping parts are not merged") }
+        if !r.result.openParts.isEmpty { left.append("open: " + r.result.openParts.joined(separator: ", ")) }
+        if r.result.nonmanifoldEdges > 0 { left.append("\(r.result.nonmanifoldEdges) edges shared by 3+ faces") }
+        if !r.result.valid { left.append("fails OpenCascade's validity check") }
+        return head + " Not one closed body: " + left.joined(separator: "; ") + "."
     }
 
     private static func describe(done: [String: Any], remaining: Int?) -> String {

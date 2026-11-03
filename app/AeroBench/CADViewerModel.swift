@@ -109,6 +109,16 @@ final class CADViewerModel {
         didSet { updateIssueMarkers() }
     }
 
+    // Repair to one body (STEP only)
+    var bodyLimitMM = 0.5
+    var bodyJob: JobItem?
+    private(set) var bodyPlan: BodyRepairResult?
+    var bodyDecisions: [String: Bool] = [:]  // item id: accepted
+    var bodySummary: String?
+    var selectedBodyItem: String? {
+        didSet { showSelectedBodyItem() }
+    }
+
     init() {
         viewer = SceneKitViewer()
         viewer.pointSize = 9
@@ -138,6 +148,7 @@ final class CADViewerModel {
         visibleBounds = model.bounds()
         status = .ready
         setReport(nil)
+        setBodyPlan(nil)
         cutter = nil
         if sectionOn { centreSection() }
     }
@@ -150,6 +161,7 @@ final class CADViewerModel {
         viewer.show(nil)
         status = .empty
         setReport(nil)
+        setBodyPlan(nil)
         cutter = nil
         sectionOn = false
     }
@@ -173,6 +185,36 @@ final class CADViewerModel {
         self.report = report
         repairSummary = nil
         shownIssues = Set((report?.allIssues ?? []).filter { $0.count > 0 && !$0.points.isEmpty && $0.severity != "info" }.map(\.kind))
+    }
+
+    var isStep: Bool {
+        fileURL.map { ["step", "stp"].contains($0.pathExtension.lowercased()) } ?? false
+    }
+
+    /// A new plan replaces the decisions with the ones it carries (accepted
+    /// on this run or matched from the saved file).
+    func setBodyPlan(_ plan: BodyRepairResult?) {
+        bodyPlan = plan
+        bodyDecisions = Dictionary(uniqueKeysWithValues: (plan?.items ?? []).compactMap { item in
+            item.decision.map { (item.id, $0 == "accept") }
+        })
+        selectedBodyItem = nil
+        if plan == nil { bodySummary = nil }
+    }
+
+    var pendingBodyItems: Int {
+        (bodyPlan?.items ?? []).filter { $0.reviewable && $0.fix != "open_shell" && bodyDecisions[$0.id] == nil }.count
+    }
+
+    private func showSelectedBodyItem() {
+        guard let item = bodyPlan?.items.first(where: { $0.id == selectedBodyItem }) else {
+            viewer.setPreviewLines([])
+            return
+        }
+        let lines = item.lines.map { $0.compactMap { p in p.count == 3 ? SIMD3(p[0], p[1], p[2]) : nil } }
+        viewer.setPreviewLines(lines)
+        let points = lines.flatMap { $0 }
+        viewer.focus(on: points.isEmpty && item.centre.count == 3 ? [SIMD3(item.centre[0], item.centre[1], item.centre[2])] : points)
     }
 
     /// Distinct, fixed colours per issue kind so markers can be told apart.

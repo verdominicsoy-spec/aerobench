@@ -144,6 +144,9 @@ struct CADSidePanel: View {
             if cad.checkJob != nil || cad.report != nil {
                 GeometryCheckSection()
             }
+            if cad.isStep && cad.model != nil {
+                BodyRepairSection()
+            }
             if let model = cad.model {
                 Section {
                     PartTree(model: model)
@@ -265,6 +268,99 @@ struct GeometryCheckSection: View {
             }
         } header: {
             Text("Geometry check")
+        }
+    }
+}
+
+/// STEP to one closed body: safe fixes run without asking, gaps between
+/// the automatic limit and 10 mm wait here for accept or skip.
+struct BodyRepairSection: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        @Bindable var cad = app.cad
+        let running = cad.bodyJob.map { !$0.status.isFinished } ?? false
+        Section {
+            HStack {
+                Button("Repair to One Body…") { app.planBodyRepair() }.disabled(running)
+                if running, let job = cad.bodyJob {
+                    ProgressView(value: job.progress, total: 100).frame(maxWidth: 120)
+                    Text(job.progressMessage).font(.caption).lineLimit(1)
+                }
+            }
+            LabeledContent("Fix gaps up to") {
+                HStack(spacing: 4) {
+                    TextField("Fix gaps up to", value: Binding(get: { cad.bodyLimitMM },
+                                                              set: { cad.bodyLimitMM = min(max($0, 0.01), 10) }),
+                              format: .number.precision(.fractionLength(0...2)))
+                        .labelsHidden().multilineTextAlignment(.trailing).frame(width: 60)
+                    Text("mm").foregroundStyle(.secondary)
+                }
+            }
+            .help("Gaps from this size to 10 mm are listed for you to accept or skip; wider ones are never closed")
+            if let job = cad.bodyJob, job.status == .failed {
+                Label(job.message ?? "The repair failed", systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
+            }
+            if let plan = cad.bodyPlan {
+                let review = plan.items.filter(\.reviewable)
+                let reports = plan.items.filter { !$0.reviewable }
+                if let summary = cad.bodySummary {
+                    Text(summary).font(.caption)
+                }
+                if !review.isEmpty {
+                    List(selection: $cad.selectedBodyItem) {
+                        ForEach(review) { item in
+                            BodyRepairRow(item: item).tag(item.id)
+                        }
+                    }
+                    .frame(minHeight: 120, maxHeight: 240)
+                    HStack {
+                        Button("Accept All") { for item in review where item.fix != "open_shell" { cad.bodyDecisions[item.id] = true } }
+                        Spacer()
+                        Text("\(cad.pendingBodyItems) to decide").font(.caption).foregroundStyle(.secondary)
+                        Button("Apply") { app.applyBodyRepair() }.disabled(running)
+                    }
+                }
+                ForEach(reports) { item in
+                    Label(item.kind == "wide_gap"
+                          ? String(format: "%@: %.2f mm gap, too wide to close", item.part, item.sizeMM ?? 0)
+                          : "\(item.part): edge shared by 3+ faces",
+                          systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(S37.C.clayInk)
+                        .onTapGesture { cad.selectedBodyItem = item.id }
+                }
+                if review.isEmpty && reports.isEmpty && cad.bodySummary == nil {
+                    Text("Nothing to review.").font(.caption)
+                }
+            }
+        } header: {
+            Text("Repair to one body")
+        }
+    }
+}
+
+struct BodyRepairRow: View {
+    @Environment(AppState.self) private var app
+    let item: BodyRepairResult.Item
+
+    var body: some View {
+        let cad = app.cad
+        HStack {
+            Text(item.kind == "gap" ? "Gap" : item.fix == "fill" ? "Hole" : "Hole, can\u{2019}t patch")
+            Text(item.part).foregroundStyle(.secondary).lineLimit(1)
+            Spacer()
+            if let size = item.sizeMM {
+                Text(String(format: "%.2f mm", size)).monospacedDigit()
+            }
+            Picker("Decision", selection: Binding(
+                get: { cad.bodyDecisions[item.id] },
+                set: { cad.bodyDecisions[item.id] = $0 })) {
+                Text("–").tag(Bool?.none)
+                Text("Accept").tag(Bool?.some(true))
+                Text("Skip").tag(Bool?.some(false))
+            }
+            .labelsHidden().pickerStyle(.segmented).frame(width: 150)
+            .disabled(item.fix == "open_shell")
         }
     }
 }

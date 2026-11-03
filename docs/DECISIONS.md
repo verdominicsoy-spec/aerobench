@@ -1300,3 +1300,22 @@ inputs beside STAR's console. The console takes the wider column, against
 sage37's rule, because STAR's names have to stay whole. Spec and plan:
 docs/superpowers/specs/2026-11-02-backdrop-prism-design.md,
 docs/superpowers/plans/2026-11-02-backdrop-prism.md.
+
+**STEP repair to one closed body.** A CAD Viewer section turns a STEP file
+into one closed body for STAR-CCM+, which splits it into regions afterwards.
+Gaps inside a part are sorted into three bands: up to the automatic limit
+(0.5 mm by default, a setting) they are fixed without asking, by sewing at
+the smallest step that closes them; from there to 10 mm they wait in a
+queue for accept or skip; wider ones are only reported. 10 mm is about a
+wing slot gap, so a slot is never closed without the user saying so. Gaps
+between parts are never touched. Cleanup of tiny edges and sliver faces and
+the fuse's fuzzy value use 0.01 mm, never the gap limit, so trailing edges
+and lips a few tenths of a mm thick survive and parts that nearly touch are
+not merged. An accepted gap is closed with a ruled strip between its two
+edges rather than by sewing wider, so only that gap changes. Apply always
+writes the file; a part that cannot be closed goes in as an open shell and
+the result says so. Decisions are saved beside the source as
+`<name>.repair.json` and matched on kind, part and a 3 mm radius, so the
+next revision needs almost no clicking. Spec and plan:
+docs/superpowers/specs/2026-11-03-step-repair-design.md,
+docs/superpowers/plans/2026-11-03-step-repair.md.
