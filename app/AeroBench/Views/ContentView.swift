@@ -59,7 +59,7 @@ enum Tool: String, CaseIterable, Identifiable {
     var motif: S37Motif {
         switch self {
         case .project: .hilbert
-        case .wingLab: .arrowhead
+        case .wingLab: .terdragon
         case .lapSim: .moore  // a closed loop, like a circuit
         case .cadViewer: .peano
         case .flowField: .gosper  // the flowsnake

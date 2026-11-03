@@ -14,6 +14,7 @@ final class PrismLayerTests: XCTestCase {
         XCTAssertEqual(p.total, p.boundaryLayer)
         XCTAssertFalse(p.capped)
         XCTAssertEqual(p.layers, 22)
+        XCTAssertEqual(p.treatment, .resolved)
         XCTAssertEqual(p.achievedYPlus, 1, accuracy: 0.001)
         XCTAssertEqual(p.warnings, [.noClearance])
         // Enough layers to reach the total, one fewer falls short.
@@ -24,7 +25,8 @@ final class PrismLayerTests: XCTestCase {
 
     func testWallFunctionsSizeByCountNotBoundaryLayer() throws {
         let p = try XCTUnwrap(PrismLayer(velocity: 20, density: 1.225, yPlus: 40, length: 1,
-                                         treatment: .wallFunctions, layers: 4, stretching: 1.25))
+                                         layers: 4, stretching: 1.25))
+        XCTAssertEqual(p.treatment, .wallFunctions)
         XCTAssertEqual(p.firstCell, 1.42e-3, accuracy: 0.005e-3)
         XCTAssertEqual(p.total, 8.19e-3, accuracy: 0.005e-3)
         XCTAssertEqual(p.total, p.firstCell * (pow(1.25, 4) - 1) / 0.25, accuracy: 1e-12)
@@ -37,6 +39,7 @@ final class PrismLayerTests: XCTestCase {
                                          clearance: 0.028, stretching: 1.2))
         XCTAssertEqual(p.uncappedTotal, 21.97e-3, accuracy: 0.01e-3)
         XCTAssertEqual(p.total, 9.33e-3, accuracy: 0.005e-3)
+        XCTAssertEqual(p.treatment, .resolved)
         XCTAssertTrue(p.capped)
         XCTAssertEqual(p.layers, 22)
         XCTAssertFalse(p.warnings.contains(.noClearance))
@@ -50,40 +53,88 @@ final class PrismLayerTests: XCTestCase {
         XCTAssertTrue(p.warnings.contains(.noClearance))
     }
 
-    func testWallFunctionsDropLayersThatDoNotFitUnderTheCap() throws {
-        // 1.42 mm first cell, 12 mm clearance: a 4 mm cap holds two layers, not four.
+    func testYPlus40SwitchesToWallFunctionsAndDropsLayersThatDoNotFit() throws {
+        // The old resolved repro at y+ 40: a 4 mm cap holds two of the three layers.
         let p = try XCTUnwrap(PrismLayer(velocity: 20, density: 1.225, yPlus: 40, length: 1,
-                                         treatment: .wallFunctions, layers: 4, clearance: 0.012, stretching: 1.25))
-        XCTAssertEqual(p.total, 0.004, accuracy: 1e-12)
+                                         layers: 3, clearance: 0.012, stretching: 1.3))
+        XCTAssertEqual(p.treatment, .wallFunctions)
         XCTAssertEqual(p.layers, 2)
+        XCTAssertEqual(p.firstCell, 1.421e-3, accuracy: 0.0005e-3)
+        XCTAssertEqual(p.total, 3.27e-3, accuracy: 0.005e-3)
+        XCTAssertEqual(p.total, p.firstCell * 2.3, accuracy: 1e-12)
+        XCTAssertTrue(p.warnings.contains(.layersDropped))
+    }
+
+    func testModeFollowsYPlus() {
+        XCTAssertEqual(PrismLayer.WallTreatment(yPlus: 0.5), .resolved)
+        XCTAssertEqual(PrismLayer.WallTreatment(yPlus: 1), .resolved)
+        XCTAssertEqual(PrismLayer.WallTreatment(yPlus: 5), .resolved)
+        XCTAssertEqual(PrismLayer.WallTreatment(yPlus: 5.1), .wallFunctions)
+        XCTAssertEqual(PrismLayer.WallTreatment(yPlus: 30), .wallFunctions)
+        XCTAssertEqual(PrismLayer.WallTreatment(yPlus: 150), .wallFunctions)
+    }
+
+    func testBufferLayerYPlusWarns() throws {
+        let p = try XCTUnwrap(PrismLayer(velocity: 20, density: 1.225, yPlus: 10, length: 1, clearance: 0.028))
+        XCTAssertEqual(p.treatment, .wallFunctions)
+        XCTAssertTrue(p.warnings.contains(.bufferLayer))
+        let q = try XCTUnwrap(PrismLayer(velocity: 20, density: 1.225, yPlus: 3, length: 1, clearance: 0.028))
+        XCTAssertEqual(q.treatment, .resolved)
+        XCTAssertTrue(q.warnings.contains(.bufferLayer))
+    }
+
+    func testYPlusOver100Warns() throws {
+        let p = try XCTUnwrap(PrismLayer(velocity: 20, density: 1.225, yPlus: 150, length: 1, clearance: 0.1))
+        XCTAssertEqual(p.treatment, .wallFunctions)
+        XCTAssertTrue(p.warnings.contains(.tooFar))
+        XCTAssertFalse(p.warnings.contains(.bufferLayer))
     }
 
     func testWarningsForEachLimit() throws {
         let steep = try XCTUnwrap(PrismLayer(velocity: 20, density: 1.225, yPlus: 40, length: 1,
-                                             treatment: .wallFunctions, layers: 6, stretching: 1.4))
+                                             layers: 6, stretching: 1.4))
         XCTAssertEqual(steep.warnings, [.thickStack, .steepStretching])
-        let lowYPlus = try XCTUnwrap(PrismLayer(velocity: 20, density: 1.225, yPlus: 5, length: 1,
-                                                treatment: .wallFunctions))
-        XCTAssertTrue(lowYPlus.warnings.contains(.yPlusOutOfRange))
         let thin = try XCTUnwrap(PrismLayer(velocity: 80, density: 1.225, yPlus: 0.5, length: 1, clearance: 0.1))
         XCTAssertEqual(thin.warnings, [.thinFirstCell])
     }
 
-    func testStarLinesInOrder() throws {
-        let p = try XCTUnwrap(PrismLayer(velocity: 20, density: 1.225, yPlus: 40, length: 1,
-                                         treatment: .wallFunctions, layers: 4, stretching: 1.25))
-        let lines = p.starLines.split(separator: "\n").map(String.init)
-        XCTAssertEqual(lines.count, 4)
-        XCTAssertEqual(lines[0], "Number of Prism Layers\t4")
-        XCTAssertTrue(lines[1].hasPrefix("Prism Layer Total Thickness\t8.19"))
-        XCTAssertTrue(lines[2].hasPrefix("Prism Layer Near Wall Thickness\t1.42"))
-        XCTAssertTrue(lines[3].hasPrefix("// stretching 1.25, achieved y+ 40"))
+    func testGapThinnerThanTheFirstCellWarnsInsteadOfDroppingLayers() throws {
+        // A wheel at y+ 40 with 1 mm to the ground: one 1.35 mm cell can't fit a 0.33 mm cap.
+        let wheel = try XCTUnwrap(PrismLayer(velocity: 20, density: 1.225, yPlus: 40, length: 0.5, clearance: 0.001, stretching: 1.25))
+        XCTAssertTrue(wheel.warnings.contains(.gapTooSmall))
+        XCTAssertFalse(wheel.warnings.contains(.layersDropped))
+        // 28 mm typed as 0.028 into the mm box: the cap falls under the near wall cell.
+        let typo = try XCTUnwrap(PrismLayer(velocity: 20, density: 1.225, yPlus: 1, length: 1, clearance: 0.028e-3))
+        XCTAssertTrue(typo.warnings.contains(.gapTooSmall))
+    }
+
+    func testSmallPartAtWallFunctionYPlusWarns() throws {
+        // A 25 mm suspension arm at y+ 40: the first cell is about the whole boundary layer.
+        let arm = try XCTUnwrap(PrismLayer(velocity: 20, density: 1.225, yPlus: 40, length: 0.025, layers: 3, stretching: 1.3))
+        XCTAssertTrue(arm.warnings.contains(.smallPart))
+        let body = try XCTUnwrap(PrismLayer(velocity: 20, density: 1.225, yPlus: 40, length: 3, stretching: 1.25))
+        XCTAssertFalse(body.warnings.contains(.smallPart))
+    }
+
+    func testTypoWarnings() throws {
+        let stretch = try XCTUnwrap(PrismLayer(velocity: 20, density: 1.225, yPlus: 1, length: 1, stretching: 1.01))
+        XCTAssertTrue(stretch.warnings.contains(.manyLayers))
+        let millimetres = try XCTUnwrap(PrismLayer(velocity: 16.67, density: 1.225, yPlus: 1, length: 300))
+        XCTAssertTrue(millimetres.warnings.contains(.unlikelyLength))
+    }
+
+    func testNonFiniteInputsHaveNoAnswerInsteadOfTrapping() {
+        XCTAssertNil(PrismLayer(velocity: .infinity, density: 1.225, yPlus: 1, length: 1))
+        XCTAssertNil(PrismLayer(velocity: .nan, density: 1.225, yPlus: 1, length: 1))
+        XCTAssertNil(PrismLayer(velocity: 20, density: 1.225, yPlus: 1, length: 1, clearance: .infinity))
+        XCTAssertNil(PrismLayer(velocity: 20, density: 1.225, yPlus: 1, length: 1, stretching: .infinity))
+        XCTAssertNil(PrismLayer(velocity: 20, density: 1.225, yPlus: 40, length: 1, stretching: 1e300))
     }
 
     func testRejectsInputsWithNoAnswer() {
         XCTAssertNil(PrismLayer(velocity: 0, density: 1.225, yPlus: 1, length: 0.3))
         XCTAssertNil(PrismLayer(velocity: 15, density: 1.225, yPlus: 1, length: 0.3, stretching: 1))
         XCTAssertNil(PrismLayer(velocity: 15, density: 1.225, yPlus: 1, length: 0.3, clearance: 0))
-        XCTAssertNil(PrismLayer(velocity: 15, density: 1.225, yPlus: 40, length: 0.3, treatment: .wallFunctions, layers: 7))
+        XCTAssertNil(PrismLayer(velocity: 15, density: 1.225, yPlus: 40, length: 0.3, layers: 7))
     }
 }
