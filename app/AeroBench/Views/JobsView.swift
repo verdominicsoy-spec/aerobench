@@ -163,7 +163,7 @@ struct LogView: View {
     var body: some View {
         GOScreen {
             VStack(alignment: .leading, spacing: 8) {
-                GOMeta(text: "Console · log · \(lines.count) \(lines.count == 1 ? "line" : "lines")")
+                GOMeta(text: "Log, \(lines.count) \(lines.count == 1 ? "line" : "lines")")
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 2) {

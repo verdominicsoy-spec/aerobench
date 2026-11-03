@@ -456,7 +456,7 @@ struct WingCanvas: View {
             }
             .pickerStyle(.menu).fixedSize().font(.caption)
             .padding(.horizontal, 4)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))  // readable over the field image
+            .background(.regularMaterial, in: Capsule())  // readable over the field image
             .disabled(!lab.fieldIsCurrent)
             .help("The last RANS run's flow over the plane, behind the wing")
             if lab.canShowChange {
@@ -1994,7 +1994,7 @@ struct ResultsSummary: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(RoundedRectangle(cornerRadius: 6).fill(lab.resultsTab == tab ? S37.C.sage.opacity(0.12) : Color.secondary.opacity(0.08)))
+        .background(RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).fill(lab.resultsTab == tab ? S37.C.sage.opacity(0.12) : Color.secondary.opacity(0.08)))
         .contentShape(Rectangle())
         .onTapGesture { if let tab { lab.resultsTab = tab } }
     }

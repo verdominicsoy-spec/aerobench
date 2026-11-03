@@ -91,6 +91,6 @@ enum S37Motifs {
         let oy = (size.height - b.height * scale) / 2 - b.minY * scale
         var path = Path()
         path.addLines(points.map { CGPoint(x: ox + $0.x * scale, y: oy + $0.y * scale) })
-        ctx.stroke(path, with: .color(c(bone, 0.07)), lineWidth: 0.75)
+        ctx.stroke(path, with: .color(c(bone, 0.11)), lineWidth: 0.9)
     }
 }

@@ -77,6 +77,9 @@ enum S37 {
         static let sm: CGFloat = 8, md: CGFloat = 12, lgIn: CGFloat = 16, lg: CGFloat = 20, xlContent: CGFloat = 24, xl: CGFloat = 28
     }
 
+    /// A nested corner: the parent's radius less the padding between them, squared off to sm below 8
+    static func concentric(_ outer: CGFloat, _ padding: CGFloat) -> CGFloat { max(Radius.sm, outer - padding) }
+
     enum Motion {
         /// buttons: 240ms, slight overshoot
         static let press = Animation.timingCurve(0.3, 1.5, 0.5, 1, duration: 0.24)
@@ -344,7 +347,7 @@ struct S37Segmented<T: Hashable>: View {
             ForEach(options, id: \.0) { value, label in
                 Button { selection = value } label: {
                     Text(label)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
                         .foregroundStyle(selection == value ? S37.C.ink : S37.C.inkSecondary)
                         .padding(.horizontal, 16)
                         .frame(height: 28)

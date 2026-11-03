@@ -100,7 +100,7 @@ struct FlowQuickSetupPanel: View {
                         Image(decorative: triad, scale: 1).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
                             .frame(width: 100, height: 100)
                     } else {
-                        RoundedRectangle(cornerRadius: 6).fill(.quaternary).frame(width: 100, height: 100)
+                        RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).fill(.quaternary).frame(width: 100, height: 100)
                             .overlay { Text("Triad not found").font(.caption2).foregroundStyle(.secondary) }
                     }
                     Text("In the video").font(.caption)
@@ -108,7 +108,7 @@ struct FlowQuickSetupPanel: View {
                 VStack(spacing: 4) {
                     TriadDrawing(axes: cal.axes, towardViewer: cal.sweepTowardViewer)
                         .frame(width: 100, height: 100)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 6))
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous))
                     Text("As set here").font(.caption)
                 }
             }

@@ -67,8 +67,7 @@ struct Dock: View {
     func item(_ t: Tool, highlight: Tool) -> some View {
         VStack(spacing: 3) {
             Image(systemName: t.symbol).font(.system(size: 17, weight: .regular)).frame(height: 20)
-            Text(label(t)).font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .tracking(0.96).textCase(.uppercase).lineLimit(1)
+            Text(label(t)).font(.system(size: 12, weight: .semibold)).lineLimit(1)
         }
         .foregroundStyle(t == selection && drag == nil ? GO.C.onSage : (t == highlight && drag != nil ? GO.C.phosphorBright : GO.C.phosphorDim))
         .padding(.horizontal, 14)

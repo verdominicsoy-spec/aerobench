@@ -194,30 +194,3 @@ struct GOPlainButton: View {
     }
 }
 
-/// One line that prints itself after an action, one character at a time.
-/// Bump trigger to replay it.
-struct GOTypeOn: View {
-    var text: String
-    var trigger: Int
-    @State private var shown = Int.max
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        ZStack(alignment: .leading) {
-            Text(text).hidden()  // reserves the full width, so nothing reflows
-            Text(String(text.prefix(shown)))
-        }
-        .lineLimit(1)
-        .onChange(of: trigger) {
-            guard !reduceMotion, text.count <= GO.CRT.typeMaxChars, !text.isEmpty else { shown = .max; return }
-            let step = min(Double(text.count) * GO.CRT.typeStep, GO.CRT.typeCap) / Double(text.count)
-            shown = 0
-            Task { @MainActor in
-                for k in 1...text.count {
-                    try? await Task.sleep(for: .seconds(step))
-                    shown = k
-                }
-            }
-        }
-    }
-}

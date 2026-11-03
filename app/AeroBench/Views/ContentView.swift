@@ -45,13 +45,13 @@ enum Tool: String, CaseIterable, Identifiable {
     /// What the tool is for, in one plain line beside its title
     var note: String {
         switch self {
-        case .project: "A project is a folder: project.json, a subfolder per tool and jobs/ for every run."
+        case .project: "Open a project or start a new one."
         case .wingLab: "Draw the wing element by element, then score it with the panel solver, RANS or the optimiser."
-        case .lapSim: "What the aero is worth on the lap: ClA and CdA against lap time on the event tracks."
+        case .lapSim: "Lap time against ClA and CdA on the event tracks."
         case .cadViewer: "Open the car's CAD and check it is watertight and clean before it meshes."
         case .flowField: "Turn STAR's plane-sweep videos into a 3D flow field you can slice."
-        case .prismLayer: "Prism layer sizes for a target y+, ready to type into STAR's mesher."
-        case .jobs: "Every engine run: its progress, its log and its result."
+        case .prismLayer: "Prism layer settings for STAR's mesher."
+        case .jobs: "Every engine run, with its progress, log and result."
         }
     }
 
@@ -167,40 +167,38 @@ struct ToolTakeawayKey: PreferenceKey {
     static func reduce(value: inout String?, nextValue: () -> String?) { value = nextValue() ?? value }
 }
 
-/// Meta line and Fraunces title on the left, the tool's takeaway (or a
-/// one-line note about it) beside it, and on the right the project, which
-/// opens its screen.
+/// The Fraunces title on the left, the tool's takeaway (or a one-line note
+/// about it) beside it, and on the right the project, which opens its screen.
 struct ToolHeader: View {
     @Environment(AppState.self) private var app
     @Binding var selection: Tool
     var takeaway: String?
 
     var body: some View {
-        HStack(alignment: .lastTextBaseline, spacing: S37.Space.s6) {
-            VStack(alignment: .leading, spacing: S37.Space.s1) {
-                Text(meta).font(.system(size: 12, weight: .medium, design: .monospaced)).tracking(0.96)
-                    .textCase(.uppercase).foregroundStyle(GO.C.phosphorFaint).lineLimit(1)
-                Text(selection.title).font(.fraunces(32)).tracking(-0.32).foregroundStyle(S37.C.ink)
-                    .lineLimit(1).fixedSize()
-            }
+        HStack(alignment: .firstTextBaseline, spacing: S37.Space.s6) {
+            Text(selection.title).font(.fraunces(32)).tracking(-0.32).foregroundStyle(S37.C.ink)
+                .lineLimit(1).fixedSize()
             Text(takeaway ?? selection.note).font(.system(size: 14, weight: .medium)).foregroundStyle(S37.C.inkSecondary)
                 .lineLimit(2).frame(maxWidth: 520, alignment: .leading)
             Spacer(minLength: S37.Space.s3)
+            if app.jobs.runningCount > 0 {
+                Text(app.jobs.runningCount == 1 ? "1 job running" : "\(app.jobs.runningCount) jobs running")
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.sageInk).lineLimit(1)
+            }
             Button { selection = .project } label: {
-                Label(app.project?.manifest.name ?? "No project", systemImage: Tool.project.symbol).lineLimit(1)
+                Label(projectLabel, systemImage: Tool.project.symbol).lineLimit(1)
             }
             .buttonStyle(S37ButtonStyle())
             .keyboardShortcut(Tool.project.key, modifiers: .command)
             .help("Project (⌘1)")
-            .alignmentGuide(.lastTextBaseline) { $0[VerticalAlignment.center] + 4 }
+            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
         }
         .s37HeaderShadow()
     }
 
-    private var meta: String {
-        var parts = ["AeroBench", app.project.map { app.hasUnsavedChanges ? "\($0.manifest.name), edited" : $0.manifest.name } ?? "No project open"]
-        if app.jobs.runningCount > 0 { parts.append(app.jobs.runningCount == 1 ? "1 job running" : "\(app.jobs.runningCount) jobs running") }
-        return parts.joined(separator: " · ")
+    private var projectLabel: String {
+        guard let project = app.project else { return "No project" }
+        return app.hasUnsavedChanges ? "\(project.manifest.name), edited" : project.manifest.name
     }
 }
 
@@ -262,6 +260,6 @@ struct UpdateBanner: View {
             Button("Update & Restart") { app.updateAndRestart() }
                 .buttonStyle(S37ButtonStyle())
         }
-        .s37Pane(radius: S37.Radius.lgIn, padding: S37.Space.s2)
+        .s37Pane(radius: 22 + S37.Space.s2, padding: S37.Space.s2)  // concentric with the 44-point capsule buttons
     }
 }
