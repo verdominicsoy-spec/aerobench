@@ -91,16 +91,21 @@ class History:
         self.current = base
         self.steps: list = []  # (maker, shape before)
 
+    def copy(self) -> "History":
+        h = History(self.current)
+        h.steps = list(self.steps)
+        return h
+
     def apply(self, maker, before) -> None:
         self.current = maker.Shape()
         self.steps.append((maker, Topology(self.current)))
 
-    def forward(self, sub) -> list:
+    def forward(self, sub, start: int = 0) -> list:
         # IsDeleted is unreliable here (a fillet reports untouched edges as
         # deleted), so a piece is gone when it was not modified and is not
         # in that step's result.
         pieces = [sub]
-        for maker, result in self.steps:
+        for maker, result in self.steps[start:]:
             nxt = []
             for p in pieces:
                 mod = list(maker.Modified(p))

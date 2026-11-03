@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from OCP.Bnd import Bnd_Box
 from OCP.BRepBndLib import BRepBndLib
@@ -207,3 +209,108 @@ def test_pushpull_curved_face_refused():
     side = max(Topology(cyl).faces, key=area)
     with pytest.raises(EngineError, match="flat faces"):
         ops.pushpull(cyl, side, 5)
+
+
+# The rebuild ----------------------------------------------------------------
+
+from aeroengine.cad.edit import build as rebuild  # noqa: E402
+
+
+def R(src, kind, i=None, **kw):
+    return {"src": src, "kind": kind, **({"i": i} if i is not None else {}), **kw}
+
+
+def F(fid, kind, refs, **values):
+    return {"id": fid, "kind": kind, "refs": refs, "values": values}
+
+
+@pytest.fixture
+def box_step(tmp_path):
+    return write_parts(tmp_path / "box.stp", {"Box": box()})
+
+
+def part_topology(step):
+    return Topology(load_part(step, None)[0])
+
+
+def edge_index(topo, c):
+    return next(i for i, e in enumerate(topo.edges) if all(abs(a - b) < 1e-6 for a, b in zip(centre(e), c)))
+
+
+def statuses(r):
+    return [f["status"] for f in r["features"]]
+
+
+def test_a_fillet_builds_and_maps_faces(box_step, tmp_path):
+    e0 = edge_index(part_topology(box_step), (50, 0, 0))
+    r = rebuild.build(box_step, None, [F("f1", "fillet", [R("part", "edge", e0)], radius=10)], None, tmp_path)
+    assert statuses(r) == ["ok"] and r["valid"] and r["closed"] and r["part_valid"]
+    from aeroengine.cad.meshio import read_glb
+    tris = sum(m.triangle_count for m in read_glb(Path(r["glb"])).meshes)
+    assert sum(f["count"] for f in r["faces"]) == tris
+    assert any(f["ref"] and f["ref"]["src"] == "f1" for f in r["faces"])
+    assert sum(1 for f in r["faces"] if f["ref"] and f["ref"]["src"] == "part") == 6
+
+
+def test_a_failed_feature_stops_the_rebuild(box_step, tmp_path):
+    t = part_topology(box_step)
+    feats = [F("f1", "fillet", [R("part", "edge", edge_index(t, (50, 0, 0)))], radius=150),
+             F("f2", "chamfer", [R("part", "edge", edge_index(t, (50, 100, 100)))], distance=5)]
+    r = rebuild.build(box_step, None, feats, None, tmp_path)
+    assert statuses(r) == ["failed", "skipped"] and r["closed"]
+    assert "fillet" in r["features"][0]["message"]
+
+
+def test_a_vanished_reference_is_lost_not_moved(box_step, tmp_path):
+    e0 = edge_index(part_topology(box_step), (50, 0, 0))
+    feats = [F("f1", "fillet", [R("part", "edge", e0)], radius=10), F("f2", "chamfer", [R("part", "edge", e0)], distance=5)]
+    assert statuses(rebuild.build(box_step, None, feats, None, tmp_path)) == ["ok", "lost"]
+
+
+def test_a_changed_file_loses_part_references(box_step, tmp_path):
+    e0 = edge_index(part_topology(box_step), (50, 0, 0))
+    r = rebuild.build(box_step, None, [F("f1", "fillet", [R("part", "edge", e0)], radius=10)], "0:0:old", tmp_path)
+    assert statuses(r) == ["lost"]
+
+
+def test_the_cache_reuses_the_prefix(box_step, tmp_path, monkeypatch):
+    t = part_topology(box_step)
+    calls = []
+    real = rebuild.ops.fillet
+    monkeypatch.setattr(rebuild.ops, "fillet", lambda *a: calls.append(1) or real(*a))
+    f1 = F("f1", "fillet", [R("part", "edge", edge_index(t, (50, 0, 0)))], radius=10)
+    far = R("part", "edge", edge_index(t, (50, 100, 100)))
+    rebuild.build(box_step, None, [f1, F("f2", "chamfer", [far], distance=5)], None, tmp_path)
+    rebuild.build(box_step, None, [f1, F("f2", "chamfer", [far], distance=6)], None, tmp_path)
+    assert len(calls) == 1
+
+
+def test_endplate_edit_end_to_end(tmp_path):
+    step = write_parts(tmp_path / "ep.stp", {"Endplate": BRepPrimAPI_MakeBox(300, 8, 200).Shape()})
+    t = part_topology(step)
+    front, back = edge_index(t, (150, 0, 200)), edge_index(t, (150, 8, 200))
+    pts = [F("p1", "point", [R("part", "edge", front)], t=0.2), F("p2", "point", [R("part", "edge", front)], t=0.8),
+           F("p3", "point", [R("part", "edge", back)], t=0.2), F("p4", "point", [R("part", "edge", back)], t=0.8)]
+    # the edges run either way: find which ends the points landed on
+    xs = {p["id"]: ops.point_on_edge(t.edges[p["refs"][0]["i"]], p["values"]["t"]).X() for p in pts}
+    a1, a2 = sorted(["p1", "p2"], key=xs.get)
+    b1, b2 = sorted(["p3", "p4"], key=xs.get)
+    lines = [F("sa", "spline", [R(a1, "point"), R(a2, "point")]), F("sb", "spline", [R(b1, "point"), R(b2, "point")]),
+             F("sc", "spline", [R(a1, "point"), R(b1, "point")]), F("sd", "spline", [R(a2, "point"), R(b2, "point")])]
+    plane = F("pl", "plane", [R("std", "plane", name="XY"), R(a1, "point")])
+    ext = [F(f"x{s['id']}", "extrude", [R(s["id"], "curve"), R("pl", "plane")], distance=20, symmetric=0) for s in lines]
+
+    def rim(fid, z):  # index of the extruded face's edge at height z (top or bottom)
+        r = rebuild.build(step, None, pts + lines + [plane] + ext, None, tmp_path)
+        e = next(e for e in r["edges"] if e["ref"]["src"] == fid and all(abs(p[2] - z * 1e-3) < 1e-6 for p in e["points"]))
+        return e["ref"]["i"]
+
+    top = F("ft", "fill", [R(x["id"], "edge", rim(x["id"], 220)) for x in (ext[0], ext[3], ext[1], ext[2])])
+    bottom = F("fb", "fill", [R(x["id"], "edge", rim(x["id"], 200)) for x in (ext[0], ext[3], ext[1], ext[2])])
+    add = F("ad", "add", [R(x["id"], "surface") for x in ext] + [R("ft", "surface"), R("fb", "surface")])
+    fil = F("fl", "fillet", [R("part", "edge", edge_index(t, (150, 0, 0)))], radius=2)
+    r = rebuild.build(step, None, pts + lines + [plane] + ext + [top, bottom, add, fil], None, tmp_path)
+    assert all(s == "ok" for s in statuses(r)), r["features"]
+    assert r["valid"] and r["closed"]
+    assert volume(rebuild.final_shape(step, None, pts + lines + [plane] + ext + [top, bottom, add], None)) == \
+        pytest.approx(300 * 8 * 200 + 180 * 8 * 20, rel=1e-4)

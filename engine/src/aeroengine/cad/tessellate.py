@@ -112,7 +112,8 @@ def _read(path: Path) -> TDocStd_Document:
     return doc
 
 
-def _mesh_shape(shape, lin: float, ang: float) -> Mesh | None:
+def _mesh_shape(shape, lin: float, ang: float, ranges: list | None = None) -> Mesh | None:
+    """`ranges`, when given, receives (face, first triangle, triangle count) per face."""
     BRepMesh_IncrementalMesh(shape, lin, False, ang, True)
     positions, indices = [], []
     base = 0
@@ -136,6 +137,8 @@ def _mesh_shape(shape, lin: float, ang: float) -> Mesh | None:
         t -= 1
         if face.Orientation() == TopAbs_REVERSED:
             t = t[:, ::-1]
+        if ranges is not None:
+            ranges.append((face, sum(len(x) for x in indices), len(t)))
         positions.append(pts)
         indices.append(t + base)
         base += n
