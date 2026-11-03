@@ -178,14 +178,19 @@ extension AppState {
             show("Could not save the repair decisions", error)  // the repair itself still runs
         }
         let accept = plan.items.filter { cad.bodyDecisions[$0.id] == true }.map { JSONValue.string($0.id) }
+        // The plan's own limit, so gaps are sorted as they were when the user decided.
         cad.bodyJob = jobs.submit(command: "cad-repair-body", params: [
-            "path": .string(url.path), "limit_mm": .double(cad.bodyLimitMM), "accept": .array(accept),
+            "path": .string(url.path), "limit_mm": .double(plan.limitMM), "accept": .array(accept),
         ], in: jobsRoot) { [weak self] item in
             guard let self, item.status == .succeeded, let text = item.resultText else { return }
             do {
                 let done = try BodyRepairResult.decode(resultFile: Data(text.utf8))
+                self.cad.setBodyPlan(done)
                 self.cad.bodySummary = Self.describe(done)
-                self.saveRepaired(item, name: done.output, beside: url)
+                // Closing a gap can uncover a new one: show it rather than save past it.
+                if self.cad.pendingBodyItems == 0 {
+                    self.saveRepaired(item, name: done.output, beside: url)
+                }
             } catch {
                 self.show("Could not read the repair result", error)
             }

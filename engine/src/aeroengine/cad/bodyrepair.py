@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 from OCP.Bnd import Bnd_Box
-from OCP.BRep import BRep_Builder
+from OCP.BRep import BRep_Builder, BRep_Tool
 from OCP.BRepAdaptor import BRepAdaptor_Curve
 from OCP.BRepBndLib import BRepBndLib
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse
@@ -39,7 +39,7 @@ from OCP.TDocStd import TDocStd_Document
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_SHELL, TopAbs_SOLID
 from OCP.TopExp import TopExp
 from OCP.TopLoc import TopLoc_Location
-from OCP.TopoDS import TopoDS, TopoDS_Compound
+from OCP.TopoDS import TopoDS, TopoDS_Compound, TopoDS_Shell
 from OCP.OCP.collections import List_TopoDS_Shape as TopTools_ListOfShape
 from OCP.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_ShapeTool
 
@@ -57,16 +57,25 @@ def _edge_faces(shape) -> EdgeFaceMap:
     return emap
 
 
+def _edges_with(shape, faces) -> list:
+    # Degenerated edges (a cone's apex, a sphere's poles) touch one face but are not open.
+    emap = _edge_faces(shape)
+    out = []
+    for i in range(1, emap.Extent() + 1):
+        e = TopoDS.Edge(emap.FindKey(i))
+        if faces(emap.FindFromIndex(i).Size()) and not BRep_Tool.Degenerated_s(e):
+            out.append(e)
+    return out
+
+
 def free_edges(shape) -> list:
     """Edges with a face on one side only."""
-    emap = _edge_faces(shape)
-    return [TopoDS.Edge(emap.FindKey(i)) for i in range(1, emap.Extent() + 1) if emap.FindFromIndex(i).Size() == 1]
+    return _edges_with(shape, lambda n: n == 1)
 
 
 def nonmanifold_edges(shape) -> list:
     """Edges shared by three or more faces."""
-    emap = _edge_faces(shape)
-    return [TopoDS.Edge(emap.FindKey(i)) for i in range(1, emap.Extent() + 1) if emap.FindFromIndex(i).Size() >= 3]
+    return _edges_with(shape, lambda n: n >= 3)
 
 
 def clean_part(shape, tol_mm: float = CLEAN_TOL_MM):
@@ -105,13 +114,19 @@ def sew_stepped(shape, limit_mm: float):
     with no free edges comes back untouched, with tolerance None."""
     if not free_edges(shape):
         return shape, None
+    # When a wider gap stays open, every step leaves free edges; sewing the
+    # whole part at the limit would then stitch thin features for nothing,
+    # so keep the smallest step that reaches the fewest free edges.
     steps = [s for s in SEW_STEPS_MM if s < limit_mm] + [limit_mm]
-    out = shape
+    best = None
     for tol in steps:
         out = _sew(shape, tol)
-        if not free_edges(out):
+        n = len(free_edges(out))
+        if best is None or n < best[0]:
+            best = (n, out, tol)
+        if n == 0:
             break
-    return out, tol
+    return best[1], best[2]
 
 
 def to_solids(shape):
@@ -129,6 +144,16 @@ def to_solids(shape):
             continue
         fix = ShapeFix_Solid()
         solids.append(TopoDS.Solid(fix.SolidFromShell(shell)))
+    # A face sewing left on its own is in no shell; keep it as an open one
+    # so nothing is dropped from the output.
+    in_shell = [f for s in _subshapes(shape, TopAbs_SHELL) for f in _subshapes(s, TopAbs_FACE)]
+    b = BRep_Builder()
+    for f in _subshapes(shape, TopAbs_FACE):
+        if not any(f.IsSame(g) for g in in_shell):
+            shell = TopoDS_Shell()
+            b.MakeShell(shell)
+            b.Add(shell, f)
+            open_.append(shell)
     return solids, open_
 
 
@@ -233,12 +258,17 @@ def bridge(shape, gap: Gap):
     either side do not move. A ruled loft rather than BRepFill.Face, which
     follows the curves' parameter direction and twists when they run
     opposite ways."""
-    loft = BRepOffsetAPI_ThruSections(False, True)
-    for e in gap.edges:
-        loft.AddWire(BRepBuilderAPI_MakeWire(e).Wire())
-    loft.CheckCompatibility(True)
-    loft.Build()
-    return _with(shape, loft.Shape())
+    try:
+        loft = BRepOffsetAPI_ThruSections(False, True)
+        for e in gap.edges:
+            loft.AddWire(BRepBuilderAPI_MakeWire(e).Wire())
+        loft.CheckCompatibility(True)
+        loft.Build()
+        if not loft.IsDone():
+            return None
+        return _with(shape, loft.Shape())
+    except Exception:
+        return None
 
 
 def find_holes(shape, gaps: list[Gap]) -> list[Hole]:
@@ -286,12 +316,18 @@ def item_id(kind: str, part: str, centre_mm) -> str:
     return f"{kind}:{part}:{x:.1f},{y:.1f},{z:.1f}"
 
 
-def match_decision(kind: str, part: str, centre_mm, saved: list[dict], within_mm: float = 3.0) -> str | None:
+def match_decision(kind: str, part: str, centre_mm, saved: list[dict], within_mm: float = 3.0,
+                   size_mm: float | None = None) -> str | None:
     """The decision of the nearest saved entry of the same kind and part
-    within `within_mm` (part-local), or None."""
+    within `within_mm` (part-local), or None. With a size, the saved size
+    must be close too, so a saved accept for a 2 mm gap never closes a 9 mm
+    one in the next revision."""
     best, found = within_mm, None
     for d in saved:
         if d.get("kind") != kind or d.get("part") != part:
+            continue
+        old = d.get("size_mm")
+        if size_mm is not None and old is not None and abs(size_mm - old) > max(0.5, 0.25 * old):
             continue
         dist = sum((a - b) ** 2 for a, b in zip(centre_mm, d.get("centre_mm", ()))) ** 0.5
         if dist <= best:
@@ -380,7 +416,7 @@ def repair_body(path: Path, out: Path, limit_mm: float = 0.5, accept: set[str] |
             iid = item_id(kind, name, centre_mm)
             decision = None
             if decide:
-                decision = "accept" if iid in accept else match_decision(kind, name, centre_mm, saved)
+                decision = "accept" if iid in accept else match_decision(kind, name, centre_mm, saved, size_mm=size_mm)
             items.append({"id": iid, "kind": kind, "part": name, "size_mm": None if size_mm is None else round(size_mm, 4),
                           "centre": _world([centre_mm], worlds[0])[0], "centre_mm": [round(c, 4) for c in centre_mm],
                           "lines": [_world(line, w) for w in worlds for line in lines_mm], "fix": fix, "decision": decision})
@@ -394,19 +430,22 @@ def repair_body(path: Path, out: Path, limit_mm: float = 0.5, accept: set[str] |
             auto["parts_sewn"] += 1
             auto["max_sew_mm"] = max(auto["max_sew_mm"] or 0.0, tol)
 
-        to_bridge = []
+        to_bridge = []  # (centre, its item or None when automatic)
         for g in find_gaps(shape):
             if g.size_mm <= limit_mm:  # sewing did not close it: still automatic
-                to_bridge.append(g.centre_mm)
+                to_bridge.append((g.centre_mm, None))
             elif g.size_mm <= QUEUE_MAX_MM:
                 if item("gap", g.centre_mm, g.lines_mm, g.size_mm, "bridge") == "accept":
-                    to_bridge.append(g.centre_mm)
+                    to_bridge.append((g.centre_mm, items[-1]))
             else:
                 item("wide_gap", g.centre_mm, g.lines_mm, g.size_mm, decide=False)
-        for c in to_bridge:  # bridging rebuilds edges, so find each gap again by its centre
+        for c, it in to_bridge:  # bridging rebuilds edges, so find each gap again by its centre
             g = next((g for g in find_gaps(shape) if max(abs(a - b) for a, b in zip(g.centre_mm, c)) < 0.01), None)
-            if g is not None:
-                shape = bridge(shape, g)
+            bridged = bridge(shape, g) if g is not None else None
+            if bridged is not None:
+                shape = bridged
+            elif it is not None:
+                it["fix"] = "failed"  # the item still says accept: the user chose it, it could not be done
 
         for h in find_holes(shape, find_gaps(shape)):
             filled = fill(shape, h)

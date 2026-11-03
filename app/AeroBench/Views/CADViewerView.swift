@@ -315,7 +315,7 @@ struct BodyRepairSection: View {
                     }
                     .frame(minHeight: 120, maxHeight: 240)
                     HStack {
-                        Button("Accept All") { for item in review where item.fix != "open_shell" { cad.bodyDecisions[item.id] = true } }
+                        Button("Accept All") { for item in review where item.fix != "open_shell" && item.fix != "failed" { cad.bodyDecisions[item.id] = true } }
                         Spacer()
                         Text("\(cad.pendingBodyItems) to decide").font(.caption).foregroundStyle(.secondary)
                         Button("Apply") { app.applyBodyRepair() }.disabled(running)
@@ -346,7 +346,8 @@ struct BodyRepairRow: View {
     var body: some View {
         let cad = app.cad
         HStack {
-            Text(item.kind == "gap" ? "Gap" : item.fix == "fill" ? "Hole" : "Hole, can\u{2019}t patch")
+            Text(item.fix == "failed" ? "Gap, bridge failed"
+                 : item.kind == "gap" ? "Gap" : item.fix == "fill" ? "Hole" : "Hole, can\u{2019}t patch")
             Text(item.part).foregroundStyle(.secondary).lineLimit(1)
             Spacer()
             if let size = item.sizeMM {
@@ -360,7 +361,7 @@ struct BodyRepairRow: View {
                 Text("Skip").tag(Bool?.some(false))
             }
             .labelsHidden().pickerStyle(.segmented).frame(width: 150)
-            .disabled(item.fix == "open_shell")
+            .disabled(item.fix == "open_shell" || item.fix == "failed")
         }
     }
 }

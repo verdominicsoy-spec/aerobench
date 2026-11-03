@@ -77,9 +77,9 @@ def test_thin_plate_survives():
 
 def test_gap_over_the_limit_stays_open():
     out, tol = sew_stepped(faces_of_box(100, 100, 100, move=("top", gp_Vec(0, 0, 5))), 0.5)
-    assert tol == 0.5 and free_edges(out)
+    assert tol == 0.01 and free_edges(out)  # nothing closes past the first step, so no wider sewing
     solids, open_ = to_solids(out)
-    assert solids == [] and len(open_) == 1
+    assert solids == [] and len(open_) == 2  # the five sewn faces, and the loose top on its own
 
 
 def test_a_5mm_gap_is_found_and_bridged():
@@ -194,7 +194,7 @@ def test_plan_then_apply(tmp_path):
     out = tmp_path / "out.step"
     plan = bodyrepair.repair_body(step, out)
     assert {i["kind"] for i in plan["items"]} == {"gap"} and not plan["result"]["closed"]
-    assert all(i["decision"] is None for i in plan["items"]) and plan["result"]["open_shells"] == 1
+    assert all(i["decision"] is None for i in plan["items"]) and plan["result"]["open_shells"] == 2
     assert out.exists()
     done = bodyrepair.repair_body(step, out, accept={i["id"] for i in plan["items"]})
     assert done["result"]["closed"] and done["result"]["solids"] == 1
@@ -246,3 +246,47 @@ def test_sample_car_through_the_engine(engine, car_files, tmp_path):
     r = json.loads((tmp_path / "w" / "result.json").read_text())["data"]
     assert r["result"]["closed"] and r["result"]["solids"] < 8  # wing elements overlap and fuse; wheels stay apart
     assert (tmp_path / "w" / r["output"]).exists()
+
+
+# Final review fixes ------------------------------------------------------------
+
+
+def test_a_closed_cone_needs_nothing(tmp_path):
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeCone, BRepPrimAPI_MakeSphere
+
+    cone = BRepPrimAPI_MakeCone(50, 0, 100).Shape()
+    assert not free_edges(cone)  # the apex is a degenerated edge, not an open one
+    assert not free_edges(BRepPrimAPI_MakeSphere(50).Shape())
+    r = bodyrepair.repair_body(write_parts(tmp_path / "c.stp", {"Nose": cone}), tmp_path / "out.step")
+    assert r["items"] == [] and r["result"]["closed"] and r["auto"]["parts_sewn"] == 0
+
+
+def faces_in(shape) -> int:
+    exp, n = TopExp_Explorer(shape, TopAbs_FACE), 0
+    while exp.More():
+        n += 1
+        exp.Next()
+    return n
+
+
+def test_loose_faces_are_kept_as_open_shells(tmp_path):
+    for mm in (5, 12):
+        out = tmp_path / f"out{mm}.step"
+        r = bodyrepair.repair_body(write_parts(tmp_path / f"g{mm}.stp", {"Box": gapped(mm)}), out)
+        assert faces_in(read_back(out)) == 6, mm
+        assert r["result"]["open_parts"] == ["Box"]
+
+
+def test_a_failed_bridge_is_reported_not_raised(tmp_path, monkeypatch):
+    step = write_parts(tmp_path / "g.stp", {"Box": gapped(5)})
+    plan = bodyrepair.repair_body(step, tmp_path / "out.step")
+    monkeypatch.setattr(bodyrepair, "bridge", lambda shape, gap: None)
+    r = bodyrepair.repair_body(step, tmp_path / "out.step", accept={i["id"] for i in plan["items"]})
+    assert all(i["fix"] == "failed" for i in r["items"] if i["kind"] == "gap")
+    assert not r["result"]["closed"] and (tmp_path / "out.step").exists()
+
+
+def test_a_saved_decision_needs_a_similar_size():
+    saved = [{"kind": "gap", "part": "Floor", "centre_mm": [100, 0, 5], "size_mm": 2.0, "decision": "accept"}]
+    assert match_decision("gap", "Floor", (100, 0, 5), saved, size_mm=2.3) == "accept"
+    assert match_decision("gap", "Floor", (100, 0, 5), saved, size_mm=9.0) is None

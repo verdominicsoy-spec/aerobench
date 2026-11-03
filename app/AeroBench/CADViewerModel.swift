@@ -203,7 +203,7 @@ final class CADViewerModel {
     }
 
     var pendingBodyItems: Int {
-        (bodyPlan?.items ?? []).filter { $0.reviewable && $0.fix != "open_shell" && bodyDecisions[$0.id] == nil }.count
+        (bodyPlan?.items ?? []).filter { $0.reviewable && $0.fix != "open_shell" && $0.fix != "failed" && bodyDecisions[$0.id] == nil }.count
     }
 
     private func showSelectedBodyItem() {
