@@ -20,6 +20,7 @@ from OCP.Bnd import Bnd_Box
 from OCP.BRepAdaptor import BRepAdaptor_Curve
 from OCP.BRepBndLib import BRepBndLib
 from OCP.BRepCheck import BRepCheck_Analyzer
+from OCP.gp import gp_Pnt
 from OCP.TopAbs import TopAbs_SOLID
 
 from ...job import EngineError
@@ -98,7 +99,12 @@ def _apply(feature: dict, ctx: _Context) -> None:
     if kind == "point":
         host = refs[0]
         sub = get(host)
-        p = ops.point_on_edge(sub, v.get("t", 0.5)) if host["kind"] == "edge" else ops.point_on_face(sub, v.get("u", 0.5), v.get("v", 0.5))
+        if "x" in v:  # a click: projected onto the host each rebuild, so it stays on it
+            p = ops.point_near(sub, gp_Pnt(v["x"], v.get("y", 0.0), v.get("z", 0.0)))
+        elif host["kind"] == "edge":
+            p = ops.point_on_edge(sub, v.get("t", 0.5))
+        else:
+            p = ops.point_on_face(sub, v.get("u", 0.5), v.get("v", 0.5))
         s.side[fid] = {"point": p}
     elif kind == "spline":
         s.side[fid] = {"curve": ops.spline([get(r) for r in refs])}

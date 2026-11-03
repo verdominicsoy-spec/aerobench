@@ -9,7 +9,8 @@ from __future__ import annotations
 from OCP.BRep import BRep_Tool
 from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Surface
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut, BRepAlgoAPI_Fuse
-from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_Transform
+from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeVertex, BRepBuilderAPI_Transform
+from OCP.BRepExtrema import BRepExtrema_DistShapeShape
 from OCP.BRepFilletAPI import BRepFilletAPI_MakeChamfer, BRepFilletAPI_MakeFillet
 from OCP.BRepOffsetAPI import BRepOffsetAPI_MakeFilling
 from OCP.BRepPrimAPI import BRepPrimAPI_MakePrism
@@ -47,6 +48,14 @@ def point_on_face(face, u: float, v: float) -> gp_Pnt:
     s = BRepAdaptor_Surface(face)
     return s.Value(s.FirstUParameter() + (s.LastUParameter() - s.FirstUParameter()) * u,
                    s.FirstVParameter() + (s.LastVParameter() - s.FirstVParameter()) * v)
+
+
+def point_near(sub, p: gp_Pnt) -> gp_Pnt:
+    """The point of an edge or face nearest `p`: where a click lands on it."""
+    d = BRepExtrema_DistShapeShape(BRepBuilderAPI_MakeVertex(p).Vertex(), sub)
+    if not d.IsDone() or d.NbSolution() == 0:
+        raise EngineError("the point could not be placed on that edge or face")
+    return d.PointOnShape2(1)
 
 
 def spline(points: list[gp_Pnt]):

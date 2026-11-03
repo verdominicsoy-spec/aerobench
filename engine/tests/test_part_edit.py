@@ -352,3 +352,10 @@ def test_part_save_refuses_a_failed_feature(engine, box_step, tmp_path):
     code, events, _ = engine.run("part-save", {"params": {"path": str(box_step),
                                  "features": [F("f1", "fillet", [R("part", "edge", e0)], radius=150)]}}, tmp_path / "w", timeout=120)
     assert code != 0 and any("before saving" in (ev.get("msg") or "") for ev in events)
+
+
+def test_a_clicked_point_is_projected_onto_its_host(box_step, tmp_path):
+    t = part_topology(box_step)
+    top = next(i for i, f in enumerate(t.faces) if centre(f)[2] == pytest.approx(100))
+    r = rebuild.build(box_step, None, [F("p1", "point", [R("part", "face", top)], x=30, y=40, z=100.4)], None, tmp_path)
+    assert statuses(r) == ["ok"] and r["points"][0]["position"] == pytest.approx([0.03, 0.04, 0.1])
