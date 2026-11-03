@@ -64,7 +64,9 @@ def object_surface(vol: Volume, ground_z: float | None = 0.0, smooth: float = 1.
     if ground_z is not None:
         occ[:, :, vol.z <= ground_z + 0.5 * (vol.z[1] - vol.z[0])] = 0
     if smooth > 0:
-        occ = gaussian_filter(occ, smooth)
+        # Smoothing alone erases parts one or two cells thick (strakes,
+        # endplates, lips); every geometry cell stays inside the surface.
+        occ = np.maximum(gaussian_filter(occ, smooth), 0.6 * occ)
     if occ.max() <= 0.5:
         return Mesh(np.zeros((0, 3), np.float32), np.zeros((0, 3), np.float32), np.zeros((0, 3), np.uint32), "Object")
     return _mesh_from_field(occ, 0.5, 0.0, vol, "Object")

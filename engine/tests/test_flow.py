@@ -237,6 +237,19 @@ def test_object_surface_recovers_the_body(sweep):
     assert enclosed_volume(mesh) == pytest.approx(exact, rel=0.15)
 
 
+def test_object_keeps_parts_one_cell_thick():
+    from aeroengine.flow.iso import object_surface
+
+    solid = np.zeros((30, 30, 30), np.uint8)
+    solid[5:15, 5:25, 5:15] = 1  # body
+    solid[20, 5:25, 5:25] = 1  # a plate one cell thick, apart from it
+    c = np.linspace(0, 1, 30)
+    vol = Volume(np.zeros(solid.shape, np.float32), c, c, c, list(range(30)), -1, 1, np.zeros((2, 3)), solid)
+    mesh = object_surface(vol, ground_z=None)
+    assert mesh.positions[:, 0].max() > c[20]
+    assert mesh.positions[:, 2].max() > c[23]
+
+
 def test_object_ignores_the_ground_slab(tmp_path):
     from aeroengine.flow.iso import object_surface
 

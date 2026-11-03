@@ -1285,8 +1285,13 @@ struct WingInspector: View {
         }
         .disabled(running)
         HStack {
-            Stepper("Trials: \(lab.optimise.trials)", value: Binding(get: { lab.optimise.trials }, set: { lab.optimise.trials = $0 }),
-                    in: 2...2000, step: 10)
+            let trials = Binding(get: { lab.optimise.trials }, set: { lab.optimise.trials = min(max($0, 2), 2000) })
+            Text("Trials:")
+            TextField("Trials", value: trials, format: .number)
+                .labelsHidden()
+                .multilineTextAlignment(.trailing)
+                .frame(width: 60)
+            Stepper("Trials", value: trials, in: 2...2000, step: 10).labelsHidden()
             if lab.optimise.trials != lab.optimise.suggestedTrials {
                 Button("Use \(lab.optimise.suggestedTrials)") { lab.optimise.trials = lab.optimise.suggestedTrials }
                     .buttonStyle(.link).font(.caption)

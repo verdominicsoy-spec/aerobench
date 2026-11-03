@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import cv2
 import numpy as np
 from scipy.ndimage import uniform_filter1d
 from scipy.spatial import cKDTree
@@ -187,6 +188,8 @@ class ColorLUT:
 
 
 def lab_distance(rgb_u8: np.ndarray, colour_rgb) -> np.ndarray:
-    lab = rgb2lab(rgb_u8.reshape(1, -1, 3).astype(float) / 255)[0]
-    ref = rgb2lab((np.asarray(colour_rgb, float) / 255).reshape(1, 1, 3))[0, 0]
+    # OpenCV's float Lab is within 0.5 of skimage's and runs on full-size
+    # frames in a fraction of the time.
+    lab = cv2.cvtColor(np.ascontiguousarray(rgb_u8, np.uint8).reshape(1, -1, 3).astype(np.float32) / 255, cv2.COLOR_RGB2Lab)[0]
+    ref = rgb2lab((np.asarray(colour_rgb, float) / 255).reshape(1, 1, 3))[0, 0].astype(np.float32)
     return np.linalg.norm(lab - ref, axis=1).reshape(rgb_u8.shape[:-1])

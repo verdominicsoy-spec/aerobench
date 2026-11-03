@@ -429,6 +429,22 @@ def track_ground(source: "FrameSource", cal: Calibration, frames: list[int], sam
             "residual_max_px": worst}
 
 
+def _geometry(frame: np.ndarray, cal: Calibration, u, v) -> np.ndarray:
+    """1 where a full-size frame pixel matches a mask colour, tested only
+    inside the pixel span (u, v) the grid covers."""
+    out = np.zeros(frame.shape[:2], np.float32)
+    u0, u1 = max(int(min(u)) - 2, 0), min(int(max(u)) + 3, frame.shape[1])
+    v0, v1 = max(int(min(v)) - 2, 0), min(int(max(v)) + 3, frame.shape[0])
+    if u1 <= u0 or v1 <= v0:
+        return out
+    part = frame[v0:v1, u0:u1]
+    hit = np.zeros(part.shape[:2], bool)
+    for c in cal.mask_colors:
+        hit |= colormap.lab_distance(part, c) < cal.mask_tolerance
+    out[v0:v1, u0:u1] = hit
+    return out
+
+
 def _invert_slice(frame: np.ndarray, cal: Calibration, s, y: np.ndarray, z: np.ndarray,
                   lut: colormap.ColorLUT, excl: np.ndarray) -> tuple[np.ndarray, np.ndarray, dict]:
     # Pre-shrink so the grid samples about one pixel per cell (no aliasing).
@@ -450,11 +466,13 @@ def _invert_slice(frame: np.ndarray, cal: Calibration, s, y: np.ndarray, z: np.n
     values, dist = lut.invert(rgb)
     # Mask colours are geometry: no fluid there. Kept separately from other
     # empty cells (excluded, outside the frame, unrecognised colour) so the
-    # object can be shown.
-    solid = np.zeros(rgb.shape[:2], bool)
-    for c in cal.mask_colors:
-        solid |= colormap.lab_distance(rgb, c) < cal.mask_tolerance
-    solid &= ~ex
+    # object can be shown. Matched at full resolution, before the shrink:
+    # averaging first blends thin parts (strakes, endplates, lips) into the
+    # colours around them. A cell is geometry when a quarter of it is.
+    geo = _geometry(frame, cal, s.cu + s.sx * y[[0, -1]], s.cv - s.sy * z[[0, -1]])
+    if k > 1:
+        geo = cv2.resize(geo, (frame.shape[1] // k, frame.shape[0] // k), interpolation=cv2.INTER_AREA)
+    solid = (cv2.remap(geo, mu, mv, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0) >= 0.25) & ~ex
     empty = ex | (dist > cal.threshold) | solid
     values = values.astype(np.float32)
     if cal.median > 1 and (~empty).any():
