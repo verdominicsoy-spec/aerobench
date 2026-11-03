@@ -1434,8 +1434,9 @@ struct WingInspector: View {
         let lab = app.wingLab
         let add = lab.wing.carContribution(cl: cl, cd: cd)
         let project = app.workFolder
-        let old = asNew ? nil : lab.cardID.flatMap { id in CarStore.cards(project).first { $0.id == id } }
         let position = lab.wing.rulesFor
+        // Updating keeps the card's place on cars: never turn a front card into a rear one.
+        let old = asNew ? nil : lab.cardID.flatMap { id in CarStore.cards(project).first { $0.id == id && $0.position == position } }
         let count = CarStore.cards(project).filter { $0.position == position }.count
         let card = WingCard(id: old?.id ?? UUID().uuidString, name: old?.name ?? "\(position == .front ? "Front" : "Rear") \(count + 1)",
                             position: position, wing: lab.wing, cla: add.cla, cda: add.cda,

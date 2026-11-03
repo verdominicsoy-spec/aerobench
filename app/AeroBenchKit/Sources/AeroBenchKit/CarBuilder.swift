@@ -64,7 +64,7 @@ public struct CarResult: Codable, Equatable, Sendable {
         public var width: Double
         public var lift: Double  // N/m, up +
         public var drag: Double
-        public var xCp: Double  // mm, car x
+        public var xCp: Double?  // mm, car x; nil when the strip carries no lift
         public var converged: Bool
         public var reason: String?
         public var wingLift: [String: Double]
@@ -101,9 +101,34 @@ public struct CarResult: Codable, Equatable, Sendable {
     public var strips: [Strip]
     public var converged: Bool
     public var wings: [WingShare]
+    public var n: Int?  // strips across half the car
+    public var flow: JSONValue?  // the speed, ground and wheel options it was run with
+
+    /// Run with these settings: same strip count, and the same speeds and options, numbers
+    /// compared as numbers (the engine's 15.0 can come back as the integer 15).
+    public func ranWith(_ other: JSONValue, n: Int) -> Bool {
+        func same(_ a: JSONValue?, _ b: JSONValue?) -> Bool {
+            switch (a, b) {
+            case (.object(let x)?, .object(let y)?):
+                return Set(x.keys) == Set(y.keys) && x.keys.allSatisfy { same(x[$0], y[$0]) }
+            case (.int(let x)?, .double(let y)?), (.double(let y)?, .int(let x)?): return abs(Double(x) - y) < 1e-9
+            case (.double(let x)?, .double(let y)?): return abs(x - y) < 1e-9
+            default: return a == b
+            }
+        }
+        return self.n == n && same(flow, other)
+    }
+
+    /// Whether it ran over a moving ground (unverified on the real car), when recorded.
+    public var groundMoving: Bool? {
+        guard case .object(let f)? = flow, case .object(let g)? = f["ground"], case .bool(let m)? = g["moving"] else { return nil }
+        return m
+    }
 
     public init(mesh: String, speed: Double, cla: Double, cda: Double, rearShare: Double?, cla2dWings: Double,
-                strips: [Strip], converged: Bool, wings: [WingShare]) {
+                strips: [Strip], converged: Bool, wings: [WingShare], n: Int? = nil, flow: JSONValue? = nil) {
+        self.n = n
+        self.flow = flow
         self.mesh = mesh
         self.speed = speed
         self.cla = cla
@@ -116,7 +141,7 @@ public struct CarResult: Codable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case mesh, speed, cla, cda, strips, converged, wings
+        case mesh, speed, cla, cda, strips, converged, wings, n, flow
         case rearShare = "rear_share"
         case cla2dWings = "cla_2d_wings"
     }
@@ -228,17 +253,33 @@ public struct Combination: Codable, Equatable, Identifiable, Sendable {
     public var name: String
     public var front: Placement?
     public var rear: Placement?
+    public var full: CarResult?
+    // What the full result was run with: it is out of date once any of it changes.
+    public var fullFront: Placement?
+    public var fullRear: Placement?
     public var cardRevisions: [String: Int] = [:]
     public var baseRevision = 0
-    public var full: CarResult?
 
     public init(id: String, name: String) {
         self.id = id
         self.name = name
     }
 
+    public mutating func recordFull(_ result: CarResult, cards: [WingCard], baseRevision: Int) {
+        full = result
+        fullFront = front
+        fullRear = rear
+        cardRevisions = Dictionary(uniqueKeysWithValues: [front, rear].compactMap { $0 }.compactMap { p in
+            cards.first { $0.id == p.card }.map { ($0.id, $0.revision) }
+        })
+        self.baseRevision = baseRevision
+    }
+
+    /// The full result no longer describes this car: a wing moved or was swapped, a card was
+    /// edited, or the bare car was run again. Quick numbers are always current.
     public func isStale(cards: [WingCard], baseRevision: Int) -> Bool {
-        if baseRevision != self.baseRevision { return true }
+        guard full != nil else { return false }
+        if baseRevision != self.baseRevision || front != fullFront || rear != fullRear { return true }
         for p in [front, rear].compactMap({ $0 }) {
             guard let c = cards.first(where: { $0.id == p.card }) else { return true }
             if cardRevisions[c.id] != c.revision { return true }
@@ -252,6 +293,14 @@ public struct QuickResult: Equatable, Sendable {
     public var cda: Double
     public var rearShare: Double?
     public var usedEstimate: [WingPosition]
+    public var pendingEstimate: [WingPosition] = []  // re-estimate asked for, not back yet: the card's own numbers meanwhile
+}
+
+/// Whether a card placed at `height` (m) needs its numbers re-estimated there:
+/// off the height they were made at, or a front wing made in free air now over the ground.
+public func needsEstimate(_ card: WingCard, height: Double) -> Bool {
+    if let h = card.rideHeight { return abs(height - h) > 0.001 }
+    return card.position == .front
 }
 
 /// The base car's numbers plus each placed card's, each wing's downforce
@@ -262,19 +311,23 @@ public func quick(base: CarResult, combo: Combination, cards: [WingCard], setup:
                   estimate: (WingCard, Double) -> (cla: Double, cda: Double)?) -> QuickResult {
     var cla = base.cla, cda = base.cda
     var rear = (base.rearShare ?? 0) * base.cla
-    var used: [WingPosition] = []
+    var used: [WingPosition] = [], pending: [WingPosition] = []
     let xf = setup.axleX("F"), xr = setup.axleX("R")
     for p in [combo.front, combo.rear].compactMap({ $0 }) {
         guard let c = cards.first(where: { $0.id == p.card }) else { continue }
         var n = (cla: c.cla, cda: c.cda)
-        if let h = c.rideHeight, abs(p.height / 1000 - h) > 0.001, let e = estimate(c, p.height / 1000) {
-            n = e
-            used.append(c.position)
+        if needsEstimate(c, height: p.height / 1000) {
+            if let e = estimate(c, p.height / 1000) {
+                n = e
+                used.append(c.position)
+            } else {
+                pending.append(c.position)
+            }
         }
         let xcp = setup.axleX(c.position == .front ? "F" : "R") + p.x - c.xcp * 1000
         cla += n.cla
         cda += n.cda
         rear += n.cla * (xf - xcp) / (xf - xr)
     }
-    return QuickResult(cla: cla, cda: cda, rearShare: cla != 0 ? rear / cla : nil, usedEstimate: used)
+    return QuickResult(cla: cla, cda: cda, rearShare: abs(cla) > 1e-9 ? rear / cla : nil, usedEstimate: used, pendingEstimate: pending)
 }

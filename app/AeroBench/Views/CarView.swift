@@ -72,6 +72,10 @@ private struct BaseCarPane: View {
                     Toggle("Moving ground", isOn: $car.groundMoving)
                     if car.groundMoving { NumberField(label: "at", unit: "m/s", digits: 1, value: $car.groundSpeed) }
                 }
+                if car.groundMoving {
+                    Text("Unverified: on this car a moving ground gave non-physical forces. Results are marked.")
+                        .font(.caption).foregroundStyle(S37.C.ochre)
+                }
                 HStack {
                     Toggle("Rotating wheels", isOn: $car.wheelsRotating)
                     if car.wheelsRotating { NumberField(label: "at", unit: "m/s", digits: 1, value: $car.wheelsSpeed) }
@@ -90,8 +94,13 @@ private struct BaseCarPane: View {
                 if let j = car.baseJob, j.status == .failed {
                     Label(j.message ?? "The run failed", systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
                 }
+                if car.baseMismatch {
+                    Text("The bare car was run with other settings (strips, speed, ground or wheels): run it again for these.")
+                        .font(.caption).foregroundStyle(S37.C.inkSecondary)
+                }
                 if let b = car.base {
-                    Text(String(format: "ClA %.3f m²   CdA %.3f m²   rear %.0f %%", b.cla, b.cda, (b.rearShare ?? 0) * 100))
+                    Text(String(format: "ClA %.3f m²   CdA %.3f m²   ", b.cla, b.cda) + rearText(b.rearShare)
+                         + (b.groundMoving == true ? "   (moving ground, unverified)" : ""))
                         .monospacedDigit()
                     if !b.converged {
                         Text("\(b.strips.filter { !$0.converged }.count) of \(b.strips.count) strips did not converge")
@@ -278,9 +287,7 @@ private struct SideViewPane: View {
         guard let i = car.combos.firstIndex(where: { $0.id == car.selected }) else { return }
         let old = car.combos
         if pos == .front { car.combos[i].front = p } else { car.combos[i].rear = p }
-        if let p, let c = car.card(p.card), let h = c.rideHeight, abs(p.height / 1000 - h) > 0.001 {
-            app.estimateCard(c, height: p.height / 1000)
-        }
+        if let p, let c = car.card(p.card) { app.estimateCard(c, height: p.height / 1000) }
         guard undoable else { return }
         undo?.registerUndo(withTarget: car) { model in MainActor.assumeIsolated { model.combos = old } }
         undo?.setActionName("Move \(pos == .front ? "Front" : "Rear") Wing")
@@ -368,7 +375,7 @@ private struct CardsPane: View {
         let start = Placement(card: c.id, x: box.maxX - axle - 10, height: max(c.rideHeight.map { $0 * 1000 } ?? 0, box.minZ - s.groundZ) + 10)
         let placed = start.clamped(card: c, setup: s).0
         if c.position == .front { car.combos[i].front = placed } else { car.combos[i].rear = placed }
-        car.combos[i].cardRevisions[c.id] = c.revision
+        app.estimateCard(c, height: placed.height / 1000)
         app.saveCar()
     }
 }
@@ -454,15 +461,16 @@ private struct CombinationsPane: View {
                 if stale { Text("Out of date").font(.caption.weight(.semibold)).foregroundStyle(S37.C.clayInk) }
             }
             if let q = quick {
-                Text(String(format: "Quick: ClA %.3f   CdA %.3f   rear %.0f %%", q.cla, q.cda, (q.rearShare ?? 0) * 100)
-                     + (q.usedEstimate.isEmpty ? "" : "  (re-estimated at the placed height)"))
+                Text(String(format: "Quick: ClA %.3f   CdA %.3f   ", q.cla, q.cda) + rearText(q.rearShare)
+                     + (q.usedEstimate.isEmpty ? "" : "  (re-estimated at the placed height)")
+                     + (q.pendingEstimate.isEmpty ? "" : "  (card's own height: estimate pending)"))
                     .font(.caption).monospacedDigit()
             } else {
                 Text("Quick: run the bare car first").font(.caption).foregroundStyle(S37.C.inkSecondary)
             }
             if let f = combo.full {
-                Text(String(format: "Full (%@): ClA %.3f   CdA %.3f   rear %.0f %%", f.mesh, f.cla, f.cda, (f.rearShare ?? 0) * 100)
-                     + (f.converged ? "" : "  not converged"))
+                Text(String(format: "Full (%@): ClA %.3f   CdA %.3f   ", f.mesh, f.cla, f.cda) + rearText(f.rearShare)
+                     + (f.converged ? "" : "  not converged") + (f.groundMoving == true ? "  moving ground, unverified" : ""))
                     .font(.caption).monospacedDigit().foregroundStyle(f.converged ? S37.C.ink : S37.C.clayInk)
             }
             HStack {
@@ -493,12 +501,17 @@ private struct CombinationsPane: View {
     }
 
     private func send(_ combo: Combination, full: Bool, _ i: Int?) {
-        if let label = app.sendCarToLapSim(combo.id, full: full, into: i) {
-            note = "Lap Sim car \(label) now has \(combo.name) (\(full ? "full" : "quick") numbers)."
+        if let sent = app.sendCarToLapSim(combo.id, full: full, into: i) {
+            note = "Lap Sim car \(sent.label) now has \(combo.name) (\(full ? "full" : "quick") numbers)."
+                + (sent.warnings.isEmpty ? "" : " Note: " + sent.warnings.joined(separator: "; ") + ".")
         }
     }
 }
 
 private extension String {
     func ifEmpty(_ other: String) -> String { isEmpty ? other : self }
+}
+
+private func rearText(_ share: Double?) -> String {
+    share.map { String(format: "rear %.0f %%", $0 * 100) } ?? "no rear share (no net downforce)"
 }

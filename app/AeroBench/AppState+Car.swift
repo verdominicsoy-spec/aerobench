@@ -12,12 +12,25 @@ extension AppState {
         return car.engine
     }
 
-    func loadCar() { car.load(project: workFolder) }
+    func loadCar() {
+        car.load(project: workFolder)
+        requestEstimates()
+    }
+
+    /// Asks for every placed card's re-estimate the quick sums need (after loading, assigning, moving).
+    func requestEstimates() {
+        for combo in car.combos {
+            for p in [combo.front, combo.rear].compactMap({ $0 }) {
+                if let c = car.card(p.card), needsEstimate(c, height: p.height / 1000) { estimateCard(c, height: p.height / 1000) }
+            }
+        }
+    }
 
     func saveCar() {
         do {
             if let s = car.setup { try CarStore.save(s, workFolder) }
-            try CarStore.save(car.combos, workFolder)
+            try CarStore.save(car.state, workFolder)
+            if !car.combosUnreadable { try CarStore.save(car.combos, workFolder) }
             for c in car.cards { try CarStore.save(c, workFolder) }
         } catch {
             show("Could not save the car", error)
@@ -104,7 +117,8 @@ extension AppState {
             guard let self, item.status == .succeeded, let text = item.resultText,
                   let i = self.car.combos.firstIndex(where: { $0.id == id }) else { return }
             do {
-                self.car.combos[i].full = try CarResult.decode(resultFile: Data(text.utf8))
+                let r = try CarResult.decode(resultFile: Data(text.utf8))
+                self.car.combos[i].recordFull(r, cards: self.car.cards, baseRevision: self.car.baseRevision)
                 self.saveCar()
             } catch {
                 self.show("Could not read the full result", error)
@@ -114,6 +128,7 @@ extension AppState {
 
     /// Re-estimates a card at a placed height (the warm engine's quick estimate), for the quick sum.
     func estimateCard(_ card: WingCard, height: Double) {
+        guard needsEstimate(card, height: height) else { return }
         let key = "\(card.id)@\(Int((height * 1000).rounded()))"
         guard car.estimates[key] == nil, let engine = carEngine() else { return }
         var wing = card.wing
@@ -127,22 +142,39 @@ extension AppState {
         }
     }
 
-    /// A combination onto Lap Sim car `index` (a new one when nil): ClA, CdA and the rear share as the driven axle's.
-    @discardableResult
-    func sendCarToLapSim(_ id: String, full: Bool, into index: Int?) -> String? {
+    /// A combination onto Lap Sim car `index` (a new one when nil): ClA, CdA and the rear share as
+    /// the driven axle's (rear-wheel drive). Returns the car's label and what the user should know
+    /// about the numbers sent (not converged, clamped, unverified moving ground, balance kept).
+    func sendCarToLapSim(_ id: String, full: Bool, into index: Int?) -> (label: String, warnings: [String])? {
         guard let combo = car.combos.first(where: { $0.id == id }) else { return nil }
+        var warnings: [String] = []
         let numbers: (cla: Double, cda: Double, rear: Double?)?
-        if full, let f = combo.full { numbers = (f.cla, f.cda, f.rearShare) } else {
-            numbers = car.quickResult(combo).map { ($0.cla, $0.cda, $0.rearShare) }
+        if full, let f = combo.full {
+            numbers = (f.cla, f.cda, f.rearShare)
+            if !f.converged { warnings.append("the full run did not converge") }
+            if f.groundMoving == true { warnings.append("it ran over a moving ground, which is unverified") }
+            if combo.isStale(cards: car.cards, baseRevision: car.baseRevision) { warnings.append("the full result is out of date") }
+        } else {
+            let q = car.quickResult(combo)
+            numbers = q.map { ($0.cla, $0.cda, $0.rearShare) }
+            if let b = car.base, !b.converged { warnings.append("the bare car's run did not converge") }
+            if !(q?.pendingEstimate.isEmpty ?? true) { warnings.append("a re-estimate was not back yet") }
         }
         guard let n = numbers else { return nil }
         let i = index ?? lapSim.cars.count
+        guard i < LapSimSetup.maxCars else { return nil }
         var target = index.map { lapSim.cars[$0] } ?? lapSim.carA
+        if n.cla < 0 { warnings.append(String(format: "ClA %.2f is lift: sent as 0", n.cla)) }
         target.cla = max(n.cla, 0)
         target.cda = max(n.cda, 0)
-        if let r = n.rear { target.aeroBalanceDriven = min(max(r, 0), 1) }  // rear-wheel drive: the rear share
-        if i < lapSim.cars.count { lapSim.cars[i] = target } else if i < LapSimSetup.maxCars { lapSim.cars.append(target) } else { return nil }
-        return LapSimSetup.labels[i]
+        if let r = n.rear {
+            if r < 0 || r > 1 { warnings.append(String(format: "the rear share %.0f %% is outside 0 to 100: clamped", r * 100)) }
+            target.aeroBalanceDriven = min(max(r, 0), 1)
+        } else {
+            warnings.append("no rear share (no net downforce): the car's balance is kept")
+        }
+        if i < lapSim.cars.count { lapSim.cars[i] = target } else { lapSim.cars.append(target) }
+        return (LapSimSetup.labels[i], warnings)
     }
 }
 

@@ -523,6 +523,7 @@ final class WingLabModel {
     func load(trial: WingStudy.Trial) {
         guard let w = wing.applying(trial, sections: studySections, library: { self.airfoil($0) }) else { return }
         edit { $0 = w }
+        cardID = nil  // another wing now: Save as Card must not overwrite the last one's card
         selectedTrial = trial.number
         let best = study.map { s in (s.bestCheck?.number ?? s.bestTrial?.number) == trial.number } ?? false
         markOrigin("\(study?.study ?? optimise.studyName) · trial \(trial.number)" + (best ? " (best)" : ""))
@@ -629,6 +630,7 @@ final class WingLabModel {
         undoStack = []
         redoStack = []
         self.wing = wing
+        cardID = nil
         origin = nil
         selection = wing.elements.isEmpty ? nil : 0
         recompute()

@@ -45,6 +45,7 @@ final class CarModel {
     var baseJob: JobItem?
     var fullJob: JobItem?
     var status: String?
+    var combosUnreadable = false  // combinations.json would not read: never written over
     var markingHeadRestraint = false
     /// Quick estimates of cards placed off their own height, by "card@height mm".
     var estimates: [String: (cla: Double, cda: Double)] = [:]
@@ -54,7 +55,22 @@ final class CarModel {
     static let meshes = ["coarse", "medium", "maxed"]
 
     var selectedCombo: Combination? { combos.first { $0.id == selected } }
-    var base: CarResult? { bases[mesh] }
+
+    /// The bare car at the current settings: same mesh, strips, speed and ground and wheel options.
+    var base: CarResult? {
+        guard let b = bases[mesh] else { return nil }
+        return b.ranWith(flow, n: strips) ? b : nil
+    }
+
+    /// A bare-car result exists at this mesh but with other settings.
+    var baseMismatch: Bool { bases[mesh] != nil && base == nil }
+
+    var state: CarStore.State {
+        get { CarStore.State(baseRevision: baseRevision, mesh: mesh, strips: strips, groundMoving: groundMoving, groundSpeed: groundSpeed,
+                             wheelsRotating: wheelsRotating, wheelsSpeed: wheelsSpeed) }
+        set { baseRevision = newValue.baseRevision; mesh = newValue.mesh; strips = newValue.strips; groundMoving = newValue.groundMoving
+              groundSpeed = newValue.groundSpeed; wheelsRotating = newValue.wheelsRotating; wheelsSpeed = newValue.wheelsSpeed }
+    }
 
     func card(_ id: String?) -> WingCard? { id.flatMap { id in cards.first { $0.id == id } } }
 
@@ -72,9 +88,15 @@ final class CarModel {
         setup = CarStore.setup(project)
         bases = Dictionary(uniqueKeysWithValues: Self.meshes.compactMap { m in CarStore.base(project, mesh: m).map { (m, $0) } })
         cards = CarStore.cards(project)
-        combos = CarStore.combinations(project)
-        baseRevision = combos.map(\.baseRevision).max() ?? 0
-        if let s = setup { groundSpeed = s.speed; wheelsSpeed = s.speed }
+        state = CarStore.state(project)
+        if let saved = CarStore.combinations(project) {
+            combos = saved
+            combosUnreadable = false
+        } else {
+            combos = []
+            combosUnreadable = true
+            status = "combinations.json would not read: it was copied to combinations.unreadable.json and will not be overwritten"
+        }
     }
 
     func quickResult(_ combo: Combination) -> QuickResult? {

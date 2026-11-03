@@ -37,9 +37,31 @@ enum CarStore {
         try write(card, cardsFolder(project).appendingPathComponent("\(card.id).json"))
     }
 
-    static func combinations(_ project: URL) -> [Combination] {
-        read([Combination].self, folder(project).appendingPathComponent("combinations.json")) ?? []
+    /// The saved combinations; nil when the file is there but unreadable (it is
+    /// copied aside and must not be written over with an empty list).
+    static func combinations(_ project: URL) -> [Combination]? {
+        let url = folder(project).appendingPathComponent("combinations.json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        if let combos = read([Combination].self, url) { return combos }
+        let aside = url.deletingPathExtension().appendingPathExtension("unreadable.json")
+        try? FileManager.default.removeItem(at: aside)
+        try? FileManager.default.copyItem(at: url, to: aside)
+        return nil
     }
+
+    /// The Car tool's own settings and the bare car's revision, kept between launches.
+    struct State: Codable {
+        var baseRevision = 0
+        var mesh = "medium"
+        var strips = 7
+        var groundMoving = false
+        var groundSpeed = 15.0
+        var wheelsRotating = true
+        var wheelsSpeed = 15.0
+    }
+
+    static func state(_ project: URL) -> State { read(State.self, folder(project).appendingPathComponent("state.json")) ?? State() }
+    static func save(_ state: State, _ project: URL) throws { try write(state, folder(project).appendingPathComponent("state.json")) }
 
     static func save(_ combos: [Combination], _ project: URL) throws {
         try write(combos, folder(project).appendingPathComponent("combinations.json"))
