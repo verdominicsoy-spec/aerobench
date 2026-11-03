@@ -14,6 +14,7 @@ public final class SceneKitViewer: Viewer3D {
     private let scene = SCNScene()
     private let modelRoot = SCNNode()
     private let markerRoot = SCNNode()
+    private let previewRoot = SCNNode()
     private let overlayRoot = SCNNode()
     private let pointsNode = SCNNode()
     private let sliceNode = SCNNode()
@@ -82,6 +83,7 @@ public final class SceneKitViewer: Viewer3D {
 
         scene.rootNode.addChildNode(modelRoot)
         scene.rootNode.addChildNode(markerRoot)
+        scene.rootNode.addChildNode(previewRoot)
         scene.rootNode.addChildNode(overlayRoot)
         overlayRoot.addChildNode(pointsNode)
         overlayRoot.addChildNode(sliceNode)
@@ -109,6 +111,7 @@ public final class SceneKitViewer: Viewer3D {
     public func show(_ model: Model3D?, resetCamera: Bool) {
         modelRoot.childNodes.forEach { $0.removeFromParentNode() }
         markerRoot.childNodes.forEach { $0.removeFromParentNode() }
+        previewRoot.childNodes.forEach { $0.removeFromParentNode() }
         nodesByID = [:]
         self.model = model
         if let model {
@@ -226,6 +229,20 @@ public final class SceneKitViewer: Viewer3D {
         let offset = orbit.position - SIMD3<Double>(center)
         let dir = simd_length(offset) > 0 ? simd_normalize(offset) : SIMD3<Double>(frame(currentView).0)
         place(direction: SIMD3<Float>(dir), up: SIMD3<Float>(orbit.screenUp))
+    }
+
+    /// Frames the camera on `points`, keeping the current view direction.
+    public func focus(on points: [SIMD3<Double>]) {
+        guard let first = points.first else { return }
+        let lo = points.reduce(first) { simd_min($0, $1) }, hi = points.reduce(first) { simd_max($0, $1) }
+        let mid = (lo + hi) / 2
+        let offset = orbit.position - mid
+        let dir = simd_length(offset) > 0 ? simd_normalize(offset) : SIMD3<Double>(frame(currentView).0)
+        // At least a twentieth of the model across, so a tiny gap is seen in context.
+        let r = max(simd_length(hi - lo) / 2, Double(radius) * 0.05)
+        pivot = nil
+        orbit.frame(center: mid, radius: r, direction: dir, up: orbit.screenUp, aspect: aspect)
+        applyCamera()
     }
 
     private func place(direction: SIMD3<Float>, up: SIMD3<Float>) {
@@ -348,6 +365,31 @@ public final class SceneKitViewer: Viewer3D {
 }
 
 // MARK: Overlays: frame box, points, slice
+
+extension SceneKitViewer {
+    /// Polylines drawn over the model in amber, never hidden behind it: a
+    /// proposed repair. An empty array clears them.
+    public func setPreviewLines(_ polylines: [[SIMD3<Double>]]) {
+        previewRoot.childNodes.forEach { $0.removeFromParentNode() }
+        var vertices: [SCNVector3] = [], indices: [Int32] = []
+        for line in polylines where line.count > 1 {
+            let base = Int32(vertices.count)
+            vertices += line.map { SCNVector3(Float($0.x), Float($0.y), Float($0.z)) }
+            for k in 0..<Int32(line.count - 1) { indices += [base + k, base + k + 1] }
+        }
+        guard !indices.isEmpty else { return }
+        let material = SCNMaterial()
+        material.lightingModel = .constant
+        material.diffuse.contents = NSColor.systemOrange
+        material.readsFromDepthBuffer = false
+        let geometry = SCNGeometry(sources: [SCNGeometrySource(vertices: vertices)],
+                                   elements: [SCNGeometryElement(indices: indices, primitiveType: .line)])
+        geometry.materials = [material]
+        let node = SCNNode(geometry: geometry)
+        node.renderingOrder = 101
+        previewRoot.addChildNode(node)
+    }
+}
 
 extension SceneKitViewer {
     public func setFrame(_ bounds: (min: SIMD3<Double>, max: SIMD3<Double>)?) {
