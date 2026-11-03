@@ -32,9 +32,15 @@ class RefLost(Exception):
         self.ref = ref
 
 
+class PickPart(EngineError):
+    def __init__(self, names: list[str]):
+        super().__init__("pick a part", ", ".join(names))
+        self.names = names
+
+
 def fingerprint(path: Path) -> str:
-    st = path.stat()
-    return f"{st.st_size}:{st.st_mtime_ns}:{hashlib.sha256(path.read_bytes()).hexdigest()[:16]}"
+    """Size and content only: copying or touching the file keeps it."""
+    return f"{path.stat().st_size}:{hashlib.sha256(path.read_bytes()).hexdigest()[:16]}"
 
 
 def load_part(path: Path, part: str | None):
@@ -50,7 +56,7 @@ def load_part(path: Path, part: str | None):
     names = [n for n, _ in parts]
     if part is None:
         if len(parts) != 1:
-            raise EngineError("pick a part", ", ".join(names))
+            raise PickPart(names)
         return parts[0][1], names, fp
     for n, shape in parts:
         if n == part:
@@ -58,29 +64,29 @@ def load_part(path: Path, part: str | None):
     raise EngineError(f"no part named '{part}'", ", ".join(names))
 
 
-def _ordered(shape, kind) -> list:
+def _ordered(shape, kind):
     m = ShapeMap()
     TopExp.MapShapes_s(shape, kind, m)
     cast = TopoDS.Face if kind == TopAbs_FACE else TopoDS.Edge
-    return [cast(m.FindKey(i)) for i in range(1, m.Extent() + 1)]
+    return m, [cast(m.FindKey(i)) for i in range(1, m.Extent() + 1)]
 
 
 class Topology:
-    """A shape's faces and edges in a fixed order."""
+    """A shape's faces and edges in a fixed order, looked up by hash."""
 
     def __init__(self, shape):
         self.shape = shape
-        self.faces = _ordered(shape, TopAbs_FACE)
-        self.edges = _ordered(shape, TopAbs_EDGE)
+        self._faces, self.faces = _ordered(shape, TopAbs_FACE)
+        self._edges, self.edges = _ordered(shape, TopAbs_EDGE)
 
     def of(self, kind: str) -> list:
         return self.faces if kind == "face" else self.edges
 
     def index(self, sub) -> int | None:
-        for seq in (self.faces, self.edges):
-            for i, s in enumerate(seq):
-                if s.IsSame(sub):
-                    return i
+        for m in (self._faces, self._edges):
+            i = m.FindIndex(sub)
+            if i:
+                return i - 1
         return None
 
 
@@ -108,11 +114,10 @@ class History:
         for maker, result in self.steps[start:]:
             nxt = []
             for p in pieces:
-                mod = list(maker.Modified(p))
-                if mod:
-                    nxt += mod
-                elif result.index(p) is not None:
+                if result.index(p) is not None:  # untouched: skip the slow Modified() call
                     nxt.append(p)
+                else:
+                    nxt += list(maker.Modified(p))
             pieces = nxt
         return pieces
 

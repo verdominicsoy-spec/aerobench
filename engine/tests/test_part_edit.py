@@ -36,7 +36,7 @@ def test_a_single_part_loads_in_its_own_frame(tmp_path):
     step = write_parts(tmp_path / "p.stp", {"Box": box()}, {"Box": [gp_Vec(500, 0, 0)]})
     shape, names, fp = load_part(step, None)
     assert names == ["Box"] and bounds(shape)[0][0] == pytest.approx(0, abs=1e-6)
-    assert fp.count(":") == 2
+    assert fp.count(":") == 1  # size and content hash
 
 
 def test_several_parts_need_a_name(tmp_path):
@@ -359,3 +359,45 @@ def test_a_clicked_point_is_projected_onto_its_host(box_step, tmp_path):
     top = next(i for i, f in enumerate(t.faces) if centre(f)[2] == pytest.approx(100))
     r = rebuild.build(box_step, None, [F("p1", "point", [R("part", "face", top)], x=30, y=40, z=100.4)], None, tmp_path)
     assert statuses(r) == ["ok"] and r["points"][0]["position"] == pytest.approx([0.03, 0.04, 0.1])
+
+
+# Final review fixes -------------------------------------------------------------
+
+import os  # noqa: E402
+import time  # noqa: E402
+
+
+def test_touching_the_file_keeps_its_fingerprint(box_step):
+    _, _, before = load_part(box_step, None)
+    st = box_step.stat()
+    os.utime(box_step, ns=(st.st_atime_ns, st.st_mtime_ns + 10_000_000_000))
+    assert load_part(box_step, None)[2] == before
+
+
+def test_part_faces_are_labelled_even_after_the_file_changed(box_step, tmp_path):
+    r = rebuild.build(box_step, None, [], "0:old", tmp_path)
+    assert sum(1 for f in r["faces"] if f["ref"] and f["ref"]["src"] == "part") == 6  # so they can be picked again
+
+
+def test_several_parts_reply_with_their_names(tmp_path):
+    step = write_parts(tmp_path / "two.stp", {"A": box(), "B": box(50)})
+    r = rebuild.build(step, None, [], None, tmp_path)
+    assert r["parts"] == ["A", "B"] and r["faces"] == [] and r["features"] == []
+
+
+def test_a_part_with_many_faces_rebuilds_quickly(tmp_path):
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+    from OCP.gp import gp_Ax2, gp_Dir
+    plate = BRepPrimAPI_MakeBox(400, 400, 10).Shape()
+    for i in range(12):
+        for j in range(12):
+            hole = BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(20 + 33 * i, 20 + 33 * j, -1), gp_Dir(0, 0, 1)), 6, 12).Shape()
+            plate = BRepAlgoAPI_Cut(plate, hole).Shape()
+    step = write_parts(tmp_path / "plate.stp", {"Plate": plate})
+    t = part_topology(step)
+    assert len(t.faces) > 100
+    top = next(i for i, f in enumerate(t.faces) if centre(f)[2] == pytest.approx(10) and area(f) > 1e5)
+    start = time.perf_counter()
+    r = rebuild.build(step, None, [F("f1", "pushpull", [R("part", "face", top)], distance=5)], None, tmp_path)
+    assert statuses(r) == ["ok"]
+    assert time.perf_counter() - start < 3.0

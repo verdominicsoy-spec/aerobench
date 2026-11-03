@@ -21,6 +21,7 @@ from OCP.BRepAdaptor import BRepAdaptor_Curve
 from OCP.BRepBndLib import BRepBndLib
 from OCP.BRepCheck import BRepCheck_Analyzer
 from OCP.gp import gp_Pnt
+from OCP.OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher as ShapeMap
 from OCP.TopAbs import TopAbs_SOLID
 
 from ...job import EngineError
@@ -28,7 +29,7 @@ from .. import meshio
 from ..bodyrepair import _compound, _subshapes, free_edges
 from ..tessellate import MM, PRESETS, _mesh_shape
 from . import ops
-from .refs import History, RefLost, Topology, load_part, resolve
+from .refs import History, PickPart, RefLost, Topology, load_part, resolve
 
 CHANGES_SOLID = {"add", "fillet", "chamfer", "pushpull"}
 CACHE_SIZE = 64
@@ -83,11 +84,11 @@ def _new(before: Topology, maker, after: Topology) -> dict:
     """Faces and edges of `after` that no sub-shape of `before` became."""
     out = {}
     for kind in ("face", "edge"):
-        old = []
+        old = ShapeMap()
         for sub in before.of(kind):
-            mod = list(maker.Modified(sub))
-            old += mod if mod else [sub]
-        out[kind] = [x for x in after.of(kind) if not any(x.IsSame(o) for o in old)]
+            for o in [sub] if after.index(sub) is not None else list(maker.Modified(sub)):
+                old.Add(o)
+        out[kind] = [x for x in after.of(kind) if not old.Contains(x)]
     return out
 
 
@@ -197,26 +198,36 @@ def _polyline(edge) -> list[list[float]]:
 
 def build(path: Path, part: str | None, features: list[dict], fingerprint: str | None, out_dir: Path,
           preset: str = "medium") -> dict:
-    state, status, names, fp, imported, part_topo = _run(path, part, features, fingerprint)
+    try:
+        state, status, names, fp, imported, part_topo = _run(path, part, features, fingerprint)
+    except PickPart as e:  # nothing to show until a part is chosen
+        return {"parts": e.names, "part": "", "fingerprint": "", "part_valid": True, "glb": "", "faces": [], "edges": [],
+                "points": [], "planes": [], "features": [], "valid": True, "closed": True}
     ok = {s["id"] for s in status if s["status"] == "ok"}
 
-    # Where each face and edge of the result came from.
-    def owners(kind) -> list:
-        out = []
-        if fingerprint is None or fingerprint == fp:
-            for i, sub in enumerate(part_topo.of(kind)):
-                now = state.hist.forward(sub)
-                if len(now) == 1:
-                    out.append((now[0], {"src": "part", "kind": kind, "i": i}))
+    # Where each face and edge of the result came from. Part faces are
+    # labelled even when the file changed, so lost picks can be made again.
+    def owners(kind):
+        shapes, refs = ShapeMap(), []
+        def own(sub, ref):
+            if not shapes.Contains(sub):
+                shapes.Add(sub)
+                refs.append(ref)
+        for i, sub in enumerate(part_topo.of(kind)):
+            now = state.hist.forward(sub)
+            if len(now) == 1:
+                own(now[0], {"src": "part", "kind": kind, "i": i})
         for fid, (subs, step) in state.made.items():
             for i, sub in enumerate(subs[kind]):
                 now = state.hist.forward(sub, step)
                 if len(now) == 1:
-                    out.append((now[0], {"src": fid, "kind": kind, "i": i}))
-        return out
+                    own(now[0], {"src": fid, "kind": kind, "i": i})
+        return shapes, refs
 
     def ref_of(sub, table):
-        return next((r for s, r in table if s.IsSame(sub)), None)
+        shapes, refs = table
+        i = shapes.FindIndex(sub)
+        return refs[i - 1] if i else None
 
     face_owners, edge_owners = owners("face"), owners("edge")
     surfaces = [(fid, g["surface"]) for fid, g in state.side.items() if "surface" in g and fid not in state.used and fid in ok]
