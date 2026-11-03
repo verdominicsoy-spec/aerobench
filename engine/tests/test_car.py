@@ -284,7 +284,8 @@ def su2_markers_on_cells(path: Path) -> dict:
 def test_the_base_car_mesh_has_clean_markers(tmp_path):
     s = car_setup.setup(BASE)
     shape = car_setup.load_part(BASE, None)[0]
-    for y in (0.0, 450.0):
+    half = max(abs(w["centre"][1]) + w["width"] / 2 for w in s["wheels"])
+    for y in [0.0, 450.0] + [y for y, _ in strips.plan(half, 3)] + [y for y, _ in strips.plan(half, 7)]:
         car_mesh.build(section.cut(shape, y, s), [], s, "coarse", tmp_path / f"m{y}.su2")
         for tag, (n, zero, loose) in su2_markers_on_cells(tmp_path / f"m{y}.su2").items():
             assert n > 0 and zero == 0 and loose == 0, (y, tag, n, zero, loose)

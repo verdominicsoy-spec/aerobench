@@ -27,11 +27,12 @@ from pathlib import Path
 import numpy as np
 
 from OCP.BRep import BRep_Tool
-from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut, BRepAlgoAPI_Fuse
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakePolygon
 from OCP.BRepTools import BRepTools, BRepTools_WireExplorer
 from OCP.gp import gp_Pnt
 from OCP.OCP.collections import List_TopoDS_Shape
+from OCP.ShapeUpgrade import ShapeUpgrade_UnifySameDomain
 from OCP.TopAbs import TopAbs_FACE, TopAbs_WIRE
 from OCP.TopoDS import TopoDS
 
@@ -43,10 +44,11 @@ NU = 1.81e-5 / 1.225
 CONTACT_M = 0.005
 MERGE_M = 1e-5  # outline vertices closer than this are one
 
-PRESETS = {  # wall size on body and wheels (m), wing surface size (fraction of chord), growth away from walls
-    "coarse": {"wall": 0.012, "wing": 0.01, "far": 0.6},
-    "medium": {"wall": 0.008, "wing": 0.006, "far": 0.5},
-    "maxed": {"wall": 0.003, "wing": 0.004, "far": 0.4},
+PRESETS = {  # wall size on body and wheels (m), wing surface size (fraction of chord), growth away from walls,
+    # and the pixel the car's outlines are merged on (m)
+    "coarse": {"wall": 0.012, "wing": 0.01, "far": 0.6, "pixel": 0.001},
+    "medium": {"wall": 0.008, "wing": 0.006, "far": 0.5, "pixel": 0.00075},
+    "maxed": {"wall": 0.003, "wing": 0.004, "far": 0.4, "pixel": 0.0005},
 }
 
 
@@ -95,6 +97,17 @@ def _split_pinches(poly: list) -> list[list]:
     return [poly]
 
 
+def _inside(pt, poly) -> bool:
+    """Ray casting: is pt strictly inside the polygon?"""
+    x, y = pt
+    p = np.asarray(poly, float)
+    xa, ya, xb, yb = p[:, 0], p[:, 1], np.roll(p[:, 0], -1), np.roll(p[:, 1], -1)
+    crosses = (ya > y) != (yb > y)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        xc = xa + (y - ya) * (xb - xa) / (yb - ya)
+    return bool(np.count_nonzero(crosses & (x < xc)) % 2)
+
+
 def _signed_area(poly) -> float:
     p = np.asarray(poly, float)
     return 0.5 * float(np.dot(p[:, 0], np.roll(p[:, 1], -1)) - np.dot(p[:, 1], np.roll(p[:, 0], -1)))
@@ -118,6 +131,79 @@ def _face(poly: np.ndarray):
         mk.Add(gp_Pnt(float(x), float(y), 0.0))
     mk.Close()
     return BRepBuilderAPI_MakeFace(mk.Wire(), True).Face()
+
+
+def _merge_outlines(polys: list, pixel: float) -> list[np.ndarray]:
+    """The car's outlines merged into simple, separate regions on a fine
+    raster: overlapping, nested and touching outlines (32 solids cut at once)
+    become one region each, cracks under two pixels close, and air enclosed
+    inside a region is filled. Exact booleans on the raw cut left holes that
+    shared edges or crossed, which gmsh could not mesh. Wings are not merged
+    here: their shape needs more precision than a pixel."""
+    import cv2
+
+    if not polys:
+        return []
+    allp = np.vstack(polys)
+    lo = allp.min(axis=0) - 4 * pixel
+    size = np.ceil((allp.max(axis=0) - lo) / pixel).astype(int) + 8
+    img = np.zeros((int(size[1]), int(size[0])), np.uint8)
+    for p in polys:
+        cv2.fillPoly(img, [np.round((p - lo) / pixel).astype(np.int32)], 255)
+    img = cv2.morphologyEx(img, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+    contours, _ = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    out = []
+    for c in contours:
+        c = cv2.approxPolyDP(c, 0.5, True).reshape(-1, 2).astype(float)
+        if len(c) < 3:
+            continue
+        poly = c * pixel + lo
+        out.append(poly if _signed_area(poly) > 0 else poly[::-1])
+    return out
+
+
+def _solids(faces: list) -> list:
+    """The obstacles as simple, separate regions: fused, touching faces and
+    edges merged, and each region's outer edge only (air enclosed inside a
+    region is not flow round the car). On the real car the cut outlines
+    overlap, nest and touch along edges; cut straight from the domain they
+    left holes sharing edges or inside each other, which gmsh cannot mesh."""
+    shapes = faces
+    for _ in range(2):  # a second pass merges regions that touch once their pockets are gone
+        if len(shapes) > 1:
+            args, tools = List_TopoDS_Shape(), List_TopoDS_Shape()
+            args.Append(shapes[0])
+            for f in shapes[1:]:
+                tools.Append(f)
+            op = BRepAlgoAPI_Fuse()
+            op.SetArguments(args)
+            op.SetTools(tools)
+            op.SetFuzzyValue(1e-6)
+            op.Build()
+            if not op.IsDone():
+                raise EngineError("the outlines of this section could not be merged")
+            unify = ShapeUpgrade_UnifySameDomain(op.Shape(), True, True, False)
+            unify.Build()
+            merged = unify.Shape()
+        else:
+            merged = shapes[0]
+        shapes = []
+        for f in _subshapes(merged, TopAbs_FACE):
+            face = TopoDS.Face(f)
+            poly = _wire_points(BRepTools.OuterWire_s(face), face)
+            if len(poly) >= 3:
+                shapes.append(_face(np.asarray(poly if _signed_area(poly) > 0 else poly[::-1])))  # counter-clockwise: material inside
+    return shapes
+
+
+def _wire_points(wire, face) -> list[tuple[float, float]]:
+    exp = BRepTools_WireExplorer(TopoDS.Wire(wire), face)
+    pts = []
+    while exp.More():
+        p = BRep_Tool.Pnt_s(exp.CurrentVertex())
+        pts.append((p.X(), p.Y()))
+        exp.Next()
+    return pts
 
 
 def _cut(domain, tools: list):
@@ -196,17 +282,15 @@ def build(section: dict, wings: list[dict], setup: dict, preset: str, out: Path)
     height = max(float(allp[:, 1].max()), 0.1)
 
     xi, xo, top = x0 - 3 * length, x1 + 6 * length, 4 * height
-    obstacles = [_face(p) for _, p in shapes]
+    car_polys = [p for m_, p in shapes if not m_.startswith("wing_")]
     for marker, p in shapes:  # wheels on the ground stand on a contact block
         if marker.startswith("wheel_") and p[:, 1].min() < CONTACT_M:
             low = p[p[:, 1] < CONTACT_M]
             xa, xb = float(low[:, 0].min()), float(low[:, 0].max())
             pad = max(xb - xa, 0.004) * 0.5
-            obstacles.append(_face(np.array([[xa - pad, -0.05], [xb + pad, -0.05], [xb + pad, CONTACT_M], [xa - pad, CONTACT_M]])))
-    # Every obstacle as its own tool in one cut: OpenCascade's general fuse
-    # sorts out where they overlap. (Fusing them first left overlapping
-    # regions on the real car, whose holes in the fluid then overlapped.)
-    fluid = _cut(_face(np.array([[xi, 0], [xo, 0], [xo, top], [xi, top]])), obstacles)
+            car_polys.append(np.array([[xa - pad, -0.05], [xb + pad, -0.05], [xb + pad, CONTACT_M], [xa - pad, CONTACT_M]]))
+    obstacles = [_face(r) for r in _merge_outlines(car_polys, ps["pixel"])] + [_face(p) for _, p, _ in wing_polys]
+    fluid = _cut(_face(np.array([[xi, 0], [xo, 0], [xo, top], [xi, top]])), _solids(obstacles))
     # [outer, hole, hole...] per fluid face. Only the face whose outer edge is
     # the domain is the flow round the car: others are air enclosed inside
     # the car's outline, and their walls would duplicate the main face's.
@@ -215,6 +299,9 @@ def build(section: dict, wings: list[dict], setup: dict, preset: str, out: Path)
     # cannot be meshed and are too small to matter to the flow: dropped.
     tiny = (ps["wall"] ** 2) / 4
     loops = [[fl[0]] + [h for h in fl[1:] if _shoelace(h) >= tiny] for fl in loops]
+    # A hole inside another hole is solid inside solid (a part within the
+    # tub's outline): only the outer one bounds the flow.
+    loops = [[fl[0]] + [h for h in fl[1:] if not any(o is not h and _inside(h[0], o) for o in fl[1:])] for fl in loops]
     if not loops:
         raise EngineError("the section fills the whole domain")
     n_obstacles = sum(len(face_loops) - 1 for face_loops in loops)  # holes in the fluid: separate solid shapes
@@ -234,9 +321,12 @@ def build(section: dict, wings: list[dict], setup: dict, preset: str, out: Path)
 
         tol = 1e-7 * max(length, 1)
         surfaces = []
+        spacing = min([ps["wall"]] + [max(ps["wing"] * c, 1e-4) for _, _, c in wing_polys])
         for face_loops in loops:
             curve_loops = []
-            for poly in face_loops:
+            for raw in face_loops:
+                # Merged edges can be long: back to the wall spacing (keeping corners) so the walls are evenly cut.
+                poly = [tuple(q) for q in _resample(np.asarray(raw), spacing)] if len(raw) > 2 else raw
                 curves = [geo.addLine(point(*poly[k]), point(*poly[(k + 1) % len(poly)])) for k in range(len(poly))]
                 curve_loops.append(geo.addCurveLoop(curves))
             surfaces.append(geo.addPlaneSurface(curve_loops))
