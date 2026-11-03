@@ -1430,6 +1430,27 @@ struct WingInspector: View {
         }
     }
 
+    private func saveCard(_ cl: Double, _ cd: Double, _ solver: String?, asNew: Bool) {
+        let lab = app.wingLab
+        let add = lab.wing.carContribution(cl: cl, cd: cd)
+        let project = app.workFolder
+        let old = asNew ? nil : lab.cardID.flatMap { id in CarStore.cards(project).first { $0.id == id } }
+        let position = lab.wing.rulesFor
+        let count = CarStore.cards(project).filter { $0.position == position }.count
+        let card = WingCard(id: old?.id ?? UUID().uuidString, name: old?.name ?? "\(position == .front ? "Front" : "Rear") \(count + 1)",
+                            position: position, wing: lab.wing, cla: add.cla, cda: add.cda,
+                            xcp: lab.wing.refChord / 4,  // the quarter chord: where a section's lift acts, near enough
+                            solver: solver ?? "inviscid preview", rideHeight: lab.wing.rideHeight, speed: lab.wing.speed,
+                            revision: (old?.revision ?? 0) + 1)
+        do {
+            try CarStore.save(card, project)
+            lab.cardID = card.id
+            sentNote = "Saved as the car card \(card.name). Put it on the car in the Car tool."
+        } catch {
+            app.show("Could not save the card", error)
+        }
+    }
+
     private func send(_ cl: Double, _ cd: Double, into car: Int?) {
         let lab = app.wingLab
         let label = app.sendWingToLapSim(cl: cl, cd: cd, replacedCla: lab.replacedCla, replacedCda: lab.replacedCda, into: car)
@@ -1467,6 +1488,11 @@ struct WingInspector: View {
             LabeledContent("Adds", value: String(format: "ClA %.3f m²   CdA %.3f m²", add.cla, add.cda))
             NumberField(label: "Replaces: old wing's ClA", unit: "m²", value: Binding(get: { lab.replacedCla }, set: { lab.replacedCla = $0 }))
             NumberField(label: "Replaces: old wing's CdA", unit: "m²", value: Binding(get: { lab.replacedCda }, set: { lab.replacedCda = $0 }))
+            HStack {
+                Button(lab.cardID == nil ? "Save as Car Card" : "Update Car Card") { saveCard(cl, cd, from?.name, asNew: false) }
+                if lab.cardID != nil { Button("Save as New Card") { saveCard(cl, cd, from?.name, asNew: true) } }
+            }
+            .help("A card for the Car tool, with this wing as a \(wing.rulesFor == .front ? "front" : "rear") wing and these numbers")
             Menu("Put in a Lap Sim Car") {
                 let cars = app.lapSim.cars.indices
                 ForEach(cars, id: \.self) { i in

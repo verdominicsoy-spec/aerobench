@@ -82,6 +82,8 @@ final class WingLabModel {
     var nCrit = 9.0
     var cdEstimate = 0.05
     var replacedCla = 0.0
+    /// The car card this wing was last saved as: Save as Card updates it.
+    var cardID: String?
     var replacedCda = 0.0
 
     // RANS
