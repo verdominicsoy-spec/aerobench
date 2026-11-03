@@ -9,12 +9,24 @@ open. Every solid is then fused into one body.
 
 from __future__ import annotations
 
-from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing
+from dataclasses import dataclass
+
+from OCP.Bnd import Bnd_Box
+from OCP.BRep import BRep_Builder
+from OCP.BRepAdaptor import BRepAdaptor_Curve
+from OCP.BRepBndLib import BRepBndLib
+from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex, BRepBuilderAPI_MakeWire, BRepBuilderAPI_Sewing
+from OCP.BRepExtrema import BRepExtrema_DistShapeShape
+from OCP.BRepGProp import BRepGProp
+from OCP.BRepOffsetAPI import BRepOffsetAPI_MakeFilling, BRepOffsetAPI_ThruSections
+from OCP.GeomAbs import GeomAbs_C0
+from OCP.GProp import GProp_GProps
+from OCP.gp import gp_Pnt
 from OCP.OCP.collections import IndexedDataMap_TopoDS_Shape_List_TopoDS_Shape_TopTools_ShapeMapHasher as EdgeFaceMap
 from OCP.ShapeFix import ShapeFix_FixSmallFace, ShapeFix_Shape, ShapeFix_Solid, ShapeFix_Wireframe
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_SHELL, TopAbs_SOLID
 from OCP.TopExp import TopExp
-from OCP.TopoDS import TopoDS
+from OCP.TopoDS import TopoDS, TopoDS_Compound
 
 from .brepcheck import _subshapes
 
@@ -101,3 +113,148 @@ def to_solids(shape):
         fix = ShapeFix_Solid()
         solids.append(TopoDS.Solid(fix.SolidFromShell(shell)))
     return solids, open_
+
+
+# Gaps and holes -------------------------------------------------------------
+
+QUEUE_MAX_MM = 10.0
+SAMPLES = 11
+
+
+@dataclass
+class Gap:
+    edges: tuple
+    size_mm: float
+    centre_mm: tuple
+    lines_mm: list
+
+
+@dataclass
+class Hole:
+    edges: list
+    centre_mm: tuple
+    lines_mm: list
+
+
+def _points(edge, n: int = SAMPLES) -> list[tuple[float, float, float]]:
+    c = BRepAdaptor_Curve(edge)
+    t0, t1 = c.FirstParameter(), c.LastParameter()
+    out = []
+    for k in range(n):
+        p = c.Value(t0 + (t1 - t0) * k / (n - 1))
+        out.append((p.X(), p.Y(), p.Z()))
+    return out
+
+
+def _length(edge) -> float:
+    props = GProp_GProps()
+    BRepGProp.LinearProperties_s(edge, props)
+    return props.Mass()
+
+
+def _distance(a, b) -> float:
+    d = BRepExtrema_DistShapeShape(a, b)
+    return d.Value() if d.IsDone() else float("inf")
+
+
+def _gap_size(a, b) -> float:
+    """Largest distance from points along the shorter edge to the other."""
+    if _length(a) > _length(b):
+        a, b = b, a
+    return max(_distance(BRepBuilderAPI_MakeVertex(gp_Pnt(*p)).Vertex(), b) for p in _points(a))
+
+
+def _box(edge, pad: float) -> Bnd_Box:
+    box = Bnd_Box()
+    BRepBndLib.Add_s(edge, box)
+    box.Enlarge(pad)
+    return box
+
+
+def _mean(points) -> tuple:
+    return tuple(sum(p[i] for p in points) / len(points) for i in range(3))
+
+
+def find_gaps(shape) -> list[Gap]:
+    """Pairs of free edges facing each other across a gap, within one
+    shape. A pair counts when its size is under half the shorter edge's
+    length; wider, it is the rim of a hole, not a gap. Mutual nearest
+    pairs only, sorted by size. Sizes above QUEUE_MAX_MM are kept (the
+    caller reports them)."""
+    edges = free_edges(shape)
+    boxes = [_box(e, QUEUE_MAX_MM * 2) for e in edges]
+    best: dict[int, tuple[float, int]] = {}
+    for i in range(len(edges)):
+        for j in range(i + 1, len(edges)):
+            if boxes[i].IsOut(_box(edges[j], 0)):
+                continue
+            size = _gap_size(edges[i], edges[j])
+            if size >= 0.5 * min(_length(edges[i]), _length(edges[j])):
+                continue
+            for a, b in ((i, j), (j, i)):
+                if a not in best or size < best[a][0]:
+                    best[a] = (size, b)
+    gaps = []
+    for i, (size, j) in best.items():
+        if i < j and best.get(j, (None, None))[1] == i:
+            lines = [_points(edges[i]), _points(edges[j])]
+            gaps.append(Gap((edges[i], edges[j]), size, _mean(lines[0] + lines[1]), lines))
+    return sorted(gaps, key=lambda g: g.size_mm)
+
+
+def _with(shape, face):
+    comp = TopoDS_Compound()
+    b = BRep_Builder()
+    b.MakeCompound(comp)
+    b.Add(comp, shape)
+    b.Add(comp, face)
+    return _sew(comp, CLEAN_TOL_MM)
+
+
+def bridge(shape, gap: Gap):
+    """Closes a gap with a ruled face between its two edges; the faces on
+    either side do not move. A ruled loft rather than BRepFill.Face, which
+    follows the curves' parameter direction and twists when they run
+    opposite ways."""
+    loft = BRepOffsetAPI_ThruSections(False, True)
+    for e in gap.edges:
+        loft.AddWire(BRepBuilderAPI_MakeWire(e).Wire())
+    loft.CheckCompatibility(True)
+    loft.Build()
+    return _with(shape, loft.Shape())
+
+
+def find_holes(shape, gaps: list[Gap]) -> list[Hole]:
+    """Free edges in no gap, grouped by shared vertices into closed loops.
+    Edges that form no closed loop are not holes."""
+    used = [e for g in gaps for e in g.edges]
+    edges = [e for e in free_edges(shape) if not any(e.IsSame(u) for u in used)]
+    ends = [(TopExp.FirstVertex_s(e), TopExp.LastVertex_s(e)) for e in edges]
+    groups: list[list[int]] = []
+    for i in range(len(edges)):
+        touching = [g for g in groups if any(v.IsSame(w) for k in g for v in ends[i] for w in ends[k])]
+        merged = [i] + [k for g in touching for k in g]
+        groups = [g for g in groups if g not in touching] + [merged]
+    holes = []
+    for g in groups:
+        verts = [v for k in g for v in ends[k]]
+        if all(sum(v.IsSame(w) for w in verts) == 2 for v in verts):
+            lines = [_points(edges[k]) for k in g]
+            holes.append(Hole([edges[k] for k in g], _mean([p for line in lines for p in line]), lines))
+    return holes
+
+
+def fill(shape, hole: Hole):
+    """Patches a hole with a filling surface; None when it fails or leaves
+    free edges."""
+    try:
+        filling = BRepOffsetAPI_MakeFilling()
+        for e in hole.edges:
+            filling.Add(e, GeomAbs_C0)
+        filling.Build()
+        if not filling.IsDone():
+            return None
+        out = _with(shape, filling.Shape())
+    except Exception:
+        return None
+    return None if free_edges(out) else out

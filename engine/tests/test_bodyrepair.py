@@ -13,7 +13,7 @@ from OCP.TopAbs import TopAbs_FACE
 from OCP.TopExp import TopExp_Explorer
 from OCP.TopoDS import TopoDS_Compound
 
-from aeroengine.cad.bodyrepair import free_edges, sew_stepped, to_solids
+from aeroengine.cad.bodyrepair import bridge, fill, find_gaps, find_holes, free_edges, sew_stepped, to_solids
 
 # MakeBox face order: x=0, x=dx, y=0, y=dy, z=0, z=dz.
 SIDES = {"left": 0, "right": 1, "front": 2, "back": 3, "bottom": 4, "top": 5}
@@ -76,3 +76,24 @@ def test_gap_over_the_limit_stays_open():
     assert tol == 0.5 and free_edges(out)
     solids, open_ = to_solids(out)
     assert solids == [] and len(open_) == 1
+
+
+def test_a_5mm_gap_is_found_and_bridged():
+    shape, _ = sew_stepped(faces_of_box(100, 100, 100, move=("top", gp_Vec(0, 0, 5))), 0.5)
+    gaps = find_gaps(shape)
+    assert len(gaps) == 4 and all(g.size_mm == pytest.approx(5, abs=0.01) for g in gaps)
+    centres = [g.centre_mm for g in gaps]
+    for c in centres:  # bridging changes edges, so find each gap again by its centre
+        g = next(g for g in find_gaps(shape) if max(abs(a - b) for a, b in zip(g.centre_mm, c)) < 0.01)
+        shape = bridge(shape, g)
+    assert not free_edges(shape)
+    solids, _ = to_solids(shape)
+    assert volume(solids[0]) == pytest.approx(100 * 100 * 105, rel=1e-3)
+
+
+def test_a_missing_face_is_a_hole_and_is_filled():
+    shape, _ = sew_stepped(faces_of_box(100, 100, 100, drop="top"), 0.5)
+    holes = find_holes(shape, find_gaps(shape))
+    assert len(holes) == 1
+    filled = fill(shape, holes[0])
+    assert filled is not None and not free_edges(filled)
