@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from OCP.BRep import BRep_Builder
 from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
@@ -13,6 +15,7 @@ from OCP.TopAbs import TopAbs_FACE
 from OCP.TopExp import TopExp_Explorer
 from OCP.TopoDS import TopoDS_Compound
 
+from aeroengine.cad import bodyrepair
 from aeroengine.cad.bodyrepair import (bridge, fill, find_gaps, find_holes, free_edges, item_id, match_decision, sew_stepped,
                                        to_solids)
 
@@ -115,3 +118,131 @@ def test_a_moved_or_renamed_part_does_not_match():
 
 def test_item_ids_are_stable():
     assert item_id("gap", "Floor", (1.04, 2, 3)) == item_id("gap", "Floor", (1.01, 2, 3)) == "gap:Floor:1.0,2.0,3.0"
+
+
+# The whole pipeline, on STEP files ------------------------------------------
+
+
+def write_parts(path, parts: dict, placements: dict | None = None):
+    """A STEP file with one named part per shape; `placements` maps a part
+    name to a list of gp_Vec offsets to place it several times."""
+    from OCP.IFSelect import IFSelect_RetDone
+    from OCP.STEPCAFControl import STEPCAFControl_Writer
+    from OCP.STEPControl import STEPControl_AsIs
+    from OCP.TCollection import TCollection_ExtendedString
+    from OCP.TDataStd import TDataStd_Name
+    from OCP.TDocStd import TDocStd_Document
+    from OCP.TopLoc import TopLoc_Location
+    from OCP.XCAFDoc import XCAFDoc_DocumentTool
+
+    doc = TDocStd_Document(TCollection_ExtendedString("XmlOcaf"))
+    tool = XCAFDoc_DocumentTool.ShapeTool_s(doc.Main())
+    name = lambda label, text: TDataStd_Name.Set_s(label, TCollection_ExtendedString(text))
+    if placements:
+        assy = tool.NewShape()
+        name(assy, "Assembly")
+    for text, shape in parts.items():
+        label = tool.AddShape(shape, False)
+        name(label, text)
+        for k, v in enumerate((placements or {}).get(text, [])):
+            t = gp_Trsf()
+            t.SetTranslation(v)
+            c = tool.AddComponent(assy, label, TopLoc_Location(t))
+            name(c, f"{text} {k + 1}")
+    tool.UpdateAssemblies()
+    w = STEPCAFControl_Writer()
+    w.SetNameMode(True)
+    w.Transfer(doc, STEPControl_AsIs)
+    assert w.Write(str(path)) == IFSelect_RetDone
+    return path
+
+
+def read_back(path):
+    from OCP.STEPControl import STEPControl_Reader
+
+    r = STEPControl_Reader()
+    r.ReadFile(str(path))
+    r.TransferRoots()
+    return r.OneShape()
+
+
+def box_at(x, dx=100.0):
+    t = gp_Trsf()
+    t.SetTranslation(gp_Vec(x, 0, 0))
+    return BRepBuilderAPI_Transform(BRepPrimAPI_MakeBox(dx, 100, 100).Shape(), t, True).Shape()
+
+
+def gapped(mm):
+    return faces_of_box(100, 100, 100, move=("top", gp_Vec(0, 0, mm)))
+
+
+def test_overlapping_boxes_fuse_into_one_closed_body(tmp_path):
+    step = write_parts(tmp_path / "o.stp", {"A": box_at(0), "B": box_at(95)})
+    r = bodyrepair.repair_body(step, tmp_path / "out.step")
+    assert r["items"] == [] and r["result"]["solids"] == 1 and r["result"]["closed"]
+    assert volume(read_back(tmp_path / "out.step")) == pytest.approx(100 * 100 * 195, rel=1e-3)
+
+
+def test_parts_10mm_apart_stay_separate(tmp_path):
+    step = write_parts(tmp_path / "s.stp", {"Main Plane": box_at(0), "Flap": box_at(110)})
+    r = bodyrepair.repair_body(step, tmp_path / "out.step")
+    assert r["items"] == [] and r["result"]["solids"] == 2 and r["result"]["closed"]
+
+
+def test_plan_then_apply(tmp_path):
+    step = write_parts(tmp_path / "g.stp", {"Box": gapped(5)})
+    out = tmp_path / "out.step"
+    plan = bodyrepair.repair_body(step, out)
+    assert {i["kind"] for i in plan["items"]} == {"gap"} and not plan["result"]["closed"]
+    assert all(i["decision"] is None for i in plan["items"]) and plan["result"]["open_shells"] == 1
+    assert out.exists()
+    done = bodyrepair.repair_body(step, out, accept={i["id"] for i in plan["items"]})
+    assert done["result"]["closed"] and done["result"]["solids"] == 1
+
+
+def test_saved_decisions_apply_on_a_new_run(tmp_path):
+    step = write_parts(tmp_path / "g.stp", {"Box": gapped(5)})
+    plan = bodyrepair.repair_body(step, tmp_path / "out.step")
+    saved = tmp_path / "g.repair.json"
+    saved.write_text(json.dumps({"version": 1, "decisions": [
+        {"kind": i["kind"], "part": i["part"], "centre_mm": i["centre_mm"], "size_mm": i["size_mm"], "decision": "accept"}
+        for i in plan["items"]]}))
+    r = bodyrepair.repair_body(step, tmp_path / "out.step", decisions=saved)
+    assert r["result"]["closed"] and all(i["decision"] == "accept" for i in r["items"])
+
+
+def test_wide_gap_is_reported_and_left_open(tmp_path):
+    step = write_parts(tmp_path / "w.stp", {"Box": gapped(12)})
+    out = tmp_path / "out.step"
+    r = bodyrepair.repair_body(step, out)
+    assert {i["kind"] for i in r["items"]} == {"wide_gap"} and r["result"]["open_parts"] == ["Box"]
+    assert not r["result"]["closed"] and out.exists()
+
+
+def test_clean_file_needs_nothing(tmp_path):
+    step = write_parts(tmp_path / "c.stp", {"Box": box_at(0)})
+    r = bodyrepair.repair_body(step, tmp_path / "out.step")
+    assert r["items"] == [] and r["result"]["closed"] and r["auto"]["parts_sewn"] == 0
+
+
+def test_a_part_placed_twice_has_one_item_per_gap(tmp_path):
+    step = write_parts(tmp_path / "p.stp", {"Box": gapped(5)}, {"Box": [gp_Vec(0, 0, 0), gp_Vec(500, 0, 0)]})
+    r = bodyrepair.repair_body(step, tmp_path / "out.step")
+    assert len([i for i in r["items"] if i["kind"] == "gap"]) == 4
+    assert all(len(i["lines"]) == 4 for i in r["items"])  # two edges x two placements
+
+
+def test_fuse_failure_still_writes(tmp_path, monkeypatch):
+    step = write_parts(tmp_path / "o.stp", {"A": box_at(0), "B": box_at(95)})
+    monkeypatch.setattr(bodyrepair, "_fuse", lambda solids: None)
+    out = tmp_path / "out.step"
+    r = bodyrepair.repair_body(step, out)
+    assert r["result"]["fused"] is False and not r["result"]["closed"] and out.exists()
+
+
+def test_sample_car_through_the_engine(engine, car_files, tmp_path):
+    code, events, err = engine.run("cad-repair-body", {"params": {"path": str(car_files[0])}}, tmp_path / "w", timeout=180)
+    assert code == 0, (events, err)
+    r = json.loads((tmp_path / "w" / "result.json").read_text())["data"]
+    assert r["result"]["closed"] and r["result"]["solids"] < 8  # wing elements overlap and fuse; wheels stay apart
+    assert (tmp_path / "w" / r["output"]).exists()

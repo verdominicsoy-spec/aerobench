@@ -120,3 +120,20 @@ def cad_repair(ctx: JobContext) -> dict:
         meshio.write_stl(out_model, out, scale=1 / scale)
     return {"output": out.name, "done": done,
             "after": {"problems": after["problems"], "issues": [{k: i[k] for k in ("kind", "title", "count")} for i in after["issues"]]}}
+
+
+@command("cad-repair-body")
+def cad_repair_body(ctx: JobContext) -> dict:
+    from ..cad.bodyrepair import QUEUE_MAX_MM, repair_body
+
+    path = _source(ctx)
+    if path.suffix.lower() not in (".step", ".stp"):
+        raise EngineError("repair to one body works on STEP files", f"{path.name} is not .step or .stp")
+    limit = float(ctx.params.get("limit_mm", 0.5))
+    if not 0 < limit <= QUEUE_MAX_MM:
+        raise EngineError(f"the automatic gap limit must be above 0 and at most {QUEUE_MAX_MM:g} mm", f"got {limit:g}")
+    accept = ctx.params.get("accept")
+    decisions = ctx.params.get("decisions")
+    return repair_body(path, ctx.workdir / f"{path.stem}_repaired.step", limit,
+                       None if accept is None else set(map(str, accept)),
+                       Path(decisions).expanduser() if decisions else None, ctx.emit.progress)

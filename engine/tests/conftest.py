@@ -52,3 +52,13 @@ def engine(tmp_path: Path) -> Engine:
 @pytest.fixture
 def events():
     return _events
+
+
+@pytest.fixture(scope="session")
+def car_files(tmp_path_factory):
+    pytest.importorskip("OCP")
+    from aeroengine.cad import sample
+
+    d = tmp_path_factory.mktemp("cad")
+    sample.build_sample_car(d / "car.step", d / "car.igs")
+    return d / "car.step", d / "car.igs"

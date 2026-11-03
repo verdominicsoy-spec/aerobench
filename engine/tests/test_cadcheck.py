@@ -111,16 +111,6 @@ def test_non_manifold_and_piercing_are_left_alone():
 SAMPLES = Path(__file__).resolve().parents[2] / "samples"
 
 
-@pytest.fixture(scope="module")
-def car_files(tmp_path_factory):
-    pytest.importorskip("OCP")
-    from aeroengine.cad import sample
-
-    d = tmp_path_factory.mktemp("cad")
-    sample.build_sample_car(d / "car.step", d / "car.igs")
-    return d / "car.step", d / "car.igs"
-
-
 def test_step_check(engine, car_files, tmp_path):
     code, events, err = engine.run("cad-check", {"params": {"path": str(car_files[0]), "preset": "coarse"}}, tmp_path / "job", timeout=180)
     assert code == 0, (events, err)
