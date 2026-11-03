@@ -259,3 +259,32 @@ def test_car_strips_through_the_engine(engine, car_step, tmp_path):
     r = json.loads((tmp_path / "w" / "result.json").read_text())["data"]
     assert len(r["strips"]) == 2 and r["strips"][1]["width"] == 200 and np.isfinite(r["cda"])
     assert (tmp_path / "w" / "car_result.json").exists()
+
+
+def su2_markers_on_cells(path: Path) -> dict:
+    """Per marker: (elements, zero-length, not an edge of any cell)."""
+    lines = path.read_text().split("\n")
+    i, cells, marks = 0, [], {}
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("NELEM="):
+            n = int(line.split("=")[1])
+            cells = [list(map(int, lines[i + 1 + k].split()[1:-1])) for k in range(n)]
+            i += n
+        elif line.startswith("MARKER_TAG="):
+            tag, n = line.split("=")[1].strip(), int(lines[i + 1].split("=")[1])
+            marks[tag] = [tuple(map(int, lines[i + 2 + k].split()[1:])) for k in range(n)]
+            i += n + 1
+        i += 1
+    edges = {frozenset((a, b)) for c in cells for a, b in zip(c, c[1:] + c[:1])}
+    return {t: (len(es), sum(e[0] == e[1] for e in es), sum(frozenset(e) not in edges for e in es)) for t, es in marks.items()}
+
+
+@needs_base
+def test_the_base_car_mesh_has_clean_markers(tmp_path):
+    s = car_setup.setup(BASE)
+    shape = car_setup.load_part(BASE, None)[0]
+    for y in (0.0, 450.0):
+        car_mesh.build(section.cut(shape, y, s), [], s, "coarse", tmp_path / f"m{y}.su2")
+        for tag, (n, zero, loose) in su2_markers_on_cells(tmp_path / f"m{y}.su2").items():
+            assert n > 0 and zero == 0 and loose == 0, (y, tag, n, zero, loose)

@@ -27,12 +27,11 @@ from pathlib import Path
 import numpy as np
 
 from OCP.BRep import BRep_Tool
-from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut, BRepAlgoAPI_Fuse
+from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakePolygon
 from OCP.BRepTools import BRepTools, BRepTools_WireExplorer
 from OCP.gp import gp_Pnt
 from OCP.OCP.collections import List_TopoDS_Shape
-from OCP.ShapeUpgrade import ShapeUpgrade_UnifySameDomain
 from OCP.TopAbs import TopAbs_FACE, TopAbs_WIRE
 from OCP.TopoDS import TopoDS
 
@@ -42,6 +41,7 @@ from ..wing.mesh import boundary_layer_thickness, first_cell_height, layers_for
 
 NU = 1.81e-5 / 1.225
 CONTACT_M = 0.005
+MERGE_M = 1e-5  # outline vertices closer than this are one
 
 PRESETS = {  # wall size on body and wheels (m), wing surface size (fraction of chord), growth away from walls
     "coarse": {"wall": 0.012, "wing": 0.01, "far": 0.6},
@@ -82,6 +82,29 @@ def _resample(p: np.ndarray, h: float, corner_deg: float = 25.0) -> np.ndarray:
     return q
 
 
+def _split_pinches(poly: list) -> list[list]:
+    """A loop that passes through one vertex twice (two solids touching at a
+    point) split there into simple loops, which gmsh can mesh."""
+    keys = [(round(x, 9), round(y, 9)) for x, y in poly]
+    seen: dict = {}
+    for j, k in enumerate(keys):
+        if k in seen:
+            i = seen[k]
+            return _split_pinches(poly[i:j]) + _split_pinches(poly[j:] + poly[:i])
+        seen[k] = j
+    return [poly]
+
+
+def _signed_area(poly) -> float:
+    p = np.asarray(poly, float)
+    return 0.5 * float(np.dot(p[:, 0], np.roll(p[:, 1], -1)) - np.dot(p[:, 1], np.roll(p[:, 0], -1)))
+
+
+def _shoelace(poly) -> float:
+    p = np.asarray(poly, float)
+    return 0.5 * abs(float(np.dot(p[:, 0], np.roll(p[:, 1], -1)) - np.dot(p[:, 1], np.roll(p[:, 0], -1))))
+
+
 def _seg_distance(pt: np.ndarray, poly: np.ndarray) -> float:
     a, b = poly, np.roll(poly, -1, axis=0)
     ab = b - a
@@ -97,27 +120,16 @@ def _face(poly: np.ndarray):
     return BRepBuilderAPI_MakeFace(mk.Wire(), True).Face()
 
 
-def _fuse(faces: list):
-    if len(faces) == 1:
-        return faces[0]
-    args, tools = List_TopoDS_Shape(), List_TopoDS_Shape()
-    args.Append(faces[0])
-    for f in faces[1:]:
-        tools.Append(f)
-    op = BRepAlgoAPI_Fuse()
+def _cut(domain, tools: list):
+    args, tl = List_TopoDS_Shape(), List_TopoDS_Shape()
+    args.Append(domain)
+    for t in tools:
+        tl.Append(t)
+    op = BRepAlgoAPI_Cut()
     op.SetArguments(args)
-    op.SetTools(tools)
+    op.SetTools(tl)
     op.SetFuzzyValue(1e-7)
     op.Build()
-    if not op.IsDone():
-        raise EngineError("the outlines of this section could not be merged")
-    unify = ShapeUpgrade_UnifySameDomain(op.Shape(), False, True, False)  # merge faces, keep edges for the markers
-    unify.Build()
-    return unify.Shape()
-
-
-def _cut(domain, solid):
-    op = BRepAlgoAPI_Cut(domain, solid)
     if not op.IsDone():
         raise EngineError("the section could not be cut out of the flow domain")
     return op.Shape()
@@ -137,8 +149,19 @@ def _loops(shape) -> list[list[list[tuple[float, float]]]]:
                 p = BRep_Tool.Pnt_s(exp.CurrentVertex())
                 pts.append((p.X(), p.Y()))
                 exp.Next()
-            if len(pts) >= 3:
-                polys.append(pts)
+            # The boolean leaves vertices nanometres apart where outlines met; as
+            # separate points they make zero-length walls SU2 cannot partition.
+            clean = []
+            for p in pts:
+                if not clean or np.hypot(p[0] - clean[-1][0], p[1] - clean[-1][1]) > MERGE_M:
+                    clean.append(p)
+            while len(clean) > 1 and np.hypot(clean[0][0] - clean[-1][0], clean[0][1] - clean[-1][1]) <= MERGE_M:
+                clean.pop()
+            pieces = [q for q in _split_pinches(clean) if len(q) >= 3]
+            if len(pieces) > 1:  # pieces turning the other way are air enclosed by the pinch: not flow round the car
+                main = max(pieces, key=lambda q: abs(_signed_area(q)))
+                pieces = [q for q in pieces if _signed_area(q) * _signed_area(main) > 0]
+            polys += pieces
         if polys:
             out.append(polys)
     return out
@@ -180,9 +203,18 @@ def build(section: dict, wings: list[dict], setup: dict, preset: str, out: Path)
             xa, xb = float(low[:, 0].min()), float(low[:, 0].max())
             pad = max(xb - xa, 0.004) * 0.5
             obstacles.append(_face(np.array([[xa - pad, -0.05], [xb + pad, -0.05], [xb + pad, CONTACT_M], [xa - pad, CONTACT_M]])))
-    solid = _fuse(obstacles)
-    fluid = _cut(_face(np.array([[xi, 0], [xo, 0], [xo, top], [xi, top]])), solid)
-    loops = _loops(fluid)  # [outer, hole, hole...] per fluid face, each a list of (x, y)
+    # Every obstacle as its own tool in one cut: OpenCascade's general fuse
+    # sorts out where they overlap. (Fusing them first left overlapping
+    # regions on the real car, whose holes in the fluid then overlapped.)
+    fluid = _cut(_face(np.array([[xi, 0], [xo, 0], [xo, top], [xi, top]])), obstacles)
+    # [outer, hole, hole...] per fluid face. Only the face whose outer edge is
+    # the domain is the flow round the car: others are air enclosed inside
+    # the car's outline, and their walls would duplicate the main face's.
+    loops = [fl for fl in _loops(fluid) if min(p[0] for p in fl[0]) <= xi + 1e-9]
+    # Holes smaller than a quarter cell (slivers where two solids nearly meet)
+    # cannot be meshed and are too small to matter to the flow: dropped.
+    tiny = (ps["wall"] ** 2) / 4
+    loops = [[fl[0]] + [h for h in fl[1:] if _shoelace(h) >= tiny] for fl in loops]
     if not loops:
         raise EngineError("the section fills the whole domain")
     n_obstacles = sum(len(face_loops) - 1 for face_loops in loops)  # holes in the fluid: separate solid shapes
@@ -200,48 +232,71 @@ def build(section: dict, wings: list[dict], setup: dict, preset: str, out: Path)
                 ids[key] = geo.addPoint(x, y, 0)
             return ids[key]
 
-        groups: dict[str, list[int]] = {}
-        wall_curves, wing_curves = [], []
-        fans = set()  # where wing wall layers need a fan: meeting the body, and sharp corners
         tol = 1e-7 * max(length, 1)
         surfaces = []
         for face_loops in loops:
             curve_loops = []
             for poly in face_loops:
-                curves = []
-                for k in range(len(poly)):
-                    (xa, ya), (xb, yb) = poly[k], poly[(k + 1) % len(poly)]
-                    c = geo.addLine(point(xa, ya), point(xb, yb))
-                    curves.append(c)
-                    mx, my = (xa + xb) / 2, (ya + yb) / 2
-                    if abs(my) < tol and abs(ya) < tol and abs(yb) < tol:
-                        name = "ground"
-                    elif abs(mx - xi) < tol:
-                        name = "inlet"
-                    elif abs(mx - xo) < tol:
-                        name = "outlet"
-                    elif abs(my - top) < tol:
-                        name = "top"
-                    else:
-                        pt = np.array([mx, my])
-                        dist = [(_seg_distance(pt, q), m) for m, q in shapes]
-                        wing = [d for d in dist if d[1].startswith("wing_") and d[0] < 2e-4]
-                        name = wing[0][1] if wing else min(dist)[1]
-                        (wing_curves if name.startswith("wing_") else wall_curves).append(c)
-                    groups.setdefault(name, []).append(c)
+                curves = [geo.addLine(point(*poly[k]), point(*poly[(k + 1) % len(poly)])) for k in range(len(poly))]
                 curve_loops.append(geo.addCurveLoop(curves))
-                names = [next(n for n, cs in groups.items() if c in cs) for c in curves]
-                for k in range(len(poly)):  # vertex k joins curve k-1 and curve k
-                    before, after = names[k - 1], names[k]
-                    if not (before.startswith("wing_") or after.startswith("wing_")):
-                        continue
-                    a = np.subtract(poly[k], poly[k - 1])
-                    b = np.subtract(poly[(k + 1) % len(poly)], poly[k])
-                    turn = np.degrees(np.arccos(np.clip(np.dot(a, b) / max(np.linalg.norm(a) * np.linalg.norm(b), 1e-30), -1, 1)))
-                    if before != after or turn > 60:
-                        fans.add(point(*poly[k]))
             surfaces.append(geo.addPlaneSurface(curve_loops))
+        # Outlines that touch give the same segment twice: one curve each, or
+        # gmsh leaves wall elements on nodes it never writes.
+        geo.removeAllDuplicates()
         geo.synchronize()
+        surfaces = [t for _, t in gmsh.model.getEntities(2)]
+
+        def name_of(c: int) -> str:
+            lo, hi = gmsh.model.getParametrizationBounds(1, c)
+            x, y, _ = gmsh.model.getValue(1, c, [(lo[0] + hi[0]) / 2])
+            if abs(y) < tol:
+                return "ground"
+            if abs(x - xi) < tol:
+                return "inlet"
+            if abs(x - xo) < tol:
+                return "outlet"
+            if abs(y - top) < tol:
+                return "top"
+            pt = np.array([x, y])
+            dist = [(_seg_distance(pt, q), m) for m, q in shapes]
+            wing = [d for d in dist if d[1].startswith("wing_") and d[0] < 2e-4]
+            return wing[0][1] if wing else min(dist)[1]
+
+        groups: dict[str, list[int]] = {}
+        curve_name: dict[int, str] = {}
+        for _, c in gmsh.model.getBoundary([(2, t) for t in surfaces], oriented=False, combined=False):
+            c = abs(c)
+            if c in curve_name:
+                continue
+            curve_name[c] = name_of(c)
+            groups.setdefault(curve_name[c], []).append(c)
+        wall_curves = [c for c, n in curve_name.items() if n == "body" or n.startswith("wheel_")]
+        wing_curves = [c for c, n in curve_name.items() if n.startswith("wing_")]
+        # Wing wall layers need a fan where a wing curve meets another kind of
+        # surface, and at sharp corners (a trailing edge).
+        fans = set()
+        ends: dict[int, list[int]] = {}
+        for c in wing_curves + wall_curves:
+            for _, pnt in gmsh.model.getBoundary([(1, c)], oriented=False):
+                ends.setdefault(abs(pnt), []).append(c)
+        for pnt, cs in ends.items():
+            kinds = {curve_name[c] for c in cs}
+            if not any(k.startswith("wing_") for k in kinds):
+                continue
+            if len(kinds) > 1 or len(cs) != 2:
+                fans.add(pnt)
+                continue
+            dirs = []
+            for c in cs:
+                lo, hi = gmsh.model.getParametrizationBounds(1, c)
+                a = np.array(gmsh.model.getValue(1, c, [lo[0]])[:2])
+                b = np.array(gmsh.model.getValue(1, c, [hi[0]])[:2])
+                here = np.array(gmsh.model.getValue(0, pnt, [])[:2])
+                far = b if np.linalg.norm(a - here) < np.linalg.norm(b - here) else a
+                dirs.append(far - here)
+            cos = np.dot(dirs[0], dirs[1]) / max(np.linalg.norm(dirs[0]) * np.linalg.norm(dirs[1]), 1e-30)
+            if np.degrees(np.arccos(np.clip(cos, -1, 1))) < 120:  # the two curves fold back sharply
+                fans.add(pnt)
         for name, curves in groups.items():
             gmsh.model.addPhysicalGroup(1, curves, name=name)
         gmsh.model.addPhysicalGroup(2, surfaces, name="fluid")
