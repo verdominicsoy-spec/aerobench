@@ -258,3 +258,25 @@ def fill(shape, hole: Hole):
     except Exception:
         return None
     return None if free_edges(out) else out
+
+
+# Item ids and saved decisions ----------------------------------------------
+
+
+def item_id(kind: str, part: str, centre_mm) -> str:
+    """Deterministic for the same input file, so a plan's ids hold for the apply run."""
+    x, y, z = centre_mm
+    return f"{kind}:{part}:{x:.1f},{y:.1f},{z:.1f}"
+
+
+def match_decision(kind: str, part: str, centre_mm, saved: list[dict], within_mm: float = 3.0) -> str | None:
+    """The decision of the nearest saved entry of the same kind and part
+    within `within_mm` (part-local), or None."""
+    best, found = within_mm, None
+    for d in saved:
+        if d.get("kind") != kind or d.get("part") != part:
+            continue
+        dist = sum((a - b) ** 2 for a, b in zip(centre_mm, d.get("centre_mm", ()))) ** 0.5
+        if dist <= best:
+            best, found = dist, d.get("decision")
+    return found

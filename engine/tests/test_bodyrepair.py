@@ -13,7 +13,8 @@ from OCP.TopAbs import TopAbs_FACE
 from OCP.TopExp import TopExp_Explorer
 from OCP.TopoDS import TopoDS_Compound
 
-from aeroengine.cad.bodyrepair import bridge, fill, find_gaps, find_holes, free_edges, sew_stepped, to_solids
+from aeroengine.cad.bodyrepair import (bridge, fill, find_gaps, find_holes, free_edges, item_id, match_decision, sew_stepped,
+                                       to_solids)
 
 # MakeBox face order: x=0, x=dx, y=0, y=dy, z=0, z=dz.
 SIDES = {"left": 0, "right": 1, "front": 2, "back": 3, "bottom": 4, "top": 5}
@@ -97,3 +98,20 @@ def test_a_missing_face_is_a_hole_and_is_filled():
     assert len(holes) == 1
     filled = fill(shape, holes[0])
     assert filled is not None and not free_edges(filled)
+
+
+SAVED = [{"kind": "gap", "part": "Floor", "centre_mm": [100, 0, 5], "size_mm": 2.0, "decision": "skip"}]
+
+
+def test_a_decision_matches_within_3mm():
+    assert match_decision("gap", "Floor", (101.5, 1.0, 5.0), SAVED) == "skip"
+
+
+def test_a_moved_or_renamed_part_does_not_match():
+    assert match_decision("gap", "Floor", (104.0, 0, 5), SAVED) is None
+    assert match_decision("gap", "Diffuser", (100, 0, 5), SAVED) is None
+    assert match_decision("hole", "Floor", (100, 0, 5), SAVED) is None
+
+
+def test_item_ids_are_stable():
+    assert item_id("gap", "Floor", (1.04, 2, 3)) == item_id("gap", "Floor", (1.01, 2, 3)) == "gap:Floor:1.0,2.0,3.0"
