@@ -281,7 +281,7 @@ extension AppState {
         }
     }
 
-    private func estimateParams(_ other: Wing? = nil) -> [String: JSONValue] {
+    func estimateParams(_ other: Wing? = nil) -> [String: JSONValue] {
         let lab = wingLab
         let wing = other ?? lab.wing
         var params = ransParams(wing)

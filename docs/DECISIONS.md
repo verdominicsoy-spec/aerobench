@@ -1340,3 +1340,26 @@ reference lost. The part is edited and saved in its own frame, alone, as
 `<part>_edited.step`. Push/pull is flat faces only for now. Spec and plan:
 docs/superpowers/specs/2026-11-03-gsd-editor-design.md,
 docs/superpowers/plans/2026-11-03-gsd-editor.md.
+
+**Car tool: modular front and rear wings on the base car.** Wing Lab wings
+are saved as cards (front or rear, with their own ClA and CdA) and placed on
+the base car from its STEP, by dragging on the side view or typing the
+leading edge's distance from its axle and its height, never outside the FS
+rules box worked out from the wheels, the ground and a marked head
+restraint. A combination is judged two ways. Quick: the bare car's numbers
+plus each card's, each wing's downforce at its quarter chord for the axle
+split, re-estimated when placed off its own height. Full: the car cut into
+strips across half its width (sines-spaced, finer outside), each section
+meshed with the wings fused into it (a front wing may run through the nose)
+and solved in SU2: wall functions on the body and fixed wheels, quad layers
+for y+ 1 on the wings, the ground moving and the wheels rolling if asked;
+each wing's share is 3D-corrected as Wing Lab does, and a full run uses the
+bare-car baseline's mesh. Booleans are done in OCP and meshing in gmsh's
+built-in kernel, because gmsh's own OpenCascade kernel crashes in a process
+that has loaded OCP. Car cases use FDS upwind (JST drifted on a bluff body)
+and a looser convergence test (2 orders, 0.5 % over 500 iterations), and a
+rotating wheel has no wall functions (SU2 8.5 goes to NaN). The axle split
+comes from the moment about the ground line, so drag above the ground counts.
+Rear-wheel drive: Lap Sim's driven-axle balance is the rear share. Spec and
+plan: docs/superpowers/specs/2026-11-03-car-builder-design.md,
+docs/superpowers/plans/2026-11-03-car-builder.md.

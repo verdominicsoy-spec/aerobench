@@ -63,7 +63,7 @@ def combine(strips: list[dict], setup: dict, speed: float, rho: float, wings: li
 
 
 def run(setup: dict, wings: list[dict], flow: dict, preset: str, workdir: Path, su2_hint: str | None, cores: int,
-        progress, planes: list | None = None, iterations: int = 6000) -> dict:
+        progress, planes: list | None = None, iterations: int = 6000, n: int = 7) -> dict:
     """Every strip's section solved in turn; the car result."""
     from ..cad.edit.refs import load_part
     from .case import RHO, solve_section
@@ -71,7 +71,7 @@ def run(setup: dict, wings: list[dict], flow: dict, preset: str, workdir: Path, 
 
     shape, _, _ = load_part(Path(setup["step"]), None)
     half = max(abs(w["centre"][1]) + w["width"] / 2 for w in setup["wheels"])
-    planes = [tuple(p) for p in planes] if planes else plan(half)
+    planes = [tuple(p) for p in planes] if planes else plan(half, n)
     results = []
     for k, (y, width) in enumerate(planes):
         here = [w for w in wings if y <= w["span"] * 500.0]

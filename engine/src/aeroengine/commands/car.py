@@ -36,6 +36,6 @@ def car_strips(ctx: JobContext) -> dict:
     flow = ctx.params.get("flow") or {"speed": setup.get("speed", 15.0)}
     result = run(setup, list(ctx.params.get("wings") or []), flow, ctx.params.get("preset", "medium"), ctx.workdir,
                  ctx.params.get("su2") or ctx.options.su2_path, ctx.options.cores, ctx.emit.progress,
-                 ctx.params.get("planes"), int(ctx.params.get("iterations", 6000)))
+                 ctx.params.get("planes"), int(ctx.params.get("iterations", 6000)), int(ctx.params.get("n", 7)))
     (ctx.workdir / "car_result.json").write_text(json.dumps(result, indent=1))
     return result

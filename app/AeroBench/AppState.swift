@@ -21,6 +21,7 @@ final class AppState {
     let jobs: JobManager
     let cad: CADViewerModel
     let partEdit = PartEditModel()
+    let car = CarModel()
     let flow: FlowFieldModel
     let wingLab: WingLabModel
     var project: OpenProject?
