@@ -125,7 +125,7 @@ the recommendation, taken as the builder's call.
   the body and wheels, y+ about 1 on wing elements; refinement behind the
   car; far field several car lengths away.
 - **SU2**: ground marker moving at its speed or fixed; wheel markers
-  rotating about their axles at their speed or fixed; wall functions on
+  rotating about their axles at their speed or fixed; no-slip walls on
   body and wheels; forces per marker so the wing's share can be reported.
 - **Strips job**: plans the planes, runs each section, and sums
   `ClA = 2 * sum(L'_i * w_i) / q`, `CdA` the same with drag, and the axle

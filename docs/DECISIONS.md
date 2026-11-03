@@ -1351,14 +1351,26 @@ plus each card's, each wing's downforce at its quarter chord for the axle
 split, re-estimated when placed off its own height. Full: the car cut into
 strips across half its width (sines-spaced, finer outside), each section
 meshed with the wings fused into it (a front wing may run through the nose)
-and solved in SU2: wall functions on the body and fixed wheels, quad layers
+and solved in SU2: a high-y+ mesh on the body and wheels, quad layers
 for y+ 1 on the wings, the ground moving and the wheels rolling if asked;
 each wing's share is 3D-corrected as Wing Lab does, and a full run uses the
 bare-car baseline's mesh. Booleans are done in OCP and meshing in gmsh's
 built-in kernel, because gmsh's own OpenCascade kernel crashes in a process
 that has loaded OCP. Car cases use FDS upwind (JST drifted on a bluff body)
-and a looser convergence test (2 orders, 0.5 % over 500 iterations), and a
-rotating wheel has no wall functions (SU2 8.5 goes to NaN). The axle split
+and a looser convergence test (2 orders, 0.5 % over 500 iterations). The
+body and wheels keep the high-y+ mesh but are plain no-slip walls, not wall
+functions: SU2 8.5's wall functions put k near 1e5 on wall nodes at the real
+car's sharp corners and SST ran away (CD 7 to 18 per metre at the
+centreline, fixed or moving ground), and on a rotating wheel gave NaN.
+Without them the centreline settles with the ground moving or fixed, so
+the ground moves by default again. The gap under the floor gets a set
+number of cells across it (8 coarse, 12 medium, 16 maxed): at the wall size
+the centreline's 34 mm gap had 3, the moving ground dragged a Couette
+profile through it and pumped the floor to Cp +1.5 (CL +1.8 per metre).
+Drag holds within 2 % from 4 to 20 cells (CD 0.82 to 0.84 moving, 0.48 to
+0.51 fixed); lift still moves with the gap's cells (CL +0.2 at 8, -0.35 at
+12, -0.4 at 16, near -0.6 at 20), because no-slip walls at high y+ set the
+gap's friction by the cell size. Read the bare car's ClA as an estimate. The axle split
 comes from the moment about the ground line, so drag above the ground counts.
 Rear-wheel drive: Lap Sim's driven-axle balance is the rear share. Spec and
 plan: docs/superpowers/specs/2026-11-03-car-builder-design.md,

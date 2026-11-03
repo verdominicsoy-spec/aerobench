@@ -159,6 +159,13 @@ def flow(ground=True, wheels=True, speed=15.0):
     return {"speed": speed, "ground": {"moving": ground, "speed": speed}, "wheels": {"rotating": wheels, "speed": speed}}
 
 
+def _su2():
+    try:
+        return car_case.su2.find_su2()
+    except Exception:
+        return None
+
+
 SETUP = {"ground_z": 0.0, "speed": 15.0, "wheels": [{"name": "FL", "centre": [-400, 400, 230], "radius": 230, "width": 200}]}
 
 
@@ -169,15 +176,12 @@ def test_config_moves_the_ground_and_turns_the_wheels():
     # rolling: 15 m/s over r 0.23 m, about the wheel's centre (X = 0.4, Y = 0.23 m)
     assert "SURFACE_ROTATION_RATE= ( 0.0, 0.0, 0.0, 0.0, 0.0, 65.2174 )" in text
     assert "SURFACE_MOTION_ORIGIN= ( 0.0, 0.0, 0.0, 0.4, 0.23, 0.0 )" in text
-    # SU2 8.5 goes to NaN with wall functions on a rotating wall: those are plain no-slip moving walls
-    assert "MARKER_WALL_FUNCTIONS= ( body, STANDARD_WALL_FUNCTION )" in text
+    assert "MARKER_WALL_FUNCTIONS" not in text
 
 
 def test_config_without_moving_parts():
     text = car_case.config(["body", "wheel_FL", "wing_front"], SETUP, flow(False, False), "m.su2")
-    assert "MARKER_WALL_FUNCTIONS= ( body, STANDARD_WALL_FUNCTION, wheel_FL, STANDARD_WALL_FUNCTION )" in text
     assert "MARKER_MOVING" not in text and "SURFACE_MOVEMENT" not in text
-    assert "wing_front, STANDARD_WALL_FUNCTION" not in text  # wings are resolved to the wall
     assert "MARKER_HEATFLUX= ( body, 0.0, wheel_FL, 0.0, wing_front, 0.0, ground, 0.0 )" in text
 
 
@@ -186,8 +190,7 @@ def test_config_moves_only_the_ground_when_asked():
     assert "MARKER_MOVING= ( ground )" in text and "SURFACE_MOVEMENT= ( MOVING_WALL )" in text
 
 
-@pytest.mark.skipif(not __import__("shutil").which("SU2_CFD") and not (Path(__file__).resolve().parents[2] / "build" / "su2" / "bin" / "SU2_CFD").exists(),
-                    reason="SU2 is not installed")
+@pytest.mark.skipif(_su2() is None, reason="SU2 is not installed")
 def test_a_section_solves(car_step, tmp_path):
     s = car_setup.setup(car_step)
     cut = section.cut(car_setup.load_part(car_step, None)[0], 0.0, s)
@@ -247,8 +250,7 @@ def test_wing_shares_are_corrected_to_3d():
     assert r["cla"] == pytest.approx(r["cla_2d_wings"] - two_d + front["cla"], rel=1e-6)
 
 
-@pytest.mark.skipif(not (Path(__file__).resolve().parents[2] / "build" / "su2" / "bin" / "SU2_CFD").exists()
-                    and not __import__("shutil").which("SU2_CFD"), reason="SU2 is not installed")
+@pytest.mark.skipif(_su2() is None, reason="SU2 is not installed")
 def test_car_strips_through_the_engine(engine, car_step, tmp_path):
     import json
     s = car_setup.setup(car_step)
@@ -312,9 +314,21 @@ def test_contact_blocks_are_not_rotating_wheel_walls(car_step, tmp_path):
     assert max(off) < 0.003  # every rotating-wall node on the tyre, none on the block
 
 
-def test_the_engine_defaults_to_a_fixed_ground():
+def test_the_engine_defaults_to_a_moving_ground():
     text = car_case.config(["body"], SETUP, {"speed": 15.0}, "m.su2")
-    assert "MARKER_MOVING= ( ground" not in text
+    assert "MARKER_MOVING= ( ground" in text
+
+
+
+@needs_base
+@pytest.mark.skipif(_su2() is None, reason="SU2 is not installed")
+def test_the_base_car_centreline_settles_on_a_moving_ground(tmp_path):
+    # With wall functions SST ran away at the car's corners: CD 7 to 18 per metre, never converged.
+    s = car_setup.setup(BASE)
+    cut = section.cut(car_setup.load_part(BASE, None)[0], 0.0, s)
+    r = car_case.solve_section(cut, [], s, flow(), "coarse", tmp_path, None, 6, lambda p, m: None)
+    assert r["converged"], r["reason"]
+    assert 0.3 < r["drag"] / Q < 2.0
 
 
 def test_rear_share_counts_the_3d_correction_where_the_wing_acts():

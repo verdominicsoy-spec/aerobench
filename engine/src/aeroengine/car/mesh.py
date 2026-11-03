@@ -11,10 +11,12 @@ OpenCascade kernel crashes in a process that has loaded OCP).
 * A wheel standing on the ground gets a contact block up to 5 mm above the
   floor merged with it: a tyre touching the floor at one point leaves a
   sliver no mesher can fill.
-* Body and wheels get fine triangles sized for wall functions (y+ about
-  30 to 100); wings get quad wall layers for y+ about 1, as Wing Lab's
-  meshes do. Quad layers on a real car's many sharp corners fail, and wall
-  functions do not need them.
+* Body and wheels get fine triangles at high y+ (about 30 to 100), solved
+  as plain no-slip walls (SU2's wall functions ran away at the real car's
+  corners, see case.py); wings get quad wall layers for y+ about 1, as Wing
+  Lab's meshes do. Quad layers on a real car's many sharp corners fail.
+* The gap between the floor and the ground gets a set number of cells
+  across it (8 coarse to 16 maxed), whatever the wall size.
 
 Coordinates: the section's (x, z) mm become (X, Y) m with X = -x (the car
 faces the flow, which runs along +X) and Y = z - ground.
@@ -45,10 +47,10 @@ CONTACT_M = 0.005
 MERGE_M = 1e-5  # outline vertices closer than this are one
 
 PRESETS = {  # wall size on body and wheels (m), wing surface size (fraction of chord), growth away from walls,
-    # and the pixel the car's outlines are merged on (m)
-    "coarse": {"wall": 0.012, "wing": 0.01, "far": 0.6, "pixel": 0.001},
-    "medium": {"wall": 0.008, "wing": 0.006, "far": 0.5, "pixel": 0.00075},
-    "maxed": {"wall": 0.003, "wing": 0.004, "far": 0.4, "pixel": 0.0005},
+    # the pixel the car's outlines are merged on (m), and cells across the gap under the floor
+    "coarse": {"wall": 0.012, "wing": 0.01, "far": 0.6, "pixel": 0.001, "gap": 8},
+    "medium": {"wall": 0.008, "wing": 0.006, "far": 0.5, "pixel": 0.00075, "gap": 12},
+    "maxed": {"wall": 0.003, "wing": 0.004, "far": 0.4, "pixel": 0.0005, "gap": 16},
 }
 
 
@@ -280,6 +282,8 @@ def build(section: dict, wings: list[dict], setup: dict, preset: str, out: Path)
     x0, x1 = float(allp[:, 0].min()), float(allp[:, 0].max())
     length = max(x1 - x0, 0.1)
     height = max(float(allp[:, 1].max()), 0.1)
+    bodies = [p for m_, p in shapes if m_ == "body"]
+    floor = min(float(p[:, 1].min()) for p in bodies) if bodies else None
 
     xi, xo, top = x0 - 3 * length, x1 + 6 * length, 4 * height
     car_polys = [p for m_, p in shapes if not m_.startswith("wing_")]
@@ -419,6 +423,18 @@ def build(section: dict, wings: list[dict], setup: dict, preset: str, out: Path)
         fld.setNumber(wake, "YMax", 1.3 * height)
         fld.setNumber(wake, "Thickness", 0.5 * length)
         fields.append(wake)
+        if floor is not None and 0 < floor < 0.5 * height:
+            # The gap under the floor: at the wall size the centreline's 34 mm had 3 cells, the moving
+            # ground dragged a Couette profile through it, and the lift halved from coarse to medium.
+            gap = fld.add("Box")
+            fld.setNumber(gap, "VIn", min(ps["wall"], floor / ps["gap"]))
+            fld.setNumber(gap, "VOut", ps["far"] * length)
+            fld.setNumber(gap, "XMin", x0)
+            fld.setNumber(gap, "XMax", x1)
+            fld.setNumber(gap, "YMin", 0)
+            fld.setNumber(gap, "YMax", floor)
+            fld.setNumber(gap, "Thickness", 2 * floor)
+            fields.append(gap)
         first = None
         if wing_curves:
             chord = max(c for _, _, c in wing_polys)

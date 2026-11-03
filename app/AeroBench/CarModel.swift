@@ -32,9 +32,7 @@ final class CarModel {
     var selected: String?
     var mesh = "medium"
     var strips = 7
-    // Fixed by default: on the real car a moving ground drove SU2 to CD 18 and a large upforce at
-    // the centreline (fixed: CD settles near 0.3 to 2); the option stays for when that is solved.
-    var groundMoving = false
+    var groundMoving = true
     var groundSpeed = 15.0
     var wheelsRotating = true
     var wheelsSpeed = 15.0

@@ -72,10 +72,6 @@ private struct BaseCarPane: View {
                     Toggle("Moving ground", isOn: $car.groundMoving)
                     if car.groundMoving { NumberField(label: "at", unit: "m/s", digits: 1, value: $car.groundSpeed) }
                 }
-                if car.groundMoving {
-                    Text("Unverified: on this car a moving ground gave non-physical forces. Results are marked.")
-                        .font(.caption).foregroundStyle(S37.C.ochre)
-                }
                 HStack {
                     Toggle("Rotating wheels", isOn: $car.wheelsRotating)
                     if car.wheelsRotating { NumberField(label: "at", unit: "m/s", digits: 1, value: $car.wheelsSpeed) }
@@ -99,8 +95,7 @@ private struct BaseCarPane: View {
                         .font(.caption).foregroundStyle(S37.C.inkSecondary)
                 }
                 if let b = car.base {
-                    Text(String(format: "ClA %.3f m²   CdA %.3f m²   ", b.cla, b.cda) + rearText(b.rearShare)
-                         + (b.groundMoving == true ? "   (moving ground, unverified)" : ""))
+                    Text(String(format: "ClA %.3f m²   CdA %.3f m²   ", b.cla, b.cda) + rearText(b.rearShare))
                         .monospacedDigit()
                     if !b.converged {
                         Text("\(b.strips.filter { !$0.converged }.count) of \(b.strips.count) strips did not converge")
@@ -470,7 +465,7 @@ private struct CombinationsPane: View {
             }
             if let f = combo.full {
                 Text(String(format: "Full (%@): ClA %.3f   CdA %.3f   ", f.mesh, f.cla, f.cda) + rearText(f.rearShare)
-                     + (f.converged ? "" : "  not converged") + (f.groundMoving == true ? "  moving ground, unverified" : ""))
+                     + (f.converged ? "" : "  not converged"))
                     .font(.caption).monospacedDigit().foregroundStyle(f.converged ? S37.C.ink : S37.C.clayInk)
             }
             HStack {

@@ -1,6 +1,6 @@
-"""The SU2 case for a car section: SST RANS with wall functions on the
-body and wheels, wings resolved to the wall, the ground and wheels moving
-or not as asked. Runs through Wing Lab's SU2 runner (CFL fallbacks,
+"""The SU2 case for a car section: SST RANS, plain no-slip walls on the
+body and wheels' high-y+ mesh, wings resolved to the wall, the ground and
+wheels moving or not as asked. Runs through Wing Lab's SU2 runner (CFL fallbacks,
 convergence test, early stop), with this file's config.
 
 In the mesh the flow runs along +X with the car standing still: a moving
@@ -29,17 +29,14 @@ def _walls(markers: list[str]) -> list[str]:
 def config(markers: list[str], setup: dict, flow: dict, mesh_file: str, iterations: int = 6000,
            cfl: float = 10.0, scheme: str = "fds") -> str:
     walls = _walls(markers)
-    resolved = [w for w in walls if w.startswith("wing_")]
-    modelled = [w for w in walls if w not in resolved]
     ground = float(setup.get("ground_z", 0.0))
     speed = float(flow.get("speed", setup.get("speed", 15.0)))
     moving, origins, rotation, translation = [], [], [], []
-    # Fixed unless asked: on the real car a moving ground gave non-physical forces (CD about 18).
-    if flow.get("ground", {}).get("moving", False):
+    if flow.get("ground", {}).get("moving", True):
         moving.append("ground")
         origins += [0.0, 0.0, 0.0]
         rotation += [0.0, 0.0, 0.0]
-        translation += [float(flow["ground"].get("speed", speed)), 0.0, 0.0]
+        translation += [float(flow.get("ground", {}).get("speed", speed)), 0.0, 0.0]
     if flow.get("wheels", {}).get("rotating", True):
         wheels = {w["name"]: w for w in setup.get("wheels", [])}
         for m in walls:
@@ -59,10 +56,11 @@ def config(markers: list[str], setup: dict, flow: dict, mesh_file: str, iteratio
                   f"SURFACE_ROTATION_RATE= ( {fmt(rotation)} )\n"
                   f"SURFACE_TRANSLATION_RATE= ( {fmt(translation)} )\n")
     heatflux = ", ".join(f"{w}, 0.0" for w in walls + ["ground"])
-    # SU2 8.5 goes to NaN at the first iteration with wall functions on a
-    # rotating wall: a turning wheel is a plain no-slip moving wall.
-    modelled = [w for w in modelled if w not in moving]
-    wall_functions = ", ".join(f"{w}, STANDARD_WALL_FUNCTION" for w in modelled)
+    # No wall functions: SU2 8.5's put k near 1e5 (U = 1) on wall nodes at the
+    # real car's sharp corners from the first iterations, and SST ran away
+    # (eddy viscosity 1e5 to 1e9 times the laminar, CD 7 to 18 per metre, fixed
+    # or moving ground); on a rotating wall they gave NaN at once. Plain no-slip
+    # on the same mesh settles (centreline: residual down 5 orders).
     flow_scheme = {
         "jst": f"CONV_NUM_METHOD_FLOW= JST\nMUSCL_FLOW= NO\nJST_SENSOR_COEFF= ( {su2.JST_DISSIPATION[0]}, {su2.JST_DISSIPATION[1]} )",
         "fds": "CONV_NUM_METHOD_FLOW= FDS\nMUSCL_FLOW= YES\nSLOPE_LIMITER_FLOW= NONE",
@@ -87,7 +85,6 @@ REF_ORIGIN_MOMENT_Z= 0.0
 REF_LENGTH= 1.0
 REF_AREA= 1.0
 MARKER_HEATFLUX= ( {heatflux} )
-{f"MARKER_WALL_FUNCTIONS= ( {wall_functions} )" if modelled else ""}
 {motion}MARKER_FAR= ( inlet, outlet, top )
 MARKER_PLOTTING= ( {', '.join(walls)} )
 MARKER_MONITORING= ( {', '.join(walls)} )
