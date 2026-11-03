@@ -103,3 +103,48 @@ def test_the_base_car_centreline():
     cut = section.cut(car_setup.load_part(BASE, None)[0], 0.0, s)
     xs = [p[0] for lp in cut["loops"] for p in lp["points"]]
     assert cut["loops"] and min(xs) == pytest.approx(-2199, abs=20) and max(xs) == pytest.approx(282, abs=20)
+
+
+# The car mesh -----------------------------------------------------------------
+
+import numpy as np  # noqa: E402
+
+from aeroengine.car import mesh as car_mesh  # noqa: E402
+
+
+def front_wing():
+    """A 300 mm ellipse-like element whose back 50 mm sit inside the synthetic car's nose."""
+    t = np.linspace(0, 2 * np.pi, 81)[:-1]
+    xs, zs = 0 + 150 * np.cos(t), 95 + 15 * np.sin(t)
+    return {"position": "front", "elements": [np.c_[xs, zs].tolist()], "span": 1.0, "factor3d": 1.0, "endplate": None}
+
+
+def test_a_centreline_mesh_has_the_markers(car_step, tmp_path):
+    s = car_setup.setup(car_step)
+    cut = section.cut(car_setup.load_part(car_step, None)[0], 0.0, s)
+    st = car_mesh.build(cut, [], s, "coarse", tmp_path / "m.su2")
+    assert set(st["markers"]) == {"body", "ground", "inlet", "outlet", "top"} and st["cells"] > 1000
+
+
+def test_a_wing_through_the_nose_is_fused_but_keeps_its_marker(car_step, tmp_path):
+    s = car_setup.setup(car_step)
+    cut = section.cut(car_setup.load_part(car_step, None)[0], 0.0, s)
+    wing = front_wing()
+    wing["elements"][0] = [[x - 100, z] for x, z in wing["elements"][0]]  # 50 mm into the nose at x = -100
+    st = car_mesh.build(cut, [wing], s, "coarse", tmp_path / "m.su2")
+    assert "wing_front" in st["markers"] and st["obstacles"] == 1 and st["quads"] > 0
+
+
+def test_a_section_through_a_wheel_has_its_marker(car_step, tmp_path):
+    s = car_setup.setup(car_step)
+    cut = section.cut(car_setup.load_part(car_step, None)[0], 400.0, s)
+    st = car_mesh.build(cut, [], s, "coarse", tmp_path / "m.su2")
+    assert {"wheel_FL", "wheel_RL"} <= set(st["markers"])
+
+
+def test_maxed_is_finer_than_coarse(car_step, tmp_path):
+    s = car_setup.setup(car_step)
+    cut = section.cut(car_setup.load_part(car_step, None)[0], 0.0, s)
+    coarse = car_mesh.build(cut, [], s, "coarse", tmp_path / "c.su2")["cells"]
+    maxed = car_mesh.build(cut, [], s, "maxed", tmp_path / "x.su2")["cells"]
+    assert maxed > 2 * coarse
