@@ -865,9 +865,34 @@ struct CFDResults: View {
         let lab = app.wingLab
         VStack(spacing: 0) {
             if let a = lab.pinned, a.field == nil || !lab.fieldIsCurrent { compareBar(lab) }
-            if let sweep = lab.sweep { SweepStrip(sweep: sweep) }
+            if let sweep = lab.sweep {
+                SweepStrip(sweep: sweep)
+            } else if case let points = app.ransPolar, !points.isEmpty {
+                ransRuns(points, lab)
+            }
             run(lab)
         }
+    }
+
+    /// The RANS runs of this wing so far, one point per wing angle.
+    @ViewBuilder private func ransRuns(_ points: [PolarCharts.Point], _ lab: WingLabModel) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("RANS runs of this wing").font(.caption).bold()
+                Text(points.count == 1
+                     ? "One angle so far: run RANS at other wing angles (or a sweep, in free air) to draw the curves."
+                     : "\(points.count) wing angles, the latest run at each, \(lab.turbulenceModel.rawValue) model.")
+                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if points.contains(where: { !$0.good }) {
+                    Text("Rust points did not converge: not results.").font(.caption2).foregroundStyle(S37.C.chart5)
+                }
+            }
+            .frame(width: 260, alignment: .leading)
+            PolarCharts(points: points, mark: lab.ransResult?.alpha)
+        }
+        .padding(8)
+        .frame(height: 170)
+        Divider()
     }
 
     @ViewBuilder private func run(_ lab: WingLabModel) -> some View {

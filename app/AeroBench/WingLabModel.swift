@@ -126,6 +126,8 @@ final class WingLabModel {
     var turbulenceIntensity = 1.0  // percent
     var ransJob: JobItem?
     var ransResult: WingRansResult?
+    /// The CFD tab's polar from earlier RANS runs, kept until the wing, its model or the runs change.
+    @ObservationIgnored var ransPolarCache: (key: String, wing: [WingElement], points: [PolarCharts.Point])?
     var ransFolder: URL?
     var su2Job: JobItem?
 

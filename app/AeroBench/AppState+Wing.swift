@@ -515,6 +515,27 @@ extension AppState {
         return "design-\(n)"
     }
 
+    /// Every finished RANS run of the wing as drawn (each element within a millimetre, the same ride
+    /// height and model), one point per wing angle, the latest run at each: the CFD tab's polar when
+    /// no sweep has run. Single runs at a few angles draw the curves.
+    var ransPolar: [PolarCharts.Point] {
+        let lab = wingLab
+        let done = jobs.jobs.filter { $0.command == "wing-rans" && $0.status == .succeeded }
+        let key = "\(done.count)|\(done.last?.id ?? "")|\(lab.turbulenceModel.rawValue)|\(lab.wing.rideHeight ?? -1)"
+        if let c = lab.ransPolarCache, c.key == key, c.wing == lab.wing.elements { return c.points }
+        let outlines = lab.wing.elements.map { $0.placed() }
+        var byAngle: [Double: PolarCharts.Point] = [:]
+        for job in done.sorted(by: { $0.created < $1.created }) {
+            guard let text = job.resultText, let r = try? WingRansResult.decode(resultFile: Data(text.utf8)),
+                  r.model == lab.turbulenceModel.rawValue, r.matches(outlines) else { continue }
+            let a = ((r.alpha ?? 0) * 10).rounded() / 10
+            byAngle[a] = .init(alpha: a, cl: r.cl, cd: r.cd, good: r.converged)
+        }
+        let points = byAngle.values.sorted { $0.alpha < $1.alpha }
+        lab.ransPolarCache = (key, lab.wing.elements, points)
+        return points
+    }
+
     /// The fastest-lap objective races the Lap Sim's car A, with this wing in
     /// place of the one it replaces, around the Lap Sim's track.
     func lapObjectiveParams() throws -> JSONValue {
