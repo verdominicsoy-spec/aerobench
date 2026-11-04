@@ -20,7 +20,7 @@ from ..job import EngineError
 from . import library_polars
 from .airfoils import NACA_SET, naca
 from .estimate import estimate
-from .geometry import Element, Variable, Wing, label
+from .geometry import _place_slot, Element, Variable, Wing, label
 from .viscous import reynolds
 
 # Chord shares and in-place angles of the standard arrangement: a common
@@ -114,26 +114,66 @@ def shortlist(root: Path | None, chords: list[float], current: list[str | None],
     return out
 
 
-def layout(units: list[np.ndarray], chord_total: float, inverted: bool, rules_box=None, min_gap: float = 0.005) -> Wing:
-    """The standard arrangement, scaled down until it fits the rules box."""
+def layout(units: list[np.ndarray], chord_total: float, inverted: bool, rules_box=None, min_gap: float = 0.005,
+           fill: bool = False) -> Wing:
+    """The standard arrangement, scaled down until it fits the rules box; with
+    `fill`, the largest that fits it instead (chord_total ignored), sitting at
+    the box's front and bottom."""
     n = len(units)
     if n not in SHARES:
         raise EngineError("a starting wing has 2 to 5 elements")
-    scale = 1.0
-    for _ in range(12):
-        chords = [chord_total * scale * s for s in SHARES[n]]
-        origin = np.zeros(2)
-        if rules_box is not None:
-            x0, y0, x1, y1 = rules_box
-            origin = np.array([x0 + 0.03 * (x1 - x0), y0 + (0.75 if inverted else 0.25) * (y1 - y0)])
+
+    def build(total: float, origin: np.ndarray, both: bool = False) -> Wing:
+        chords = [total * s for s in SHARES[n]]
         els = [Element(units[0], chords[0], ANGLES[n][0], origin.copy(), inverted)]
         for i in range(1, n):
             prev = els[-1]
             els.append(Element(units[i], chords[i], ANGLES[n][i], prev.trailing_edge.copy(), inverted))
         w = Wing(els, min_gap=min_gap, rules_box=rules_box)
         for i in range(1, n):
-            w.set_overlap(OVERLAP, i)
-            w.set_gap(GAP, i)
+            if both:  # both at once: setting them in turn does not settle on longer chords (the slot closes)
+                _place_slot(w, i, np.array([GAP, OVERLAP]))
+            else:  # the arrangement the estimate's RANS checks were made on
+                w.set_overlap(OVERLAP, i)
+                w.set_gap(GAP, i)
+        return w
+
+    if fill and rules_box is not None:
+        x0, y0, x1, y1 = rules_box
+
+        def fitted(total: float) -> Wing:
+            w = build(total, np.zeros(2), both=True)
+            pts = np.vstack([e.placed() for e in w.elements])
+            # The arrangement's bounding box at the box's front and bottom (a hair inside: rounding).
+            shift = np.array([x0, y0]) + 1e-7 - pts.min(axis=0)
+            for e in w.elements:
+                e.leading_edge = e.leading_edge + shift
+            return w
+
+        probe = np.vstack([e.placed() for e in build(1.0, np.zeros(2), both=True).elements])
+        size = np.ptp(probe, axis=0)
+        lo, hi = 0.0, 1.2 * min((x1 - x0) / size[0], (y1 - y0) / size[1])
+        best = None
+        for _ in range(12):
+            mid = (lo + hi) / 2
+            w = fitted(mid)
+            if w.issues():
+                hi = mid
+            else:
+                lo, best = mid, w
+        if best is None:
+            raise EngineError(f"no {n}-element wing fits the rules box "
+                              f"({(x1 - x0) * 1000:.0f} x {(y1 - y0) * 1000:.0f} mm)",
+                              "use fewer elements or a bigger box")
+        return best
+
+    scale = 1.0
+    for _ in range(12):
+        origin = np.zeros(2)
+        if rules_box is not None:
+            x0, y0, x1, y1 = rules_box
+            origin = np.array([x0 + 0.03 * (x1 - x0), y0 + (0.75 if inverted else 0.25) * (y1 - y0)])
+        w = build(chord_total * scale, origin)
         if not w.issues():
             return w
         scale *= 0.9
@@ -170,7 +210,7 @@ def variables(wing: Wing, shortlists: list[list[str]] | None = None) -> list[Var
 def starter(root: Path | None, elements: int = 2, chord_total: float = 0.44, inverted: bool = True,
             rules_box=None, speed: float = 15.0, rho: float = 1.225, mu: float = 1.81e-5, n_crit: float = 9.0,
             min_thickness: float = 0.08, candidates: int = 6, min_gap: float = 0.005,
-            ride_height: float | None = None, progress=lambda pct, msg: None) -> dict:
+            ride_height: float | None = None, progress=lambda pct, msg: None, fill: bool = False) -> dict:
     t0 = time.time()
     secs = _sections(root, min_thickness)
     if not secs:
@@ -193,7 +233,7 @@ def starter(root: Path | None, elements: int = 2, chord_total: float = 0.44, inv
     tried, best = [], None
     for j, (clmax, key, name, unit) in enumerate(ranked[:candidates]):
         progress(70 + 25 * j / candidates, f"trying {name}")
-        w = layout([unit] * elements, chord_total, inverted, rules_box, min_gap)
+        w = layout([unit] * elements, chord_total, inverted, rules_box, min_gap, fill=fill)
         els = [{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "chord": e.chord, "angle": e.angle,
                 "inverted": e.inverted} for e in w.elements]
         row = estimate(els, [0.0], speed, rho, mu, n_crit, ride_height=ride_height)["rows"][0]

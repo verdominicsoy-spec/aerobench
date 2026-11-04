@@ -58,3 +58,17 @@ def test_shortlists_rank_each_element_at_its_own_reynolds_number(engine, tmp_pat
     assert lists[0][0]["key"] == "naca/0012"  # the element's own section first, whatever its rank
     assert lists[1][0]["key"] != "naca/0012" and all(int(x["key"][-2:]) >= 10 for x in lists[1])
     assert len({x["key"] for x in lists[0]}) == 4  # no repeats
+
+
+def test_a_filled_layout_uses_the_box():
+    import numpy as np
+    import pytest
+
+    box = (0.0, 0.03, 0.70, 0.35)  # the front wing's box in the design frame: 700 mm long, 30 to 350 mm up
+    for n in (2, 3, 5):
+        w = layout([naca4("6412")] * n, 0.44, True, box, fill=True)
+        pts = np.vstack([e.placed() for e in w.elements])
+        assert not w.issues()
+        width, height = np.ptp(pts[:, 0]), np.ptp(pts[:, 1])
+        assert width >= 0.95 * 0.70 or height >= 0.95 * 0.32  # grown until one side of the box stops it
+        assert pts[:, 0].min() == pytest.approx(0.0, abs=0.002) and pts[:, 1].min() == pytest.approx(0.03, abs=0.002)
