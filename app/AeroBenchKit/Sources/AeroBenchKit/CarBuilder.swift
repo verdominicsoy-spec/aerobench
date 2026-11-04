@@ -190,6 +190,14 @@ public struct WingCard: Codable, Equatable, Identifiable, Sendable {
         self.revision = revision
     }
 
+    /// A card from a wing and its section numbers, as Wing Lab's Save as Card makes it.
+    public static func make(wing: Wing, cl: Double, cd: Double, solver: String, id: String, name: String, revision: Int) -> WingCard {
+        let add = wing.carContribution(cl: cl, cd: cd)
+        return WingCard(id: id, name: name, position: wing.rulesFor, wing: wing, cla: add.cla, cda: add.cda,
+                        xcp: wing.refChord / 4,  // the quarter chord: where a section's lift acts, near enough
+                        solver: solver, rideHeight: wing.rideHeight, speed: wing.speed, revision: revision)
+    }
+
     /// The elements turned by the wing's angle as Wing Lab does over a
     /// ground, in the wing's frame (m, x downstream, y up).
     func outline() -> [[SIMD2<Double>]] {
@@ -222,6 +230,15 @@ public struct Placement: Codable, Equatable, Sendable {
         } }
     }
 
+    /// Where a card first goes on the car: 10 mm inside the front of its box, at its own ride height or just above the clearance.
+    public static func start(card: WingCard, setup: CarSetup) -> Placement {
+        let box = CarRules.box(card.position, setup: setup)
+        let axle = setup.axleX(card.position == .front ? "F" : "R")
+        let p = Placement(card: card.id, x: box.maxX - axle - 10,
+                          height: max(card.rideHeight.map { $0 * 1000 } ?? 0, box.minZ - setup.groundZ) + 10)
+        return p.clamped(card: card, setup: setup).0
+    }
+
     /// Moved the least distance that keeps the whole wing inside its rules box.
     public func clamped(card: WingCard, setup: CarSetup) -> (Placement, clamped: Bool) {
         let box = CarRules.box(card.position, setup: setup)
@@ -249,6 +266,19 @@ public enum CarRules {
         guard let lo = pts.map(\.x).min(), let hi = pts.map(\.x).max(),
               let bottom = pts.map(\.y).min(), let top = pts.map(\.y).max() else { return true }
         return (hi - lo) * 1000 <= b.maxX - b.minX + 1e-6 && (top - bottom) * 1000 <= b.maxZ - b.minZ + 1e-6
+    }
+
+    /// The card's box as a rules box in the frame Wing Lab checks it in (the
+    /// elements unturned, m), with the wing at `placement`: its leading edge and
+    /// lowest point are the anchor. Exact at a wing angle of 0.
+    public static func wingBox(_ card: WingCard, placement: Placement, setup: CarSetup) -> RulesBox {
+        let b = box(card.position, setup: setup)
+        let pts = card.wing.elements.flatMap { $0.placed() }
+        let minX = pts.map(\.x).min() ?? 0, minY = pts.map(\.y).min() ?? 0
+        let front = setup.axleX(card.position == .front ? "F" : "R") + placement.x  // car x of the leading edge
+        let bottom = setup.groundZ + placement.height  // car z of the lowest point
+        return RulesBox(minX: minX + (front - b.maxX) / 1000, minY: minY + (b.minZ - bottom) / 1000,
+                        maxX: minX + (front - b.minX) / 1000, maxY: minY + (b.maxZ - bottom) / 1000)
     }
 
     public static func box(_ position: WingPosition, setup: CarSetup) -> (minX: Double, maxX: Double, minZ: Double, maxZ: Double) {
@@ -291,6 +321,29 @@ public struct Combination: Codable, Equatable, Identifiable, Sendable {
             cards.first { $0.id == p.card }.map { ($0.id, $0.revision) }
         })
         self.baseRevision = baseRevision
+    }
+
+    /// Where the wing being edited goes: its end's slot (at its own ride height when it has one),
+    /// or the start spot when that end is empty; kept inside the box.
+    public func draftPlacement(_ draft: WingCard, setup: CarSetup) -> Placement {
+        let slot = draft.position == .front ? front : rear
+        var p = slot ?? Placement.start(card: draft, setup: setup)
+        p.card = draft.id
+        if let h = draft.wing.rideHeight { p.height = h * 1000 }
+        return p.clamped(card: draft, setup: setup).0
+    }
+
+    /// This combination with the wing being edited at `at` on its end; the stored one is unchanged.
+    public func overlaying(_ draft: WingCard, at: Placement) -> Combination {
+        var c = self
+        if draft.position == .front { c.front = at } else { c.rear = at }
+        return c
+    }
+
+    public func without(_ position: WingPosition) -> Combination {
+        var c = self
+        if position == .front { c.front = nil } else { c.rear = nil }
+        return c
     }
 
     /// The full result no longer describes this car: a wing moved or was swapped, a card was

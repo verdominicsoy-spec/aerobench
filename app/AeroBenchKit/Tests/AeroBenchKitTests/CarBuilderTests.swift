@@ -22,6 +22,56 @@ final class CarBuilderTests: XCTestCase {
                         xcp: xcp, solver: "estimate", rideHeight: rideHeight, speed: 15, revision: 1)
     }
 
+    func testACardIsMadeFromTheWingAsSaveDoes() {
+        var w = card(.front).wing
+        w.rulesFor = .front
+        w.rideHeight = 0.05
+        let c = WingCard.make(wing: w, cl: -1.2, cd: 0.05, solver: "CFD", id: "a", name: "Front 1", revision: 3)
+        let add = w.carContribution(cl: -1.2, cd: 0.05)
+        XCTAssertEqual(c.cla, add.cla, accuracy: 1e-12)
+        XCTAssertEqual(c.cda, add.cda, accuracy: 1e-12)
+        XCTAssertEqual(c.xcp, 0.075, accuracy: 1e-12)
+        XCTAssertEqual(c.position, .front)
+        XCTAssertEqual(c.rideHeight, 0.05)
+        XCTAssertEqual(c.revision, 3)
+    }
+
+    func testANewWingStartsAtTheFrontOfItsBox() {
+        let p = Placement.start(card: card(.front), setup: setup())
+        XCTAssertEqual(p.x, 917, accuracy: 1e-9)  // 298 + 629 - 10
+        XCTAssertEqual(p.height, 40, accuracy: 1e-9)  // 30 mm clearance + 10
+    }
+
+    func testTheDraftTakesItsEndsSlotAtItsOwnRideHeight() {
+        var combo = Combination(id: "k", name: "K")
+        combo.front = Placement(card: "cfront", x: 600, height: 60)
+        combo.rear = Placement(card: "crear", x: -100, height: 700)
+        var d = card(.front, rideHeight: 0.08)
+        d.id = "draft"
+        let at = combo.draftPlacement(d, setup: setup())
+        XCTAssertEqual(at, Placement(card: "draft", x: 600, height: 80))
+        let shown = combo.overlaying(d, at: at)
+        XCTAssertEqual(shown.front, at)
+        XCTAssertEqual(shown.rear, combo.rear)
+        XCTAssertEqual(combo.front?.card, "cfront")  // the stored combination is untouched
+        XCTAssertNil(combo.without(.front).front)
+    }
+
+    func testAnEmptyEndGivesTheDraftTheStartSpot() {
+        var d = card(.front)
+        d.id = "draft"
+        XCTAssertEqual(Combination(id: "k", name: "K").draftPlacement(d, setup: setup()), Placement(card: "draft", x: 917, height: 40))
+    }
+
+    func testTheCarsBoxInTheWingsFrame() {
+        let c = card(.front)
+        let b = CarRules.wingBox(c, placement: Placement(card: c.id, x: 600, height: 60), setup: setup())
+        XCTAssertEqual(b.minX, -0.327, accuracy: 1e-9)
+        XCTAssertEqual(b.maxX, 0.373, accuracy: 1e-9)
+        XCTAssertEqual(b.minY, -0.033, accuracy: 1e-9)
+        XCTAssertEqual(b.maxY, 0.287, accuracy: 1e-9)
+    }
+
     func testRulesBoxesComeFromTheCar() {
         let f = CarRules.box(.front, setup: setup())
         XCTAssertEqual(f.minX, -402, accuracy: 1e-9)
