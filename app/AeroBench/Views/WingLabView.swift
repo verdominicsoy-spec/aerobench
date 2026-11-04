@@ -61,7 +61,10 @@ struct WingLabView: View {
             }
         }
         .onChange(of: app.car.selected) { app.syncCarRulesBox() }
+        .preference(key: ToolTakeawayKey.self, value: carTakeaway)
         .onAppear {
+            app.loadCar()
+            app.refreshSections()
             if lab.library.isEmpty { lab.loadLibrary(engineDirectory: app.settings.engineDirectory) }
             if lab.wing.elements.isEmpty && lab.undoStack.isEmpty { lab.reset(to: WingLabModel.starter) }
         }
@@ -100,6 +103,15 @@ struct CanvasHost: View {
                 .onAppear { app.putDraftOnCar() }
             }
         }
+    }
+}
+
+extension WingLabView {
+    /// With a base car, the car with this wing on it; otherwise Wing Lab's own note.
+    var carTakeaway: String? {
+        guard app.car.setup != nil, let q = app.shownQuick, let name = app.shownCombo?.name else { return nil }
+        let rear = q.rearShare.map { String(format: ", %.0f %% rear", $0 * 100) } ?? ""
+        return String(format: "%@ with this wing: ClA %.2f m², CdA %.2f m²", name, q.cla, q.cda) + rear + " (quick)."
     }
 }
 

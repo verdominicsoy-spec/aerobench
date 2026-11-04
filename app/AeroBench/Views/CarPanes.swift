@@ -1,7 +1,7 @@
 import AeroBenchKit
 import SwiftUI
 
-/// The Car tool: the base car from its STEP, its 2D strip runs, and front
+/// Wing Lab's car: the base car from its STEP, its 2D strip runs, and front
 /// and rear wing cards placed on it, compared quickly (sums) or fully (the
 /// strips again with the wings in them), then sent to Lap Sim.
 // MARK: Base car

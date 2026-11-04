@@ -20,7 +20,7 @@ struct CarSection: Decodable, Sendable {
     }
 }
 
-/// The Car tool: the base car, its 2D strip results, the wing cards and the
+/// Wing Lab's car: the base car, its 2D strip results, the wing cards and the
 /// combinations of base car, front card and rear card.
 @MainActor @Observable
 final class CarModel {

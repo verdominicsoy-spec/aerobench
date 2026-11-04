@@ -1390,3 +1390,19 @@ comes from the moment about the ground line, so drag above the ground counts.
 Rear-wheel drive: Lap Sim's driven-axle balance is the rear share. Spec and
 plan: docs/superpowers/specs/2026-11-03-car-builder-design.md,
 docs/superpowers/plans/2026-11-03-car-builder.md.
+
+**Car tool merged into Wing Lab.** Wing Lab and the Car tool had one goal, a
+front and a rear wing that make the car fast, so the Car tool left the dock.
+The wing being edited sits on the selected combination live, at its end's
+place, as a card made in memory from its best numbers; the stored
+combination keeps its card until Save (or Run Full, which saves first). The
+canvas has a Wing | Car switch with the side view, the results pane a Car
+tab, the inspector a Car section, and the library sidebar the cards. On the
+car the wing's height and Wing Lab's ride height are one number, so a drag
+turns the ground on and goes through Wing Lab's undo. With a base car,
+Wing Lab's rules box is the car's box for the wing's end (exact at a wing
+angle of 0), and the Study's fastest-lap goal races the base car with the
+other wing, at the combination's balance when the study starts. A first
+combination is made the first time a wing goes on the car. Spec and plan:
+docs/superpowers/specs/2026-11-04-wing-lab-car-merge-design.md,
+docs/superpowers/plans/2026-11-04-wing-lab-car-merge.md.

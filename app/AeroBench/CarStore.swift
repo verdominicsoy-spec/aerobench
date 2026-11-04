@@ -1,7 +1,7 @@
 import AeroBenchKit
 import Foundation
 
-/// The Car tool's files in the project's car/ folder: the base car's setup,
+/// The car's files in the project's car/ folder: the base car's setup,
 /// its strip results per mesh setting, the wing cards and the combinations.
 enum CarStore {
     static func folder(_ project: URL) -> URL { ProjectStore.toolURL(for: project, tool: "car") }
@@ -49,7 +49,7 @@ enum CarStore {
         return nil
     }
 
-    /// The Car tool's own settings and the bare car's revision, kept between launches.
+    /// The car's own settings and the bare car's revision, kept between launches.
     struct State: Codable {
         var baseRevision = 0
         var mesh = "medium"

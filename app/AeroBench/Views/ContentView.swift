@@ -1,18 +1,17 @@
 import AeroBenchKit
 import SwiftUI
 
-/// The tools, in working order: design the wing, see what it is worth on a
-/// lap, check it on the car, then look at the flow from STAR, with the
+/// The tools, in working order: design the wing and put it on the car, see
+/// what it is worth on a lap, check the CAD, then look at the flow from STAR, with the
 /// prism layer sizes for STAR's mesher alongside.
 enum Tool: String, CaseIterable, Identifiable {
-    case project, wingLab, car, lapSim, cadViewer, flowField, prismLayer, jobs
+    case project, wingLab, lapSim, cadViewer, flowField, prismLayer, jobs
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .project: "Project"
         case .wingLab: "Wing Lab"
-        case .car: "Car"
         case .lapSim: "Lap Sim"
         case .cadViewer: "CAD Viewer"
         case .flowField: "Flow Field"
@@ -25,7 +24,6 @@ enum Tool: String, CaseIterable, Identifiable {
         switch self {
         case .project: "folder"
         case .wingLab: "airplane"
-        case .car: "car.side"
         case .lapSim: "flag.checkered"
         case .cadViewer: "cube"
         case .flowField: "wind"
@@ -48,8 +46,7 @@ enum Tool: String, CaseIterable, Identifiable {
     var note: String {
         switch self {
         case .project: "Open a project or start a new one."
-        case .wingLab: "Draw the wing element by element, then score it with the panel solver, RANS or the optimiser."
-        case .car: "Front and rear wings on the base car: quick sums, or 2D strips of the car with the wings in it."
+        case .wingLab: "Draw the wing element by element, score it with the panel solver, RANS or the optimiser, and see it on the car."
         case .lapSim: "Lap time against ClA and CdA on the event tracks."
         case .cadViewer: "Open the car's CAD and check it is watertight and clean before it meshes."
         case .flowField: "Turn STAR's plane-sweep videos into a 3D flow field you can slice."
@@ -63,7 +60,6 @@ enum Tool: String, CaseIterable, Identifiable {
         switch self {
         case .project: .hilbert
         case .wingLab: .terdragon
-        case .car: .hilbert
         case .lapSim: .moore  // a closed loop, like a circuit
         case .cadViewer: .peano
         case .flowField: .gosper  // the flowsnake
@@ -73,9 +69,9 @@ enum Tool: String, CaseIterable, Identifiable {
     }
 
     /// The dock's tools; the project sits in the header.
-    static let docked: [Tool] = [.wingLab, .car, .lapSim, .cadViewer, .flowField, .prismLayer, .jobs]
+    static let docked: [Tool] = [.wingLab, .lapSim, .cadViewer, .flowField, .prismLayer, .jobs]
 
-    /// ⌘1 to ⌘8: the project, then the dock in order.
+    /// ⌘1 to ⌘7: the project, then the dock in order.
     var key: KeyEquivalent { KeyEquivalent(Character(String((Tool.allCases.firstIndex(of: self) ?? 0) + 1))) }
 }
 
@@ -102,8 +98,6 @@ struct ContentView: View {
                         ProjectView()
                     case .wingLab:
                         WingLabView()
-                    case .car:
-                        CarView()
                     case .cadViewer:
                         CADViewerView()
                     case .flowField:
