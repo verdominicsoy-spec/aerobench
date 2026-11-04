@@ -288,11 +288,27 @@ def wing_optimise(ctx: JobContext) -> dict:
             raise EngineError("the ride height is a variable only over a ground", "set a ride height first")
         if not 0 <= v.element < len(base.elements) or (v.kind in ("gap", "overlap") and v.element == 0):
             raise EngineError(f"{v.name}: no such element (gap and overlap belong to flaps)")
+    return _study(ctx, p, base, variables, sections)[0]
+
+
+def _study(ctx: JobContext, p: dict, base, variables, sections, car=None, span=(0.0, 100.0)):
+    """The estimate or RANS study of `base` over `variables`, then the RANS
+    checks of its best: wing-optimise's work, shared with wing-design (which
+    scores in car terms through `car`). `span` maps the study's progress, 0 to
+    100, onto the job's. Returns the summary and the spec."""
+    from ..wing import optimise, rans
+    from ..wing.estimate import estimate
+    from ..wing.geometry import Wing
+
+    def emit(pct: float, msg: str) -> None:
+        ctx.emit.progress(span[0] + (span[1] - span[0]) * pct / 100, msg)
+
     spec = optimise.Spec(variables, objective=str(p.get("objective", "max_cl")), cd_cap=p.get("cd_cap"),
                          cl_target=p.get("cl_target"), sampler=str(p.get("sampler", "tpe")),
                          trials=int(p.get("trials", 40)), parallel=max(1, int(p.get("parallel", 1))),
                          seed=p.get("seed"), solver=str(p.get("solver", "rans")), sections=sections,
-                         lap=_lap_score(p.get("lap"), base) if p.get("objective") == "min_lap_time" else None)
+                         lap=_lap_score(p.get("lap"), base) if p.get("objective") == "min_lap_time" else None,
+                         car=car)
     checks = int(p.get("check", 0)) if spec.solver == "estimate" else 0
     if spec.solver == "estimate":
         spec.parallel = 1  # a trial takes a fraction of a second
@@ -351,12 +367,12 @@ def wing_optimise(ctx: JobContext) -> dict:
         calibrate.start()
         ctx.emit.log("calibrating: one RANS run of the starting wing alongside the estimate study")
     out = optimise.run(base, spec, evaluate, path, name, ctx.scratch_dir,
-                       (lambda pct, msg: ctx.emit.progress(pct * (0.5 if checks else 1.0), msg)), ctx.emit.log, keep_runs=False,
+                       (lambda pct, msg: emit(pct * (0.5 if checks else 1.0), msg)), ctx.emit.log, keep_runs=False,
                        info={"solver": spec.solver, "mesh": flow.get("mesh", "medium"), "model": flow.get("model", "sa"),
                              "speed": flow.get("speed"), "alpha": flow.get("alpha", 0.0)})
     scale = (1.0, 1.0)
     if calibrate is not None:
-        ctx.emit.progress(50, "waiting for the calibration run")
+        emit(50, "waiting for the calibration run")
         calibrate.join()
         if anchor.get("converged") and abs(anchor["cl_estimate"]) > 1e-6 and anchor["cd_estimate"] > 0:
             scale = (anchor["cl_rans"] / anchor["cl_estimate"], anchor["cd_rans"] / anchor["cd_estimate"])
@@ -368,9 +384,140 @@ def wing_optimise(ctx: JobContext) -> dict:
         optimise.record_anchor(path, name, spec, anchor)
     if checks:
         out = optimise.check(base, spec, path, name, evaluate_rans, checks, ctx.scratch_dir,
-                             lambda pct, msg: ctx.emit.progress(50 + 0.5 * pct, msg), ctx.emit.log, scale=scale,
+                             lambda pct, msg: emit(50 + 0.5 * pct, msg), ctx.emit.log, scale=scale,
                              until_pass=bool(p.get("until_pass", False)))
-    return out
+    return out, spec
+
+
+FINALISTS = 5  # without RANS checks: the best distinct designs by the estimate
+
+
+@command("wing-design")
+def wing_design(ctx: JobContext) -> dict:
+    """One run from the rules box to finalists: a wing laid out to fill the box
+    (or the one given, moved inside it), the estimate study over its angles,
+    slots, chords, sections and place in the box, scored in car terms, then
+    RANS on the best few, ranked by RANS. The design frame: m, x downstream
+    from the box's front, y up from the ground. Resumes a study of the same name."""
+    import json as _json
+
+    import numpy as np
+
+    from ..wing import optimise
+    from ..wing.airfoils import data_dir
+    from ..wing.design import starter, units, variables as default_variables
+    from ..wing.geometry import Element, Variable, Wing, apply
+
+    p = ctx.params
+    try:
+        box = tuple(float(v) for v in p["box"])
+        storage, name = Path(str(p["storage"])).expanduser(), str(p["name"])
+    except (KeyError, TypeError, ValueError):
+        raise EngineError("params.box ([x0, y0, x1, y1], m, the design frame), storage and name are needed") from None
+    if len(box) != 4 or not (box[2] > box[0] and box[3] > box[1] and (box[1] >= 0 or p.get("free_air"))):
+        raise EngineError("params.box must be [x0, y0, x1, y1] with x1 > x0 and y1 > y0 >= 0 (y up from the ground)")
+    goal = str(p.get("goal", "max_cla"))
+    car_raw = p.get("car")
+    if goal == "balance" and not car_raw:
+        raise EngineError("the balance goal needs a base car", "set up the base car in Wing Lab's Car section")
+    inverted = bool(p.get("inverted", True))
+    flow = {k: float(p.get(k, d)) for k, d in (("speed", 15.0), ("rho", 1.225), ("mu", 1.81e-5), ("n_crit", 9.0))}
+    root = (_root(ctx) or data_dir()) / "airfoils"
+    saved = storage.with_suffix(".design.json")
+    ctx.emit.progress(1, "laying out the wing")
+    if saved.exists():  # a resumed design: the same starting wing and search
+        first = _json.loads(saved.read_text())
+    elif p.get("start"):
+        try:
+            els = [Element.from_dict(e) for e in p["start"]]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise EngineError(f"bad starting wing: {exc}") from None
+        w = Wing(els, min_gap=float(p.get("min_gap", 0.005)), rules_box=box)
+        for _ in range(40):  # where it is if it fits; else at the box's front and bottom, smaller until it does
+            if not w.issues():
+                break
+            pts = np.vstack([e.placed() for e in w.elements])
+            shift = np.array([box[0], box[1]]) + 1e-7 - pts.min(axis=0)
+            for e in w.elements:
+                e.leading_edge = e.leading_edge + shift
+            if not w.issues():
+                break
+            origin = w.elements[0].leading_edge.copy()
+            for e in w.elements:
+                e.chord *= 0.95
+                e.leading_edge = origin + 0.95 * (e.leading_edge - origin)
+        else:
+            raise EngineError("the wing on the canvas does not fit the rules box even at a fraction of its size",
+                              "start from scratch, or check the box")
+        first = {"elements": [{"key": None, "name": None, "unit": e.unit.tolist(), "chord": e.chord, "angle": e.angle,
+                               "leading_edge": e.leading_edge.tolist(), "inverted": e.inverted} for e in w.elements],
+                 "shortlists": None}
+    else:
+        r = starter(root, elements=int(p.get("elements", 2)), inverted=inverted, rules_box=box,
+                    min_thickness=float(p.get("min_thickness", 0.08)), min_gap=float(p.get("min_gap", 0.005)),
+                    progress=lambda pct, msg: ctx.emit.progress(1 + 0.09 * pct, msg), fill=True, **flow)
+        first = {"elements": r["elements"], "shortlists": [[k["key"] for k in keys] for keys in r["shortlists"]]}
+    base = Wing([Element.from_dict(e) for e in first["elements"]], min_gap=float(p.get("min_gap", 0.005)),
+                rules_box=box, ground_frame=True, free_air=bool(p.get("free_air", False)))
+    # Its ride height is where it sits. A wing laid out from scratch starts halfway up the room the box
+    # leaves it, not on the floor: a big main 30 mm off the ground separates, and the search starts lost.
+    base = apply(base, {"yfrac_0": 0.5} if first["shortlists"] is not None else {})
+    if not saved.exists():
+        storage.parent.mkdir(parents=True, exist_ok=True)
+        saved.write_text(_json.dumps(first))
+    if p.get("variables"):
+        var = [Variable(int(v["element"]), str(v["kind"]), float(v["low"]), float(v["high"]),
+                       tuple(str(k) for k in v.get("choices") or ())) for v in p["variables"]]
+    else:
+        var = default_variables(base, first["shortlists"], box=box)
+    wanted = sorted({k for v in var if v.kind == "airfoil" for k in v.choices})
+    sections = units(root, wanted) if wanted else None
+    ref = sum(e.chord for e in base.elements)
+    car = optimise.CarScore(
+        span=float(p.get("span", 1.0)), endplate=None if p.get("endplate") is None else float(p["endplate"]),
+        factor=float(p.get("factor", 1.0)), ref_chord=ref,
+        base=(float(car_raw["base_cla"]), float(car_raw["base_cda"]), float(car_raw["base_rear_cla"])) if car_raw else None,
+        axles=(float(car_raw["axle_front"]), float(car_raw["axle_rear"])) if car_raw else None,
+        cda_cap=None if p.get("cda_cap") is None else float(p["cda_cap"]),
+        rear_target=None if p.get("rear_target") is None else float(p["rear_target"]))
+    checks = int(p.get("checks", 3))
+    study_p = {**{k: v for k, v in p.items() if k not in ("variables", "start", "box", "car")}, **flow,
+               "objective": goal, "solver": "estimate", "check": checks, "until_pass": False,
+               "anchor": checks > 0, "ref_chord": ref, "ride_height": base.ride_height,
+               "storage": str(storage), "name": name}
+    out, spec = _study(ctx, study_p, base, var, sections, car=car, span=(10.0, 100.0))
+
+    def where(params: dict) -> dict:
+        w = apply(base, *optimise.resolve(spec, params)[:2])
+        return {"ride_height": w.ride_height, "x": float(min(e.placed()[:, 0].min() for e in w.elements))}
+
+    trials = {t["number"]: t for t in out["trials"]}
+    keep = ("cla", "cda", "cla_cda", "car_cla", "car_cda", "rear_share")
+    finalists = []
+    if checks:
+        for c in out["checks"]:
+            t = trials.get(c["number"])
+            if t is None:
+                continue
+            held = c.get("value") is not None and c.get("feasible", True)
+            src = c if held else t
+            finalists.append({"number": c["number"], "params": t["params"], "estimate_value": t["value"],
+                              **{k: src.get(k) for k in keep}, "from": "RANS" if held else "estimate",
+                              **where(t["params"]),
+                              "rans": {k: c.get(k) for k in ("cl", "cd", "converged", "separated", "reason", "value")}})
+        sense = -1 if spec.direction == "maximize" else 1
+        finalists.sort(key=lambda f: (f["rans"]["value"] is None, sense * (f["rans"]["value"] or 0)))
+    else:
+        good = sorted((t for t in out["trials"] if t["state"] == "complete" and t["feasible"]),
+                      key=lambda t: t["value"], reverse=spec.direction == "maximize")
+        for t in good[:FINALISTS]:
+            finalists.append({"number": t["number"], "params": t["params"], "estimate_value": t["value"],
+                              **{k: t.get(k) for k in keep}, "from": "estimate", **where(t["params"]), "rans": None})
+    shown = [{**e, "coords": Element.from_dict(e).placed().tolist()} for e in first["elements"]]
+    for e, b in zip(shown, base.elements):  # where the base wing sits now (moved to its ride height)
+        e["leading_edge"], e["coords"] = b.leading_edge.tolist(), b.placed().tolist()
+    return {"base": {"elements": shown, "ride_height": base.ride_height}, "study": out, "finalists": finalists,
+            "goal": goal, "box": list(box)}
 
 
 @command("su2-install")

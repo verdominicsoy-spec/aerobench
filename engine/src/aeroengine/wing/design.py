@@ -182,6 +182,7 @@ def layout(units: list[np.ndarray], chord_total: float, inverted: bool, rules_bo
 
 SHORTLIST = 6  # sections per element the design search chooses between
 CHORD_RANGE = 0.25  # each chord searched this far either side of the starting one
+BOX_CHORD_GROWTH = 0.6  # in a box, each chord may grow this much (each alone up to all of the box)
 
 
 def variables(wing: Wing, shortlists: list[list[str]] | None = None, box=None) -> list[Variable]:
@@ -200,12 +201,15 @@ def variables(wing: Wing, shortlists: list[list[str]] | None = None, box=None) -
         out.append(Variable(i, "gap", max(wing.min_gap + 0.001, 0.006), 0.022))
         out.append(Variable(i, "overlap", MIN_OVERLAP, 0.020))
     for i, e in enumerate(wing.elements):
-        # In a box a chord may grow to all of it (the box's check stops what does not fit).
-        high = box[2] - box[0] if box is not None else round(e.chord * (1 + CHORD_RANGE), 4)
+        # In a box a chord may grow further, up to the box's length (its check stops what does not fit).
+        grow = BOX_CHORD_GROWTH if box is not None else CHORD_RANGE
+        high = round(e.chord * (1 + grow), 4)
+        if box is not None:
+            high = min(high, box[2] - box[0])
         out.append(Variable(i, "chord", round(e.chord * (1 - CHORD_RANGE), 4), high))
-    if box is not None:  # the design frame: where the wing sits in the box
-        out.append(Variable(0, "height", box[1], box[3]))
-        out.append(Variable(0, "x", box[0], box[2]))
+    if box is not None:  # the design frame: where the wing sits in the room the box leaves it
+        out.append(Variable(0, "xfrac", 0.0, 1.0))
+        out.append(Variable(0, "yfrac", 0.0, 1.0))
     for i, keys in enumerate(shortlists or []):
         if len(keys) > 1:
             out.append(Variable(i, "airfoil", 0.0, float(len(keys) - 1), tuple(keys)))

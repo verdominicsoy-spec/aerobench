@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from aeroengine.wing.airfoils import build_index, naca4
 from aeroengine.wing.design import layout, starter, variables
 
@@ -93,5 +95,115 @@ def test_chords_may_grow_to_the_box():
 
     w = layout([naca4("6412")] * 2, 0.30, True)
     vs = {v.name: v for v in variables(w, box=(0.0, 0.03, 0.70, 0.35))}
-    assert vs["chord_0"].high == pytest.approx(0.70) and vs["chord_1"].high == pytest.approx(0.70)
-    assert vs["height_0"].low == pytest.approx(0.03) and vs["x_0"].high == pytest.approx(0.70)
+    main, flap = w.elements[0].chord, w.elements[1].chord
+    assert vs["chord_0"].high == pytest.approx(min(1.6 * main, 0.70), abs=1e-4)
+    assert vs["chord_1"].high == pytest.approx(min(1.6 * flap, 0.70), abs=1e-4)
+    assert (vs["xfrac_0"].low, vs["xfrac_0"].high, vs["yfrac_0"].low, vs["yfrac_0"].high) == (0, 1, 0, 1)
+
+
+def test_a_place_in_the_room_never_leaves_the_box():
+    import numpy as np
+
+    from aeroengine.wing.geometry import apply
+
+    box = (0.0, 0.03, 0.70, 0.35)
+    w = layout([naca4("6412")] * 2, 0.30, True, box)
+    w.ground_frame = True
+    for fx, fy in ((0, 0), (1, 1), (0.5, 0.2)):
+        moved = apply(w, {"xfrac_0": fx, "yfrac_0": fy})
+        pts = np.vstack([e.placed() for e in moved.elements])
+        assert not moved.issues()
+        if (fx, fy) == (0, 0):
+            assert pts[:, 1].min() == pytest.approx(0.03, abs=1e-6) and moved.ride_height == pytest.approx(0.03, abs=1e-6)
+        if (fx, fy) == (1, 1):
+            assert pts[:, 0].max() == pytest.approx(0.70, abs=1e-6) and pts[:, 1].max() == pytest.approx(0.35, abs=1e-6)
+
+
+def _design(engine, tmp_path, name, timeout=300, **params):
+    import json
+
+    job = {"command": "wing-design", "params": {"box": [0.0, 0.03, 0.70, 0.35], "elements": 2, "inverted": True,
+                                                "goal": "max_cla", "span": 1.2, "endplate": 0.25, "speed": 15.0,
+                                                "trials": 12, "checks": 0, "storage": str(tmp_path / f"{name}.db"),
+                                                "name": name, **params}}
+    code, events, stderr = engine.run("wing-design", job, tmp_path / f"job-{name}", timeout=timeout)
+    result = tmp_path / f"job-{name}" / "result.json"
+    return code, events, (json.loads(result.read_text())["data"] if code == 0 else stderr + str(events[-3:]))
+
+
+def test_design_without_rans_returns_ranked_finalists(engine, tmp_path):
+    import numpy as np
+
+    code, _, out = _design(engine, tmp_path, "d", trials=30)
+    assert code == 0, out
+    f = out["finalists"]
+    assert f and all(x["rans"] is None for x in f)
+    values = [x["estimate_value"] for x in f]
+    assert values == sorted(values, reverse=True)
+    assert all(x["cla"] > 0 and x["cda"] > 0 and x["cla_cda"] == pytest.approx(x["cla"] / x["cda"]) for x in f)
+    pts = np.vstack([np.asarray(e["coords"]) for e in out["base"]["elements"]])
+    assert np.ptp(pts[:, 0]) >= 0.6 or np.ptp(pts[:, 1]) >= 0.3  # the starting wing fills the box
+
+
+def test_design_refuses_a_box_too_small(engine, tmp_path):
+    code, _, out = _design(engine, tmp_path, "small", box=[0.0, 0.03, 0.15, 0.08], elements=5, trials=5)
+    assert code != 0 and "box" in out
+
+
+def test_a_start_wing_outside_the_box_is_moved_inside(engine, tmp_path):
+    import numpy as np
+
+    w = layout([naca4("6412")] * 2, 0.40, True)
+    start = [{"unit": e.unit.tolist(), "chord": e.chord, "angle": e.angle, "inverted": True,
+              "leading_edge": (e.leading_edge + np.array([0.9, 0.5])).tolist()} for e in w.elements]
+    code, _, out = _design(engine, tmp_path, "s", start=start, trials=5)
+    assert code == 0, out
+    pts = np.vstack([np.asarray(e["coords"]) for e in out["base"]["elements"]])
+    assert pts[:, 0].max() <= 0.70 + 1e-9 and pts[:, 1].max() <= 0.35 + 1e-9 and pts[:, 1].min() >= 0.03 - 1e-9
+
+
+def test_design_again_resumes_the_same_study(engine, tmp_path):
+    code, _, first = _design(engine, tmp_path, "r")
+    assert code == 0, first
+    code, _, again = _design(engine, tmp_path, "r")
+    assert code == 0, again
+    assert again["study"]["complete"] == first["study"]["complete"]  # nothing new to run: the same 12 trials
+    assert again["base"] == first["base"]
+
+
+def test_balance_needs_a_base_car(engine, tmp_path):
+    code, _, out = _design(engine, tmp_path, "b", goal="balance", rear_target=0.55, trials=5)
+    assert code != 0 and "base car" in out
+
+
+@pytest.mark.skipif(not __import__("os").environ.get("AEROBENCH_SU2") and not __import__("shutil").which("SU2_CFD"),
+                    reason="SU2 not found")
+def test_design_with_rans_ranks_by_rans(engine, tmp_path):
+    code, _, out = _design(engine, tmp_path, "rans", timeout=1500, trials=20, checks=2, mesh="quick", model="sa")
+    assert code == 0, out
+    f = out["finalists"]
+    assert len(f) == 2 and all(x["rans"] is not None for x in f)
+    held = [x for x in f if x["rans"]["value"] is not None]
+    assert [x["rans"]["value"] for x in held] == sorted((x["rans"]["value"] for x in held), reverse=True)
+    assert all(x["from"] == "RANS" for x in held) and f[: len(held)] == held  # held ones first
+
+
+def test_the_study_starts_from_where_the_wing_sits_in_the_box():
+    from aeroengine.wing.geometry import apply
+    from aeroengine.wing.optimise import _current
+
+    box = (0.0, 0.03, 0.70, 0.35)
+    w = layout([naca4("6412")] * 2, 0.30, True, box)
+    w.ground_frame = True
+    w = apply(w, {"xfrac_0": 0.25, "yfrac_0": 0.5})
+    vs = variables(w, box=box)
+    now = _current(w, vs)
+    assert now["xfrac_0"] == pytest.approx(0.25, abs=1e-6) and now["yfrac_0"] == pytest.approx(0.5, abs=1e-6)
+    again = apply(w, now)  # the first trial is the wing as it is
+    assert again.ride_height == pytest.approx(w.ride_height, abs=1e-9)
+
+
+def test_a_design_in_free_air_has_no_ride_height(engine, tmp_path):
+    code, _, out = _design(engine, tmp_path, "free", box=[0.0, 0.0, 0.45, 0.30], free_air=True)
+    assert code == 0, out
+    assert out["base"]["ride_height"] is None and all(f["ride_height"] is None for f in out["finalists"])

@@ -56,6 +56,7 @@ class Wing:
     # The design frame: y is height over the ground (at y = 0, along the flow), so
     # the wing's place in it is its ride height, and height_0 and x_0 move it.
     ground_frame: bool = False
+    free_air: bool = False  # in the design frame with no ground: placed in the box, but no ride height
 
     def copy(self) -> "Wing":
         return replace(self, elements=[replace(e, leading_edge=e.leading_edge.copy()) for e in self.elements])
@@ -157,10 +158,11 @@ class Variable:
     chord (m), section (one of `choices`, library keys, the element's own
     first), or its shape: camber added (fraction of chord) and thickness
     (scale); or the whole wing's ride height over a ground (m, element 0),
-    or, in the design frame, where its most upstream point sits (x, m, element 0).
+    or, in the design frame, where its most upstream point sits (x, m, element 0)
+    or where it sits in the room the box leaves it (xfrac, yfrac: 0 front or bottom, 1 back or top).
     A section variable's value is the index of its choice."""
     element: int
-    kind: str  # "angle", "gap", "overlap", "chord", "airfoil", "camber", "thickness", "height" or "x"
+    kind: str  # "angle", "gap", "overlap", "chord", "airfoil", "camber", "thickness", "height", "x", "xfrac" or "yfrac"
     low: float
     high: float
     choices: tuple[str, ...] = ()
@@ -227,13 +229,22 @@ def apply(base: Wing, values: dict[str, float], sections: dict[int, np.ndarray] 
         target = np.array([values.get(f"gap_{i}", targets[i][0]), values.get(f"overlap_{i}", targets[i][1])])
         _place_slot(w, i, target)
     if w.ground_frame:
-        # Last, the whole wing: its lowest point to height_0, its front to x_0; its ride height is where it sits.
+        # Last, the whole wing: its lowest point to height_0, its front to x_0, or (xfrac_0, yfrac_0)
+        # that share of the room the box leaves it, so a wing that fits is never placed outside;
+        # its ride height is where it sits.
         pts = np.vstack([e.placed() for e in w.elements])
-        shift = np.array([values.get("x_0", pts[:, 0].min()) - pts[:, 0].min(),
-                          values.get("height_0", pts[:, 1].min()) - pts[:, 1].min()])
+        lo, size = pts.min(axis=0), np.ptp(pts, axis=0)
+        x, y = values.get("x_0", lo[0]), values.get("height_0", lo[1])
+        if w.rules_box is not None:
+            x0, y0, x1, y1 = w.rules_box
+            if "xfrac_0" in values:
+                x = x0 + 1e-7 + values["xfrac_0"] * max(x1 - x0 - size[0] - 2e-7, 0.0)
+            if "yfrac_0" in values:
+                y = y0 + 1e-7 + values["yfrac_0"] * max(y1 - y0 - size[1] - 2e-7, 0.0)
+        shift = np.array([x - lo[0], y - lo[1]])
         for e in w.elements:
             e.leading_edge = e.leading_edge + shift
-        w.ride_height = float(pts[:, 1].min() + shift[1])
+        w.ride_height = None if w.free_air else float(pts[:, 1].min() + shift[1])
     return w
 
 

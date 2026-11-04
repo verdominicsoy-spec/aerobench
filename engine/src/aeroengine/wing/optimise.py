@@ -152,7 +152,8 @@ class Spec:
         if not self.variables:
             raise EngineError("tick at least one design variable")
         for v in self.variables:
-            if v.kind not in ("angle", "gap", "overlap", "chord", "airfoil", "camber", "thickness", "height", "x"):
+            if v.kind not in ("angle", "gap", "overlap", "chord", "airfoil", "camber", "thickness", "height", "x",
+                              "xfrac", "yfrac"):
                 raise EngineError(f"unknown design variable '{v.kind}'")
             if v.kind == "airfoil":
                 if len(v.choices) < 2:
@@ -441,6 +442,16 @@ def _current(base: Wing, variables: list[Variable]) -> dict[str, float]:
             out[v.name] = base.elements[v.element].chord
         elif v.kind == "airfoil":
             out[v.name] = 0  # the element's own section is the first choice
+        elif v.kind in ("x", "xfrac", "yfrac"):  # where the wing sits in the design frame
+            pts = np.vstack([e.placed() for e in base.elements])
+            lo, size = pts.min(axis=0), np.ptp(pts, axis=0)
+            if v.kind == "x" or base.rules_box is None:
+                out[v.name] = float(lo[0]) if v.kind == "x" else 0.0
+            else:
+                x0, y0, x1, y1 = base.rules_box
+                k = 0 if v.kind == "xfrac" else 1
+                room = (x1 - x0, y1 - y0)[k] - size[k] - 2e-7
+                out[v.name] = float(np.clip((lo[k] - (x0, y0)[k] - 1e-7) / room, 0.0, 1.0)) if room > 0 else 0.0
         else:  # the drawn shape: no camber added, thickness as it is
             out[v.name] = 0.0 if v.kind == "camber" else 1.0
     return out
