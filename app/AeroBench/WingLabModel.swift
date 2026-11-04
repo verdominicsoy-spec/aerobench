@@ -818,7 +818,10 @@ final class WingLabModel {
         let start = Date()
         if let g = wing.inGroundEffect,
            let solver = PanelSolver(elements: g.elements, refChord: wing.refChord, ground: g.ground) {
-            preview = solver.solve(alphaDeg: 0)  // turned: the flow and the ground run along x
+            let image = solver.solve(alphaDeg: 0)  // turned: the flow and the ground run along x
+            // The image's lift gain alone grows without limit near the ground: keep what RANS holds.
+            let free = PanelSolver(elements: wing.elements.map { $0.placed() }, refChord: wing.refChord)?.solve(alphaDeg: wing.alpha)
+            preview = free.map { image.groundCorrected(free: $0) } ?? image
             previewError = nil
         } else if wing.rideHeight == nil, let solver = PanelSolver(elements: wing.elements.map { $0.placed() }, refChord: wing.refChord) {
             preview = solver.solve(alphaDeg: wing.alpha)

@@ -189,3 +189,25 @@ public final class PanelSolver: @unchecked Sendable {
         return PanelSolution(alphaDeg: alphaDeg, speed: speed, cp: cps, cl: cls, cd: cds, cm: cms)
     }
 }
+
+/// The ground effect RANS holds, as the engine's estimate.ground_share: the
+/// image method's lift gain over free air grows without limit as the gap
+/// under the wing closes, while RANS's peaks near +70% and falls.
+public enum GroundEffect {
+    public static let share = 0.8, knee = 1.6
+
+    /// The share of the image method's gain over free air that holds.
+    public static func share(gain: Double) -> Double { share / (1 + pow(max(gain, 0) / knee, 3)) }
+}
+
+extension PanelSolution {
+    /// This solution over a ground with each element's lift and moment kept to
+    /// the share of the image's gain over `free` (the same wing in free air) that RANS holds.
+    public func groundCorrected(free: PanelSolution) -> PanelSolution {
+        guard free.cl.count == cl.count, abs(free.clTotal) > 0.05 else { return self }
+        let s = GroundEffect.share(gain: clTotal / free.clTotal - 1)
+        return PanelSolution(alphaDeg: alphaDeg, speed: speed, cp: cp,
+                             cl: zip(cl, free.cl).map { $1 + s * ($0 - $1) }, cd: cd,
+                             cm: zip(cm, free.cm).map { $1 + s * ($0 - $1) })
+    }
+}

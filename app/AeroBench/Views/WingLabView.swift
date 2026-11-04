@@ -440,6 +440,11 @@ struct WingCanvas: View {
                 if let e = lab.estimate?.row(nearest: lab.wing.alpha), lab.liveStatus == nil {
                     Text(String(format: "Cl %.3f   Cd %.4f   L/D %.1f   α %.1f°", e.cl, e.cd, abs(e.cl) / max(e.cd, 1e-9), lab.wing.alpha))
                         .font(.caption.monospacedDigit())
+                    if e.separating == true {
+                        // Past separation the estimate's drag is far too low (a stalled wing: Cd 0.09 here, 0.36 in RANS).
+                        Text("separating: check with RANS").font(.caption.weight(.semibold)).foregroundStyle(S37.C.clayInk)
+                            .help(e.why ?? "An element separates here.")
+                    }
                 } else if let r = lab.preview {
                     Text(String(format: "Cl %.3f (inviscid)   Cm %.3f   α %.1f°", r.clTotal, r.cmTotal, lab.wing.alpha))
                         .font(.caption.monospacedDigit())

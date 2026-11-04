@@ -1406,3 +1406,19 @@ other wing, at the combination's balance when the study starts. A first
 combination is made the first time a wing goes on the car. Spec and plan:
 docs/superpowers/specs/2026-11-04-wing-lab-car-merge-design.md,
 docs/superpowers/plans/2026-11-04-wing-lab-car-merge.md.
+
+**Ground effect down to 30 mm.** A study at 30 mm ride height reached Cl -19
+to -24 on the estimate: the image method's lift gain grows without limit as
+the gap under the wing closes (12 times free air at h/c 0.08), and the fixed
+GROUND_LIFT = 0.75 had only been checked at 150 and 300 mm. RANS (quick mesh,
+SA, converged) on the NACA 6212 main and flap and a NACA 4412 main alone, 30
+to 300 mm, shows the real gain peaking (+72% at h/c 0.33, +60% at 0.18) and
+falling (+9% and +47% at 30 mm). The share of the image's gain RANS keeps
+falls with that gain on both wings alike, so it is now
+0.8 / (1 + (gain / 1.6)^3) of it: every converged point within 0.15 of gain,
+and the ground can never add more than about 68%. The study's best wing,
+stalled in RANS (Cd 0.36 in free air, 0.51 at 30 mm, Cl -1.81), now reads Cl
+-2.48 at 30 mm, and a wing separating in free air separates over the ground
+too. The live panel preview keeps the same share of its image's gain. Its
+drag stays far too low once separating (0.09 against 0.36), so the canvas now
+says "separating: check with RANS" beside the live estimate.

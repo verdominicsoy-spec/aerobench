@@ -71,13 +71,24 @@ DRAG_GROWTH = 0.0087  # per degree squared past stall onset
 # the NACA 6212 wing held at 22 and separated at 42 and 46 (see above). The
 # same limit holds from the main to any flap on three to five elements.
 MAX_DEFLECTION = 25.0
-# Over a ground the panel method's image overstates the lift the ground adds:
-# against RANS (NACA 6212 main and flap, quick mesh, SA) at ride heights of
-# 300 and 150 mm the estimate's gain over free air was 42% and 77%, RANS's
-# 30% and 61%. Each element's lift keeps this share of the estimate's gain
-# (0.73 and 0.78 measured). At 60 mm RANS never settled and the estimate has
-# the main separating.
-GROUND_LIFT = 0.75
+# Over a ground the panel method's image overstates the lift the ground adds,
+# and more so the closer the ground: its gain grows without limit as the gap
+# under the wing closes, while the real one peaks and falls as the flow under
+# the wing separates. RANS (quick mesh, SA, 15 m/s, moving ground), gain over
+# free air: NACA 6212 main and flap +30% at 300 mm, +61% at 150, +72% at 100,
+# +9% at 30; a NACA 4412 main alone +9% at 300, +37% at 100, +60% at 50, +47%
+# at 30. The share of the image's gain RANS keeps falls with that gain, on
+# both wings alike: GROUND_SHARE / (1 + (gain / GROUND_GAIN_KNEE)^3) fits
+# every converged point within 0.15 of gain, and caps the ground's whole gain
+# near +68%. A heavily separated wing (Cd 0.36 in free air) kept less (+41% at
+# 150 mm for +67% here) and nothing at 30 mm.
+GROUND_SHARE = 0.8
+GROUND_GAIN_KNEE = 1.6
+
+
+def ground_share(gain: float) -> float:
+    """The share of the image method's lift gain over free air that holds (RANS)."""
+    return GROUND_SHARE / (1 + (max(gain, 0.0) / GROUND_GAIN_KNEE) ** 3)
 
 
 def in_ground_effect(placed: list[np.ndarray], alpha: float, ride_height: float) -> tuple[list[np.ndarray], float]:
@@ -101,9 +112,10 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
     so it holds only what its neighbours do, and the ground's own lift
     (the image's induced speed, more than any turning of the flow) is
     applied on top, as the ratio of the element's lift alone over the
-    ground to alone in free air. Each element then keeps GROUND_LIFT of the
+    ground to alone in free air. Each element then keeps ground_share of the
     lift the ground adds over the same wing in free air (the image method
-    overstates it against RANS); each row also gives cl_free_air."""
+    overstates it against RANS, more the closer the ground); each row also
+    gives cl_free_air."""
     if not elements:
         raise EngineError("no elements to estimate")
     if ride_height is not None and not ride_height > 0:
@@ -246,11 +258,17 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
     if ride_height is not None:
         free = estimate(elements, alphas, speed, rho, mu, n_crit, ref_chord, model_size, stall_margin)["rows"]
         for row, base in zip(rows, free):
+            # One share for the whole wing, from the image's gain on the whole wing.
+            share = ground_share(row["cl"] / base["cl"] - 1) if abs(base["cl"]) > 0.05 else GROUND_SHARE
             for el, b in zip(row["elements"], base["elements"]):
-                el["cl"] = b["cl"] + GROUND_LIFT * (el["cl"] - b["cl"])
-                el["cl_own"] = b["cl_own"] + GROUND_LIFT * (el["cl_own"] - b["cl_own"])
+                el["cl"] = b["cl"] + share * (el["cl"] - b["cl"])
+                el["cl_own"] = b["cl_own"] + share * (el["cl_own"] - b["cl_own"])
             row["cl"] = sum(el["cl"] for el in row["elements"])
             row["cl_free_air"] = base["cl"]
+            # A ground loads the wing more and separates it sooner: separating in free air, it separates here too.
+            if base["separating"] and not row["separating"]:
+                row["separating"] = True
+                row["why"] = base["why"] + " (in free air; nearer the ground it only gets worse)"
     return {"ref_chord": ref, "rows": rows, "ride_height": ride_height,
             "re": [reynolds(speed, c, rho, mu) for c in chords]}
 
