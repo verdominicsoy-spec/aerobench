@@ -45,6 +45,8 @@ final class CarModel {
     var status: String?
     var combosUnreadable = false  // combinations.json would not read: never written over
     var markingHeadRestraint = false
+    /// Where the wing being edited sits (mm ahead of its axle) while its end of the combination is empty.
+    var draftX: Double?
     /// Quick estimates of cards placed off their own height, by "card@height mm".
     var estimates: [String: (cla: Double, cda: Double)] = [:]
     @ObservationIgnored var engine: WarmEngine?
@@ -94,13 +96,6 @@ final class CarModel {
             combos = []
             combosUnreadable = true
             status = "combinations.json would not read: it was copied to combinations.unreadable.json and will not be overwritten"
-        }
-    }
-
-    func quickResult(_ combo: Combination) -> QuickResult? {
-        guard let base, let setup else { return nil }
-        return quick(base: base, combo: combo, cards: cards, setup: setup) { [estimates] card, h in
-            estimates["\(card.id)@\(Int((h * 1000).rounded()))"]
         }
     }
 

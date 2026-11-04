@@ -759,6 +759,15 @@ final class WingLabModel {
         library.first { $0.key == key } ?? (key.hasPrefix("naca/") ? Airfoil.naca4(String(key.dropFirst(5))) : nil)
     }
 
+    /// The best section numbers there are for the wing: converged CFD, then the
+    /// live estimate, then the inviscid preview with the typed-in Cd.
+    var bestNumbers: (cl: Double, cd: Double, name: String)? {
+        if let r = ransResult, r.converged { return (r.cl, r.cd, "CFD") }
+        if let e = estimate?.row(nearest: wing.alpha) { return (e.cl, e.cd, "live estimate") }
+        if let p = preview { return (p.clTotal, cdEstimate, "inviscid preview") }
+        return nil
+    }
+
     // MARK: Preview
 
     private func recompute() {

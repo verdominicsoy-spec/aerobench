@@ -494,7 +494,7 @@ private struct CombinationsPane: View {
     @ViewBuilder private func row(_ combo: Combination) -> some View {
         let car = app.car
         let stale = combo.isStale(cards: car.cards, baseRevision: car.baseRevision)
-        let quick = car.quickResult(combo)
+        let quick = app.quickResult(combo)
         let selected = car.selected == combo.id
         VStack(alignment: .leading, spacing: 4) {
             HStack {
