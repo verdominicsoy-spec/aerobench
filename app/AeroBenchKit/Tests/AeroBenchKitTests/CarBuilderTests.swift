@@ -139,7 +139,8 @@ final class CarBuilderTests: XCTestCase {
     func testANullCentreOfPressureDecodes() throws {
         let json = #"""
         {"data": {"mesh": "coarse", "speed": 15, "cla": 0, "cda": 0.5, "rear_share": null, "cla_2d_wings": 0, "converged": true,
-          "wings": [], "n": 7, "flow": {"speed": 15, "ground": {"moving": false, "speed": 15}},
+          "wings": [], "n": 7, "flow": {"speed": 15, "ground": {"moving": false, "speed": 15}}, "open_gaps": 3,
+          "failed": [{"y": 200, "width": 150, "reason": "SU2 diverged at every CFL tried"}],
           "strips": [{"y": 50, "width": 100, "lift": 0, "drag": 5, "x_cp": null, "converged": true, "wing_lift": {}, "wing_drag": {}}]}}
         """#
         let r = try CarResult.decode(resultFile: Data(json.utf8))
@@ -147,6 +148,8 @@ final class CarBuilderTests: XCTestCase {
         XCTAssertNil(r.rearShare)
         XCTAssertEqual(r.n, 7)
         XCTAssertEqual(r.groundMoving, false)
+        XCTAssertEqual(r.openGaps, 3)
+        XCTAssertEqual(r.failed?.first?.y, 200)
     }
 
     func testDecodesACarResult() throws {

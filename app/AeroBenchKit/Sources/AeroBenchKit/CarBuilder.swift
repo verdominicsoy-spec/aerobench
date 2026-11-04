@@ -101,7 +101,15 @@ public struct CarResult: Codable, Equatable, Sendable {
     public var strips: [Strip]
     public var converged: Bool
     public var wings: [WingShare]
+    public struct Failure: Codable, Equatable, Sendable {
+        public var y: Double
+        public var width: Double
+        public var reason: String
+    }
+
     public var n: Int?  // strips across half the car
+    public var failed: [Failure]?  // strips that would not solve: the totals leave them out
+    public var openGaps: Int?  // places the CAD's cut did not close, over all strips
     public var flow: JSONValue?  // the speed, ground and wheel options it was run with
 
     /// Run with these settings: same strip count, and the same speeds and options, numbers
@@ -141,8 +149,9 @@ public struct CarResult: Codable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case mesh, speed, cla, cda, strips, converged, wings, n, flow
+        case mesh, speed, cla, cda, strips, converged, wings, n, flow, failed
         case rearShare = "rear_share"
+        case openGaps = "open_gaps"
         case cla2dWings = "cla_2d_wings"
     }
 

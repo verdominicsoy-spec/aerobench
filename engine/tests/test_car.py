@@ -352,3 +352,44 @@ def test_the_result_says_how_it_was_run():
     r = strips.combine([strip(100, 400, -100, -1175)], AXLES, 15, 1.225, [], "coarse",
                        flow={"speed": 15, "ground": {"moving": False}}, n=7)
     assert r["flow"]["ground"]["moving"] is False and r["n"] == 7
+
+
+# Deferred minors -----------------------------------------------------------------
+
+
+def test_a_failed_strip_does_not_lose_the_others(car_step, tmp_path, monkeypatch):
+    from aeroengine.job import EngineError
+    s = car_setup.setup(car_step)
+    calls = []
+
+    def fake(section_, wings, setup, flow_, preset, workdir, su2_hint, cores, progress, iterations=6000):
+        calls.append(section_["y"])
+        if len(calls) == 2:
+            raise EngineError("SU2 diverged at every CFL tried")
+        return {"y": section_["y"], "lift": -10.0, "drag": 5.0, "x_cp": -1175.0, "converged": True, "wing_lift": {}, "wing_drag": {}}
+
+    monkeypatch.setattr("aeroengine.car.case.solve_section", fake)
+    r = strips.run(s, [], {"speed": 15}, "coarse", tmp_path, None, 1, lambda p, m: None, planes=[[0, 300], [200, 200], [400, 200]])
+    assert len(calls) == 3 and r["converged"] is False
+    assert [f["y"] for f in r["failed"]] == [200.0] and "diverged" in r["failed"][0]["reason"]
+    assert len(r["strips"]) == 2
+
+
+def test_gaps_in_the_cad_are_counted_in_the_result(car_step, tmp_path, monkeypatch):
+    s = car_setup.setup(car_step)
+    monkeypatch.setattr("aeroengine.car.case.solve_section", lambda sec, *a, **k: {
+        "y": sec["y"], "lift": -1.0, "drag": 1.0, "x_cp": -1175.0, "converged": True, "wing_lift": {}, "wing_drag": {}})
+    monkeypatch.setattr("aeroengine.car.section.cut", lambda shape, y, setup: {"y": y, "loops": [], "open": [[0, 0], [1, 1]] * (2 if y else 0)})
+    r = strips.run(s, [], {"speed": 15}, "coarse", tmp_path, None, 1, lambda p, m: None, planes=[[0, 300], [200, 200]])
+    assert [st["open_gaps"] for st in r["strips"]] == [0, 2] and r["open_gaps"] == 2
+
+
+def test_a_wing_s_own_chord_is_used_when_given():
+    # Only the endplate estimate depends on the chord (its aspect ratio); a plain factor cancels it.
+    from aeroengine.wing.finite import car_contribution
+    wing = {"position": "front", "elements": [[[150, 95], [-150, 95], [0, 110]]], "span": 1.0, "factor3d": 1.0,
+            "endplate": 0.2, "chord": 0.25}
+    s = [strip(100, 400, -150, -300, wing={"front": -60})]
+    r = strips.combine(s, AXLES, 15, 1.225, [wing], "coarse")
+    cl, cd = -60 * 0.4 / (Q * 0.25 * 0.4), 1.0 * 0.4 / (Q * 0.25 * 0.4)
+    assert r["wings"][0]["cla"] == pytest.approx(car_contribution(cl, cd, 1.0, 0.25, 0.2)[0], rel=1e-6)

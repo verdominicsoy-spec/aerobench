@@ -111,6 +111,15 @@ private struct BaseCarPane: View {
                         Text("\(b.strips.filter { !$0.converged }.count) of \(b.strips.count) strips did not converge")
                             .font(.caption).foregroundStyle(S37.C.clayInk)
                     }
+                    if let f = b.failed, !f.isEmpty {
+                        Text("\(f.count) strip\(f.count == 1 ? "" : "s") would not solve and \(f.count == 1 ? "is" : "are") left out of the totals: "
+                             + f.map { String(format: "y %.0f mm", $0.y) }.joined(separator: ", "))
+                            .font(.caption).foregroundStyle(S37.C.clayInk)
+                    }
+                    if let g = b.openGaps, g > 0 {
+                        Text("The CAD's cut did not close in \(g) place\(g == 1 ? "" : "s"): those outlines were left out.")
+                            .font(.caption).foregroundStyle(S37.C.ochre)
+                    }
                 }
             }
         }

@@ -31,6 +31,10 @@ def _axles(setup: dict) -> tuple[float, float]:
 
 
 def _chord_m(wing: dict) -> float:
+    """The wing's reference chord (Wing Lab's: the sum of its element chords) when sent, else
+    the elements' extents along x."""
+    if wing.get("chord"):
+        return float(wing["chord"])
     return sum((max(p[0] for p in el) - min(p[0] for p in el)) for el in wing["elements"]) / 1000.0
 
 
@@ -77,18 +81,30 @@ def run(setup: dict, wings: list[dict], flow: dict, preset: str, workdir: Path, 
         progress, planes: list | None = None, iterations: int = 6000, n: int = 7) -> dict:
     """Every strip's section solved in turn; the car result."""
     from ..cad.edit.refs import load_part
-    from .case import RHO, solve_section
-    from .section import cut
+    from ..job import EngineError
+    from . import case as car_case
+    from . import section as car_section
 
     shape, _, _ = load_part(Path(setup["step"]), None)
     half = max(abs(w["centre"][1]) + w["width"] / 2 for w in setup["wheels"])
     planes = [tuple(p) for p in planes] if planes else plan(half, n)
-    results = []
+    results, failed = [], []
     for k, (y, width) in enumerate(planes):
         here = [w for w in wings if y <= w["span"] * 500.0]
         report = lambda p, m, k=k: progress(100 * (k + p / 100) / len(planes), f"strip {k + 1} of {len(planes)}: {m}")  # noqa: E731
-        r = solve_section(cut(shape, y, setup), here, setup, flow, preset, workdir / f"strip_{k + 1}", su2_hint, cores,
-                          report, iterations)
+        sec = car_section.cut(shape, y, setup)
+        try:
+            r = car_case.solve_section(sec, here, setup, flow, preset, workdir / f"strip_{k + 1}", su2_hint, cores,
+                                       report, iterations)
+        except EngineError as e:  # one strip that will not solve must not throw away the others
+            failed.append({"y": float(y), "width": float(width), "reason": e.msg + (f": {e.detail}" if e.detail else "")})
+            continue
         r["width"] = width
+        r["open_gaps"] = len(sec.get("open", [])) // 2
         results.append(r)
-    return combine(results, setup, float(flow.get("speed", setup.get("speed", 15.0))), RHO, wings, preset, flow, len(planes))
+    out = combine(results, setup, float(flow.get("speed", setup.get("speed", 15.0))), car_case.RHO, wings, preset, flow,
+                  len(planes))
+    out["failed"] = failed
+    out["converged"] = out["converged"] and not failed
+    out["open_gaps"] = sum(r["open_gaps"] for r in results)
+    return out

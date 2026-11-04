@@ -111,7 +111,8 @@ final class CarModel {
             guard let p, let c = card(p.card) else { return nil }
             let els = p.placedElements(card: c, setup: setup).map { el in JSONValue.array(el.map { .array([.double($0.x), .double($0.y)]) }) }
             var o: [String: JSONValue] = ["position": .string(c.position.rawValue), "elements": .array(els),
-                                          "span": .double(c.wing.span), "factor3d": .double(c.wing.factor3D)]
+                                          "span": .double(c.wing.span), "factor3d": .double(c.wing.factor3D),
+                                          "chord": .double(c.wing.refChord)]
             if let h = c.wing.endplateHeight { o["endplate"] = .double(h) }
             return .object(o)
         }
