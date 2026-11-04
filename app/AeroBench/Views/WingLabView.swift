@@ -1062,6 +1062,7 @@ struct WingInspector: View {
             flowSection(lab)
             solversSection(lab)
             optimiseSection(lab)
+            carSection
             lapSimSection(lab)
 
             Section("Export") {
@@ -1472,10 +1473,31 @@ struct WingInspector: View {
         }
     }
 
+    private func sendCombo(_ combo: Combination, full: Bool, _ i: Int?) {
+        if let sent = app.sendCarToLapSim(combo.id, full: full, into: i) {
+            sentNote = "Lap Sim car \(sent.label) now has \(combo.name) (\(full ? "full" : "quick") numbers)."
+                + (sent.warnings.isEmpty ? "" : " Note: " + sent.warnings.joined(separator: "; ") + ".")
+        }
+    }
+
     private func send(_ cl: Double, _ cd: Double, into car: Int?) {
         let lab = app.wingLab
         let label = app.sendWingToLapSim(cl: cl, cd: cd, replacedCla: lab.replacedCla, replacedCda: lab.replacedCda, into: car)
         sentNote = "Lap Sim car \(label) now has this wing (\(lab.shownVersion)). Run the Lap Sim to compare it with A."
+    }
+
+    @ViewBuilder private var carSection: some View {
+        Section {
+            BaseCarPane(embedded: true)
+            if app.car.setup != nil {
+                SectionPane(embedded: true)
+                CombinationsPane(embedded: true)
+            }
+        } header: {
+            Text("Car")
+        } footer: {
+            Text("The base car's 2D strips, and the combinations of front and rear cards on it. The wing being edited takes its end of the selected combination.")
+        }
     }
 
     @ViewBuilder private func lapSimSection(_ lab: WingLabModel) -> some View {
@@ -1505,25 +1527,41 @@ struct WingInspector: View {
                 NumberField(label: "Cd (typed in: no estimate or CFD yet)", value: Binding(get: { lab.cdEstimate }, set: { lab.cdEstimate = $0 }))
             }
             LabeledContent("Adds", value: String(format: "ClA %.3f m²   CdA %.3f m²", add.cla, add.cda))
-            NumberField(label: "Replaces: old wing's ClA", unit: "m²", value: Binding(get: { lab.replacedCla }, set: { lab.replacedCla = $0 }))
-            NumberField(label: "Replaces: old wing's CdA", unit: "m²", value: Binding(get: { lab.replacedCda }, set: { lab.replacedCda = $0 }))
-            HStack {
-                Button(lab.cardID == nil ? "Save as Car Card" : "Update Car Card") { saveCard(asNew: false) }
-                if lab.cardID != nil { Button("Save as New Card") { saveCard(asNew: true) } }
-            }
-            .help("A card for the Car tool, with this wing as a \(wing.rulesFor == .front ? "front" : "rear") wing and these numbers")
-            Menu("Put in a Lap Sim Car") {
-                let cars = app.lapSim.cars.indices
-                ForEach(cars, id: \.self) { i in
-                    Button("Car \(LapSimSetup.labels[i]): swap its wing for this one") { send(cl, cd, into: i) }
+            if app.car.setup != nil && app.car.base != nil, let combo = app.car.selectedCombo {
+                Menu("Send \(combo.name) to the Lap Sim") {
+                    ForEach(app.lapSim.cars.indices, id: \.self) { i in
+                        Button("Car \(LapSimSetup.labels[i]) (quick)") { sendCombo(combo, full: false, i) }
+                        if combo.full != nil { Button("Car \(LapSimSetup.labels[i]) (full)") { sendCombo(combo, full: true, i) } }
+                    }
+                    if app.lapSim.cars.count < LapSimSetup.maxCars { Button("New car (quick)") { sendCombo(combo, full: false, nil) } }
                 }
-                if cars.count < LapSimSetup.maxCars {
-                    Divider()
-                    Button("New car \(LapSimSetup.labels[cars.count]): car A with this wing") { send(cl, cd, into: nil) }
+                .fixedSize()
+                .help("The base car with both wings: ClA, CdA and the rear axle's share")
+                HStack {
+                    Button(lab.cardID == nil ? "Save as Car Card" : "Update Car Card") { saveCard(asNew: false) }
+                    if lab.cardID != nil { Button("Save as New Card") { saveCard(asNew: true) } }
                 }
+            } else {
+                NumberField(label: "Replaces: old wing's ClA", unit: "m²", value: Binding(get: { lab.replacedCla }, set: { lab.replacedCla = $0 }))
+                NumberField(label: "Replaces: old wing's CdA", unit: "m²", value: Binding(get: { lab.replacedCda }, set: { lab.replacedCda = $0 }))
+                HStack {
+                    Button(lab.cardID == nil ? "Save as Car Card" : "Update Car Card") { saveCard(asNew: false) }
+                    if lab.cardID != nil { Button("Save as New Card") { saveCard(asNew: true) } }
+                }
+                .help("A card for the car, with this wing as a \(wing.rulesFor == .front ? "front" : "rear") wing and these numbers")
+                Menu("Put in a Lap Sim Car") {
+                    let cars = app.lapSim.cars.indices
+                    ForEach(cars, id: \.self) { i in
+                        Button("Car \(LapSimSetup.labels[i]): swap its wing for this one") { send(cl, cd, into: i) }
+                    }
+                    if cars.count < LapSimSetup.maxCars {
+                        Divider()
+                        Button("New car \(LapSimSetup.labels[cars.count]): car A with this wing") { send(cl, cd, into: nil) }
+                    }
+                }
+                .fixedSize()
+                .disabled(from == nil && lab.preview == nil)
             }
-            .fixedSize()
-            .disabled(from == nil && lab.preview == nil)
             if let note = sentNote { Text(note).font(.caption).foregroundStyle(.secondary) }
         } header: {
             Text("Use in the Lap Sim")

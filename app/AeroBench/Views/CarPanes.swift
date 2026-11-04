@@ -8,11 +8,12 @@ import SwiftUI
 
 struct BaseCarPane: View {
     @Environment(AppState.self) private var app
+    var embedded = false  // in Wing Lab's inspector: its section header is the title, no pane
 
     var body: some View {
         @Bindable var car = app.car
         VStack(alignment: .leading, spacing: S37.Space.s3) {
-            Text("Base car").font(.system(size: 20, weight: .semibold))
+            if !embedded { Text("Base car").font(.system(size: 20, weight: .semibold)) }
             HStack {
                 Button(car.setup == nil ? "Choose STEP…" : "Change STEP…") { app.chooseCarSTEP() }
                 if let s = car.setup { Text(URL(fileURLWithPath: s.step).lastPathComponent).lineLimit(1).foregroundStyle(S37.C.inkSecondary) }
@@ -89,7 +90,7 @@ struct BaseCarPane: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .s37Pane()
+        .carPane(embedded)
     }
 
     private func setupBinding(_ key: WritableKeyPath<CarSetup, Double>) -> Binding<Double> {
@@ -322,12 +323,13 @@ struct SideViewPane: View {
 
 struct SectionPane: View {
     @Environment(AppState.self) private var app
+    var embedded = false  // in Wing Lab's inspector: its section header is the title, no pane
 
     var body: some View {
         @Bindable var car = app.car
         VStack(alignment: .leading, spacing: S37.Space.s3) {
             HStack {
-                Text("Section").font(.system(size: 20, weight: .semibold))
+                if !embedded { Text("Section").font(.system(size: 20, weight: .semibold)) }
                 Spacer()
                 Text(String(format: "y %.0f mm", car.sectionY)).monospacedDigit().foregroundStyle(S37.C.inkSecondary)
             }
@@ -354,7 +356,7 @@ struct SectionPane: View {
                 Text("The plane misses the car here.").font(.caption).foregroundStyle(S37.C.inkSecondary)
             }
         }
-        .s37Pane()
+        .carPane(embedded)
     }
 }
 
@@ -435,6 +437,7 @@ struct CardRow: View {
 
 struct CombinationsPane: View {
     @Environment(AppState.self) private var app
+    var embedded = false  // in Wing Lab's inspector: its section header is the title, no pane
     @Environment(\.undoManager) private var undo
     @State private var note: String?
 
@@ -442,7 +445,7 @@ struct CombinationsPane: View {
         @Bindable var car = app.car
         VStack(alignment: .leading, spacing: S37.Space.s3) {
             HStack {
-                Text("Combinations").font(.system(size: 20, weight: .semibold))
+                if !embedded { Text("Combinations").font(.system(size: 20, weight: .semibold)) }
                 Spacer()
                 Button("Add") { add() }.disabled(car.combos.count >= 12)
             }
@@ -458,7 +461,7 @@ struct CombinationsPane: View {
             if let note { Text(note).font(.caption).foregroundStyle(S37.C.sageInk) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .s37Pane()
+        .carPane(embedded)
     }
 
     private func add() {
@@ -621,6 +624,12 @@ struct CarResults: View {
             Text(value).font(.system(size: 32, weight: .semibold)).monospacedDigit()
             Text(label).font(.caption).foregroundStyle(S37.C.inkSecondary)
         }
+    }
+}
+
+private extension View {
+    @ViewBuilder func carPane(_ embedded: Bool) -> some View {
+        if embedded { self } else { s37Pane() }
     }
 }
 

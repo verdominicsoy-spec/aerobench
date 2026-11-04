@@ -280,7 +280,9 @@ extension AppState {
             if f.groundMoving == true { warnings.append("it ran over a moving ground, which is unverified") }
             if combo.isStale(cards: car.cards, baseRevision: car.baseRevision) { warnings.append("the full result is out of date") }
         } else {
-            let q = quickResult(combo)
+            // The selected combination is sent as shown: with the wing being edited on it.
+            let q = quickResult(id == car.selected ? shownCombo ?? combo : combo)
+            if id == car.selected, carDraftUnsaved { warnings.append("the edited wing is not saved") }
             numbers = q.map { ($0.cla, $0.cda, $0.rearShare) }
             if let b = car.base, !b.converged { warnings.append("the bare car's run did not converge") }
             if !(q?.pendingEstimate.isEmpty ?? true) { warnings.append("a re-estimate was not back yet") }
