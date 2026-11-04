@@ -505,7 +505,13 @@ extension AppState {
 
     func nextDesignName() -> String {
         var n = 1
-        while FileManager.default.fileExists(atPath: WingLabModel.studyFile(project: workFolder, name: "design-\(n)").path) { n += 1 }
+        // A design run writes its starting wing beside the study before the study exists: a name with either is taken.
+        func taken(_ n: Int) -> Bool {
+            let db = WingLabModel.studyFile(project: workFolder, name: "design-\(n)")
+            return FileManager.default.fileExists(atPath: db.path)
+                || FileManager.default.fileExists(atPath: db.deletingPathExtension().appendingPathExtension("design.json").path)
+        }
+        while taken(n) { n += 1 }
         return "design-\(n)"
     }
 

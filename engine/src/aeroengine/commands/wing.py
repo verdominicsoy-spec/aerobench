@@ -392,6 +392,20 @@ def _study(ctx: JobContext, p: dict, base, variables, sections, car=None, span=(
 FINALISTS = 5  # without RANS checks: the best distinct designs by the estimate
 
 
+def rank_finalists(checks: list[dict], direction: str) -> list[dict]:
+    """RANS checks in the order the card shows them: those that held (a value and
+    the goal's limit or target met), best first; then those that missed their limit
+    or target, by value; then those that separated or did not converge."""
+    sense = -1 if direction == "maximize" else 1
+
+    def key(c: dict):
+        v = c.get("value")
+        tier = 2 if v is None else (0 if c.get("feasible", True) else 1)
+        return tier, sense * (v or 0.0)
+
+    return sorted(checks, key=key)
+
+
 @command("wing-design")
 def wing_design(ctx: JobContext) -> dict:
     """One run from the rules box to finalists: a wing laid out to fill the box
@@ -425,8 +439,14 @@ def wing_design(ctx: JobContext) -> dict:
     root = (_root(ctx) or data_dir()) / "airfoils"
     saved = storage.with_suffix(".design.json")
     ctx.emit.progress(1, "laying out the wing")
+    # What the starting wing was laid out for: a resumed design must ask for the same.
+    signature = {"box": list(box), "elements": None if p.get("start") else int(p.get("elements", 2)),
+                 "start": bool(p.get("start")), "inverted": inverted, "free_air": bool(p.get("free_air", False))}
     if saved.exists():  # a resumed design: the same starting wing and search
         first = _json.loads(saved.read_text())
+        if first.get("signature", signature) != signature:
+            raise EngineError(f"a different design is saved under the name {name}",
+                              "start a new design (another name) for other settings")
     elif p.get("start"):
         try:
             els = [Element.from_dict(e) for e in p["start"]]
@@ -449,9 +469,19 @@ def wing_design(ctx: JobContext) -> dict:
         else:
             raise EngineError("the wing on the canvas does not fit the rules box even at a fraction of its size",
                               "start from scratch, or check the box")
-        first = {"elements": [{"key": None, "name": None, "unit": e.unit.tolist(), "chord": e.chord, "angle": e.angle,
-                               "leading_edge": e.leading_edge.tolist(), "inverted": e.inverted} for e in w.elements],
-                 "shortlists": None}
+        keys = [e.get("key") for e in p["start"]]
+        # Its sections are still searched: each element's own first, then the library's best at its Reynolds number.
+        lists = None
+        if any(keys):
+            from ..wing.design import shortlist
+
+            lists = [[x["key"] for x in sl] for sl in shortlist(
+                root, [e.chord for e in w.elements], keys, flow["speed"], flow["rho"], flow["mu"], flow["n_crit"],
+                float(p.get("min_thickness", 0.08)), progress=lambda pct, msg: ctx.emit.progress(1 + 0.09 * pct, msg))]
+        first = {"elements": [{"key": k, "name": None, "unit": e.unit.tolist(), "chord": e.chord, "angle": e.angle,
+                               "leading_edge": e.leading_edge.tolist(), "inverted": e.inverted}
+                              for k, e in zip(keys, w.elements)],
+                 "shortlists": lists, "from_canvas": True}
     else:
         # The sections are judged over the ground at about where the wing will start (halfway up the box).
         start_height = None if p.get("free_air") else box[1] + 0.25 * (box[3] - box[1])
@@ -464,10 +494,10 @@ def wing_design(ctx: JobContext) -> dict:
                 rules_box=box, ground_frame=True, free_air=bool(p.get("free_air", False)))
     # Its ride height is where it sits. A wing laid out from scratch starts halfway up the room the box
     # leaves it, not on the floor: a big main 30 mm off the ground separates, and the search starts lost.
-    base = apply(base, {"yfrac_0": 0.5} if first["shortlists"] is not None else {})
+    base = apply(base, {} if first.get("from_canvas") else {"yfrac_0": 0.5})
     if not saved.exists():
         storage.parent.mkdir(parents=True, exist_ok=True)
-        saved.write_text(_json.dumps(first))
+        saved.write_text(_json.dumps({**first, "signature": signature}))
     if p.get("variables"):
         var = [Variable(int(v["element"]), str(v["kind"]), float(v["low"]), float(v["high"]),
                        tuple(str(k) for k in v.get("choices") or ())) for v in p["variables"]]
@@ -509,9 +539,10 @@ def wing_design(ctx: JobContext) -> dict:
             finalists.append({"number": c["number"], "params": t["params"], "estimate_value": t["value"],
                               **{k: src.get(k) for k in keep}, "from": "RANS" if held else "estimate",
                               **where(t["params"]),
-                              "rans": {k: c.get(k) for k in ("cl", "cd", "converged", "separated", "reason", "value")}})
-        sense = -1 if spec.direction == "maximize" else 1
-        finalists.sort(key=lambda f: (f["rans"]["value"] is None, sense * (f["rans"]["value"] or 0)))
+                              "rans": {k: c.get(k) for k in ("cl", "cd", "converged", "separated", "reason", "value",
+                                                             "feasible")}})
+        order = {c["number"]: i for i, c in enumerate(rank_finalists(out["checks"], spec.direction))}
+        finalists.sort(key=lambda f: order.get(f["number"], len(order)))
     else:
         good = sorted((t for t in out["trials"] if t["state"] == "complete" and t["feasible"]),
                       key=lambda t: t["value"], reverse=spec.direction == "maximize")

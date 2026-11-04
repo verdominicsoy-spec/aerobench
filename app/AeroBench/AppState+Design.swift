@@ -41,9 +41,13 @@ extension AppState {
     /// The design's job params, without the study's name.
     private func designParams() throws -> [String: JSONValue] {
         let lab = wingLab, wing = lab.wing, d = lab.design, f = designFrame
+        if d.startFrom == .existing, abs(wing.alpha) > 1e-9 {
+            throw WingLabError("Set the wing's angle to 0° first: a design turns its elements, not the whole wing.")
+        }
         var p = ransParams()
         p["ref_chord"] = nil
         p["ride_height"] = nil
+        p["alpha"] = .double(0)  // designs are scored and shown at 0°: the box and the car take the elements as drawn
         func pair(_ v: SIMD2<Double>) -> JSONValue { .array([.double(v.x), .double(v.y)]) }
         p["box"] = .array([f.box.minX, f.box.minY, f.box.maxX, f.box.maxY].map { .double($0) })
         p["free_air"] = .bool(f.freeAir)
@@ -76,7 +80,8 @@ extension AppState {
             guard let offset = f.offset else { throw WingLabError("Put the wing on the car first, or start from scratch.") }
             p["start"] = .array(wing.elements.map { e in
                 .object(["unit": .array(e.airfoil.coords.map(pair)), "chord": .double(e.chord), "angle": .double(e.angle),
-                         "leading_edge": pair(e.leadingEdge + offset), "inverted": .bool(e.inverted)])
+                         "leading_edge": pair(e.leadingEdge + offset), "inverted": .bool(e.inverted),
+                         "key": .string(e.airfoil.key)])
             })
         }
         return p
@@ -104,6 +109,8 @@ extension AppState {
         params["name"] = .string(file.deletingPathExtension().lastPathComponent)
         lab.designResult = nil
         lab.designShown = nil
+        let resultFile = WingLabModel.designResultFile(project: workFolder, name: lab.designName!)
+        saveProject()  // the chips and the study's name, so a relaunch can resume it
         lab.designRun = jobs.submit(command: "wing-design", params: params, in: jobsRoot) { [weak self] item in
             guard let self else { return }
             guard item.status == .succeeded, let text = item.resultText,
@@ -111,6 +118,7 @@ extension AppState {
                 if item.status == .failed { self.show("The design did not finish", WingLabError(item.message ?? "The design failed.")) }
                 return
             }
+            try? Data(text.utf8).write(to: resultFile, options: .atomic)
             self.wingLab.designResult = r
         }
     }
@@ -153,11 +161,15 @@ extension AppState {
         let wing = wingLab.wing
         let ref = wingLab.designResult?.base.elements.reduce(0) { $0 + $1.chord } ?? wing.refChord
         // The study's coefficients are on its starting wing's total chord: the card's go on its own.
-        let numbers = f.rans.flatMap { v -> (cl: Double, cd: Double, name: String)? in
-            guard f.held, let cl = v.cl, let cd = v.cd else { return nil }
-            return (cl * ref / wing.refChord, cd * ref / wing.refChord, "RANS (design)")
+        // RANS's when it held, else the finalist's own estimate (never the live one: not back yet for this wing).
+        let trial = wingLab.designResult?.study.trials.first { $0.number == f.number }
+        let ran: (Double, Double, String)? = f.held ? f.rans.flatMap { v in v.cl.flatMap { cl in v.cd.map { (cl, $0, "RANS (design)") } } } : nil
+        let est: (Double, Double, String)? = trial.flatMap { t in t.cl.flatMap { cl in t.cd.map { (cl, $0, "estimate (design)") } } }
+        guard let (cl, cd, name) = ran ?? est else {
+            show("Could not save the design", WingLabError("This finalist has no numbers to save."))
+            return
         }
-        saveWingCard(asNew: true, numbers: numbers)
+        saveWingCard(asNew: true, numbers: (cl * ref / wing.refChord, cd * ref / wing.refChord, name))
     }
 }
 

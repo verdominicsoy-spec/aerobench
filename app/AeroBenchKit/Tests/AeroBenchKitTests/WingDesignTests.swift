@@ -50,6 +50,15 @@ final class WingDesignTests: XCTestCase {
         XCTAssertEqual(r.base.elements[0].leadingEdge, [0, 0.05])
     }
 
+    func testAFinalistThatMissesItsTargetInRansDoesNotHold() throws {
+        // A drag limit or balance missed in RANS: converged, attached, a (penalised) value, but not feasible.
+        let missed = Self.sample.replacingOccurrences(of: "\"separated\": false, \"reason\": null, \"value\": 0.88}",
+                                                      with: "\"separated\": false, \"reason\": null, \"value\": 0.5, \"feasible\": false}")
+        let r = try WingDesignResult.decode(resultFile: Data(missed.utf8))
+        XCTAssertEqual(r.finalists[0].rans?.value, 0.5)
+        XCTAssertFalse(r.finalists[0].held)
+    }
+
     func testTheDesignBoxIsTheCarsBoxFromTheGround() {
         let b = CarRules.designBox(.front, setup: setup())  // front box x -402...298, z -18...302, ground -48
         XCTAssertEqual(b.minX, 0, accuracy: 1e-12)

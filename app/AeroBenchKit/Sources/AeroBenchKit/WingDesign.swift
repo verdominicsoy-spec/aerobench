@@ -26,6 +26,7 @@ public struct WingDesignResult: Decodable, Sendable {
         public var separated: Bool?
         public var reason: String?
         public var value: Double?
+        public var feasible: Bool?  // met the goal's drag limit or balance in RANS
     }
     public struct Finalist: Decodable, Sendable, Identifiable {
         public var number: Int
@@ -42,8 +43,8 @@ public struct WingDesignResult: Decodable, Sendable {
         public var x: Double
         public var rans: RansVerdict?
         public var id: Int { number }
-        /// RANS ran it, it converged, stayed attached and gave a value for the goal.
-        public var held: Bool { rans?.value != nil }
+        /// RANS ran it, it converged, stayed attached, gave a value for the goal and met its limit or target.
+        public var held: Bool { rans?.value != nil && rans?.feasible != false }
         enum CodingKeys: String, CodingKey {
             case number, params, cla, cda, from, x, rans
             case estimateValue = "estimate_value", claCda = "cla_cda", carCla = "car_cla", carCda = "car_cda"

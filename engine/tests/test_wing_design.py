@@ -207,3 +207,31 @@ def test_a_design_in_free_air_has_no_ride_height(engine, tmp_path):
     code, _, out = _design(engine, tmp_path, "free", box=[0.0, 0.0, 0.45, 0.30], free_air=True)
     assert code == 0, out
     assert out["base"]["ride_height"] is None and all(f["ride_height"] is None for f in out["finalists"])
+
+
+def test_finalists_that_held_in_rans_come_first_and_misses_do_not_hold():
+    from aeroengine.commands.wing import rank_finalists
+
+    checks = [{"number": 1, "value": 0.9, "feasible": True}, {"number": 2, "value": 1.2, "feasible": False},
+              {"number": 3, "value": None, "separated": True}, {"number": 4, "value": 1.0, "feasible": True}]
+    ranked = rank_finalists(checks, "maximize")
+    assert [c["number"] for c in ranked] == [4, 1, 2, 3]  # held by value, then the drag-limit miss, then the separated one
+
+
+def test_a_saved_design_with_other_settings_is_refused(engine, tmp_path):
+    code, _, first = _design(engine, tmp_path, "same")
+    assert code == 0, first
+    code, _, out = _design(engine, tmp_path, "same", elements=3)
+    assert code != 0 and "different design" in out
+
+
+def test_a_canvas_wing_still_searches_sections(engine, tmp_path):
+    import numpy as np
+
+    w = layout([naca4("6412")] * 2, 0.30, True, (0.0, 0.03, 0.70, 0.35))
+    start = [{"unit": e.unit.tolist(), "chord": e.chord, "angle": e.angle, "inverted": True, "key": "naca/6412",
+              "leading_edge": (e.leading_edge + np.array([0.0, 0.1])).tolist()} for e in w.elements]
+    code, _, out = _design(engine, tmp_path, "canvas", start=start, trials=5)
+    assert code == 0, out
+    kinds = [v["kind"] for v in out["study"]["spec"]["variables"]]
+    assert "airfoil" in kinds

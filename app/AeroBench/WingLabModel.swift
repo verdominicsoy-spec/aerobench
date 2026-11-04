@@ -325,13 +325,13 @@ final class WingLabModel {
 
     // Where a study starts: the wing on the canvas, or one the engine lays out
     // from the library (sections ranked by maximum lift, a standard arrangement).
-    enum StartFrom: String, CaseIterable, Identifiable {
+    enum StartFrom: String, Codable, CaseIterable, Identifiable {
         case existing = "Existing"
         case scratch = "From scratch"
         var id: String { rawValue }
     }
     /// The Design card's goals, by the engine's keys.
-    enum DesignGoal: String, CaseIterable, Identifiable {
+    enum DesignGoal: String, Codable, CaseIterable, Identifiable {
         case maxCla = "max_cla", maxEfficiency = "max_efficiency", minLapTime = "min_lap_time"
         case maxClaCdaCap = "max_cla_cda_cap", balance = "balance"
         var id: String { rawValue }
@@ -345,7 +345,7 @@ final class WingLabModel {
             }
         }
     }
-    struct DesignSetup: Equatable {
+    struct DesignSetup: Codable, Equatable {
         var startFrom: StartFrom = .scratch
         var elements = 2
         var minThickness = 8.0  // % of chord, the thinnest section allowed
@@ -872,6 +872,8 @@ final class WingLabModel {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(wing).write(to: folder.appendingPathComponent("wing.json"), options: .atomic)
         try encoder.encode(optimise).write(to: folder.appendingPathComponent("optimise.json"), options: .atomic)
+        try encoder.encode(SavedDesign(setup: design, name: designName, key: designKey))
+            .write(to: folder.appendingPathComponent("design.json"), options: .atomic)
         markSaved()
         let version = folder.appendingPathComponent("version.txt")
         if let label = originVersion {
@@ -896,6 +898,32 @@ final class WingLabModel {
         savedOptimise = optimise
     }
     var hasUnsavedChanges: Bool { wing != savedWing || optimise != savedOptimise }
+
+    /// The Design card's chips and the study a Design run resumes, kept with the project.
+    struct SavedDesign: Codable {
+        var setup: DesignSetup
+        var name: String?
+        var key: String?
+    }
+
+    /// The Design card as the project left it, and its last finalists (beside the study).
+    func restoreDesign(fromProject project: URL) {
+        let url = ProjectStore.toolURL(for: project, tool: "wing").appendingPathComponent("design.json")
+        let saved = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode(SavedDesign.self, from: $0) }
+        design = saved?.setup ?? DesignSetup()
+        designName = saved?.name
+        designKey = saved?.key
+        designShown = nil
+        designResult = designName.flatMap { name in
+            (try? Data(contentsOf: Self.designResultFile(project: project, name: name)))
+                .flatMap { try? WingDesignResult.decode(resultFile: $0) }
+        }
+    }
+
+    /// A design run's result, kept beside its study.
+    static func designResultFile(project: URL, name: String) -> URL {
+        studyFile(project: project, name: name).deletingPathExtension().appendingPathExtension("result.json")
+    }
 
     static func loadOptimise(fromProject project: URL) -> OptimiseSetup? {
         let url = ProjectStore.toolURL(for: project, tool: "wing").appendingPathComponent("optimise.json")
