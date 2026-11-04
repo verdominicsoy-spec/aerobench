@@ -30,7 +30,7 @@ final class AppSettings {
         let parallel = defaults.integer(forKey: Key.maxParallelJobs)
         maxParallelJobs = parallel > 0 ? parallel : 2
         let cores = defaults.integer(forKey: Key.coresPerJob)
-        coresPerJob = cores > 0 ? cores : 4
+        coresPerJob = cores > 0 ? cores : Self.defaultCores
         let trials = defaults.integer(forKey: Key.parallelTrials)
         parallelTrials = trials > 0 ? trials : 1
     }
@@ -79,5 +79,17 @@ final class AppSettings {
             .deletingLastPathComponent()  // repo
         let engine = repo.appendingPathComponent("engine")
         return FileManager.default.fileExists(atPath: engine.appendingPathComponent("pyproject.toml").path) ? engine.path : nil
+    }
+
+    /// SU2 waits for its slowest core, and efficiency cores are slow: the performance cores and half
+    /// the efficiency ones. On an 18-core Mac (6 + 12) a fine-mesh run took 90 s on 4, 57 s on 12, 67 s on 16.
+    static var defaultCores: Int {
+        func count(_ name: String) -> Int {
+            var n: Int32 = 0
+            var size = MemoryLayout<Int32>.size
+            return sysctlbyname(name, &n, &size, nil, 0) == 0 ? Int(n) : 0
+        }
+        let fast = count("hw.perflevel0.physicalcpu"), slow = count("hw.perflevel1.physicalcpu")
+        return fast > 0 ? max(fast + slow / 2, 2) : 4
     }
 }

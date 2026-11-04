@@ -192,6 +192,10 @@ struct ToolHeader: View {
             .keyboardShortcut(Tool.project.key, modifiers: .command)
             .help("Project (⌘1)")
             .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+            SettingsLink { Label("Settings", systemImage: "gearshape").labelStyle(.iconOnly) }
+                .buttonStyle(S37ButtonStyle())
+                .help("Settings (⌘,): cores per job, the engine and SU2, units")
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
         }
         .s37HeaderShadow()
     }
