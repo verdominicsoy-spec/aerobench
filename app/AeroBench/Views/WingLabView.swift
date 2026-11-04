@@ -982,7 +982,7 @@ struct CFDResults: View {
                 }
                 Button("Run CFD") {
                     app.wingLab.solver = .rans
-                    app.runWingRANS()
+                    app.runCFD()
                 }
                 .disabled(app.settings.su2Executable == nil || app.wingLab.wing.elements.isEmpty
                           || !app.wingLab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty)
@@ -1260,10 +1260,11 @@ struct WingInspector: View {
         }
         let haveSU2 = app.settings.su2Executable != nil
         if !haveSU2 { su2Install(lab) }
-        Button("Run CFD") { app.runWingRANS() }
+        ransSweepControls(lab)
+        Button("Run CFD") { app.runCFD() }
             .buttonStyle(S37ButtonStyle(kind: .prominent))
             .disabled(!haveSU2 || lab.wing.elements.isEmpty || !lab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty
-                      || (lab.ransJob.map { !$0.status.isFinished } ?? false))
+                      || [lab.ransJob, lab.sweepJob].contains { $0.map { !$0.status.isFinished } ?? false })
         if !lab.wing.issues.filter({ $0.kind != .outsideRules }).isEmpty {
             Text("Fix the overlapping or touching elements first.").font(.caption).foregroundStyle(S37.C.clayInk)
         }
@@ -1271,7 +1272,9 @@ struct WingInspector: View {
         if let job = lab.ransJob, !job.status.isFinished || job.status == .failed {
             JobInlineStatus(job: job)
         }
-        ransSweepControls(lab)
+        if let job = lab.sweepJob, !job.status.isFinished || job.status == .failed {
+            JobInlineStatus(job: job)
+        }
         if needsSU2 && haveSU2 {
             Text("SU2 is installed now: run it again.").font(.caption).foregroundStyle(.secondary)
         }
@@ -1473,13 +1476,13 @@ struct WingInspector: View {
     }
 
     @ViewBuilder private func ransSweepControls(_ lab: WingLabModel) -> some View {
-        Toggle("Sweep the wing angle", isOn: Binding(get: { lab.sweepOn && lab.wing.rideHeight == nil }, set: { lab.sweepOn = $0 }))
+        Toggle("Vary the angle", isOn: Binding(get: { lab.sweepOn && lab.wing.rideHeight == nil }, set: { lab.sweepOn = $0 }))
             .disabled(lab.wing.rideHeight != nil)
             .help(lab.wing.rideHeight != nil ? "Over a ground each angle needs its own mesh, so there is no sweep" : "")
         if lab.sweepOn {
             FittingPicker(title: "Sweep", selection: Binding(get: { lab.sweepRising }, set: { lab.sweepRising = $0 })) {
-                Text("Quick, within 5 min").tag(false)
-                Text("Through stall").tag(true)
+                Text("Quick scan").tag(false)
+                Text("Full polar").tag(true)
             }
             NumberField(label: "From", unit: "°", value: Binding(get: { lab.sweepFrom }, set: { lab.sweepFrom = $0 }))
             NumberField(label: "To", unit: "°", value: Binding(get: { lab.sweepTo }, set: { lab.sweepTo = $0 }))
@@ -1488,12 +1491,6 @@ struct WingInspector: View {
                  ? "On the \(lab.meshLevel) mesh: the lowest angle from rest, each next from the one below, so angles near maximum lift start from an attached flow. No time limit: several minutes an angle."
                  : "Quick mesh; the middle angle from rest, the rest each from its neighbour. Never past 5 minutes: angles there is no time for are skipped and listed. About three angles fit on 4 cores."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Button("Run the Sweep") { app.runWingQuickEstimate() }
-                .disabled(app.settings.su2Executable == nil || (lab.sweepJob.map { !$0.status.isFinished } ?? false)
-                          || lab.wing.elements.isEmpty || !lab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty)
-            if let job = lab.sweepJob, !job.status.isFinished || job.status == .failed {
-                JobInlineStatus(job: job)
-            }
         }
     }
 

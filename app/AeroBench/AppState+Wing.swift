@@ -329,6 +329,11 @@ extension AppState {
 
     /// RANS on the quick mesh over a sweep of wing angles (inside 5 minutes;
     /// the engine skips angles that would run past it), or at the wing's angle.
+    /// The one Run CFD: the wing's own angle, or the sweep of angles when Vary the angle is ticked.
+    func runCFD() {
+        if wingLab.sweepOn { runWingQuickEstimate() } else { runWingRANS() }
+    }
+
     func runWingQuickEstimate() {
         let lab = wingLab
         let wing = lab.wing
