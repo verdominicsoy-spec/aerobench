@@ -330,12 +330,36 @@ final class WingLabModel {
         case scratch = "From scratch"
         var id: String { rawValue }
     }
+    /// The Design card's goals, by the engine's keys.
+    enum DesignGoal: String, CaseIterable, Identifiable {
+        case maxCla = "max_cla", maxEfficiency = "max_efficiency", minLapTime = "min_lap_time"
+        case maxClaCdaCap = "max_cla_cda_cap", balance = "balance"
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .maxCla: "Most downforce"
+            case .maxEfficiency: "Best efficiency"
+            case .minLapTime: "Fastest lap"
+            case .maxClaCdaCap: "Downforce under a drag limit"
+            case .balance: "Hit a balance"
+            }
+        }
+    }
     struct DesignSetup: Equatable {
-        var startFrom: StartFrom = .existing
+        var startFrom: StartFrom = .scratch
         var elements = 2
         var minThickness = 8.0  // % of chord, the thinnest section allowed
+        var goal = DesignGoal.maxCla
+        var checks = 3  // RANS on the best this many
+        var cdaCap = 1.5  // m², the drag limit (the car's with a base car, else the wing's)
+        var rearTarget = 55.0  // %, the balance goal's rear share
     }
     var design = DesignSetup()
+    var designRun: JobItem?  // the Design card's wing-design job
+    var designResult: WingDesignResult?
+    var designShown: Int?  // the finalist on the canvas
+    var designName: String?  // the study a Design run resumes while its settings stay the same
+    var designKey: String?
     var designStage: String?  // what setting up or a running study is doing, shown over the canvas
     var designJob: JobItem?
     /// Each element's sections to choose between, from the engine (the element's own first).

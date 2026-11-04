@@ -1054,6 +1054,7 @@ struct WingInspector: View {
         @Bindable var lab = app.wingLab
         let wing = lab.wing
         Form {
+            DesignCard()
             Section("Elements") {
                 ForEach(Array(wing.elements.enumerated()), id: \.element.id) { i, e in
                     HStack {
@@ -1267,38 +1268,13 @@ struct WingInspector: View {
     @ViewBuilder private func optimiseSection(_ lab: WingLabModel) -> some View {
         let running = lab.optimiseJob.map { !$0.status.isFinished } ?? false
         Section {
-            FittingPicker(title: "Start from", selection: Binding(get: { lab.design.startFrom }, set: { lab.design.startFrom = $0 })) {
-                ForEach(WingLabModel.StartFrom.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .disabled(running)
-            if lab.design.startFrom == .scratch {
-                scratchControls(lab)
-            } else {
-                variablesGrid(lab, running: running)
-                studyControls(lab, running: running)
-            }
+            variablesGrid(lab, running: running)
+            studyControls(lab, running: running)
         } header: {
             Text("Optimise")
         } footer: {
-            Text(lab.design.startFrom == .scratch
-                 ? "Set Up replaces the canvas with the engine's starting wing (Undo brings yours back) and ticks every section, chord, angle, gap and overlap. Nothing runs until Start Study."
-                 : "Wings that break the minimum gap or the rules box are never run. Trials that fail or do not converge are recorded as failed and the study carries on. Stopping is safe: Resume picks up where it left off.")
+            Text("The study in full, for hand-picked variables (the Design card above runs the whole chain). Wings that break the minimum gap or the rules box are never run. Trials that fail or do not converge are recorded as failed and the study carries on. Stopping is safe: Resume picks up where it left off.")
         }
-    }
-
-    @ViewBuilder private func scratchControls(_ lab: WingLabModel) -> some View {
-        FittingPicker(title: "Elements", selection: Binding(get: { lab.design.elements }, set: { lab.design.elements = $0 })) {
-            ForEach(2...5, id: \.self) { Text("\($0)").tag($0) }
-        }
-        NumberField(label: "Thinnest section", unit: "%", value: Binding(get: { lab.design.minThickness },
-                                                                          set: { lab.design.minThickness = min(max($0, 2), 30) }))
-        Text("The library's sections are ranked by maximum lift at your Reynolds number (NeuralFoil, a few seconds), the best few laid out as a standard \(lab.design.elements)-element wing inside the rules box, and the one the quick estimate likes best kept. Each element gets a shortlist of six sections to choose between."
-             + (lab.library.isEmpty ? " No library downloaded: only the NACA set is ranked." : ""))
-            .font(.caption).foregroundStyle(lab.library.isEmpty ? S37.C.clayInk : Color.secondary).fixedSize(horizontal: false, vertical: true)
-        Button("Set Up From Scratch") { app.setUpFromScratch() }
-            .buttonStyle(S37ButtonStyle(kind: .prominent))
-            .disabled(lab.designStage != nil)
-        if let job = lab.designJob, !job.status.isFinished || job.status == .failed { JobInlineStatus(job: job) }
     }
 
     /// What to search: a row per element, a column per variable.

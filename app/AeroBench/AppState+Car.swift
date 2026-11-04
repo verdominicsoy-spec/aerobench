@@ -149,9 +149,9 @@ extension AppState {
     /// Saves the edited wing as a card (the one it came from, or a new one), puts it on its end
     /// of the selected combination where the draft sits, and returns it.
     @discardableResult
-    func saveWingCard(asNew: Bool) -> WingCard? {
+    func saveWingCard(asNew: Bool, numbers: (cl: Double, cd: Double, name: String)? = nil) -> WingCard? {
         let lab = wingLab
-        guard let n = lab.bestNumbers else { return nil }
+        guard let n = numbers ?? lab.bestNumbers else { return nil }
         let at = carDraftAt
         let position = lab.wing.rulesFor
         // Updating keeps the card's place on cars: never turn a front card into a rear one.
