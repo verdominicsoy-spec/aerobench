@@ -2018,6 +2018,7 @@ struct EstimateResults: View {
                 let a = lab.pinned?.estimate?.rows
                 chart("Cl", est.rows.map { ($0.alpha, $0.cl, $0.trusted) }, mark: here.alpha, pinned: a?.map { ($0.alpha, $0.cl) })
                 chart("Cd", est.rows.map { ($0.alpha, $0.cd, $0.trusted) }, mark: here.alpha, pinned: a?.map { ($0.alpha, $0.cd) })
+                dragPolar(est.rows.map { ($0.cd, $0.cl, $0.trusted) }, here: (here.cd, here.cl), pinned: a?.map { ($0.cd, $0.cl) })
             }
             .padding(8)
         } else {
@@ -2043,6 +2044,30 @@ struct EstimateResults: View {
         }
         .chartXAxisLabel("Wing angle (°)").chartYAxisLabel(name)
         .chartYScale(domain: .automatic(includesZero: false))
+    }
+
+    /// The whole wing's drag polar over the sweep, in angle order: Cl against Cd, this angle ringed.
+    private func dragPolar(_ points: [(Double, Double, Bool)], here: (Double, Double), pinned: [(Double, Double)]?) -> some View {
+        Chart {
+            ForEach(Array((pinned ?? []).enumerated()), id: \.offset) { _, p in
+                LineMark(x: .value("Cd", p.0), y: .value("Cl", p.1), series: .value("Design", "A"))
+                    .foregroundStyle(S37.C.chart6.opacity(0.8))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            }
+            ForEach(Array(points.enumerated()), id: \.offset) { _, p in
+                LineMark(x: .value("Cd", p.0), y: .value("Cl", p.1), series: .value("Design", "B"))
+                PointMark(x: .value("Cd", p.0), y: .value("Cl", p.1))
+                    .symbolSize(p.2 ? 16 : 24)
+                    .foregroundStyle(p.2 ? S37.C.sage : S37.C.chart5)
+            }
+            PointMark(x: .value("Cd", here.0), y: .value("Cl", here.1))
+                .symbol(.circle).symbolSize(110).foregroundStyle(.clear)
+                .annotation(position: .overlay) { Circle().strokeBorder(S37.C.ink, lineWidth: 1.5).frame(width: 12, height: 12) }
+        }
+        .chartXAxisLabel("Cd").chartYAxisLabel("Cl")
+        .chartXScale(domain: .automatic(includesZero: false))
+        .chartYScale(domain: .automatic(includesZero: false))
+        .help("Drag polar of the whole wing (live estimate, each point a wing angle); the ring is the wing's angle now, the dashed line A")
     }
 }
 
