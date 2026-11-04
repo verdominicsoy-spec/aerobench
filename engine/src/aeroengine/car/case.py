@@ -3,10 +3,11 @@ body and wheels' high-y+ mesh, wings resolved to the wall, the ground and
 wheels moving or not as asked. Runs through Wing Lab's SU2 runner (CFL fallbacks,
 convergence test, early stop), with this file's config.
 
-In the mesh the flow runs along +X with the car standing still: a moving
-ground slides along +X at its speed, and a rolling wheel turns about its
+In the mesh the flow runs along +X with the car standing still: a ground
+moving at the air's speed is a slip wall, one moving at another speed slides
+along +X at it, a fixed one is no-slip, and a rolling wheel turns about its
 axle at speed / radius, counter-clockwise, so its contact point moves with
-the ground.
+the ground. Beyond the car's ends the ground ("road") is always slip.
 """
 
 from __future__ import annotations
@@ -32,11 +33,18 @@ def config(markers: list[str], setup: dict, flow: dict, mesh_file: str, iteratio
     ground = float(setup.get("ground_z", 0.0))
     speed = float(flow.get("speed", setup.get("speed", 15.0)))
     moving, origins, rotation, translation = [], [], [], []
-    if flow.get("ground", {}).get("moving", True):
+    ground_moving = flow.get("ground", {}).get("moving", True)
+    ground_speed = float(flow.get("ground", {}).get("speed", speed))
+    # A ground moving at the air's speed is slip: as a moving no-slip wall its cells (too big to
+    # resolve the thin layer it drags) pumped the air under the nose, and the centreline's lift went
+    # from +0.3 to -0.1 per metre, coarse to medium; slip gives -0.56 and -0.61. The air the ground
+    # drags into the floor gap is left out.
+    slip_ground = ground_moving and abs(ground_speed - speed) <= 1e-6 * max(speed, 1.0)
+    if ground_moving and not slip_ground:
         moving.append("ground")
         origins += [0.0, 0.0, 0.0]
         rotation += [0.0, 0.0, 0.0]
-        translation += [float(flow.get("ground", {}).get("speed", speed)), 0.0, 0.0]
+        translation += [ground_speed, 0.0, 0.0]
     if flow.get("wheels", {}).get("rotating", True):
         wheels = {w["name"]: w for w in setup.get("wheels", [])}
         for m in walls:
@@ -55,7 +63,9 @@ def config(markers: list[str], setup: dict, flow: dict, mesh_file: str, iteratio
                   f"SURFACE_MOTION_ORIGIN= ( {fmt(origins)} )\n"
                   f"SURFACE_ROTATION_RATE= ( {fmt(rotation)} )\n"
                   f"SURFACE_TRANSLATION_RATE= ( {fmt(translation)} )\n")
-    heatflux = ", ".join(f"{w}, 0.0" for w in walls + ["ground"])
+    heatflux = ", ".join(f"{w}, 0.0" for w in walls + ([] if slip_ground else ["ground"]))
+    slip = (["ground"] if slip_ground else []) + (["road"] if "road" in markers else [])
+    slip_line = f"MARKER_SYM= ( {', '.join(slip)} )\n" if slip else ""
     # No wall functions: SU2 8.5's put k near 1e5 (U = 1) on wall nodes at the
     # real car's sharp corners from the first iterations, and SST ran away
     # (eddy viscosity 1e5 to 1e9 times the laminar, CD 7 to 18 per metre, fixed
@@ -85,7 +95,7 @@ REF_ORIGIN_MOMENT_Z= 0.0
 REF_LENGTH= 1.0
 REF_AREA= 1.0
 MARKER_HEATFLUX= ( {heatflux} )
-{motion}MARKER_FAR= ( inlet, outlet, top )
+{slip_line}{motion}MARKER_FAR= ( inlet, outlet, top )
 MARKER_PLOTTING= ( {', '.join(walls)} )
 MARKER_MONITORING= ( {', '.join(walls)} )
 NUM_METHOD_GRAD= GREEN_GAUSS

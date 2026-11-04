@@ -17,6 +17,9 @@ OpenCascade kernel crashes in a process that has loaded OCP).
   Lab's meshes do. Quad layers on a real car's many sharp corners fail.
 * The gap between the floor and the ground gets a set number of cells
   across it (8 coarse to 16 maxed), whatever the wall size.
+* The ground is split at the car's ends: "ground" under the car, "road"
+  beyond it (always slip, see case.py). The domain's edges are not cut at
+  the wall size.
 
 Coordinates: the section's (x, z) mm become (X, Y) m with X = -x (the car
 faces the flow, which runs along +X) and Y = z - ground.
@@ -337,6 +340,17 @@ def build(section: dict, wings: list[dict], setup: dict, preset: str, out: Path)
             for raw in face_loops:
                 # Merged edges can be long: back to the wall spacing (keeping corners) so the walls are evenly cut.
                 poly = [tuple(q) for q in _resample(np.asarray(raw), spacing)] if len(raw) > 2 else raw
+                # Not along the domain's edges: points every wall size there, under cells a metre
+                # across, made slivers on the ground whose pressure swung by q from node to node
+                # (the flow fed to the car, and its lift, followed the far cells' size).
+                on = [{e for e, (v, i) in enumerate(((xi, 0), (0, 1), (xo, 0), (top, 1))) if abs(q[i] - v) < tol} for q in poly]
+                poly = [q for k, q in enumerate(poly) if not (on[k] and on[k] & on[k - 1] & on[(k + 1) % len(poly)] == on[k])]
+                # The ground splits at the car's ends: no-slip under the car, slip ("road") beyond (see name_of).
+                for xs in (x0, x1):
+                    k = next((k for k, (a, b) in enumerate(zip(poly, poly[1:] + poly[:1]))
+                              if abs(a[1]) < tol and abs(b[1]) < tol and min(a[0], b[0]) + tol < xs < max(a[0], b[0]) - tol), None)
+                    if k is not None:
+                        poly.insert(k + 1, (xs, 0.0))
                 curves = [geo.addLine(point(*poly[k]), point(*poly[(k + 1) % len(poly)])) for k in range(len(poly))]
                 curve_loops.append(geo.addCurveLoop(curves))
             surfaces.append(geo.addPlaneSurface(curve_loops))
@@ -350,7 +364,11 @@ def build(section: dict, wings: list[dict], setup: dict, preset: str, out: Path)
             lo, hi = gmsh.model.getParametrizationBounds(1, c)
             x, y, _ = gmsh.model.getValue(1, c, [(lo[0] + hi[0]) / 2])
             if abs(y) < tol:
-                return "ground"
+                # No-slip on the ground's big cells ahead of the car set the air near it by the cell
+                # size (fixed: a 0.5 m layer of still air; moving: pumped to 1.4 to 2.2 times the free
+                # stream's total pressure under the nose), and lift followed the mesh. Beyond the car
+                # the ground is slip; under it, see case.py.
+                return "ground" if x0 - tol <= x <= x1 + tol else "road"
             if abs(x - xi) < tol:
                 return "inlet"
             if abs(x - xo) < tol:
