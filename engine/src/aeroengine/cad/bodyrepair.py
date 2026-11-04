@@ -324,12 +324,17 @@ def match_decision(kind: str, part: str, centre_mm, saved: list[dict], within_mm
     one in the next revision."""
     best, found = within_mm, None
     for d in saved:
-        if d.get("kind") != kind or d.get("part") != part:
+        if not isinstance(d, dict) or d.get("kind") != kind or d.get("part") != part:
             continue
-        old = d.get("size_mm")
+        centre, old = d.get("centre_mm"), d.get("size_mm")
+        # A hand-edited or damaged entry never decides anything.
+        if (d.get("decision") not in ("accept", "skip") or not isinstance(centre, list) or len(centre) != 3
+                or not all(isinstance(c, (int, float)) for c in centre)
+                or (old is not None and not isinstance(old, (int, float)))):
+            continue
         if size_mm is not None and old is not None and abs(size_mm - old) > max(0.5, 0.25 * old):
             continue
-        dist = sum((a - b) ** 2 for a, b in zip(centre_mm, d.get("centre_mm", ()))) ** 0.5
+        dist = sum((a - b) ** 2 for a, b in zip(centre_mm, centre)) ** 0.5
         if dist <= best:
             best, found = dist, d.get("decision")
     return found
@@ -377,18 +382,22 @@ def _fuse(solids):
         op.Build()
         if not op.IsDone():
             return None
+    except Exception:
+        return None
+    try:  # merging coplanar faces only tidies the result: a good fuse stands without it
         unify = ShapeUpgrade_UnifySameDomain(op.Shape(), True, True, False)
         unify.Build()
         return unify.Shape()
     except Exception:
-        return None
+        return op.Shape()
 
 
 def _saved(decisions: Path | None) -> list[dict]:
     if decisions is None or not decisions.is_file():
         return []
     try:
-        return list(json.loads(decisions.read_text()).get("decisions", []))
+        entries = json.loads(decisions.read_text()).get("decisions", [])
+        return [d for d in entries if isinstance(d, dict)] if isinstance(entries, list) else []
     except (ValueError, AttributeError) as e:
         raise EngineError(f"could not read {decisions.name}", f"delete it to start the decisions afresh ({e})")
 

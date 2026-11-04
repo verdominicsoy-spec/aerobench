@@ -3,6 +3,7 @@ import AeroBenchKit
 import CoreGraphics
 import CryptoKit
 import Foundation
+import simd
 import Observation
 
 enum TessellationPreset: String, CaseIterable, Identifiable {
@@ -221,8 +222,16 @@ final class CADViewerModel {
         }
         let lines = item.lines.map { $0.compactMap { p in p.count == 3 ? SIMD3(p[0], p[1], p[2]) : nil } }
         viewer.setPreviewLines(lines)
-        let points = lines.flatMap { $0 }
-        viewer.focus(on: points.isEmpty && item.centre.count == 3 ? [SIMD3(item.centre[0], item.centre[1], item.centre[2])] : points)
+        // A part placed several times has lines at every placement: frame the one nearest the item's
+        // centre (its first placement), not the whole car.
+        let centre = item.centre.count == 3 ? SIMD3(item.centre[0], item.centre[1], item.centre[2]) : nil
+        var points = lines.flatMap { $0 }
+        if let c = centre, !lines.isEmpty {
+            let far = lines.map { line in line.map { simd_length($0 - c) }.min() ?? .infinity }
+            let nearest = far.min() ?? 0
+            points = zip(lines, far).filter { $0.1 <= nearest + 0.05 }.flatMap { $0.0 }  // within 5 cm of the closest
+        }
+        viewer.focus(on: points.isEmpty ? centre.map { [$0] } ?? [] : points)
     }
 
     /// Distinct, fixed colours per issue kind so markers can be told apart.

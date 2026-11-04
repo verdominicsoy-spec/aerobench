@@ -170,8 +170,22 @@ extension AppState {
             return ["kind": item.kind, "part": item.part, "centre_mm": item.centreMM, "size_mm": item.sizeMM as Any,
                     "decision": accepted ? "accept" : "skip"]
         }
+        // Keep decisions for things not in this run (another part, a gap fixed since), replacing only
+        // the ones this run decided again: same kind and part within 3 mm.
+        var kept: [[String: Any]] = []
+        if let data = try? Data(contentsOf: bodyDecisionsURL(url)),
+           let old = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["decisions"] as? [[String: Any]] {
+            kept = old.filter { o in
+                guard let c = o["centre_mm"] as? [Double], c.count == 3 else { return false }
+                return !decided.contains { d in
+                    guard (d["kind"] as? String) == (o["kind"] as? String), (d["part"] as? String) == (o["part"] as? String),
+                          let e = d["centre_mm"] as? [Double], e.count == 3 else { return false }
+                    return sqrt(zip(c, e).map { ($0 - $1) * ($0 - $1) }.reduce(0, +)) <= 3
+                }
+            }
+        }
         do {
-            let data = try JSONSerialization.data(withJSONObject: ["version": 1, "decisions": decided],
+            let data = try JSONSerialization.data(withJSONObject: ["version": 1, "decisions": kept + decided],
                                                   options: [.prettyPrinted, .sortedKeys])
             try data.write(to: bodyDecisionsURL(url))
         } catch {

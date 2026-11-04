@@ -257,3 +257,33 @@ def test_a_saved_decision_needs_a_similar_size():
     saved = [{"kind": "gap", "part": "Floor", "centre_mm": [100, 0, 5], "size_mm": 2.0, "decision": "accept"}]
     assert match_decision("gap", "Floor", (100, 0, 5), saved, size_mm=2.3) == "accept"
     assert match_decision("gap", "Floor", (100, 0, 5), saved, size_mm=9.0) is None
+
+
+# Deferred minors ---------------------------------------------------------------
+
+
+def test_a_good_fuse_survives_a_failed_face_merge(monkeypatch):
+    class Broken:
+        def __init__(self, *a):
+            pass
+
+        def Build(self):
+            raise RuntimeError("unify failed")
+
+    monkeypatch.setattr(bodyrepair, "ShapeUpgrade_UnifySameDomain", Broken)
+    out = bodyrepair._fuse([box_at(0), box_at(95)])
+    assert out is not None and volume(out) == pytest.approx(100 * 100 * 195, rel=1e-3)
+
+
+def test_malformed_saved_decisions_are_ignored():
+    saved = ["junk", {"kind": "gap", "part": "Floor", "centre_mm": [100, 0], "decision": "accept"},
+             {"kind": "gap", "part": "Floor", "centre_mm": [100, 0, 5], "decision": "maybe"},
+             {"kind": "gap", "part": "Floor", "centre_mm": [100, 0, "x"], "decision": "accept"},
+             {"kind": "gap", "part": "Floor", "centre_mm": [100, 0, 5], "size_mm": "big", "decision": "skip"}]
+    assert match_decision("gap", "Floor", (100, 0, 5), saved, size_mm=2.0) is None
+
+
+def test_a_decisions_file_that_is_not_a_list_reads_as_none(tmp_path):
+    p = tmp_path / "x.repair.json"
+    p.write_text('{"version": 1, "decisions": {"oops": 1}}')
+    assert bodyrepair._saved(p) == []
