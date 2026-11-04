@@ -453,9 +453,12 @@ def wing_design(ctx: JobContext) -> dict:
                                "leading_edge": e.leading_edge.tolist(), "inverted": e.inverted} for e in w.elements],
                  "shortlists": None}
     else:
+        # The sections are judged over the ground at about where the wing will start (halfway up the box).
+        start_height = None if p.get("free_air") else box[1] + 0.25 * (box[3] - box[1])
         r = starter(root, elements=int(p.get("elements", 2)), inverted=inverted, rules_box=box,
                     min_thickness=float(p.get("min_thickness", 0.08)), min_gap=float(p.get("min_gap", 0.005)),
-                    progress=lambda pct, msg: ctx.emit.progress(1 + 0.09 * pct, msg), fill=True, **flow)
+                    progress=lambda pct, msg: ctx.emit.progress(1 + 0.09 * pct, msg), fill=True,
+                    ride_height=start_height, **flow)
         first = {"elements": r["elements"], "shortlists": [[k["key"] for k in keys] for keys in r["shortlists"]]}
     base = Wing([Element.from_dict(e) for e in first["elements"]], min_gap=float(p.get("min_gap", 0.005)),
                 rules_box=box, ground_frame=True, free_air=bool(p.get("free_air", False)))
@@ -483,7 +486,9 @@ def wing_design(ctx: JobContext) -> dict:
     checks = int(p.get("checks", 3))
     study_p = {**{k: v for k, v in p.items() if k not in ("variables", "start", "box", "car")}, **flow,
                "objective": goal, "solver": "estimate", "check": checks, "until_pass": False,
-               "anchor": checks > 0, "ref_chord": ref, "ride_height": base.ride_height,
+               # No calibration run: it meshes in a thread beside the study, and gmsh started again on the
+               # main thread for the checks then crashes (in its OpenMP start-up); the app's Study runs none either.
+               "anchor": False, "ref_chord": ref, "ride_height": base.ride_height,
                "storage": str(storage), "name": name}
     out, spec = _study(ctx, study_p, base, var, sections, car=car, span=(10.0, 100.0))
 

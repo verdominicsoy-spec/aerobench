@@ -79,6 +79,10 @@ struct DesignCard: View {
     @ViewBuilder private func finalists(_ r: WingDesignResult) -> some View {
         let lab = app.wingLab
         let car = r.finalists.contains { $0.carCla != nil }
+        if r.finalists.isEmpty {
+            Text("No design held even in the estimate: every trial separated or broke the box. Try more trials (More), fewer elements, or a higher start.")
+                .font(.caption).foregroundStyle(S37.C.clayInk).fixedSize(horizontal: false, vertical: true)
+        }
         if !r.finalists.contains(where: \.held), r.finalists.contains(where: { $0.rans != nil }) {
             HStack {
                 Text("None held in RANS: each separated or did not converge.").font(.caption).foregroundStyle(S37.C.clayInk)

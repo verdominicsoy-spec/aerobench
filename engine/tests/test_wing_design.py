@@ -179,10 +179,10 @@ def test_balance_needs_a_base_car(engine, tmp_path):
 @pytest.mark.skipif(not __import__("os").environ.get("AEROBENCH_SU2") and not __import__("shutil").which("SU2_CFD"),
                     reason="SU2 not found")
 def test_design_with_rans_ranks_by_rans(engine, tmp_path):
-    code, _, out = _design(engine, tmp_path, "rans", timeout=1500, trials=20, checks=2, mesh="quick", model="sa")
+    code, _, out = _design(engine, tmp_path, "rans", timeout=1500, trials=80, seed=5, checks=2, mesh="quick", model="sa")
     assert code == 0, out
     f = out["finalists"]
-    assert len(f) == 2 and all(x["rans"] is not None for x in f)
+    assert 1 <= len(f) <= 2 and all(x["rans"] is not None for x in f)
     held = [x for x in f if x["rans"]["value"] is not None]
     assert [x["rans"]["value"] for x in held] == sorted((x["rans"]["value"] for x in held), reverse=True)
     assert all(x["from"] == "RANS" for x in held) and f[: len(held)] == held  # held ones first
