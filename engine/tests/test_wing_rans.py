@@ -334,3 +334,36 @@ def test_a_rising_sweep_climbs_without_a_time_limit(monkeypatch, tmp_path):
     rans.sweep({"alphas": [0, -4, -8], "order": "rising", "time_limit": 0, "elements": [{"inverted": True}]}, tmp_path / "inv",
                tmp_path / "m.su2", None, 1, None, lambda *a: None, lambda *a, **k: None)
     assert calls == [(0.0, None), (-4.0, "a0"), (-8.0, "a-4")]
+
+
+def test_reversed_flow_over_a_share_of_an_element_is_separation():
+    from aeroengine.wing.rans import SEPARATED_SHARE, separation
+
+    s = np.linspace(0.06, 1.0, 100)  # along the chord, past the first 5%
+    attached = np.column_stack([s, np.where(s > 0.97, -0.001, 0.004)])  # a sliver reversed at the trailing edge
+    stalled = np.column_stack([s, np.where(s > 0.6, -0.002, 0.004)])  # reversed over the back 40%
+    assert separation([attached]) == (False, None)
+    sep, why = separation([attached, stalled])
+    assert sep and why.startswith("Flap 1") and SEPARATED_SHARE < 0.4
+
+
+@su2
+def test_rans_says_the_stalled_study_wing_separates_and_an_attached_one_does_not(tmp_path):
+    """Reversed flow past the first 5% of chord, on the quick mesh: the stalled
+    study wing's main 33% at 30 mm (Cl -1.83, Cd 0.52), a NACA 4412 main alone
+    3% at 100 mm (Cd 0.023, attached)."""
+    from aeroengine.wing import rans
+    from aeroengine.wing.design import layout
+
+    w = json.loads((Path(__file__).parent / "data" / "stalled_wing.json").read_text())
+    flow = {"alpha": 0.0, "mesh": "quick", "model": "sa", "transition": "auto", "n_crit": 5}
+    p = {**{k: w[k] for k in ("elements", "speed", "rho", "mu", "ref_chord")}, **flow, "ride_height": 0.03}
+    r = rans.solve(p, tmp_path / "s", tmp_path / "s" / "wing.su2", None, 6, None, lambda *a: None, lambda *a, **k: None,
+                   field=False)
+    assert r["converged"] and r["separated"] and r["separation"].startswith("Main")
+    e = layout([naca4("4412")] * 2, 0.40, True).elements[0]
+    one = [{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "chord": e.chord, "angle": e.angle, "inverted": True}]
+    q = {"elements": one, "speed": 15.0, "rho": 1.225, "mu": 1.81e-5, **flow, "ride_height": 0.10}
+    r = rans.solve(q, tmp_path / "a", tmp_path / "a" / "wing.su2", None, 6, None, lambda *a: None, lambda *a, **k: None,
+                   field=False)
+    assert r["converged"] and not r["separated"] and r["separation"] is None

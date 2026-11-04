@@ -42,6 +42,7 @@ OBJECTIVES = {
 # (or 10 % in Cd). The sampler steers away; feasible says which trials hold.
 PENALTY = 10.0
 INVALID = 1e6  # what a wing that breaks a constraint scores (negated when maximising)
+SEPARATED_DRAG = 3.0  # a RANS check with more than this times the estimate's drag counts as separated
 DISTINCT = 0.05  # of a variable's range: how far apart two checked designs must be in at least one
 
 
@@ -532,7 +533,17 @@ def check(base: Wing, spec: Spec, storage: Path, name: str, evaluate: Evaluate, 
             res = evaluate(wing, folder)
             load = -res["cl"] if inverted else res["cl"]
             rec.update(cl=res["cl"], cd=res["cd"], load=load, converged=bool(res["converged"]), reason=res.get("reason"))
-            if res["converged"] and res.get("scheme", "jst") == "jst":
+            # Converged is not attached: a stalled wing can settle. Skin friction says so,
+            # or a drag many times the estimate's (the stalled study wing: 0.52 against 0.09).
+            est_cd = t.get("cd")
+            if res.get("separated"):
+                rec.update(separated=True, reason=res.get("separation") or "separates in RANS")
+            elif est_cd and res["cd"] > SEPARATED_DRAG * est_cd:
+                rec.update(separated=True, reason=f"its drag in RANS is {res['cd'] / est_cd:.1f} times the estimate's: "
+                                                  "separated flow")
+            else:
+                rec["separated"] = False
+            if res["converged"] and res.get("scheme", "jst") == "jst" and not rec["separated"]:
                 rec["value"], rec["feasible"] = score(spec, load, res["cd"], wing)
                 if spec.car is not None:
                     rec.update(spec.car.numbers(load, res["cd"], wing))

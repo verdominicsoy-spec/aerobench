@@ -480,3 +480,25 @@ def test_balance_is_on_target_within_a_percent():
     assert value <= cla
     with pytest.raises(Exception, match="balance"):
         Spec([_var()], objective="balance", car=CarScore(1.2, 0.25, 1.0, 0.44, None, None))
+
+
+def test_a_check_that_separates_in_rans_does_not_hold(tmp_path):
+    spec = optimise.Spec([Variable(1, "angle", 15, 40), Variable(1, "gap", 0.006, 0.02)], trials=20, seed=8,
+                         solver="estimate")
+    evaluate, _ = _fake()
+    optimise.run(_starter(), spec, evaluate, tmp_path / "s.db", "s", tmp_path / "w")
+    calls = []
+
+    def rans(wing, folder):
+        calls.append(1)
+        if len(calls) == 1:  # converged, but stalled: reversed flow over the main
+            return {"cl": -1.8, "cd": 0.05, "converged": True, "separated": True, "separation": "Main separates in RANS"}
+        if len(calls) == 2:  # converged and attached by skin friction, but its drag is many times the estimate's
+            return {"cl": -1.8, "cd": 0.50, "converged": True, "separated": False, "separation": None}
+        return {"cl": -1.5, "cd": 0.05, "converged": True, "separated": False, "separation": None}
+
+    out = optimise.check(_starter(), spec, tmp_path / "s.db", "s", rans, 3, tmp_path / "w")
+    first, second, third = out["checks"]
+    assert first.get("value") is None and first["separated"] and "Main" in first["reason"]
+    assert second.get("value") is None and second["separated"] and "drag" in second["reason"]
+    assert third["value"] == pytest.approx(1.5) and not third["separated"]

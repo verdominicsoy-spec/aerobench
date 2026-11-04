@@ -116,6 +116,12 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
                      progress=lambda pct, msg: progress(10 + 0.88 * pct, msg), env=env)
     result.pop("history_columns", None)
     surface = surface_cp(workdir / "surface.csv", placed)
+    separated, why = False, None
+    if (workdir / "flow.vtu").exists():
+        try:
+            separated, why = separation(surface_cf(workdir / "flow.vtu", placed))
+        except Exception as exc:  # noqa: BLE001 - the run's numbers stand without the verdict
+            log(f"no separation check: {exc}", level="warning")
     if not result["converged"]:
         log(f"not converged: {result['reason']}", level="warning")
     view = None
@@ -132,8 +138,51 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     # by minus its angle): the surface and field are in that turned frame.
     return {"alpha": alpha, "frame_turn": -alpha if ground is not None else 0.0,
             "re": re_ref, "mesh": mesh, "mesh_level": level, "transition": zones, "model": model,
-            "model_name": su2.MODELS[model], **result, "surface": surface,
+            "model_name": su2.MODELS[model], **result, "surface": surface, "separated": separated, "separation": why,
             "field": "flow.vtu" if (workdir / "flow.vtu").exists() else None, "field_view": view}
+
+
+# An element counts as separated when its wall skin friction points upstream
+# over more than this share of its surface past the first 5% of chord (the
+# stagnation point's own reversal sits there). Quick mesh, SA: a NACA 4412 main
+# alone at 100 mm, attached (Cd 0.023), 3%; the stalled study wing at 30 mm
+# (Cd 0.52), its main 33% and its flap 2%. Converged is not attached: that
+# stalled run converged.
+SEPARATED_SHARE = 0.15
+
+
+def surface_cf(vtu: Path, placed: list[np.ndarray]) -> list[np.ndarray]:
+    """Each element's wall points as (distance along its chord over the chord,
+    skin friction along the flow), from SU2's flow.vtu (the CSV surface file
+    holds no skin friction in SU2 8.5). Each wall point goes to the nearest element."""
+    from .field import _read_vtu
+
+    pts, _, arrays = _read_vtu(vtu)
+    cf = np.asarray(arrays.get("Skin_Friction_Coefficient"))
+    if cf.ndim != 2:
+        return []
+    wall = np.linalg.norm(cf[:, :2], axis=1) > 0  # zero away from the walls
+    p, c = pts[wall], cf[wall, 0]
+    owner = np.argmin([np.min(np.linalg.norm(p[:, None, :] - e[None, :, :], axis=2), axis=1) for e in placed], axis=0)
+    out = []
+    for i, e in enumerate(placed):
+        le, te = e[np.argmin(e[:, 0])], 0.5 * (e[0] + e[-1])
+        u = (te - le) / max(float(np.linalg.norm(te - le)), 1e-12)
+        sel = owner == i
+        out.append(np.column_stack([(p[sel] - le) @ u / max(float(np.linalg.norm(te - le)), 1e-12), c[sel]]))
+    return out
+
+
+def separation(cf_by_element: list[np.ndarray]) -> tuple[bool, str | None]:
+    """Whether any element separates in RANS, and which, from surface_cf."""
+    from .geometry import label
+
+    for i, a in enumerate(cf_by_element):
+        keep = a[a[:, 0] > 0.05] if len(a) else a
+        if len(keep) and float(np.mean(keep[:, 1] < 0)) > SEPARATED_SHARE:
+            share = float(np.mean(keep[:, 1] < 0))
+            return True, f"{label(i)} separates in RANS: reversed flow over {share * 100:.0f}% of it"
+    return False, None
 
 
 def surface_cp(path: Path, placed: list[np.ndarray]) -> list[dict]:
