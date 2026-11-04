@@ -17,7 +17,7 @@ struct WingLabView: View {
                     .frame(minWidth: 240, idealWidth: 280, maxWidth: 380)
             }
             VSplitView {
-                WingCanvas()
+                CanvasHost()
                     .s37Region()
                     .frame(minHeight: 200, maxHeight: .infinity)
                 WingResultsPane()
@@ -63,6 +63,41 @@ struct WingLabView: View {
         .onAppear {
             if lab.library.isEmpty { lab.loadLibrary(engineDirectory: app.settings.engineDirectory) }
             if lab.wing.elements.isEmpty && lab.undoStack.isEmpty { lab.reset(to: WingLabModel.starter) }
+        }
+    }
+}
+
+/// The canvas: the wing in its own plane, or the car's side view with the wing on it.
+struct CanvasHost: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        @Bindable var lab = app.wingLab
+        VStack(spacing: 0) {
+            Picker("Canvas", selection: $lab.canvasMode) {
+                ForEach(WingLabModel.CanvasMode.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .padding([.top, .horizontal], 8)
+            switch lab.canvasMode {
+            case .wing:
+                WingCanvas()
+            case .car:
+                ScrollView {
+                    if app.car.setup == nil {
+                        Text("Set up the base car in the inspector's Car section to put this wing on it.")
+                            .foregroundStyle(S37.C.inkSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(S37.Space.s4)
+                    } else {
+                        SideViewPane().padding(6)
+                    }
+                }
+                .scrollIndicators(.never)
+                .onAppear { app.putDraftOnCar() }
+            }
         }
     }
 }

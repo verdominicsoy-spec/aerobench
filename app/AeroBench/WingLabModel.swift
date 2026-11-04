@@ -331,6 +331,13 @@ final class WingLabModel {
     var selectedTrial: Int?
 
     // Panels (kept per Mac)
+    enum CanvasMode: String, CaseIterable, Identifiable {
+        case wing = "Wing", car = "Car"
+        var id: String { rawValue }
+    }
+    var canvasMode = CanvasMode(rawValue: UserDefaults.standard.string(forKey: "wingCanvasMode") ?? "") ?? .wing {
+        didSet { UserDefaults.standard.set(canvasMode.rawValue, forKey: "wingCanvasMode") }
+    }
     var showLibrary = UserDefaults.standard.object(forKey: "wingShowLibrary") as? Bool ?? true {
         didSet { UserDefaults.standard.set(showLibrary, forKey: "wingShowLibrary") }
     }
