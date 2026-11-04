@@ -336,15 +336,25 @@ def test_a_rising_sweep_climbs_without_a_time_limit(monkeypatch, tmp_path):
     assert calls == [(0.0, None), (-4.0, "a0"), (-8.0, "a-4")]
 
 
-def test_reversed_flow_over_a_share_of_an_element_is_separation():
+def test_reversed_flow_reaching_the_trailing_edge_is_separation_a_bubble_is_not():
     from aeroengine.wing.rans import SEPARATED_SHARE, separation
 
-    s = np.linspace(0.06, 1.0, 100)  # along the chord, past the first 5%
-    attached = np.column_stack([s, np.where(s > 0.97, -0.001, 0.004)])  # a sliver reversed at the trailing edge
-    stalled = np.column_stack([s, np.where(s > 0.6, -0.002, 0.004)])  # reversed over the back 40%
+    s = np.linspace(0.0, 1.0, 200)
+
+    def element(cf_upper, cf_lower):  # (distance along the chord / chord, skin friction along the flow, surface)
+        return np.vstack([np.column_stack([s, cf_upper(s), np.ones_like(s)]),
+                          np.column_stack([s, cf_lower(s), -np.ones_like(s)])])
+
+    attached = element(lambda x: np.full_like(x, 0.004), lambda x: np.full_like(x, 0.004))
+    # A long laminar bubble that reattaches well before the trailing edge: 29% of the S1223's whole surface
+    # reversed at Re 200,000 (SST transition), every bit of it a bubble.
+    bubble = element(lambda x: np.where((x > 0.15) & (x < 0.75), -0.001, 0.004), lambda x: np.full_like(x, 0.004))
+    # Reversed from 33% to 97% chord, positive again in the trailing-edge corner (the stalled study wing).
+    stalled = element(lambda x: np.full_like(x, 0.004), lambda x: np.where((x > 0.33) & (x < 0.97), -0.0006, 0.002))
     assert separation([attached]) == (False, None)
+    assert separation([bubble]) == (False, None)
     sep, why = separation([attached, stalled])
-    assert sep and why.startswith("Flap 1") and SEPARATED_SHARE < 0.4
+    assert sep and why.startswith("Flap 1") and SEPARATED_SHARE < 0.6
 
 
 @su2

@@ -46,7 +46,9 @@ class Case:
     iterations: int = 4000
     residual_drop: float = 4.0  # orders of magnitude, on the pressure residual
     window: int = 200  # iterations over which Cl and Cd must hold still
-    tolerance: float = 1e-4  # their relative change over the window
+    # Their relative change over the window. 1e-4 failed a fine-mesh SST transition run whose
+    # residuals were down ten orders, Cd moving 5e-6 over 200 iterations: the model's own ripple.
+    tolerance: float = 5e-4
     # Fixed CFL with multigrid: on NACA 0012 an adaptive CFL diverged and
     # CFL 50 diverged at once; CFL 25 on two multigrid levels took the
     # residual down 8 orders in about 1,000 iterations.

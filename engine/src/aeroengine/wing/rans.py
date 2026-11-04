@@ -142,19 +142,25 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
             "field": "flow.vtu" if (workdir / "flow.vtu").exists() else None, "field_view": view}
 
 
-# An element counts as separated when its wall skin friction points upstream
-# over more than this share of its surface past the first 5% of chord (the
-# stagnation point's own reversal sits there). Quick mesh, SA: a NACA 4412 main
-# alone at 100 mm, attached (Cd 0.023), 3%; the stalled study wing at 30 mm
-# (Cd 0.52), its main 33% and its flap 2%. Converged is not attached: that
-# stalled run converged.
+# An element counts as separated when, on either surface, its wall skin
+# friction points upstream all the way from near its trailing edge (95% of
+# chord) forward over more than this share of the chord. Reversed flow that
+# reattaches first is a laminar bubble, not separation. Quick mesh, SA: a NACA
+# 4412 main alone at 100 mm, attached (Cd 0.023), none; the stalled study wing
+# at 30 mm (Cd 0.52), its main reversed from 33% to 97% chord, 62%. Fine mesh,
+# SST transition: the S1223 at Re 200,000, a bubble from 28% to 40% chord
+# (29% of its surface reversed in all) and attached at the trailing edge, none.
+# Converged is not attached: that stalled run converged.
 SEPARATED_SHARE = 0.15
+TRAILING_EDGE = 0.95  # where the run is measured from: the last few % read positive in the trailing-edge corner
 
 
 def surface_cf(vtu: Path, placed: list[np.ndarray]) -> list[np.ndarray]:
     """Each element's wall points as (distance along its chord over the chord,
-    skin friction along the flow), from SU2's flow.vtu (the CSV surface file
-    holds no skin friction in SU2 8.5). Each wall point goes to the nearest element."""
+    skin friction along the flow, surface: 1 or -1), from SU2's flow.vtu (the
+    CSV surface file holds no skin friction in SU2 8.5). Each wall point goes
+    to the nearest element, and to its surface by the nearest outline point
+    (Selig order: trailing edge, one surface, leading edge, the other)."""
     from .field import _read_vtu
 
     pts, _, arrays = _read_vtu(vtu)
@@ -166,10 +172,12 @@ def surface_cf(vtu: Path, placed: list[np.ndarray]) -> list[np.ndarray]:
     owner = np.argmin([np.min(np.linalg.norm(p[:, None, :] - e[None, :, :], axis=2), axis=1) for e in placed], axis=0)
     out = []
     for i, e in enumerate(placed):
-        le, te = e[np.argmin(e[:, 0])], 0.5 * (e[0] + e[-1])
-        u = (te - le) / max(float(np.linalg.norm(te - le)), 1e-12)
-        sel = owner == i
-        out.append(np.column_stack([(p[sel] - le) @ u / max(float(np.linalg.norm(te - le)), 1e-12), c[sel]]))
+        lead = int(np.argmin(e[:, 0]))
+        le, te = e[lead], 0.5 * (e[0] + e[-1])
+        length = max(float(np.linalg.norm(te - le)), 1e-12)
+        q, cq = p[owner == i], c[owner == i]
+        near = np.argmin(np.linalg.norm(q[:, None, :] - e[None, :, :], axis=2), axis=1)
+        out.append(np.column_stack([(q - le) @ ((te - le) / length) / length, cq, np.where(near <= lead, 1.0, -1.0)]))
     return out
 
 
@@ -178,10 +186,17 @@ def separation(cf_by_element: list[np.ndarray]) -> tuple[bool, str | None]:
     from .geometry import label
 
     for i, a in enumerate(cf_by_element):
-        keep = a[a[:, 0] > 0.05] if len(a) else a
-        if len(keep) and float(np.mean(keep[:, 1] < 0)) > SEPARATED_SHARE:
-            share = float(np.mean(keep[:, 1] < 0))
-            return True, f"{label(i)} separates in RANS: reversed flow over {share * 100:.0f}% of it"
+        for side in (1.0, -1.0):
+            run = a[(a[:, 2] == side) & (a[:, 0] <= TRAILING_EDGE) & (a[:, 0] > 0.05)]
+            run = run[np.argsort(-run[:, 0])]  # from the trailing edge forward
+            if not len(run) or run[0, 1] >= 0:
+                continue
+            ahead = np.nonzero(run[:, 1] >= 0)[0]
+            start = run[ahead[0] - 1, 0] if len(ahead) else run[-1, 0]  # the most forward point still reversed
+            share = TRAILING_EDGE - float(start)
+            if share > SEPARATED_SHARE:
+                return True, (f"{label(i)} separates in RANS: reversed flow from {start * 100:.0f}% of its chord "
+                              "to the trailing edge")
     return False, None
 
 
