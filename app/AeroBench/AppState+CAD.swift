@@ -115,7 +115,8 @@ extension AppState {
     }
 
     /// Asks where to save a repair job's output, then opens it.
-    func saveRepaired(_ item: JobItem, name: String, beside source: URL) {
+    /// `beforeOpen` runs only once the file is saved, just before it opens.
+    func saveRepaired(_ item: JobItem, name: String, beside source: URL, beforeOpen: (() -> Void)? = nil) {
         let panel = NSSavePanel()
         panel.title = "Save Repaired File"
         panel.nameFieldStringValue = name
@@ -124,6 +125,7 @@ extension AppState {
         do {
             if FileManager.default.fileExists(atPath: dest.path) { try FileManager.default.removeItem(at: dest) }
             try FileManager.default.copyItem(at: item.workdir.appendingPathComponent(name), to: dest)
+            beforeOpen?()
             openCAD(dest)
         } catch {
             show("Could not save the repaired file", error)

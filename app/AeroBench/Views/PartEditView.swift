@@ -59,10 +59,10 @@ struct PartEditView: View {
             Section {
                 if let status = edit.status { Text(status).font(.caption).foregroundStyle(S37.C.clayInk) }
                 HStack {
-                    if edit.busy { ProgressView().controlSize(.small) }
+                    if edit.busy || edit.saving { ProgressView().controlSize(.small) }
                     Spacer()
                     Button("Save Part…") { app.savePartEdit() }
-                        .disabled(edit.reply == nil || edit.busy
+                        .disabled(edit.reply == nil || edit.busy || edit.saving
                                   || !(edit.reply?.features.allSatisfy { $0.status == "ok" } ?? false))
                 }
             }

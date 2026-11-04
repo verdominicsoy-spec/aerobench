@@ -22,6 +22,7 @@ final class PartEditModel {
     private(set) var reply: PartEditReply?
     var status: String?
     var busy = false
+    var saving = false
     private var hoveredEdge: Int?
 
     @ObservationIgnored var engine: WarmEngine?
@@ -215,9 +216,19 @@ final class PartEditModel {
 
     // MARK: Picking
 
+    @ObservationIgnored private var projected: (key: String, lines: [[SIMD3<Double>]])?
+
     private func edgeIndex(at pointer: EditPointer) -> Int? {
         guard let reply, let viewer else { return nil }
-        let lines = reply.edges.map { $0.points.compactMap { p in p.count == 3 ? viewer.projectWithDepth(SIMD3(p[0], p[1], p[2])) : nil } }
+        // Every edge projected once per camera position, not on every mouse move.
+        let key = "\(reply.glb)#\(viewer.cameraRevision)#\(viewer.view.bounds.size)"  // a resize moves every point too
+        let lines: [[SIMD3<Double>]]
+        if let p = projected, p.key == key {
+            lines = p.lines
+        } else {
+            lines = reply.edges.map { $0.points.compactMap { p in p.count == 3 ? viewer.projectWithDepth(SIMD3(p[0], p[1], p[2])) : nil } }
+            projected = (key, lines)
+        }
         return EdgePick.nearest(lines, to: pointer.screen, within: 6,
                                 surfaceDepth: pointer.hit.map { viewer.projectWithDepth($0.point).z })
     }

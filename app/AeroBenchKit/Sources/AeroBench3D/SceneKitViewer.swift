@@ -35,6 +35,8 @@ public final class SceneKitViewer: Viewer3D {
     /// under it, so an edge on a silhouette can still be picked.
     public var onEditHover: ((EditPointer) -> Void)?
     public var onEditClick: ((EditPointer) -> Void)?
+    /// Changes whenever the camera moves, so screen projections can be cached between moves.
+    public private(set) var cameraRevision = 0
     public var snapToVertices = true
     /// Screen size of points shown with setPoints, in points.
     public var pointSize: CGFloat = 3
@@ -267,6 +269,7 @@ public final class SceneKitViewer: Viewer3D {
     }
 
     private func applyCamera() {
+        cameraRevision &+= 1
         cameraNode.simdPosition = SIMD3<Float>(orbit.position)
         cameraNode.simdLook(at: SIMD3<Float>(orbit.target), up: SIMD3<Float>(orbit.screenUp), localFront: SIMD3(0, 0, -1))
         cameraNode.camera?.usesOrthographicProjection = orbit.orthographic

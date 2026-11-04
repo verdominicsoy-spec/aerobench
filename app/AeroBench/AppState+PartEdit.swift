@@ -21,11 +21,11 @@ extension AppState {
         partEdit.start(step: url, engine: engine)
     }
 
-    func exitPartEdit() {
+    func exitPartEdit(reload: Bool = true) {
         partEdit.stop()
         cad.viewer.onEditHover = nil
         cad.viewer.onEditClick = nil
-        reloadCAD()
+        if reload { reloadCAD() }
     }
 
     /// An imported part that is not a valid solid is repaired first.
@@ -35,7 +35,11 @@ extension AppState {
     }
 
     func savePartEdit() {
-        guard let url = cad.fileURL, partEdit.reply != nil else { return }
+        guard let url = cad.fileURL, partEdit.reply != nil, !partEdit.saving else { return }
+        if let d = partEdit.draft, partEdit.ready(d) {
+            partEdit.status = "Apply or cancel the \(PartEditModel.describe(d)) first: Save writes the applied features"
+            return
+        }
         var params: [String: JSONValue] = ["path": .string(url.path)]
         if let part = partEdit.file.part { params["part"] = .string(part) }
         if let fp = partEdit.file.fingerprint { params["fingerprint"] = .string(fp) }
@@ -45,18 +49,18 @@ extension AppState {
             show("Could not send the edits to the engine", error)
             return
         }
-        partEdit.busy = true
+        partEdit.saving = true
         _ = jobs.submit(command: "part-save", params: params, in: jobsRoot) { [weak self] item in
             guard let self else { return }
-            self.partEdit.busy = false
+            self.partEdit.saving = false
             guard item.status == .succeeded, let text = item.resultText,
                   let obj = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
                   let data = obj["data"] as? [String: Any], let name = data["output"] as? String else {
                 self.partEdit.status = item.message ?? "The part could not be saved"
                 return
             }
-            self.exitPartEdit()
-            self.saveRepaired(item, name: name, beside: url)
+            // Edit Part stays open until the file is saved: cancelling the panel keeps the edits on screen.
+            self.saveRepaired(item, name: name, beside: url) { self.exitPartEdit(reload: false) }
         }
     }
 }
