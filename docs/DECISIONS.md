@@ -1422,3 +1422,27 @@ stalled in RANS (Cd 0.36 in free air, 0.51 at 30 mm, Cl -1.81), now reads Cl
 too. The live panel preview keeps the same share of its image's gain. Its
 drag stays far too low once separating (0.09 against 0.36), so the canvas now
 says "separating: check with RANS" beside the live estimate.
+
+**The Design card.** Wing Lab's design was a chain of trips: a starter
+job, a Study, RANS checks, saving a card, the car. The Design card at the
+top of the inspector runs one engine job, wing-design, from the rules box
+to finalists, and the user picks the final design (Use This Wing puts it on
+the canvas, a new card and the car). Every setting is a chip (end, start,
+elements, goal, RANS checks); More is the Study's own settings. The wing
+fills its box: a from-scratch layout grows until it just fits (it began at
+440 mm and only shrank, in a 700 mm front box), chords may grow 60%, and
+the wing's place in the box is searched as a share of the room the box
+leaves it (fixed positions made most samples break the box). A
+from-scratch wing starts halfway up the box: on its floor, a 495 mm main
+30 mm off the ground separates in RANS (0.47 times the estimate's lift,
+three times its drag) and the search starts lost. Goals are in car terms
+through the 3D settings: most ClA, best ClA/CdA (the whole car's with a
+base car, the wing's without), fastest lap, ClA under a CdA limit, and an
+aero balance within 1% of a target. The estimate shortlists and RANS picks:
+a RANS check counts only if it converges and stays attached, judged by skin
+friction from flow.vtu (SU2 8.5's surface CSV has none): reversed flow over
+more than 15% of an element past its first 5% of chord, where an attached
+NACA 4412 main reads 3% and the stalled study wing's main 33%, or a drag
+over three times the estimate's. Spec and plan:
+docs/superpowers/specs/2026-11-05-wing-design-card-design.md,
+docs/superpowers/plans/2026-11-05-wing-design-card.md.
