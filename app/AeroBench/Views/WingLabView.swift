@@ -60,7 +60,10 @@ struct WingLabView: View {
                     .disabled(lab.redoStack.isEmpty)
             }
         }
-        .onChange(of: app.car.selected) { app.syncCarRulesBox() }
+        .onChange(of: app.car.selected) {
+            lab.carX = nil  // another combination: the wing takes its end's place there
+            app.syncCarRulesBox()
+        }
         .preference(key: ToolTakeawayKey.self, value: carTakeaway)
         .onAppear {
             app.loadCar()

@@ -314,23 +314,31 @@ public struct Combination: Codable, Equatable, Identifiable, Sendable {
     }
 
     public mutating func recordFull(_ result: CarResult, cards: [WingCard], baseRevision: Int) {
+        recordFull(result, ran: self, cards: cards, baseRevision: baseRevision)
+    }
+
+    /// The result of a run of `ran` (as it was when the run was asked for, with `cards` then):
+    /// anything changed since makes it out of date.
+    public mutating func recordFull(_ result: CarResult, ran: Combination, cards: [WingCard], baseRevision: Int) {
         full = result
-        fullFront = front
-        fullRear = rear
-        cardRevisions = Dictionary(uniqueKeysWithValues: [front, rear].compactMap { $0 }.compactMap { p in
+        fullFront = ran.front
+        fullRear = ran.rear
+        cardRevisions = Dictionary(uniqueKeysWithValues: [ran.front, ran.rear].compactMap { $0 }.compactMap { p in
             cards.first { $0.id == p.card }.map { ($0.id, $0.revision) }
         })
         self.baseRevision = baseRevision
     }
 
-    /// Where the wing being edited goes: its end's slot (at its own ride height when it has one),
-    /// or the start spot when that end is empty; kept inside the box.
+    /// Where the wing being edited goes: its end's slot, or the start spot when that end is empty,
+    /// kept inside the box along x. With a ride height it sits at that height even outside the box:
+    /// its numbers are made there, and Wing Lab's rules box flags it.
     public func draftPlacement(_ draft: WingCard, setup: CarSetup) -> Placement {
         let slot = draft.position == .front ? front : rear
         var p = slot ?? Placement.start(card: draft, setup: setup)
         p.card = draft.id
+        p = p.clamped(card: draft, setup: setup).0
         if let h = draft.wing.rideHeight { p.height = h * 1000 }
-        return p.clamped(card: draft, setup: setup).0
+        return p
     }
 
     /// This combination with the wing being edited at `at` on its end; the stored one is unchanged.

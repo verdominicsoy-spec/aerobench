@@ -186,6 +186,8 @@ final class AppState {
         if hasUnsavedChanges { saveProject() }
         project = nil
         pingJob = nil
+        loadCar()  // the car is the project's: never write one project's car into another
+        refreshSections()
         wingLab.reloadStudy(project: workFolder)
         jobs.loadHistory(from: jobsRoot)
         showLatestLapSim()
@@ -218,6 +220,8 @@ final class AppState {
         wingLab.optimise = WingLabModel.loadOptimise(fromProject: url) ?? .init()
         wingLab.reloadStudy(project: url)
         wingLab.markSaved()
+        loadCar()  // the car is the project's: never write one project's car into another
+        refreshSections()
         scheduleLiveEstimate()
         project?.isDirty = false
         noteRecent(url)

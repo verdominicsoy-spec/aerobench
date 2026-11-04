@@ -17,8 +17,20 @@ final class WingLabModel {
         }
     }
     @ObservationIgnored var onChange: (() -> Void)?
-    private(set) var undoStack: [Wing] = []
-    private(set) var redoStack: [Wing] = []
+    /// What one undo step brings back: the wing, the card it is saved as, and where it sits on the car.
+    struct Step: Equatable {
+        var wing: Wing
+        var cardID: String?
+        var carX: Double?
+    }
+    private(set) var undoStack: [Step] = []
+    private(set) var redoStack: [Step] = []
+    /// Where the wing sits on the car (mm ahead of its axle) once moved there; nil, its end's place.
+    var carX: Double?
+    private var step: Step {
+        get { Step(wing: wing, cardID: cardID, carX: carX) }
+        set { wing = newValue.wing; cardID = newValue.cardID; carX = newValue.carX }
+    }
     var selection: Int?
     var snap = true
     var lockAngle = false
@@ -545,8 +557,7 @@ final class WingLabModel {
 
     /// Puts a card's wing on the canvas to edit (undoable); Save then updates that card.
     func open(card: WingCard) {
-        edit { $0 = card.wing }
-        cardID = card.id
+        editStep { $0 = Step(wing: card.wing, cardID: card.id, carX: nil) }
         markOrigin("card \(card.name)")
     }
 
@@ -606,18 +617,23 @@ final class WingLabModel {
 
     /// Records the current wing for undo, then applies a change.
     func edit(_ change: (inout Wing) -> Void) {
-        var next = wing
+        editStep { change(&$0.wing) }
+    }
+
+    /// The same, for a change to where the wing sits on the car too.
+    func editStep(_ change: (inout Step) -> Void) {
+        var next = step
         change(&next)
-        guard next != wing else { return }
-        undoStack.append(wing)
+        guard next != step else { return }
+        undoStack.append(step)
         if undoStack.count > 200 { undoStack.removeFirst() }
         redoStack = []
-        wing = next
+        step = next
     }
 
     /// For a drag: one undo step for the whole gesture.
     func beginGesture() {
-        undoStack.append(wing)
+        undoStack.append(step)
         redoStack = []
     }
 
@@ -630,15 +646,15 @@ final class WingLabModel {
 
     func undo() {
         guard let last = undoStack.popLast() else { return }
-        redoStack.append(wing)
-        wing = last
+        redoStack.append(step)
+        step = last
         clampSelection()
     }
 
     func redo() {
         guard let next = redoStack.popLast() else { return }
-        undoStack.append(wing)
-        wing = next
+        undoStack.append(step)
+        step = next
         clampSelection()
     }
 
@@ -652,6 +668,7 @@ final class WingLabModel {
         redoStack = []
         self.wing = wing
         cardID = nil
+        carX = nil
         origin = nil
         selection = wing.elements.isEmpty ? nil : 0
         recompute()
@@ -783,7 +800,8 @@ final class WingLabModel {
     /// The best section numbers there are for the wing: converged CFD, then the
     /// live estimate, then the inviscid preview with the typed-in Cd.
     var bestNumbers: (cl: Double, cd: Double, name: String)? {
-        if let r = ransResult, r.converged { return (r.cl, r.cd, "CFD") }
+        // CFD only of this wing: a run on an earlier shape is not its numbers.
+        if let r = ransResult, r.converged, r.matches(wing.elements.map { $0.placed() }) { return (r.cl, r.cd, "CFD") }
         if let e = estimate?.row(nearest: wing.alpha) { return (e.cl, e.cd, "live estimate") }
         if let p = preview { return (p.clTotal, cdEstimate, "inviscid preview") }
         return nil

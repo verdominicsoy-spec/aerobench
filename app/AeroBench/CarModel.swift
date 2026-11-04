@@ -45,8 +45,6 @@ final class CarModel {
     var status: String?
     var combosUnreadable = false  // combinations.json would not read: never written over
     var markingHeadRestraint = false
-    /// Where the wing being edited sits (mm ahead of its axle) while its end of the combination is empty.
-    var draftX: Double?
     /// Quick estimates of cards placed off their own height, by "card@height mm".
     var estimates: [String: (cla: Double, cda: Double)] = [:]
     @ObservationIgnored var engine: WarmEngine?
@@ -85,6 +83,12 @@ final class CarModel {
     }
 
     func load(project: URL) {
+        // Nothing of another project's car survives: what is not loaded here is made again.
+        section = nil
+        centreline = nil
+        estimates = [:]
+        status = nil
+        selected = nil
         setup = CarStore.setup(project)
         bases = Dictionary(uniqueKeysWithValues: Self.meshes.compactMap { m in CarStore.base(project, mesh: m).map { (m, $0) } })
         cards = CarStore.cards(project)
@@ -92,6 +96,7 @@ final class CarModel {
         if let saved = CarStore.combinations(project) {
             combos = saved
             combosUnreadable = false
+            selected = saved.first?.id
         } else {
             combos = []
             combosUnreadable = true

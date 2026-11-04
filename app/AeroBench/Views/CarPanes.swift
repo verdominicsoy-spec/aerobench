@@ -476,7 +476,7 @@ struct CombinationsPane: View {
 
     @ViewBuilder private func row(_ combo: Combination) -> some View {
         let car = app.car
-        let stale = combo.isStale(cards: car.cards, baseRevision: car.baseRevision)
+        let stale = app.fullStale(combo)
         let quick = app.quickResult(combo)
         let selected = car.selected == combo.id
         VStack(alignment: .leading, spacing: 4) {
@@ -590,11 +590,11 @@ struct CarResults: View {
         }
         Divider()
         if let stored = car.selectedCombo, let f = stored.full {
-            let stale = stored.isStale(cards: car.cards, baseRevision: car.baseRevision)
+            let stale = app.fullStale(stored)
             Text(String(format: "Full (%@): ClA %.3f   CdA %.3f   ", f.mesh, f.cla, f.cda) + rearText(f.rearShare)
                  + String(format: "   (2D sum ClA %.3f)", f.cla2dWings))
                 .font(.caption).monospacedDigit()
-            if stale || app.carDraftUnsaved {
+            if stale {
                 Text("Out of date: the wings have changed since it ran.").font(.caption.weight(.semibold)).foregroundStyle(S37.C.clayInk)
             }
             if !f.converged { Text("Not converged.").font(.caption).foregroundStyle(S37.C.clayInk) }

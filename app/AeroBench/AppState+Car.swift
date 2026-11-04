@@ -18,8 +18,9 @@ extension AppState {
     /// (same end) or "draft". Never saved; the quick sum uses it in place of its end's card.
     var carDraft: WingCard? {
         let lab = wingLab
-        guard !lab.wing.elements.isEmpty, let n = lab.bestNumbers else { return nil }
         let saved = car.card(lab.cardID).flatMap { $0.position == lab.wing.rulesFor ? $0 : nil }
+        if let saved, saved.wing == lab.wing { return saved }  // unchanged: the card's own numbers
+        guard !lab.wing.elements.isEmpty, let n = lab.bestNumbers else { return nil }
         return WingCard.make(wing: lab.wing, cl: n.cl, cd: n.cd, solver: n.name, id: saved?.id ?? "draft",
                              name: saved?.name ?? "This wing", revision: -1)
     }
@@ -37,11 +38,19 @@ extension AppState {
     private func draftPlacement(of d: WingCard) -> Placement? {
         guard let s = car.setup else { return nil }
         var combo = car.selectedCombo ?? Combination(id: "", name: "")
-        if (d.position == .front ? combo.front : combo.rear) == nil, let x = car.draftX {
-            let p = Placement(card: d.id, x: x, height: 0)
+        if let x = wingLab.carX {  // moved on the car: held here until Save puts it in the combination
+            let p = Placement(card: d.id, x: x, height: (d.position == .front ? combo.front : combo.rear)?.height ?? 0)
             if d.position == .front { combo.front = p } else { combo.rear = p }
         }
         return combo.draftPlacement(d, setup: s)
+    }
+
+    /// The selected combination's full result no longer describes what is shown: its own rule,
+    /// or the wing being edited differs from what ran.
+    func fullStale(_ combo: Combination) -> Bool {
+        guard combo.full != nil else { return false }
+        if combo.isStale(cards: car.cards, baseRevision: car.baseRevision) { return true }
+        return combo.id == car.selected && (carDraftUnsaved || shownCombo != car.selectedCombo)
     }
 
     /// The selected combination as shown: the draft on its end.
@@ -62,8 +71,11 @@ extension AppState {
     /// The quick sum over the shown cards (the draft included).
     func quickResult(_ combo: Combination) -> QuickResult? {
         guard let base = car.base, let setup = car.setup else { return nil }
-        return quick(base: base, combo: combo, cards: shownCards, setup: setup) { [estimates = car.estimates] card, h in
-            estimates["\(card.id)@\(Int((h * 1000).rounded()))"]
+        // Only the selected combination carries the wing being edited; it is never re-estimated
+        // (it sits at its own ride height), and never takes its saved card's cached estimate.
+        let cards = combo.id == car.selected ? shownCards : car.cards
+        return quick(base: base, combo: combo, cards: cards, setup: setup) { [estimates = car.estimates] card, h in
+            card.revision < 0 ? nil : estimates["\(card.id)@\(Int((h * 1000).rounded()))"]
         }
     }
 
@@ -74,6 +86,8 @@ extension AppState {
         guard let s = car.setup, !lab.wing.elements.isEmpty else { return }
         let d = carDraft ?? WingCard.make(wing: lab.wing, cl: 0, cd: 0, solver: "", id: "draft", name: "", revision: -1)
         guard let at = draftPlacement(of: d) else { return }
+        // On a combination the wing is on the car, so over the ground at its place there.
+        if car.selectedCombo != nil, lab.wing.rideHeight == nil { lab.live { $0.rideHeight = at.height / 1000 } }
         let box = CarRules.wingBox(d, placement: at, setup: s)
         if lab.wing.rulesBox != box { lab.live { $0.rulesBox = box } }
     }
@@ -117,21 +131,19 @@ extension AppState {
         }
     }
 
-    /// Moves the draft on the car: its height is Wing Lab's ride height (through Wing Lab's undo,
-    /// one step per gesture), its x goes to its end's slot, or is kept here while the end is empty.
+    /// Moves the draft on the car: its height is Wing Lab's ride height and its x Wing Lab's carX,
+    /// both through Wing Lab's undo (one step per gesture).
     func moveDraft(to p: Placement, live: Bool) {
-        guard let d = carDraft else { return }
+        guard carDraft != nil else { return }
         let h = p.height / 1000
-        if live { wingLab.live { $0.rideHeight = h } } else { wingLab.edit { $0.rideHeight = h } }
-        defer { syncCarRulesBox() }
-        if let i = car.combos.firstIndex(where: { $0.id == car.selected }),
-           let slot = d.position == .front ? car.combos[i].front : car.combos[i].rear {
-            let moved = Placement(card: slot.card, x: p.x, height: p.height)
-            if d.position == .front { car.combos[i].front = moved } else { car.combos[i].rear = moved }
-            if !live { saveCar() }
+        // Held in Wing Lab (its undo) until Save: the combination's own wing stays where it was.
+        if live {
+            wingLab.live { $0.rideHeight = h }
+            wingLab.carX = p.x
         } else {
-            car.draftX = p.x
+            wingLab.editStep { $0.wing.rideHeight = h; $0.carX = p.x }
         }
+        syncCarRulesBox()
     }
 
     /// Saves the edited wing as a card (the one it came from, or a new one), puts it on its end
@@ -159,8 +171,9 @@ extension AppState {
         if let at, let i = car.combos.firstIndex(where: { $0.id == car.selected }) {
             let p = Placement(card: card.id, x: at.x, height: at.height)
             if position == .front { car.combos[i].front = p } else { car.combos[i].rear = p }
-            car.draftX = nil
+            lab.carX = nil
         }
+        car.estimates = car.estimates.filter { !$0.key.hasPrefix("\(card.id)@") }  // made of the old numbers
         saveCar()
         return card
     }
@@ -268,12 +281,14 @@ extension AppState {
         if id == car.selected, carDraft != nil, carDraftUnsaved || shownCombo != car.selectedCombo { saveWingCard(asNew: false) }
         guard let combo = car.combos.first(where: { $0.id == id }), car.base != nil,
               let params = stripsParams(wings: car.placedWings(combo)) else { return }
+        // Recorded against what ran: anything changed while it runs leaves it out of date.
+        let ranCards = car.cards, ranBase = car.baseRevision
         car.fullJob = jobs.submit(command: "car-strips", params: params, in: jobsRoot) { [weak self] item in
             guard let self, item.status == .succeeded, let text = item.resultText,
                   let i = self.car.combos.firstIndex(where: { $0.id == id }) else { return }
             do {
                 let r = try CarResult.decode(resultFile: Data(text.utf8))
-                self.car.combos[i].recordFull(r, cards: self.car.cards, baseRevision: self.car.baseRevision)
+                self.car.combos[i].recordFull(r, ran: combo, cards: ranCards, baseRevision: ranBase)
                 self.saveCar()
             } catch {
                 self.show("Could not read the full result", error)
@@ -308,7 +323,7 @@ extension AppState {
             numbers = (f.cla, f.cda, f.rearShare)
             if !f.converged { warnings.append("the full run did not converge") }
             if f.groundMoving == true { warnings.append("it ran over a moving ground, which is unverified") }
-            if combo.isStale(cards: car.cards, baseRevision: car.baseRevision) { warnings.append("the full result is out of date") }
+            if fullStale(combo) { warnings.append("the full result is out of date") }
         } else {
             // The selected combination is sent as shown: with the wing being edited on it.
             let q = quickResult(id == car.selected ? shownCombo ?? combo : combo)

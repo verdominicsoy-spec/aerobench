@@ -63,6 +63,25 @@ final class CarBuilderTests: XCTestCase {
         XCTAssertEqual(Combination(id: "k", name: "K").draftPlacement(d, setup: setup()), Placement(card: "draft", x: 917, height: 40))
     }
 
+    func testTheDraftKeepsItsOwnHeightEvenBelowTheClearance() {
+        var d = card(.front, rideHeight: 0.01)  // 10 mm: under the 30 mm clearance
+        d.id = "draft"
+        let at = Combination(id: "k", name: "K").draftPlacement(d, setup: setup())
+        XCTAssertEqual(at.height, 10, accuracy: 1e-9)  // its numbers are made there; the box flags it, the car does not move it
+    }
+
+    func testAFullResultIsRecordedAgainstWhatRanNotWhatIsThereWhenItEnds() {
+        let c = card(.front)
+        var ran = Combination(id: "k", name: "K")
+        ran.front = Placement(card: c.id, x: 600, height: 60)
+        var now = ran
+        now.front?.x = 650  // moved while the run was going
+        let result = CarResult(mesh: "coarse", speed: 15, cla: 1, cda: 1, rearShare: 0.5, cla2dWings: 0, strips: [], converged: true, wings: [])
+        now.recordFull(result, ran: ran, cards: [c], baseRevision: 0)
+        XCTAssertEqual(now.fullFront, ran.front)
+        XCTAssertTrue(now.isStale(cards: [c], baseRevision: 0))
+    }
+
     func testTheCarsBoxInTheWingsFrame() {
         let c = card(.front)
         let b = CarRules.wingBox(c, placement: Placement(card: c.id, x: 600, height: 60), setup: setup())
