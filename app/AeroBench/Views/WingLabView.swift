@@ -1613,6 +1613,7 @@ struct StudyResults: View {
     enum ChartKind: String, CaseIterable, Identifiable {
         case progress = "Best so far"
         case front = "Downforce vs drag"
+        case polars = "Selected design"
         var id: String { rawValue }
     }
 
@@ -1815,7 +1816,21 @@ struct StudyResults: View {
             switch chart {
             case .progress: bestSoFar(s, lab)
             case .front: scatter(s, lab)
+            case .polars: selectedPolars(lab)
             }
+        }
+    }
+
+    /// Every trial runs at one wing angle; the one on the canvas, over the angles, from the live estimate.
+    @ViewBuilder private func selectedPolars(_ lab: WingLabModel) -> some View {
+        if let est = lab.estimate, let here = est.row(nearest: lab.wing.alpha) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text((lab.selectedTrial.map { "Trial \($0)" } ?? "The wing on the canvas") + ", live estimate over the wing angle")
+                    .font(.caption).foregroundStyle(.secondary)
+                PolarCharts(points: est.rows.map { .init(alpha: $0.alpha, cl: $0.cl, cd: $0.cd, good: $0.trusted) }, mark: here.alpha)
+            }
+        } else {
+            Text("Pick a trial in the table: its polars come from the live estimate.").font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -1948,26 +1963,13 @@ struct SweepStrip: View {
                 }
             }
             .frame(width: 260, alignment: .leading)
-            chart("Cl", rows.map { ($0.element.alpha ?? 0, $0.element.cl, $0.element.converged) })
-            chart("Cd", rows.map { ($0.element.alpha ?? 0, $0.element.cd, $0.element.converged) })
+            PolarCharts(points: rows.map { .init(alpha: $0.element.alpha ?? 0, cl: $0.element.cl, cd: $0.element.cd,
+                                                 good: $0.element.converged) },
+                        mark: lab.sweepRow.flatMap { sweep.rows.indices.contains($0) ? sweep.rows[$0].alpha : nil })
         }
         .padding(8)
-        .frame(height: 150)
+        .frame(height: 170)
         Divider()
-    }
-
-    private func chart(_ name: String, _ points: [(Double, Double, Bool)]) -> some View {
-        Chart {
-            ForEach(Array(points.enumerated()), id: \.offset) { _, p in
-                LineMark(x: .value("α", p.0), y: .value(name, p.1)).foregroundStyle(.gray)
-                PointMark(x: .value("α", p.0), y: .value(name, p.1))
-                    .symbolSize(p.2 ? 40 : 30)
-                    .foregroundStyle(p.2 ? S37.C.sage : S37.C.chart5)
-                    .opacity(p.2 ? 1 : 0.5)
-            }
-        }
-        .chartXAxisLabel("Wing angle (°)").chartYAxisLabel(name)
-        .chartYScale(domain: .automatic(includesZero: false))
     }
 }
 
@@ -2015,10 +2017,9 @@ struct EstimateResults: View {
                 }
                 .frame(width: 290, alignment: .leading)
                 .scrollableColumn()
-                let a = lab.pinned?.estimate?.rows
-                chart("Cl", est.rows.map { ($0.alpha, $0.cl, $0.trusted) }, mark: here.alpha, pinned: a?.map { ($0.alpha, $0.cl) })
-                chart("Cd", est.rows.map { ($0.alpha, $0.cd, $0.trusted) }, mark: here.alpha, pinned: a?.map { ($0.alpha, $0.cd) })
-                dragPolar(est.rows.map { ($0.cd, $0.cl, $0.trusted) }, here: (here.cd, here.cl), pinned: a?.map { ($0.cd, $0.cl) })
+                PolarCharts(points: est.rows.map { .init(alpha: $0.alpha, cl: $0.cl, cd: $0.cd, good: $0.trusted) },
+                            mark: here.alpha,
+                            pinned: lab.pinned?.estimate?.rows.map { .init(alpha: $0.alpha, cl: $0.cl, cd: $0.cd, good: true) })
             }
             .padding(8)
         } else {
@@ -2026,48 +2027,54 @@ struct EstimateResults: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
+}
 
-    private func chart(_ name: String, _ points: [(Double, Double, Bool)], mark: Double, pinned: [(Double, Double)]?) -> some View {
-        Chart {
-            ForEach(Array((pinned ?? []).enumerated()), id: \.offset) { _, p in
-                LineMark(x: .value("α", p.0), y: .value(name, p.1), series: .value("Design", "A"))
-                    .foregroundStyle(S37.C.chart6.opacity(0.8))
-                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-            }
-            ForEach(Array(points.enumerated()), id: \.offset) { _, p in
-                LineMark(x: .value("α", p.0), y: .value(name, p.1), series: .value("Design", "B"))
-                PointMark(x: .value("α", p.0), y: .value(name, p.1))
-                    .symbolSize(p.2 ? 16 : 24)
-                    .foregroundStyle(p.2 ? S37.C.sage : S37.C.chart5)
-            }
-            RuleMark(x: .value("wing", mark)).foregroundStyle(.secondary.opacity(0.5))
+/// Cl and Cd against the wing angle, and Cl against Cd (the drag polar), for
+/// one sweep of angles: points in the warning colour are not to be trusted
+/// (NeuralFoil unsure, RANS not converged); `mark` rings the wing's angle now,
+/// `pinned` is design A, dashed.
+struct PolarCharts: View {
+    struct Point {
+        var alpha: Double
+        var cl: Double
+        var cd: Double
+        var good: Bool
+    }
+    let points: [Point]
+    var mark: Double?
+    var pinned: [Point]?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            chart("Wing angle (°)", "Cl", \.alpha, \.cl)
+            chart("Wing angle (°)", "Cd", \.alpha, \.cd)
+            chart("Cd", "Cl", \.cd, \.cl)
         }
-        .chartXAxisLabel("Wing angle (°)").chartYAxisLabel(name)
-        .chartYScale(domain: .automatic(includesZero: false))
     }
 
-    /// The whole wing's drag polar over the sweep, in angle order: Cl against Cd, this angle ringed.
-    private func dragPolar(_ points: [(Double, Double, Bool)], here: (Double, Double), pinned: [(Double, Double)]?) -> some View {
-        Chart {
+    private func chart(_ xName: String, _ yName: String, _ x: KeyPath<Point, Double>, _ y: KeyPath<Point, Double>) -> some View {
+        let here = mark.flatMap { m in points.min { abs($0.alpha - m) < abs($1.alpha - m) } }
+        return Chart {
             ForEach(Array((pinned ?? []).enumerated()), id: \.offset) { _, p in
-                LineMark(x: .value("Cd", p.0), y: .value("Cl", p.1), series: .value("Design", "A"))
+                LineMark(x: .value(xName, p[keyPath: x]), y: .value(yName, p[keyPath: y]), series: .value("Design", "A"))
                     .foregroundStyle(S37.C.chart6.opacity(0.8))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
             }
             ForEach(Array(points.enumerated()), id: \.offset) { _, p in
-                LineMark(x: .value("Cd", p.0), y: .value("Cl", p.1), series: .value("Design", "B"))
-                PointMark(x: .value("Cd", p.0), y: .value("Cl", p.1))
-                    .symbolSize(p.2 ? 16 : 24)
-                    .foregroundStyle(p.2 ? S37.C.sage : S37.C.chart5)
+                LineMark(x: .value(xName, p[keyPath: x]), y: .value(yName, p[keyPath: y]), series: .value("Design", "B"))
+                PointMark(x: .value(xName, p[keyPath: x]), y: .value(yName, p[keyPath: y]))
+                    .symbolSize(p.good ? 16 : 24)
+                    .foregroundStyle(p.good ? S37.C.sage : S37.C.chart5)
             }
-            PointMark(x: .value("Cd", here.0), y: .value("Cl", here.1))
-                .symbol(.circle).symbolSize(110).foregroundStyle(.clear)
-                .annotation(position: .overlay) { Circle().strokeBorder(S37.C.ink, lineWidth: 1.5).frame(width: 12, height: 12) }
+            if let here {
+                PointMark(x: .value(xName, here[keyPath: x]), y: .value(yName, here[keyPath: y]))
+                    .foregroundStyle(.clear)
+                    .annotation(position: .overlay) { Circle().strokeBorder(S37.C.ink, lineWidth: 1.5).frame(width: 12, height: 12) }
+            }
         }
-        .chartXAxisLabel("Cd").chartYAxisLabel("Cl")
-        .chartXScale(domain: .automatic(includesZero: false))
+        .chartXAxisLabel(xName).chartYAxisLabel(yName)
+        .chartXScale(domain: .automatic(includesZero: x == \Point.alpha))
         .chartYScale(domain: .automatic(includesZero: false))
-        .help("Drag polar of the whole wing (live estimate, each point a wing angle); the ring is the wing's angle now, the dashed line A")
     }
 }
 
