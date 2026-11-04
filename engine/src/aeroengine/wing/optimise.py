@@ -99,7 +99,7 @@ class Spec:
         if not self.variables:
             raise EngineError("tick at least one design variable")
         for v in self.variables:
-            if v.kind not in ("angle", "gap", "overlap", "chord", "airfoil", "camber", "thickness", "height"):
+            if v.kind not in ("angle", "gap", "overlap", "chord", "airfoil", "camber", "thickness", "height", "x"):
                 raise EngineError(f"unknown design variable '{v.kind}'")
             if v.kind == "airfoil":
                 if len(v.choices) < 2:

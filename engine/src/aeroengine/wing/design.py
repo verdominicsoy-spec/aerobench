@@ -184,7 +184,7 @@ SHORTLIST = 6  # sections per element the design search chooses between
 CHORD_RANGE = 0.25  # each chord searched this far either side of the starting one
 
 
-def variables(wing: Wing, shortlists: list[list[str]] | None = None) -> list[Variable]:
+def variables(wing: Wing, shortlists: list[list[str]] | None = None, box=None) -> list[Variable]:
     """What the optimiser searches from the start: every angle, every slot's
     gap and overlap, every chord (within CHORD_RANGE; the rules box keeps the
     total in check) and, given shortlists, each element's section. Ranges are wide enough to hold the usual FS wings. The
@@ -200,7 +200,12 @@ def variables(wing: Wing, shortlists: list[list[str]] | None = None) -> list[Var
         out.append(Variable(i, "gap", max(wing.min_gap + 0.001, 0.006), 0.022))
         out.append(Variable(i, "overlap", MIN_OVERLAP, 0.020))
     for i, e in enumerate(wing.elements):
-        out.append(Variable(i, "chord", round(e.chord * (1 - CHORD_RANGE), 4), round(e.chord * (1 + CHORD_RANGE), 4)))
+        # In a box a chord may grow to all of it (the box's check stops what does not fit).
+        high = box[2] - box[0] if box is not None else round(e.chord * (1 + CHORD_RANGE), 4)
+        out.append(Variable(i, "chord", round(e.chord * (1 - CHORD_RANGE), 4), high))
+    if box is not None:  # the design frame: where the wing sits in the box
+        out.append(Variable(0, "height", box[1], box[3]))
+        out.append(Variable(0, "x", box[0], box[2]))
     for i, keys in enumerate(shortlists or []):
         if len(keys) > 1:
             out.append(Variable(i, "airfoil", 0.0, float(len(keys) - 1), tuple(keys)))

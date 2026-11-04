@@ -72,3 +72,26 @@ def test_a_filled_layout_uses_the_box():
         width, height = np.ptp(pts[:, 0]), np.ptp(pts[:, 1])
         assert width >= 0.95 * 0.70 or height >= 0.95 * 0.32  # grown until one side of the box stops it
         assert pts[:, 0].min() == pytest.approx(0.0, abs=0.002) and pts[:, 1].min() == pytest.approx(0.03, abs=0.002)
+
+
+def test_the_wing_moves_in_the_design_frame():
+    import numpy as np
+    import pytest
+
+    from aeroengine.wing.geometry import apply
+
+    w = layout([naca4("6412")] * 2, 0.44, True, (0.0, 0.03, 0.70, 0.35), fill=True)
+    w.ground_frame = True
+    moved = apply(w, {"height_0": 0.08, "x_0": 0.10})
+    pts = np.vstack([e.placed() for e in moved.elements])
+    assert pts[:, 1].min() == pytest.approx(0.08, abs=1e-9) and moved.ride_height == pytest.approx(0.08, abs=1e-9)
+    assert pts[:, 0].min() == pytest.approx(0.10, abs=1e-9)
+
+
+def test_chords_may_grow_to_the_box():
+    import pytest
+
+    w = layout([naca4("6412")] * 2, 0.30, True)
+    vs = {v.name: v for v in variables(w, box=(0.0, 0.03, 0.70, 0.35))}
+    assert vs["chord_0"].high == pytest.approx(0.70) and vs["chord_1"].high == pytest.approx(0.70)
+    assert vs["height_0"].low == pytest.approx(0.03) and vs["x_0"].high == pytest.approx(0.70)

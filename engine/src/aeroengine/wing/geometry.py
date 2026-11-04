@@ -53,6 +53,9 @@ class Wing:
     rules_box: tuple[float, float, float, float] | None = None  # min x, min y, max x, max y (entered by the user)
     alpha: float = 0.0
     ride_height: float | None = None  # m, lowest point to a ground along the flow; None is free air
+    # The design frame: y is height over the ground (at y = 0, along the flow), so
+    # the wing's place in it is its ride height, and height_0 and x_0 move it.
+    ground_frame: bool = False
 
     def copy(self) -> "Wing":
         return replace(self, elements=[replace(e, leading_edge=e.leading_edge.copy()) for e in self.elements])
@@ -153,10 +156,11 @@ class Variable:
     """One design variable: an element's angle (degrees), gap or overlap (m),
     chord (m), section (one of `choices`, library keys, the element's own
     first), or its shape: camber added (fraction of chord) and thickness
-    (scale); or the whole wing's ride height over a ground (m, element 0).
+    (scale); or the whole wing's ride height over a ground (m, element 0),
+    or, in the design frame, where its most upstream point sits (x, m, element 0).
     A section variable's value is the index of its choice."""
     element: int
-    kind: str  # "angle", "gap", "overlap", "chord", "airfoil", "camber", "thickness" or "height"
+    kind: str  # "angle", "gap", "overlap", "chord", "airfoil", "camber", "thickness", "height" or "x"
     low: float
     high: float
     choices: tuple[str, ...] = ()
@@ -222,6 +226,14 @@ def apply(base: Wing, values: dict[str, float], sections: dict[int, np.ndarray] 
         w.move(i, w.elements[i - 1].trailing_edge + turn @ offset - w.elements[i].leading_edge)
         target = np.array([values.get(f"gap_{i}", targets[i][0]), values.get(f"overlap_{i}", targets[i][1])])
         _place_slot(w, i, target)
+    if w.ground_frame:
+        # Last, the whole wing: its lowest point to height_0, its front to x_0; its ride height is where it sits.
+        pts = np.vstack([e.placed() for e in w.elements])
+        shift = np.array([values.get("x_0", pts[:, 0].min()) - pts[:, 0].min(),
+                          values.get("height_0", pts[:, 1].min()) - pts[:, 1].min()])
+        for e in w.elements:
+            e.leading_edge = e.leading_edge + shift
+        w.ride_height = float(pts[:, 1].min() + shift[1])
     return w
 
 
