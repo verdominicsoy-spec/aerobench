@@ -332,6 +332,12 @@ final class WingLabModel {
     var selectedTrial: Int?
 
     // Panels (kept per Mac)
+    enum LibraryTab: String, CaseIterable, Identifiable {
+        case airfoils = "Airfoils", cards = "Cards"
+        var id: String { rawValue }
+    }
+    var libraryTab = LibraryTab.airfoils
+
     enum CanvasMode: String, CaseIterable, Identifiable {
         case wing = "Wing", car = "Car"
         var id: String { rawValue }
@@ -535,6 +541,13 @@ final class WingLabModel {
         selectedTrial = trial.number
         let best = study.map { s in (s.bestCheck?.number ?? s.bestTrial?.number) == trial.number } ?? false
         markOrigin("\(study?.study ?? optimise.studyName) · trial \(trial.number)" + (best ? " (best)" : ""))
+    }
+
+    /// Puts a card's wing on the canvas to edit (undoable); Save then updates that card.
+    func open(card: WingCard) {
+        edit { $0 = card.wing }
+        cardID = card.id
+        markOrigin("card \(card.name)")
     }
 
     // MARK: Where the canvas wing came from

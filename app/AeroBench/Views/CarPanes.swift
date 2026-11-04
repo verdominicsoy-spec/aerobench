@@ -364,21 +364,23 @@ struct SectionPane: View {
 
 struct CardsPane: View {
     @Environment(AppState.self) private var app
+    var embedded = false  // in Wing Lab's library sidebar
+    var open: ((WingCard) -> Void)?
     @Environment(\.undoManager) private var undo
 
     var body: some View {
         let car = app.car
         VStack(alignment: .leading, spacing: S37.Space.s3) {
-            Text("Wing cards").font(.system(size: 20, weight: .semibold))
+            if !embedded { Text("Wing cards").font(.system(size: 20, weight: .semibold)) }
             if car.cards.isEmpty {
-                Text("Save a wing as a card in Wing Lab (Lap Sim section).").font(.caption).foregroundStyle(S37.C.inkSecondary)
+                Text("Save a wing as a card in the inspector's Lap Sim section.").font(.caption).foregroundStyle(S37.C.inkSecondary)
             }
             ForEach(car.cards) { c in
-                CardRow(card: c) { assign(c) }
+                CardRow(card: c, put: { assign(c) }, open: open.map { f in { f(c) } })
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .s37Pane()
+        .carPane(embedded)
     }
 
     private func assign(_ c: WingCard) {
@@ -387,10 +389,7 @@ struct CardsPane: View {
         let old = car.combos
         undo?.registerUndo(withTarget: car) { model in MainActor.assumeIsolated { model.combos = old } }
         undo?.setActionName("Put \(c.name) on the Car")
-        let box = CarRules.box(c.position, setup: s)
-        let axle = s.axleX(c.position == .front ? "F" : "R")
-        let start = Placement(card: c.id, x: box.maxX - axle - 10, height: max(c.rideHeight.map { $0 * 1000 } ?? 0, box.minZ - s.groundZ) + 10)
-        let placed = start.clamped(card: c, setup: s).0
+        let placed = Placement.start(card: c, setup: s)
         if c.position == .front { car.combos[i].front = placed } else { car.combos[i].rear = placed }
         app.estimateCard(c, height: placed.height / 1000)
         app.saveCar()
@@ -401,6 +400,7 @@ struct CardRow: View {
     @Environment(AppState.self) private var app
     let card: WingCard
     let put: () -> Void
+    var open: (() -> Void)?
 
     var body: some View {
         let car = app.car
@@ -409,6 +409,7 @@ struct CardRow: View {
                 TextField("Name", text: nameBinding).textFieldStyle(.plain).font(.system(size: 16, weight: .semibold))
                 Text(card.position == .front ? "Front" : "Rear").font(.caption).foregroundStyle(S37.C.inkSecondary)
                 Spacer()
+                if let open { Button("Open", action: open).help("Edit this card's wing") }
                 Button("Put on Car", action: put).disabled(car.selectedCombo == nil || car.setup == nil)
             }
             Text(String(format: "ClA %.3f   CdA %.3f   ", card.cla, card.cda) + card.solver).font(.caption).monospacedDigit()

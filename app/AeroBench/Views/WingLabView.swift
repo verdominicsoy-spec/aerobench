@@ -106,11 +106,34 @@ struct CanvasHost: View {
 
 struct AirfoilLibraryPanel: View {
     @Environment(AppState.self) private var app
+    @State private var opening: WingCard?
 
     var body: some View {
         @Bindable var lab = app.wingLab
         VStack(spacing: 0) {
-            if lab.library.isEmpty {
+            Picker("Library", selection: $lab.libraryTab) {
+                ForEach(WingLabModel.LibraryTab.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(8)
+            if lab.libraryTab == .cards {
+                ScrollView {
+                    CardsPane(embedded: true) { card in
+                        if app.carDraftUnsaved && !lab.wing.elements.isEmpty { opening = card } else { lab.open(card: card) }
+                    }
+                    .padding(8)
+                }
+                .confirmationDialog("Discard the changes to this wing?", isPresented: Binding(
+                    get: { opening != nil }, set: { if !$0 { opening = nil } })) {
+                    Button("Open \(opening?.name ?? "the Card")", role: .destructive) {
+                        if let c = opening { lab.open(card: c) }
+                        opening = nil
+                    }
+                } message: {
+                    Text("The wing being edited is not saved as a card. Undo brings it back.")
+                }
+            } else if lab.library.isEmpty {
                 missingLibrary(lab)
             } else {
                 filters($lab)
