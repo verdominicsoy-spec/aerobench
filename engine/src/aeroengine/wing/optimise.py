@@ -28,6 +28,10 @@ from ..job import EngineError
 from .geometry import Variable, Wing, apply
 
 OBJECTIVES = {
+    "max_cla": "Most downforce (ClA)",
+    "max_efficiency": "Best efficiency (ClA/CdA)",
+    "max_cla_cda_cap": "Most downforce under a drag limit",
+    "balance": "Hit an aero balance",
     "max_cl": "Most downforce (lift, upright)",
     "max_ld": "Best L/D",
     "max_cl_cd_cap": "Most downforce under a drag cap",
@@ -56,16 +60,56 @@ class LapScore:
     replaced_cda: float = 0.0
     start_speed: float = 0.0
 
-    def lap_time(self, load: float, cd: float) -> float:
+    def lap_time(self, load: float, cd: float, chord: float | None = None) -> float:
+        """chord: the trial's total chord (coefficients stay on self.chord, the reference)."""
         from dataclasses import replace as _replace
 
         from ..lapsim import simulate
         from .finite import car_contribution
 
-        cla, cda = car_contribution(-load, cd, self.span, self.chord, self.endplate, self.factor)
+        c = chord or self.chord
+        cla, cda = car_contribution(-load * self.chord / c, cd * self.chord / c, self.span, c, self.endplate, self.factor)
         car = _replace(self.car, cla=max(self.car.cla - self.replaced_cla + cla, 0.0),
                        cda=max(self.car.cda - self.replaced_cda + cda, 0.0))
         return simulate(car, self.track, self.start_speed).lap_time
+
+
+@dataclass
+class CarScore:
+    """The wing in car terms for the goals in ClA: span and 3D settings, and,
+    with a base car, the base car with the other end's wing (ClA, CdA and the
+    ClA on the rear axle) and the axles in the design frame (m downstream)."""
+    span: float
+    endplate: float | None
+    factor: float
+    ref_chord: float | None  # what the coefficients are on; None: the wing's own total chord
+    base: tuple[float, float, float] | None
+    axles: tuple[float, float] | None
+    cda_cap: float | None = None
+    rear_target: float | None = None
+
+    def wing(self, load: float, cd: float, wing: Wing) -> tuple[float, float, float]:
+        """ClA and CdA of this wing on its own total chord, and its centre of pressure
+        (the quarter chord behind its most upstream point, m in the design frame)."""
+        from .finite import car_contribution
+
+        c = sum(e.chord for e in wing.elements)
+        ref = self.ref_chord or c
+        cla, cda = car_contribution(-load * ref / c, cd * ref / c, self.span, c, self.endplate, self.factor)
+        front = min(float(e.placed()[:, 0].min()) for e in wing.elements)
+        return cla, cda, front + c / 4
+
+    def numbers(self, load: float, cd: float, wing: Wing) -> dict:
+        """What a trial shows: the wing's, and the car's with a base."""
+        cla, cda, xcp = self.wing(load, cd, wing)
+        out = {"cla": cla, "cda": cda, "cla_cda": cla / cda if cda > 0 else None}
+        if self.base is not None:
+            total, drag = self.base[0] + cla, self.base[1] + cda
+            out.update(car_cla=total, car_cda=drag)
+            if self.axles is not None and abs(total) > 1e-9:
+                xf, xr = self.axles
+                out["rear_share"] = (self.base[2] + cla * (xcp - xf) / (xr - xf)) / total
+        return out
 
 
 @dataclass
@@ -82,6 +126,7 @@ class Spec:
     lap: LapScore | None = None  # for min_lap_time
     # Unit coordinates of every section a section variable can choose, by key.
     sections: dict[str, np.ndarray] | None = None
+    car: CarScore | None = None  # for the goals in car terms
 
     def __post_init__(self) -> None:
         if self.objective not in OBJECTIVES:
@@ -90,6 +135,13 @@ class Spec:
             raise EngineError("the drag cap objective needs a Cd cap above zero")
         if self.objective == "min_cd_cl_target" and not (self.cl_target and self.cl_target > 0):
             raise EngineError("the downforce target objective needs a target Cl above zero")
+        if self.objective in ("max_cla", "max_efficiency", "max_cla_cda_cap", "balance") and self.car is None:
+            raise EngineError(f"the {self.objective} goal needs the wing's span and 3D settings")
+        if self.objective == "max_cla_cda_cap" and not (self.car and self.car.cda_cap and self.car.cda_cap > 0):
+            raise EngineError("the drag limit goal needs a CdA limit above zero")
+        if self.objective == "balance" and not (self.car and self.car.base and self.car.axles
+                                                and self.car.rear_target is not None):
+            raise EngineError("the balance goal needs a base car (with its axles) and a rear share to aim for")
         if self.objective == "min_lap_time" and self.lap is None:
             raise EngineError("the fastest-lap objective needs a car and a track")
         if self.solver not in ("rans", "estimate"):
@@ -124,15 +176,34 @@ class Spec:
         return "minimize" if self.objective in ("min_cd_cl_target", "min_lap_time") else "maximize"
 
 
-def score(spec: Spec, load: float, cd: float) -> tuple[float, bool]:
+def score(spec: Spec, load: float, cd: float, wing: Wing | None = None) -> tuple[float, bool]:
     """The value the sampler sees and whether the trial meets the constraint.
-    load is Cl in the working direction: downforce for an inverted wing."""
+    load is Cl in the working direction: downforce for an inverted wing. The
+    goals in car terms need the trial's wing (its chord and place)."""
+    if spec.objective in ("max_cla", "max_efficiency", "max_cla_cda_cap", "balance"):
+        if wing is None:
+            raise EngineError(f"the {spec.objective} goal scores a wing, not bare coefficients")
+        car = spec.car
+        n = car.numbers(load, cd, wing)  # type: ignore[union-attr]
+        cla = n["cla"]
+        if spec.objective == "max_cla":
+            return cla, True
+        if spec.objective == "max_efficiency":
+            total, drag = n.get("car_cla", cla), n.get("car_cda", n["cda"])
+            return total / max(drag, 1e-9), True
+        if spec.objective == "max_cla_cda_cap":
+            over = max(0.0, n.get("car_cda", n["cda"]) / car.cda_cap - 1)  # type: ignore[union-attr,operator]
+            return cla - PENALTY * over, over == 0
+        share = n.get("rear_share")
+        off = 1.0 if share is None else max(0.0, abs(share - car.rear_target) - 0.01)  # type: ignore[union-attr,operator]
+        return cla - PENALTY * off, off == 0
     if spec.objective == "max_cl":
         return load, True
     if spec.objective == "max_ld":
         return load / max(cd, 1e-9), True
     if spec.objective == "min_lap_time":
-        return spec.lap.lap_time(load, cd), True  # type: ignore[union-attr]
+        chord = sum(e.chord for e in wing.elements) if wing is not None else None
+        return spec.lap.lap_time(load, cd, chord), True  # type: ignore[union-attr]
     if spec.objective == "max_cl_cd_cap":
         over = max(0.0, cd / spec.cd_cap - 1)  # type: ignore[operator]
         return load - PENALTY * over, over == 0
@@ -266,8 +337,10 @@ def run(base: Wing, spec: Spec, evaluate: Evaluate, storage: Path, name: str, wo
                     # Its drag is on another scheme's footing: not comparable with the rest.
                     attrs["reason"] = "ran only on the upwind fallback scheme, whose drag is not comparable"
                 elif res["converged"]:
-                    value, feasible = score(spec, load, res["cd"])
+                    value, feasible = score(spec, load, res["cd"], wing)
                     attrs["feasible"] = feasible
+                    if spec.car is not None:
+                        attrs.update(spec.car.numbers(load, res["cd"], wing))
                     state = optuna.trial.TrialState.COMPLETE
                 else:
                     attrs.update(reason=f"not converged: {res.get('reason')}", unsettled=True)
@@ -388,7 +461,8 @@ def summary(study: optuna.Study, spec: Spec) -> dict:
                        "params": t.params,
                        **{k: a.get(k) for k in ("cl", "cd", "cm", "load", "element_cl", "feasible", "converged",
                                                 "reason", "placement", "gaps", "overlaps", "chords", "airfoils",
-                                                "seconds", "iterations", "cells")}})
+                                                "seconds", "iterations", "cells", "cla", "cda", "cla_cda",
+                                                "car_cla", "car_cda", "rear_share", "ride_height", "x")}})
     good = [t for t in trials if t["state"] == "complete" and t["feasible"]]
     best = None
     if good:
@@ -423,7 +497,8 @@ def check(base: Wing, spec: Spec, storage: Path, name: str, evaluate: Evaluate, 
     def ranked(t: dict) -> float:
         if scale == (1.0, 1.0) or t.get("load") is None or t.get("cd") is None:
             return t["value"]
-        return score(spec, t["load"] * scale[0], t["cd"] * scale[1])[0]
+        wing = apply(base, *resolve(spec, t["params"])[:2]) if spec.car is not None else None
+        return score(spec, t["load"] * scale[0], t["cd"] * scale[1], wing)[0]
 
     good.sort(key=ranked, reverse=spec.direction == "maximize")
     # Distinct designs only: each pick differs from every earlier one by at
@@ -453,11 +528,14 @@ def check(base: Wing, spec: Spec, storage: Path, name: str, evaluate: Evaluate, 
         folder.mkdir(parents=True, exist_ok=True)
         rec: dict = {"number": t["number"], "estimate_value": t["value"]}
         try:
-            res = evaluate(apply(base, *resolve(spec, t["params"])[:2]), folder)
+            wing = apply(base, *resolve(spec, t["params"])[:2])
+            res = evaluate(wing, folder)
             load = -res["cl"] if inverted else res["cl"]
             rec.update(cl=res["cl"], cd=res["cd"], load=load, converged=bool(res["converged"]), reason=res.get("reason"))
             if res["converged"] and res.get("scheme", "jst") == "jst":
-                rec["value"], rec["feasible"] = score(spec, load, res["cd"])
+                rec["value"], rec["feasible"] = score(spec, load, res["cd"], wing)
+                if spec.car is not None:
+                    rec.update(spec.car.numbers(load, res["cd"], wing))
         except EngineError as exc:
             rec.update(converged=False, reason=exc.msg)
         finally:

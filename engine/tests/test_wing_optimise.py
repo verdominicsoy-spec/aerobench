@@ -425,3 +425,58 @@ def test_sections_and_chords_are_design_variables(tmp_path):
         optimise.Spec([Variable(1, "airfoil", 0, 0, ("naca/4412", "x/unknown"))], sections=sections)
     with pytest.raises(EngineError, match="two or more"):
         optimise.Spec([Variable(1, "airfoil", 0, 0, ("naca/4412",))], sections=sections)
+
+
+def _var():
+    from aeroengine.wing.geometry import Variable
+
+    return Variable(0, "angle", -4.0, 12.0)
+
+
+def _wing(chord: float):
+    """A one-element NACA 6412 wing at the origin, inverted, with this chord."""
+    from aeroengine.wing.airfoils import naca4
+    from aeroengine.wing.geometry import Element, Wing
+
+    return Wing([Element(naca4("6412"), chord, 3.0, np.zeros(2), True)])
+
+
+def test_a_bigger_wing_scores_more_downforce():
+    from aeroengine.wing.finite import car_contribution
+    from aeroengine.wing.optimise import CarScore, Spec, score
+
+    car = CarScore(span=1.2, endplate=0.25, factor=1.0, ref_chord=0.44, base=None, axles=None)
+    spec = Spec([_var()], objective="max_cla", car=car)
+    small, big = _wing(chord=0.44), _wing(chord=0.66)
+    v_small = score(spec, 2.0, 0.05, small)[0]
+    v_big = score(spec, 2.0 * 0.66 / 0.44 * 0.95, 0.05, big)[0]  # nearly the same section Cl on its own chord
+    # Half again the chord at 95% of the section Cl: 1.43 times the 2D downforce, less the 3D loss
+    # of a lower aspect ratio (1.8 against 2.7 on a 1.2 m span): about 1.2 times in all.
+    assert v_big > 1.15 * v_small
+    cla, _ = car_contribution(-2.0, 0.05, 1.2, 0.44, 0.25)
+    assert v_small == pytest.approx(cla)
+
+
+def test_efficiency_is_the_whole_cars_with_a_base():
+    from aeroengine.wing.optimise import CarScore, Spec, score
+
+    on = CarScore(1.2, 0.25, 1.0, 0.44, base=(-0.2, 1.1, -0.1), axles=(0.9, 2.45))
+    off = CarScore(1.2, 0.25, 1.0, 0.44, base=None, axles=None)
+    w = _wing(chord=0.44)
+    cla, cda, _ = on.wing(2.0, 0.05, w)
+    assert score(Spec([_var()], objective="max_efficiency", car=on), 2.0, 0.05, w)[0] == pytest.approx((cla - 0.2) / (cda + 1.1))
+    assert score(Spec([_var()], objective="max_efficiency", car=off), 2.0, 0.05, w)[0] == pytest.approx(cla / cda)
+
+
+def test_balance_is_on_target_within_a_percent():
+    from aeroengine.wing.optimise import CarScore, Spec, score
+
+    car = CarScore(1.2, 0.25, 1.0, 0.44, base=(1.0, 1.1, 0.6), axles=(0.9, 2.45), rear_target=0.5)
+    w = _wing(chord=0.44)  # its centre of pressure ahead of the front axle: it moves the balance forward
+    value, ok = score(Spec([_var()], objective="balance", car=car), 2.0, 0.05, w)
+    cla, _, xcp = car.wing(2.0, 0.05, w)
+    share = (0.6 + cla * (xcp - 0.9) / (2.45 - 0.9)) / (1.0 + cla)
+    assert ok == (abs(share - 0.5) <= 0.01)
+    assert value <= cla
+    with pytest.raises(Exception, match="balance"):
+        Spec([_var()], objective="balance", car=CarScore(1.2, 0.25, 1.0, 0.44, None, None))
