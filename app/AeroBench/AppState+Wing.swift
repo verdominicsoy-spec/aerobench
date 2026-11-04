@@ -607,11 +607,13 @@ extension AppState {
     func lapObjectiveParams() throws -> JSONValue {
         let wing = wingLab.wing
         let lap = try lapSim.jobParams(lapsimFolder: lapSimFolder)
+        // With a base car the trial wing goes on the car itself, so nothing is replaced.
+        let onCar = lapGoalCar()
         var out: [String: JSONValue] = [
-            "car": lap["car"] ?? .null, "track": lap["track"] ?? .null, "ds": lap["ds"] ?? .double(0.5),
-            "start_speed": lap["start_speed"] ?? .double(0), "span": .double(wing.span),
-            "factor": .double(wing.factor3D), "replaced_cla": .double(wingLab.replacedCla),
-            "replaced_cda": .double(wingLab.replacedCda),
+            "car": try onCar.map { try JSONValue(encoding: $0.car) } ?? lap["car"] ?? .null, "track": lap["track"] ?? .null,
+            "ds": lap["ds"] ?? .double(0.5), "start_speed": lap["start_speed"] ?? .double(0), "span": .double(wing.span),
+            "factor": .double(wing.factor3D), "replaced_cla": .double(onCar == nil ? wingLab.replacedCla : 0),
+            "replaced_cda": .double(onCar == nil ? wingLab.replacedCda : 0),
         ]
         if let h = wing.endplateHeight { out["endplate"] = .double(h) }
         return .object(out)

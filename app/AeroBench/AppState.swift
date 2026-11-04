@@ -60,7 +60,10 @@ final class AppState {
         showLatestLapSim()
         checkForUpdates()
         flow.onCalibrationChange = { [weak self] in self?.project?.isDirty = true }
-        wingLab.onChange = { [weak self] in self?.scheduleLiveEstimate() }
+        wingLab.onChange = { [weak self] in
+            self?.scheduleLiveEstimate()
+            Task { @MainActor in self?.syncCarRulesBox() }  // after the change lands, not inside the wing's didSet
+        }
         scheduleLiveEstimate()
         terminationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main

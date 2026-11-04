@@ -60,6 +60,7 @@ struct WingLabView: View {
                     .disabled(lab.redoStack.isEmpty)
             }
         }
+        .onChange(of: app.car.selected) { app.syncCarRulesBox() }
         .onAppear {
             if lab.library.isEmpty { lab.loadLibrary(engineDirectory: app.settings.engineDirectory) }
             if lab.wing.elements.isEmpty && lab.undoStack.isEmpty { lab.reset(to: WingLabModel.starter) }
@@ -1064,6 +1065,7 @@ struct WingInspector: View {
                 Toggle("Rules box", isOn: Binding(
                     get: { wing.rulesBox != nil },
                     set: { on in lab.edit { $0.rulesBox = on ? Wing.defaultRulesBox($0.rulesFor) : nil } }))
+                    .disabled(app.car.setup != nil)
                 if let box = wing.rulesBox {
                     Picker("Box for", selection: Binding(get: { wing.rulesFor },
                                                          set: { p in lab.edit { $0.switchRules(to: p) } })) {
@@ -1072,14 +1074,20 @@ struct WingInspector: View {
                     }
                     .pickerStyle(.segmented)
                     NumberField(label: "Box from x", unit: "mm", value: mm({ box.minX }, { v in lab.edit { $0.rulesBox?.minX = v } }))
+                        .disabled(app.car.setup != nil)
                     NumberField(label: "Box to x", unit: "mm", value: mm({ box.maxX }, { v in lab.edit { $0.rulesBox?.maxX = v } }))
+                        .disabled(app.car.setup != nil)
                     NumberField(label: "Box from y", unit: "mm", value: mm({ box.minY }, { v in lab.edit { $0.rulesBox?.minY = v } }))
+                        .disabled(app.car.setup != nil)
                     NumberField(label: "Box to y", unit: "mm", value: mm({ box.maxY }, { v in lab.edit { $0.rulesBox?.maxY = v } }))
+                        .disabled(app.car.setup != nil)
                 }
             } header: {
                 Text("Wing")
             } footer: {
-                Text("The wing sits in its own plane, not on the car. The rules box is wherever you put it; data/rules/fs2027_aero.json has the FS and FSUK limits it comes from.")
+                Text(app.car.setup != nil
+                     ? "The rules box is the car's box for the \(wing.rulesFor == .front ? "front" : "rear") wing, from the base car, where the wing sits on it."
+                     : "The wing sits in its own plane, not on the car. The rules box is wherever you put it; data/rules/fs2027_aero.json has the FS and FSUK limits it comes from.")
             }
 
             flowSection(lab)
@@ -1341,7 +1349,10 @@ struct WingInspector: View {
         if lab.optimise.objective == .minCdClTarget {
             NumberField(label: "Downforce Cl target", value: Binding(get: { lab.optimise.clTarget }, set: { lab.optimise.clTarget = $0 }))
         }
-        if lab.optimise.objective == .minLapTime {
+        if lab.optimise.objective == .minLapTime, let goal = app.lapGoalCar() {
+            Text("Each trial is a lap of the Lap Sim's track (\(app.lapSim.track.kind.title)) in car A as the base car: \(goal.note).")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        } else if lab.optimise.objective == .minLapTime {
             Text("Each trial is a lap of the Lap Sim's track (\(app.lapSim.track.kind.title)) in car A, with this wing in place of the one under Use in the Lap Sim, using the 3D settings there.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }

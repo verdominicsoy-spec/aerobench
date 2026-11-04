@@ -32,8 +32,10 @@ extension AppState {
     }
 
     /// Where the draft sits on the selected combination.
-    var carDraftAt: Placement? {
-        guard let d = carDraft, let s = car.setup else { return nil }
+    var carDraftAt: Placement? { carDraft.flatMap { draftPlacement(of: $0) } }
+
+    private func draftPlacement(of d: WingCard) -> Placement? {
+        guard let s = car.setup else { return nil }
         var combo = car.selectedCombo ?? Combination(id: "", name: "")
         if (d.position == .front ? combo.front : combo.rear) == nil, let x = car.draftX {
             let p = Placement(card: d.id, x: x, height: 0)
@@ -65,6 +67,32 @@ extension AppState {
         }
     }
 
+    /// With a base car, the wing's rules box is the car's box for its end, where the wing sits
+    /// (no undo step: it follows the wing and its placement).
+    func syncCarRulesBox() {
+        let lab = wingLab
+        guard let s = car.setup, !lab.wing.elements.isEmpty else { return }
+        let d = carDraft ?? WingCard.make(wing: lab.wing, cl: 0, cd: 0, solver: "", id: "draft", name: "", revision: -1)
+        guard let at = draftPlacement(of: d) else { return }
+        let box = CarRules.wingBox(d, placement: at, setup: s)
+        if lab.wing.rulesBox != box { lab.live { $0.rulesBox = box } }
+    }
+
+    /// The fastest-lap goal's car with a base car: car A with the base car and the other end's wing,
+    /// at the balance the combination has now (the trial wing's numbers are added by the engine).
+    func lapGoalCar() -> (car: CarParameters, note: String)? {
+        guard car.base != nil, let combo = shownCombo, let d = carDraft else { return nil }
+        guard let others = quickResult(combo.without(d.position)), let now = quickResult(combo) else { return nil }
+        var c = lapSim.carA
+        c.cla = max(others.cla, 0)
+        c.cda = max(others.cda, 0)
+        if let r = now.rearShare { c.aeroBalanceDriven = min(max(r, 0), 1) }
+        let other = (d.position == .front ? combo.rear : combo.front).flatMap { p in car.card(p.card)?.name }
+        let note = "this wing on the car with " + (other ?? "no other wing")
+            + String(format: "; balance kept at %.0f %% rear", c.aeroBalanceDriven * 100)
+        return (c, note)
+    }
+
     /// The quick sum over the saved cards only (the draft left out).
     func quickResultSaved(_ combo: Combination) -> QuickResult? {
         guard let base = car.base, let setup = car.setup else { return nil }
@@ -83,6 +111,7 @@ extension AppState {
             saveCar()
         }
         guard let at = carDraftAt else { return }
+        defer { syncCarRulesBox() }
         if wingLab.wing.rideHeight.map({ abs($0 * 1000 - at.height) > 0.01 }) ?? true {
             wingLab.edit { $0.rideHeight = at.height / 1000 }
         }
@@ -94,6 +123,7 @@ extension AppState {
         guard let d = carDraft else { return }
         let h = p.height / 1000
         if live { wingLab.live { $0.rideHeight = h } } else { wingLab.edit { $0.rideHeight = h } }
+        defer { syncCarRulesBox() }
         if let i = car.combos.firstIndex(where: { $0.id == car.selected }),
            let slot = d.position == .front ? car.combos[i].front : car.combos[i].rear {
             let moved = Placement(card: slot.card, x: p.x, height: p.height)
