@@ -233,6 +233,15 @@ public enum CarRules {
     public static let frontLength = 700.0, frontHeight = 350.0
     public static let rearLength = 250.0, rearHeight = 1100.0
 
+    /// Whether the card's wing can fit its box at all (no placement keeps a bigger one inside).
+    public static func fits(_ card: WingCard, setup: CarSetup) -> Bool {
+        let b = box(card.position, setup: setup)
+        let pts = card.outline().flatMap { $0 }
+        guard let lo = pts.map(\.x).min(), let hi = pts.map(\.x).max(),
+              let bottom = pts.map(\.y).min(), let top = pts.map(\.y).max() else { return true }
+        return (hi - lo) * 1000 <= b.maxX - b.minX + 1e-6 && (top - bottom) * 1000 <= b.maxZ - b.minZ + 1e-6
+    }
+
     public static func box(_ position: WingPosition, setup: CarSetup) -> (minX: Double, maxX: Double, minZ: Double, maxZ: Double) {
         let g = setup.groundZ
         switch position {

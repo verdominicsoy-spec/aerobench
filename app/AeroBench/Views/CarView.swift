@@ -67,7 +67,15 @@ private struct BaseCarPane: View {
                     Toggle("Mark head restraint", isOn: $car.markingHeadRestraint).toggleStyle(.button)
                     if let h = s.headRestraint { Text(String(format: "x %.0f, z %.0f mm", h[0], h[1])).font(.caption) }
                 }
-                NumberField(label: "Car speed", unit: "m/s", digits: 1, value: setupBinding(\.speed))
+                NumberField(label: "Car speed", unit: "m/s", digits: 1, value: Binding(get: { app.car.setup?.speed ?? 15 }, set: { v in
+                    // Ground and wheels that ran at the car's speed keep doing so.
+                    if let old = app.car.setup?.speed {
+                        if abs(app.car.groundSpeed - old) < 1e-9 { app.car.groundSpeed = v }
+                        if abs(app.car.wheelsSpeed - old) < 1e-9 { app.car.wheelsSpeed = v }
+                    }
+                    app.car.setup?.speed = v
+                    app.setupChanged()
+                }))
                 HStack {
                     Toggle("Moving ground", isOn: $car.groundMoving)
                     if car.groundMoving { NumberField(label: "at", unit: "m/s", digits: 1, value: $car.groundSpeed) }
@@ -97,6 +105,8 @@ private struct BaseCarPane: View {
                 if let b = car.base {
                     Text(String(format: "ClA %.3f m²   CdA %.3f m²   ", b.cla, b.cda) + rearText(b.rearShare))
                         .monospacedDigit()
+                    Text("Lift from 2D sections is not yet mesh-independent: compare drag and differences between cars, not this ClA alone.")
+                        .font(.caption).foregroundStyle(S37.C.inkSecondary)
                     if !b.converged {
                         Text("\(b.strips.filter { !$0.converged }.count) of \(b.strips.count) strips did not converge")
                             .font(.caption).foregroundStyle(S37.C.clayInk)
@@ -156,6 +166,7 @@ private struct SideViewPane: View {
     @Environment(\.undoManager) private var undo
     @State private var dragging: WingPosition?
     @State private var startPlacement: Placement?
+    @State private var clampNote: String?
 
     var body: some View {
         let car = app.car
@@ -173,6 +184,7 @@ private struct SideViewPane: View {
             if let combo = car.selectedCombo {
                 placementFields(combo, .front)
                 placementFields(combo, .rear)
+                if let clampNote { Text(clampNote).font(.caption).foregroundStyle(S37.C.ochre) }
             } else {
                 Text("Select or add a combination to place wings on the car.").font(.caption).foregroundStyle(S37.C.inkSecondary)
             }
@@ -265,6 +277,12 @@ private struct SideViewPane: View {
         let car = app.car
         if car.markingHeadRestraint {
             car.markingHeadRestraint = false
+            // The rear box's forward limit moved: rear wings must still sit inside it.
+            if let s = car.setup {
+                for i in car.combos.indices {
+                    if let p = car.combos[i].rear, let c = car.card(p.card) { car.combos[i].rear = p.clamped(card: c, setup: s).0 }
+                }
+            }
             app.setupChanged()
             return
         }
@@ -289,14 +307,24 @@ private struct SideViewPane: View {
         app.saveCar()
     }
 
+    private func typed(_ pos: WingPosition, _ q: Placement, _ c: WingCard, _ s: CarSetup) {
+        let (fixed, moved) = q.clamped(card: c, setup: s)
+        if !CarRules.fits(c, setup: s) {
+            clampNote = "\(c.name) is bigger than its rules box: it cannot fit wherever it goes"
+        } else {
+            clampNote = moved ? "Kept inside the \(pos == .front ? "front" : "rear") wing's rules box" : nil
+        }
+        set(pos, fixed, undoable: true)
+    }
+
     @ViewBuilder private func placementFields(_ combo: Combination, _ pos: WingPosition) -> some View {
         if let p = pos == .front ? combo.front : combo.rear, let c = app.car.card(p.card), let s = app.car.setup {
             HStack {
                 Text("\(pos == .front ? "Front" : "Rear"): \(c.name)").frame(width: 140, alignment: .leading)
                 NumberField(label: "ahead of axle", unit: "mm", digits: 0, value: Binding(get: { p.x }, set: { v in
-                    var q = p; q.x = v; set(pos, q.clamped(card: c, setup: s).0, undoable: true) }))
+                    var q = p; q.x = v; typed(pos, q, c, s) }))
                 NumberField(label: "above ground", unit: "mm", digits: 0, value: Binding(get: { p.height }, set: { v in
-                    var q = p; q.height = v; set(pos, q.clamped(card: c, setup: s).0, undoable: true) }))
+                    var q = p; q.height = v; typed(pos, q, c, s) }))
             }
         }
     }
@@ -346,6 +374,7 @@ private struct SectionPane: View {
 
 private struct CardsPane: View {
     @Environment(AppState.self) private var app
+    @Environment(\.undoManager) private var undo
 
     var body: some View {
         let car = app.car
@@ -365,6 +394,9 @@ private struct CardsPane: View {
     private func assign(_ c: WingCard) {
         let car = app.car
         guard let i = car.combos.firstIndex(where: { $0.id == car.selected }), let s = car.setup else { return }
+        let old = car.combos
+        undo?.registerUndo(withTarget: car) { model in MainActor.assumeIsolated { model.combos = old } }
+        undo?.setActionName("Put \(c.name) on the Car")
         let box = CarRules.box(c.position, setup: s)
         let axle = s.axleX(c.position == .front ? "F" : "R")
         let start = Placement(card: c.id, x: box.maxX - axle - 10, height: max(c.rideHeight.map { $0 * 1000 } ?? 0, box.minZ - s.groundZ) + 10)
@@ -415,6 +447,7 @@ private struct CardRow: View {
 
 private struct CombinationsPane: View {
     @Environment(AppState.self) private var app
+    @Environment(\.undoManager) private var undo
     @State private var note: String?
 
     var body: some View {
@@ -426,6 +459,14 @@ private struct CombinationsPane: View {
                 Button("Add") { add() }.disabled(car.combos.count >= 12)
             }
             ForEach(car.combos) { combo in row(combo) }
+            if let j = car.fullJob, !j.status.isFinished {
+                HStack {
+                    ProgressView(value: j.progress, total: 100).frame(maxWidth: 120)
+                    Text(j.progressMessage).font(.caption).lineLimit(1)
+                }
+            } else if let j = car.fullJob, j.status == .failed {
+                Label(j.message ?? "The full run failed", systemImage: "xmark.octagon").font(.caption).foregroundStyle(S37.C.critical)
+            }
             if let note { Text(note).font(.caption).foregroundStyle(S37.C.sageInk) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -465,7 +506,7 @@ private struct CombinationsPane: View {
             }
             if let f = combo.full {
                 Text(String(format: "Full (%@): ClA %.3f   CdA %.3f   ", f.mesh, f.cla, f.cda) + rearText(f.rearShare)
-                     + (f.converged ? "" : "  not converged"))
+                     + (f.converged ? "" : "  not converged") + String(format: "   (2D sum ClA %.3f)", f.cla2dWings))
                     .font(.caption).monospacedDigit().foregroundStyle(f.converged ? S37.C.ink : S37.C.clayInk)
             }
             HStack {
@@ -484,7 +525,14 @@ private struct CombinationsPane: View {
                 .fixedSize()
                 .disabled(quick == nil)
                 Spacer()
-                Button("Remove") { car.combos.removeAll { $0.id == combo.id }; app.saveCar() }.buttonStyle(.link)
+                Button("Remove") {
+                    let old = car.combos
+                    undo?.registerUndo(withTarget: car) { model in MainActor.assumeIsolated { model.combos = old } }
+                    undo?.setActionName("Remove \(combo.name)")
+                    car.combos.removeAll { $0.id == combo.id }
+                    app.saveCar()
+                }
+                .buttonStyle(.link)
             }
             .font(.caption)
         }

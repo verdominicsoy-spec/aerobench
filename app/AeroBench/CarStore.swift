@@ -54,7 +54,7 @@ enum CarStore {
         var baseRevision = 0
         var mesh = "medium"
         var strips = 7
-        var groundMoving = false
+        var groundMoving = true  // as CarModel: the moving ground is verified since bfca043
         var groundSpeed = 15.0
         var wheelsRotating = true
         var wheelsSpeed = 15.0

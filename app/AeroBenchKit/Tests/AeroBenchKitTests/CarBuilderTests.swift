@@ -45,6 +45,14 @@ final class CarBuilderTests: XCTestCase {
         XCTAssertLessThanOrEqual(xs.max()!, 298 + 1e-6)
     }
 
+    func testAWingBiggerThanItsBoxIsReported() {
+        let c = card(.front)  // 300 mm chord, 6 mm thick
+        XCTAssertTrue(CarRules.fits(c, setup: setup()))
+        var long = c
+        long.wing.elements[0].chord = 0.8  // longer than the 700 mm front box
+        XCTAssertFalse(CarRules.fits(long, setup: setup()))
+    }
+
     func testPlacedElementsSitWhereTyped() {
         let c = card(.front)
         let pts = Placement(card: c.id, x: 400, height: 60).placedElements(card: c, setup: setup()).flatMap { $0 }
