@@ -65,6 +65,14 @@ extension AppState {
         }
     }
 
+    /// The quick sum over the saved cards only (the draft left out).
+    func quickResultSaved(_ combo: Combination) -> QuickResult? {
+        guard let base = car.base, let setup = car.setup else { return nil }
+        return quick(base: base, combo: combo, cards: car.cards, setup: setup) { [estimates = car.estimates] card, h in
+            estimates["\(card.id)@\(Int((h * 1000).rounded()))"]
+        }
+    }
+
     /// Puts the draft on the car: makes the first combination if there is none, and turns on
     /// Wing Lab's ground at the placed height (one undo step) so both show the same numbers.
     func putDraftOnCar() {
@@ -226,6 +234,8 @@ extension AppState {
 
     /// Full: the strips again with the placed wings, at the baseline's mesh.
     func runFull(_ id: String) {
+        // The wing being edited is saved to its card first, so the full result belongs to saved cards.
+        if id == car.selected, carDraft != nil, carDraftUnsaved || shownCombo != car.selectedCombo { saveWingCard(asNew: false) }
         guard let combo = car.combos.first(where: { $0.id == id }), car.base != nil,
               let params = stripsParams(wings: car.placedWings(combo)) else { return }
         car.fullJob = jobs.submit(command: "car-strips", params: params, in: jobsRoot) { [weak self] item in

@@ -539,6 +539,91 @@ struct CombinationsPane: View {
     }
 }
 
+/// Wing Lab's Car tab: the selected combination with the wing being edited on it.
+struct CarResults: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        let car = app.car
+        ScrollView {
+            VStack(alignment: .leading, spacing: S37.Space.s3) {
+                if car.setup == nil {
+                    Text("Set up the base car in the inspector's Car section.").foregroundStyle(S37.C.inkSecondary)
+                } else if car.base == nil {
+                    Text("Run the bare car at the \(car.mesh) mesh in the inspector's Car section.").foregroundStyle(S37.C.inkSecondary)
+                } else if app.carDraft == nil {
+                    Text("Add an element: the car sum needs a wing with numbers.").foregroundStyle(S37.C.inkSecondary)
+                } else if let combo = app.shownCombo, let q = app.quickResult(combo) {
+                    numbers(combo, q)
+                } else {
+                    Button("Put This Wing on the Car") { app.putDraftOnCar() }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(S37.Space.s4)
+        }
+        .scrollIndicators(.never)
+    }
+
+    @ViewBuilder private func numbers(_ combo: Combination, _ q: QuickResult) -> some View {
+        let car = app.car
+        HStack(alignment: .firstTextBaseline, spacing: S37.Space.s6) {
+            figure("ClA", String(format: "%.3f m²", q.cla))
+            figure("CdA", String(format: "%.3f m²", q.cda))
+            figure("Rear", q.rearShare.map { String(format: "%.0f %%", $0 * 100) } ?? "–")
+        }
+        Text("Quick, \(combo.name)" + (app.carDraftUnsaved ? ", using the wing being edited (not saved)" : "")
+             + (q.usedEstimate.isEmpty ? "" : "; the other wing re-estimated at its placed height")
+             + (q.pendingEstimate.isEmpty ? "" : "; an estimate is pending"))
+            .font(.caption).foregroundStyle(S37.C.inkSecondary)
+        if let b = car.base {
+            Text(String(format: "Against the bare car: ClA %+.3f   CdA %+.3f", q.cla - b.cla, q.cda - b.cda))
+                .font(.caption).monospacedDigit()
+        }
+        if app.carDraftUnsaved, let stored = car.selectedCombo, let s = app.quickResultSaved(stored) {
+            Text(String(format: "Against the saved wings: ClA %+.3f   CdA %+.3f", q.cla - s.cla, q.cda - s.cda))
+                .font(.caption).monospacedDigit()
+        }
+        Divider()
+        if let stored = car.selectedCombo, let f = stored.full {
+            let stale = stored.isStale(cards: car.cards, baseRevision: car.baseRevision)
+            Text(String(format: "Full (%@): ClA %.3f   CdA %.3f   ", f.mesh, f.cla, f.cda) + rearText(f.rearShare)
+                 + String(format: "   (2D sum ClA %.3f)", f.cla2dWings))
+                .font(.caption).monospacedDigit()
+            if stale || app.carDraftUnsaved {
+                Text("Out of date: the wings have changed since it ran.").font(.caption.weight(.semibold)).foregroundStyle(S37.C.clayInk)
+            }
+            if !f.converged { Text("Not converged.").font(.caption).foregroundStyle(S37.C.clayInk) }
+            if let fl = f.failed, !fl.isEmpty {
+                Text("\(fl.count) strip\(fl.count == 1 ? "" : "s") would not solve and \(fl.count == 1 ? "is" : "are") left out of the totals.")
+                    .font(.caption).foregroundStyle(S37.C.clayInk)
+            }
+            if let g = f.openGaps, g > 0 {
+                Text("The CAD's cut did not close in \(g) place\(g == 1 ? "" : "s").").font(.caption).foregroundStyle(S37.C.ochre)
+            }
+        }
+        HStack {
+            Button("Run Full") { app.runFull(combo.id) }
+                .disabled(car.fullJob.map { !$0.status.isFinished } ?? false)
+                .help(app.carDraftUnsaved ? "Saves this wing to its card, then runs the strips with the wings in them"
+                                          : "The strips again with these wings in them")
+            if let j = car.fullJob, !j.status.isFinished {
+                ProgressView(value: j.progress, total: 100).frame(maxWidth: 120)
+                Text(j.progressMessage).font(.caption).lineLimit(1)
+            } else if let j = car.fullJob, j.status == .failed {
+                Label(j.message ?? "The full run failed", systemImage: "xmark.octagon").font(.caption).foregroundStyle(S37.C.critical)
+            }
+        }
+    }
+
+    private func figure(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value).font(.system(size: 32, weight: .semibold)).monospacedDigit()
+            Text(label).font(.caption).foregroundStyle(S37.C.inkSecondary)
+        }
+    }
+}
+
 private extension String {
     func ifEmpty(_ other: String) -> String { isEmpty ? other : self }
 }

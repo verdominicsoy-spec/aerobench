@@ -709,6 +709,7 @@ struct WingResultsPane: View {
             case .estimate: EstimateResults()
             case .cfd: CFDResults()
             case .study: StudyResults()
+            case .car: CarResults()
             }
         }
     }
