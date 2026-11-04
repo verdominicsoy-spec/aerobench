@@ -123,7 +123,7 @@ def test_a_centreline_mesh_has_the_markers(car_step, tmp_path):
     s = car_setup.setup(car_step)
     cut = section.cut(car_setup.load_part(car_step, None)[0], 0.0, s)
     st = car_mesh.build(cut, [], s, "coarse", tmp_path / "m.su2")
-    assert set(st["markers"]) == {"body", "ground", "inlet", "outlet", "top"} and st["cells"] > 1000
+    assert set(st["markers"]) == {"body", "ground", "road", "inlet", "outlet", "top"} and st["cells"] > 1000
 
 
 def test_a_wing_through_the_nose_is_fused_but_keeps_its_marker(car_step, tmp_path):
@@ -169,25 +169,29 @@ def _su2():
 SETUP = {"ground_z": 0.0, "speed": 15.0, "wheels": [{"name": "FL", "centre": [-400, 400, 230], "radius": 230, "width": 200}]}
 
 
-def test_config_moves_the_ground_and_turns_the_wheels():
-    text = car_case.config(["body", "wheel_FL"], SETUP, flow(), "m.su2")
-    assert "MARKER_MOVING= ( ground, wheel_FL )" in text
-    assert "SURFACE_TRANSLATION_RATE= ( 15.0, 0.0, 0.0, 0.0, 0.0, 0.0 )" in text
+def test_config_slips_a_ground_at_the_air_speed_and_turns_the_wheels():
+    text = car_case.config(["body", "wheel_FL", "road"], SETUP, flow(), "m.su2")
+    assert "MARKER_SYM= ( ground, road )" in text and "MARKER_HEATFLUX= ( body, 0.0, wheel_FL, 0.0 )" in text
+    assert "MARKER_MOVING= ( wheel_FL )" in text
+    assert "SURFACE_TRANSLATION_RATE= ( 0.0, 0.0, 0.0 )" in text
     # rolling: 15 m/s over r 0.23 m, about the wheel's centre (X = 0.4, Y = 0.23 m)
-    assert "SURFACE_ROTATION_RATE= ( 0.0, 0.0, 0.0, 0.0, 0.0, 65.2174 )" in text
-    assert "SURFACE_MOTION_ORIGIN= ( 0.0, 0.0, 0.0, 0.4, 0.23, 0.0 )" in text
+    assert "SURFACE_ROTATION_RATE= ( 0.0, 0.0, 65.2174 )" in text
+    assert "SURFACE_MOTION_ORIGIN= ( 0.4, 0.23, 0.0 )" in text
     assert "MARKER_WALL_FUNCTIONS" not in text
 
 
 def test_config_without_moving_parts():
-    text = car_case.config(["body", "wheel_FL", "wing_front"], SETUP, flow(False, False), "m.su2")
+    text = car_case.config(["body", "wheel_FL", "wing_front", "road"], SETUP, flow(False, False), "m.su2")
     assert "MARKER_MOVING" not in text and "SURFACE_MOVEMENT" not in text
     assert "MARKER_HEATFLUX= ( body, 0.0, wheel_FL, 0.0, wing_front, 0.0, ground, 0.0 )" in text
+    assert "MARKER_SYM= ( road )" in text
 
 
-def test_config_moves_only_the_ground_when_asked():
-    text = car_case.config(["body", "wheel_FL"], SETUP, flow(True, False), "m.su2")
+def test_config_moves_a_ground_slower_than_the_air():
+    f = {**flow(True, False), "ground": {"moving": True, "speed": 10.0}}
+    text = car_case.config(["body", "wheel_FL"], SETUP, f, "m.su2")
     assert "MARKER_MOVING= ( ground )" in text and "SURFACE_MOVEMENT= ( MOVING_WALL )" in text
+    assert "SURFACE_TRANSLATION_RATE= ( 10.0, 0.0, 0.0 )" in text and "ground, 0.0" in text
 
 
 @pytest.mark.skipif(_su2() is None, reason="SU2 is not installed")
@@ -316,7 +320,7 @@ def test_contact_blocks_are_not_rotating_wheel_walls(car_step, tmp_path):
 
 def test_the_engine_defaults_to_a_moving_ground():
     text = car_case.config(["body"], SETUP, {"speed": 15.0}, "m.su2")
-    assert "MARKER_MOVING= ( ground" in text
+    assert "MARKER_SYM= ( ground )" in text and "ground, 0.0" not in text
 
 
 
@@ -329,6 +333,9 @@ def test_the_base_car_centreline_settles_on_a_moving_ground(tmp_path):
     r = car_case.solve_section(cut, [], s, flow(), "coarse", tmp_path, None, 6, lambda p, m: None)
     assert r["converged"], r["reason"]
     assert 0.3 < r["drag"] / Q < 2.0
+    # The ground's no-slip on cells too big for it set the lift by the mesh (CL +0.3 coarse, -0.1 medium);
+    # slip: -0.56 coarse, -0.61 medium.
+    assert -0.75 < r["lift"] / Q < -0.45
 
 
 def test_rear_share_counts_the_3d_correction_where_the_wing_acts():

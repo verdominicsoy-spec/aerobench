@@ -1368,9 +1368,24 @@ number of cells across it (8 coarse, 12 medium, 16 maxed): at the wall size
 the centreline's 34 mm gap had 3, the moving ground dragged a Couette
 profile through it and pumped the floor to Cp +1.5 (CL +1.8 per metre).
 Drag holds within 2 % from 4 to 20 cells (CD 0.82 to 0.84 moving, 0.48 to
-0.51 fixed); lift still moves with the gap's cells (CL +0.2 at 8, -0.35 at
-12, -0.4 at 16, near -0.6 at 20), because no-slip walls at high y+ set the
-gap's friction by the cell size. Read the bare car's ClA as an estimate. The axle split
+0.51 fixed); lift moved with the mesh (centreline CL +0.2 coarse, -0.35
+medium). The cause was the ground, not the gap: as a no-slip wall on cells
+up to a metre tall ahead of the car it set the air near it by the cell
+size (fixed: still air 0.5 m deep from the inlet; moving: pumped to 1.4 to
+2.2 times the free stream's total pressure under the nose, which fed the
+floor), and the domain's edges were cut at the wall size, which left
+slivers on the ground whose pressure swung by q from node to node. Now the
+domain's edges are not cut, the ground is split at the car's ends, the
+ground beyond them ("road") is slip, and a ground moving at the air's
+speed is slip under the car too: centreline CL -0.56 coarse, -0.61
+medium, about -0.69 maxed (it oscillates between -0.57 and -0.76 and does
+not settle: the finer wake sheds), CD 0.90, 0.90, 0.92. Slip leaves out
+the air the moving ground drags into the gap; resolving that needs y+ 1
+layers on the ground (a session tried them: about 3 times the run time).
+A fixed ground, or one at another speed, stays no-slip under the car and
+its lift still follows the mesh (fixed: CL +0.58 coarse, +0.18 medium).
+Neither a slope limiter (Venkatakrishnan: CL +1.24 coarse, did not
+converge) nor a velocity inlet and pressure outlet changed this. The axle split
 comes from the moment about the ground line, so drag above the ground counts.
 Rear-wheel drive: Lap Sim's driven-axle balance is the rear share. Spec and
 plan: docs/superpowers/specs/2026-11-03-car-builder-design.md,

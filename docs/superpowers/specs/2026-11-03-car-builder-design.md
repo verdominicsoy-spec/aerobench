@@ -124,7 +124,9 @@ the recommendation, taken as the builder's call.
   line at the tyre bottoms; wall layers sized for y+ about 30 to 100 on
   the body and wheels, y+ about 1 on wing elements; refinement behind the
   car; far field several car lengths away.
-- **SU2**: ground marker moving at its speed or fixed; wheel markers
+- **SU2**: ground under the car slip when moving at the air's speed,
+  a moving wall at any other speed, no-slip when fixed; slip beyond the
+  car's ends (see DECISIONS); wheel markers
   rotating about their axles at their speed or fixed; no-slip walls on
   body and wheels; forces per marker so the wing's share can be reported.
 - **Strips job**: plans the planes, runs each section, and sums
