@@ -207,6 +207,77 @@ def _model(name: str, coords: dict[str, np.ndarray]) -> str | None:
             or next((k for k in cands if k.endswith(".dap")), None) or next((k for k in cands if k.endswith(".dat")), None))
 
 
+# The ten sections the accuracy window compares against, heavy camber to light
+# (docs/superpowers/specs/2026-11-05-uiuc-validation-section-design.md):
+# (airfoil as the drag file names it, volume, key).
+UIUC_BENCHMARK = [
+    ("S1223", 1, "s1223"), ("E423", 2, "e423"), ("S1210", 1, "s1210"), ("SG6043", 3, "sg6043"),
+    ("SD7062 (B)", 3, "sd7062"), ("E387 (A)", 1, "e387"), ("SD7037 (B)", 1, "sd7037"),
+    ("Clark-Y (B)", 3, "clarky"), ("SA7038", 3, "sa7038"), ("S8037", 3, "s8037"),
+]
+BENCHMARK_RE = 300_000  # an FS wing's Reynolds number
+
+
+def pick_run(runs: list[dict], airfoil: str, target: float = BENCHMARK_RE) -> dict | None:
+    """The airfoil's clean run (comment exactly "clean": never flapped or
+    tripped) within 5% of target: the most angles, then the nearest Re."""
+    near = [r for r in runs if r["airfoil"] == airfoil and r["comment"].strip().lower() == "clean"
+            and abs(r["re"] / target - 1) < 0.05]
+    return min(near, key=lambda r: (-len(r["rows"]), abs(r["re"] - target)), default=None)
+
+
+def benchmark_cases(folders: dict[int, Path] | None = None) -> list[Case]:
+    """The benchmark's cases, each on the tunnel model's coordinates as tested."""
+    folders = folders or {}
+    files: dict[int, tuple[list[dict], dict]] = {}
+    out = []
+    for airfoil, vol, key in UIUC_BENCHMARK:
+        if vol not in files:
+            folder, v = folders.get(vol) or fetch_uiuc(volume=vol), f"{vol:02d}"
+            files[vol] = (parse_runs((folder / f"DRAG{v}.TXT").read_text(errors="replace")),
+                          parse_coords((folder / f"COORD{v}.TXT").read_text(errors="replace")))
+        runs, coords = files[vol]
+        run, model = pick_run(runs, airfoil), _model(airfoil, coords)
+        if run is None or model is None:
+            raise EngineError(f"UIUC volume {vol} has no clean run near Re {BENCHMARK_RE:,} with coordinates for {airfoil}")
+        out.append(Case(key, f"{airfoil.split(' (')[0]} at Re {run['re']:,.0f}",
+                        f"UIUC low-speed airfoil tests, Summary of Low-Speed Airfoil Data, Volume {vol} (m-selig.ae.illinois.edu)",
+                        run["re"], _unit(coords[model]), sorted(run["rows"]), notes=[f"volume {vol}", model]))
+    return out
+
+
+def _attached_to(case: Case) -> float:
+    """The last measured angle that counts: STALL_BACKOFF short of the
+    maximum lift, or every angle when the run stops before the lift peaks."""
+    alphas = [r[0] for r in case.rows]
+    k = int(np.argmax([r[1] for r in case.rows]))
+    return alphas[k] - STALL_BACKOFF if k < len(alphas) - 1 else alphas[-1]
+
+
+def errors(case: Case, alphas, cl, cd) -> dict:
+    """Mean relative errors at the given tunnel angles over the attached
+    range: lift against LIFT_FLOOR near zero lift, drag against itself."""
+    measured = {r[0]: r for r in case.rows}
+    upto = _attached_to(case)
+    pts = [(measured[a], c, d) for a, c, d in zip(alphas, cl, cd) if a in measured and a <= upto]
+    if not pts:
+        return {"lift": None, "drag": None, "lift_signed": None}
+    signed = np.array([(c - m[1]) / max(abs(m[1]), LIFT_FLOOR) for m, c, _ in pts])
+    drag = np.array([abs(d - m[2]) / m[2] for m, _, d in pts])
+    return {"lift": float(np.abs(signed).mean()), "drag": float(drag.mean()), "lift_signed": float(signed.mean())}
+
+
+def rans_at_tunnel(case: Case, rans_rows) -> tuple[list, list, list]:
+    """RANS at the tunnel's angles: linear between neighbouring converged
+    angles, and nothing outside the converged range."""
+    good = sorted((r[0], r[1], r[2]) for r in rans_rows if r[3])
+    if not good:
+        return [], [], []
+    ra, rcl, rcd = (np.array(c) for c in zip(*good))
+    a = [r[0] for r in case.rows if ra[0] <= r[0] <= ra[-1]]
+    return a, [float(x) for x in np.interp(a, ra, rcl)], [float(x) for x in np.interp(a, ra, rcd)]
+
+
 def survey(volumes=(1, 2, 3), progress=lambda pct, msg: None) -> dict:
     """The viscous core against every clean run in the UIUC volumes at FS
     Reynolds numbers: how far off it is across many sections, not one."""
@@ -262,7 +333,7 @@ def compare(case: Case, model_size: str = "large", sweep_max: bool = True) -> di
     attached = alphas <= alphas[k_max] - STALL_BACKOFF if peaked else np.ones(len(alphas), bool)
     lift_err = np.abs(cl_e - cl_m) / np.maximum(np.abs(cl_m), LIFT_FLOOR)
     drag_err = np.abs(cd_e - cd_m) / cd_m
-    signed = (cl_e - cl_m) / np.maximum(np.abs(cl_m), LIFT_FLOOR)
+    means = errors(case, alphas.tolist(), cl_e.tolist(), cd_e.tolist())
     # The estimate's own maximum lift, on a fine sweep past the measured range.
     fine = np.arange(alphas.min(), alphas.max() + 4.0, 0.25) if sweep_max else alphas
     sweep = polar(case.coords, fine, case.re, case.n_crit, model_size=model_size, xtr=case.xtr)["rows"] if sweep_max else est
@@ -273,10 +344,10 @@ def compare(case: Case, model_size: str = "large", sweep_max: bool = True) -> di
         "rows": [{"alpha": float(al), "cl": float(m), "cl_estimate": float(e), "cd": float(dm), "cd_estimate": float(de),
                   "attached": bool(at)} for al, m, e, dm, de, at in zip(alphas, cl_m, cl_e, cd_m, cd_e, attached)],
         "attached_to": float(alphas[k_max] - STALL_BACKOFF if peaked else alphas[-1]), "stalled": bool(peaked),
-        "lift_error_mean": float(lift_err[a].mean()) if a.any() else None,
+        "lift_error_mean": means["lift"],
         "lift_error_max": float(lift_err[a].max()) if a.any() else None,
-        "lift_error_signed": float(signed[a].mean()) if a.any() else None,  # + reads high
-        "drag_error_mean": float(drag_err[a].mean()) if a.any() else None,
+        "lift_error_signed": means["lift_signed"],  # + reads high
+        "drag_error_mean": means["drag"],
         "drag_error_max": float(drag_err[a].max()) if a.any() else None,
         # Measured maximum lift only when the run went past it.
         "cl_max": float(cl_m[k_max]) if peaked else None, "alpha_cl_max": float(alphas[k_max]) if peaked else None,

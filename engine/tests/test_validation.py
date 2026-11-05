@@ -7,6 +7,7 @@ are skipped and say so."""
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from aeroengine import validation as v
@@ -103,3 +104,44 @@ def test_the_estimate_matches_rans():
     r = v.against_rans()
     assert r["all_agree"] and r["lift_error_max"] <= 0.05 and r["drag_error_max"] <= 0.10
     assert sum(c["cl_rans"] is None for c in r["cases"]) == 2
+
+
+# The ten-section benchmark the accuracy window shows ----------------------------------------------
+
+def test_pick_run_takes_the_clean_run_with_most_angles():
+    runs = [{"airfoil": "SG6043", "comment": "clean", "re": 299_100, "rows": [(0, .5, .01)] * 11},
+            {"airfoil": "SG6043", "comment": "clean", "re": 299_700, "rows": [(0, .5, .01)] * 20},
+            {"airfoil": "SG6043", "comment": "clean: flap = 10 degs", "re": 300_000, "rows": [(0, .5, .01)] * 30},
+            {"airfoil": "SG6043", "comment": "clean", "re": 200_000, "rows": [(0, .5, .01)] * 40}]
+    assert v.pick_run(runs, "SG6043")["re"] == 299_700
+    assert v.pick_run(runs, "E387 (A)") is None
+
+
+def test_rans_errors_use_only_converged_angles_inside_their_range():
+    case = v.Case("t", "t", "", 3e5, np.zeros((3, 2)), [(-1.0, 0.4, 0.010), (1.0, 0.6, 0.012), (5.0, 1.0, 0.020)])
+    rows = [(0.0, 0.5, 0.011, True), (2.0, 0.7, 0.013, True), (4.0, 0.9, 0.030, False)]
+    a, cl, cd = v.rans_at_tunnel(case, rows)
+    assert a == [1.0] and cl == pytest.approx([0.6]) and cd == pytest.approx([0.012])
+
+
+def test_a_section_with_no_converged_rans_has_no_rans_errors():
+    case = v.Case("t", "t", "", 3e5, np.zeros((3, 2)), [(0.0, 0.5, 0.01), (2.0, 0.7, 0.012)])
+    assert v.errors(case, *v.rans_at_tunnel(case, [(0.0, 0.5, 0.01, False)])) == {"lift": None, "drag": None, "lift_signed": None}
+
+
+def test_errors_follow_the_attached_range_and_lift_floor():
+    # The lift peaks at 10 degrees, so above 8 is left out; near zero lift the error is against LIFT_FLOOR.
+    case = v.Case("t", "t", "", 3e5, np.zeros((3, 2)),
+                  [(0.0, 0.0, 0.01), (4.0, 0.8, 0.02), (9.0, 1.25, 0.035), (10.0, 1.3, 0.04), (12.0, 1.1, 0.06)])
+    e = v.errors(case, [0.0, 4.0, 9.0], [0.04, 0.88, 2.0], [0.01, 0.022, 0.09])
+    assert e["lift"] == pytest.approx((0.04 / 0.4 + 0.08 / 0.8) / 2)
+    assert e["drag"] == pytest.approx((0.0 + 0.1) / 2)
+
+
+def test_the_benchmark_cases():
+    try:
+        cases = v.benchmark_cases()
+    except EngineError as exc:
+        pytest.skip(f"UIUC data not available here: {exc.msg}")
+    assert [c.key for c in cases] == [k for _, _, k in v.UIUC_BENCHMARK]
+    assert all(abs(c.re / 300_000 - 1) < 0.05 and any(n.endswith(".dap") for n in c.notes) for c in cases)
