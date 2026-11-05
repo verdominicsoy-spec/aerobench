@@ -41,6 +41,10 @@ final class AppState {
     }
     var lapSimJob: JobItem?
     var lapSimOutput: LapSimOutput?
+    /// The accuracy window's UIUC comparison (AppState+UIUC).
+    var uiuc: UIUCResults?
+    var uiucJob: JobItem?
+    var uiucNote: String?
 
     private static let recentsKey = "recentProjects"
     @ObservationIgnored private var terminationObserver: NSObjectProtocol?

@@ -47,6 +47,7 @@ struct AccuracyHelpView: View {
                         Text(s.name).font(.headline)
                     }
                 }
+                UIUCSection()
                 Text("Everything here is 2D. A 3D wing makes less lift than its section, so expect STAR-CCM+ on the full car to come in lower.")
                     .font(.callout)
                     .foregroundStyle(.secondary)

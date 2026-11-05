@@ -18,6 +18,7 @@ struct AeroBenchApp: App {
 
         Window("Solver Accuracy", id: "accuracy") {
             AccuracyHelpView()
+                .environment(app)  // the UIUC section loads results and runs its job
                 .preferredColorScheme(.dark)
                 .tint(S37.C.sage)
         }
