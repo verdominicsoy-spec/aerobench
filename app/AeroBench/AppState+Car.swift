@@ -80,14 +80,16 @@ extension AppState {
     }
 
     /// With a base car, the wing's rules box is the car's box for its end, where the wing sits
-    /// (no undo step: it follows the wing and its placement).
-    func syncCarRulesBox() {
+    /// (no undo step: it follows the wing and its placement). `groundOn` puts the wing over the
+    /// ground at its place on the car: only when a combination is picked, so the ground can be
+    /// turned off afterwards (every wing edit calls this, and would turn it straight back on).
+    func syncCarRulesBox(groundOn: Bool = false) {
         let lab = wingLab
         guard let s = car.setup, !lab.wing.elements.isEmpty else { return }
         let d = carDraft ?? WingCard.make(wing: lab.wing, cl: 0, cd: 0, solver: "", id: "draft", name: "", revision: -1)
         guard let at = draftPlacement(of: d) else { return }
         // On a combination the wing is on the car, so over the ground at its place there.
-        if car.selectedCombo != nil, lab.wing.rideHeight == nil { lab.live { $0.rideHeight = at.height / 1000 } }
+        if groundOn, car.selectedCombo != nil, lab.wing.rideHeight == nil { lab.live { $0.rideHeight = at.height / 1000 } }
         let box = CarRules.wingBox(d, placement: at, setup: s)
         if lab.wing.rulesBox != box { lab.live { $0.rulesBox = box } }
     }

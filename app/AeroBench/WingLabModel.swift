@@ -53,6 +53,15 @@ final class WingLabModel {
 
         var id: String { rawValue }
 
+        /// How close it gets, in a word: from the UIUC Vol 1 check (docs/validation) and RANS.
+        var accuracy: String {
+            switch self {
+            case .quickViscous: "Rough"  // one element alone, no slot effects
+            case .live: "Fair"           // NeuralFoil per element, calibrated against RANS
+            case .rans: "Good"           // Cd within 1-9% of the tunnel, Cl a little high
+            }
+        }
+
         /// Where this solver's results show.
         var resultsTab: ResultsTab {
             switch self {
@@ -110,6 +119,14 @@ final class WingLabModel {
             case .sa: "Spalart–Allmaras"
             case .sst: "SST"
             case .sstLM: "SST + transition"
+            }
+        }
+        /// How close it gets, in a word (UIUC Vol 1 check, 2026-11-05).
+        var accuracy: String {
+            switch self {
+            case .sa: "Fair"
+            case .sst: "Good"
+            case .sstLM: "Best"  // closest drag, when it converges
             }
         }
         var purpose: String {

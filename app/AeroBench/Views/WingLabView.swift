@@ -62,7 +62,7 @@ struct WingLabView: View {
         }
         .onChange(of: app.car.selected) {
             lab.carX = nil  // another combination: the wing takes its end's place there
-            app.syncCarRulesBox()
+            app.syncCarRulesBox(groundOn: true)
         }
         .preference(key: ToolTakeawayKey.self, value: carTakeaway)
         .onAppear {
@@ -1209,7 +1209,7 @@ struct WingInspector: View {
     @ViewBuilder private func solversSection(_ lab: WingLabModel) -> some View {
         Section {
             FittingPicker(title: "Solver", selection: Binding(get: { lab.solver }, set: { lab.solver = $0 })) {
-                ForEach(WingLabModel.Solver.allCases) { Text($0.rawValue).tag($0) }
+                ForEach(WingLabModel.Solver.allCases) { Text("\($0.rawValue) · \($0.accuracy)").tag($0) }
             }
             Text(lab.solver.purpose).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             switch lab.solver {
@@ -1243,14 +1243,14 @@ struct WingInspector: View {
 
     @ViewBuilder private func ransControls(_ lab: WingLabModel) -> some View {
         Picker("Model", selection: Binding(get: { lab.turbulenceModel }, set: { lab.turbulenceModel = $0 })) {
-            ForEach(WingLabModel.TurbulenceModel.allCases) { Text($0.title).tag($0) }
+            ForEach(WingLabModel.TurbulenceModel.allCases) { Text("\($0.title) · \($0.accuracy)").tag($0) }
         }
         Text(lab.turbulenceModel.purpose).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         Picker("Mesh", selection: Binding(get: { lab.meshLevel }, set: { lab.meshLevel = $0 })) {
-            Text("Quick, about 2 min").tag("quick")
-            Text("Coarse").tag("coarse")
-            Text("Medium").tag("medium")
-            Text("Fine").tag("fine")
+            Text("Quick · Rough, about 2 min").tag("quick")
+            Text("Coarse · Fair").tag("coarse")
+            Text("Medium · Good").tag("medium")
+            Text("Fine · Best").tag("fine")
         }
         Toggle("Laminar zones from the quick viscous solver", isOn: Binding(get: { lab.predictTransition }, set: { lab.predictTransition = $0 }))
         Text("Where each element's flow is still laminar gets a finer, flow-aligned wall mesh (structured quads); turbulent regions and wakes get unstructured cells. With a fully turbulent model the zones only refine the mesh.")
