@@ -387,3 +387,13 @@ def test_default_model_is_fully_turbulent_sst():
     cfg = config(case, "wing.su2")
     assert "KIND_TURB_MODEL= SST" in cfg
     assert "KIND_TRANS_MODEL" not in cfg
+
+
+def test_a_shape_gmsh_cannot_mesh_is_an_engine_error(tmp_path):
+    # A figure-eight outline: gmsh fails inside generate(); the job must say so in words,
+    # not crash with gmsh's own exception (it took down a whole UIUC benchmark run).
+    t = np.linspace(0, 2 * np.pi, 81)
+    eight = np.c_[0.5 + 0.5 * np.cos(t), 0.05 * np.sin(2 * t)]
+    s = Settings(re=3e5, ref_chord=0.3, transition=[(0.4, 0.1)])
+    with pytest.raises(EngineError, match="could not mesh"):
+        build([eight * 0.3], s, tmp_path / "w.su2", [False])

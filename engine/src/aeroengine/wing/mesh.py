@@ -279,6 +279,11 @@ def build(elements: list[np.ndarray], s: Settings, out: Path, inverted: list[boo
         gmsh.option.setNumber("Mesh.SaveAll", 0)
         gmsh.write(str(out))
         q = gmsh.model.mesh.getElementQualities(np.concatenate(tags).astype(np.int64).tolist(), "minSICN")
+    except EngineError:
+        raise
+    except Exception as exc:  # gmsh's own failures ("Edge not recovered", no cells): say so in words
+        raise EngineError("could not mesh the wing: try a coarser mesh or untick the laminar zones",
+                          f"gmsh: {exc}") from None
     finally:
         gmsh.finalize()
     tri = sum(v for k, v in counts.items() if "Triangle" in k)
