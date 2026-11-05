@@ -1478,3 +1478,16 @@ trimmed, thinner wall layers when gmsh cannot fit the full ones), with
 Clark-Y (B) back in: all ten sections meshed and RANS converged at 85% of
 its angles (69% before). Estimate lift 8.4%, drag 8.8%; RANS lift 6.4%,
 drag 45% high (33 to 76% by section). 2.6 hours on 12 cores.
+
+**Converged on average.** A RANS run that hits the iteration cap without
+passing the strict check (residual down 4 orders, Cl and Cd still within
+0.05% over 200 iterations) now counts as converged on average when the mean
+of its last 300 iterations moved less than 1% over the last 300 (Cl and Cd,
+against 0.1 and 0.01 floors) and its residual fell at least 2 orders: the
+steady solver is wobbling about a steady answer (a laminar bubble, flow near
+stall). Its Cl and Cd are those means, it is flagged "averaged", and Wing
+Lab says how far Cl swings. The stopping rule is unchanged: 1% over 100
+iterations as a stop rule ended runs with Cd up to 9.5% short of its final
+value, so averaging only judges runs that ran to the cap (the user's idea,
+2026-11-05). On the second UIUC run it rescues 4 of the 16 unconverged
+angles, all near stall.

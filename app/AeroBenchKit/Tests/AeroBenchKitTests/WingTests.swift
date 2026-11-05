@@ -208,6 +208,19 @@ final class WingRansResultTests: XCTestCase {
         XCTAssertFalse(r.matches([square.map { $0 + SIMD2(0.005, 0) }]))  // the element moved 5 mm since
         XCTAssertFalse(r.matches([square, square]))  // an element added since
     }
+
+    func testARunSettledOnAverageSaysSo() throws {
+        let base = """
+        {"data": {"re": 1e6, "mesh": {"cells": 1, "triangles": 1, "quads": 0, "first_cell_height_m": 1e-5,
+          "layer_thickness_m": 0.01, "layers": 1}, "mesh_level": "quick", "transition": [], "model": "sst",
+          "model_name": "SST", "iterations": 4000, "converged": true, AVERAGED"residual_drop": 3, "cl": 1, "cd": 0.1,
+          "cm": 0, "elements": [], "surface": []}}
+        """
+        let averaged = try WingRansResult.decode(resultFile: Data(base.replacingOccurrences(of: "AVERAGED", with: #""averaged": true, "#).utf8))
+        XCTAssertEqual(averaged.averaged, true)
+        let older = try WingRansResult.decode(resultFile: Data(base.replacingOccurrences(of: "AVERAGED", with: "").utf8))
+        XCTAssertNil(older.averaged)  // results from before the averaged verdict still open
+    }
 }
 
 final class WingStudyTests: XCTestCase {

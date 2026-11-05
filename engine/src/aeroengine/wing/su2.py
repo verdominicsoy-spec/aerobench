@@ -211,6 +211,42 @@ def judge(history: dict[str, np.ndarray], case: Case) -> dict:
     return {"converged": bool(ok), "residual_drop": drop, "cl_change": dcl, "cd_change": dcd, "reason": reason}
 
 
+SETTLE_WINDOW = 300  # iterations: a settled run is judged by the mean over this many
+SETTLE_TOLERANCE = 0.01  # how far that mean may move over the last window, relative
+SETTLE_RESIDUAL_DROP = 2.0  # orders: a run whose residual never fell is not settled, however flat
+
+
+def settled(history: dict[str, np.ndarray]) -> dict | None:
+    """A run that ended without converging, judged by its average: when the
+    mean of the last SETTLE_WINDOW iterations of Cl and Cd moved less than
+    SETTLE_TOLERANCE (relative, against 0.1 and 0.01 floors) over the last
+    window, the steady solver is wobbling about a steady answer (a laminar
+    bubble, flow near stall) and that mean is the result, with how far Cl
+    swings about it. None when it is drifting, too short or never converging.
+    The stopping rule stays judge's: this only ever rescues the final verdict."""
+    res_key = next((k for k in history if k.lower() in ("rms[p]", "rms_pressure")), None)
+    cl, cd = history.get("CL"), history.get("CD")
+    w = SETTLE_WINDOW
+    if res_key is None or cl is None or cd is None or len(cl) < 2 * w:
+        return None
+    res = history[res_key]
+    if res[: min(5, len(res))].max() - res[-1] < SETTLE_RESIDUAL_DROP:
+        return None
+
+    def running(v):
+        c = np.concatenate([[0.0], np.cumsum(v)])
+        return (c[w:] - c[:-w]) / w  # the mean of each window of w
+
+    out = {}
+    for name, v, floor in (("cl", cl, 0.1), ("cd", cd, 0.01)):
+        m = running(np.asarray(v, float))[-w:]
+        if np.ptp(m) > SETTLE_TOLERANCE * max(abs(float(m[-1])), floor):
+            return None
+        out[name] = float(m[-1])
+    out["cl_swing"] = float(np.ptp(np.asarray(cl[-w:], float)) / 2)
+    return out
+
+
 # SU2 runs on towards a residual of 1e-12 long after lift and drag have
 # settled (on NACA 0012 at 10 degrees they held still from iteration 2,262
 # of 3,790). The engine watches the run and stops it once the convergence
@@ -363,14 +399,21 @@ def _run_once(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
         raise EngineError(f"SU2 stopped with exit code {proc.returncode}", "\n".join(tail[-12:]))
     hist = read_history(history_file)
     verdict = judge(hist, case)
-    out = {"iterations": int(len(hist["CL"])), "model": case.model, **verdict, "stopped_early": stopped,
-           "cl": float(hist["CL"][-1]), "cd": float(hist["CD"][-1]),
-           "cm": float(hist["CMz"][-1]) if "CMz" in hist else None, "elements": []}
+    average = settled(hist) if not verdict["converged"] else None
+    # A run that settled on average reports the means of its last window, not its last iteration.
+    final = (lambda v: float(np.mean(v[-SETTLE_WINDOW:]))) if average else (lambda v: float(v[-1]))
+    if average:
+        verdict = {**verdict, "converged": True, "averaged": True,
+                   "reason": f"settled on average: Cl and Cd are the means of the last {SETTLE_WINDOW} iterations "
+                             f"(Cl swings ±{average['cl_swing']:.3f} about it)"}
+    out = {"iterations": int(len(hist["CL"])), "model": case.model, "averaged": False, **verdict,
+           "stopped_early": stopped, "cl": final(hist["CL"]), "cd": final(hist["CD"]),
+           "cm": final(hist["CMz"]) if "CMz" in hist else None, "elements": []}
     for wall in case.walls:
         row = {"marker": wall}
         for key in ("CL", "CD", "CMz"):
             col = next((k for k in hist if k.replace("(", "_").replace(")", "").replace(" ", "") == f"{key}_{wall}"), None)
-            row[key.lower()] = float(hist[col][-1]) if col else None
+            row[key.lower()] = final(hist[col]) if col else None
         out["elements"].append(row)
     out["history_columns"] = list(hist)
     return out

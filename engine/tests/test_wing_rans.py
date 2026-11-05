@@ -16,7 +16,7 @@ import pytest
 from aeroengine.job import EngineError
 from aeroengine.wing.airfoils import naca4
 from aeroengine.wing.mesh import Settings, boundary_layer_thickness, build, first_cell_height, layers_for
-from aeroengine.wing.su2 import Case, config, judge
+from aeroengine.wing.su2 import Case, config, judge, settled
 
 
 def _place(c, chord, angle, at):
@@ -449,3 +449,26 @@ def test_a_surface_that_hooks_past_the_trailing_edge_is_trimmed():
     xy[-2] = [1.0008, xy[-1, 1] - 0.0004]
     fixed, cut = _untangle_trailing_edge(xy, 1.0)
     assert cut and fixed[-1].tolist() == xy[-2].tolist() and len(fixed) == len(xy) - 1
+
+
+def _oscillating(n=4000, cl=1.2, swing=0.01, drift=0.0, res_drop=3.0):
+    it = np.arange(n)
+    return {"rms[P]": -3 - res_drop * it / (n - 1), "CL": cl + swing * np.sin(0.05 * it) + drift * it,
+            "CD": 0.02 + 0.02 * swing * np.cos(0.05 * it)}
+
+
+def test_a_run_that_settles_on_average_counts_at_its_mean():
+    # A steady solver wobbling about a steady answer (a laminar bubble, near stall): the strict
+    # rule rejects it, but the mean of the last 300 iterations holds, and that mean is the result.
+    h = _oscillating()
+    case = Case(speed=10, rho=1.2, mu=1.8e-5, alpha_deg=0, ref_chord=1, ref_point=(0.25, 0), walls=["wall_0"])
+    assert not judge(h, case)["converged"]
+    s = settled(h)
+    assert s["cl"] == pytest.approx(1.2, abs=0.002) and s["cd"] == pytest.approx(0.02, abs=0.0005)
+    assert s["cl_swing"] == pytest.approx(0.01, rel=0.05)
+
+
+def test_a_drifting_or_short_or_unconverging_run_does_not_settle():
+    assert settled(_oscillating(drift=1e-4)) is None  # the mean creeps about 2% per 300 iterations
+    assert settled(_oscillating(n=500)) is None  # too short to judge two windows
+    assert settled(_oscillating(res_drop=1.0)) is None  # residuals never fell

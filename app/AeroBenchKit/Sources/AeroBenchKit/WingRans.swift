@@ -42,6 +42,9 @@ public struct WingRansResult: Codable, Equatable, Sendable {
     public var modelName: String
     public var iterations: Int
     public var converged: Bool
+    /// Converged on average: it hit the iteration cap wobbling about a steady answer, so its
+    /// numbers are the means of the last window (su2.settled); `reason` says how far Cl swings.
+    public var averaged: Bool?
     public var residualDrop: Double
     public var reason: String?
     public var cl: Double

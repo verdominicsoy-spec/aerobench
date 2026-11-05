@@ -899,7 +899,10 @@ struct CFDResults: View {
         if let r = lab.ransResult {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    if r.converged {
+                    if r.converged && r.averaged == true {
+                        Label("Converged on average", systemImage: "checkmark.seal").foregroundStyle(S37.C.sageInk)
+                        Text(r.reason ?? "").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    } else if r.converged {
                         Label("Converged", systemImage: "checkmark.seal").foregroundStyle(S37.C.sageInk)
                     } else {
                         Label("Not converged: not a result", systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
