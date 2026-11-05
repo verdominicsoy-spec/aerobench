@@ -1247,7 +1247,7 @@ struct WingInspector: View {
         }
         Text(lab.turbulenceModel.purpose).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         Picker("Mesh", selection: Binding(get: { lab.meshLevel }, set: { lab.meshLevel = $0 })) {
-            Text("Quick · Rough, about 2 min").tag("quick")
+            Text("Quick · Rough").tag("quick")
             Text("Coarse · Fair").tag("coarse")
             Text("Medium · Good").tag("medium")
             Text("Fine · Best").tag("fine")
