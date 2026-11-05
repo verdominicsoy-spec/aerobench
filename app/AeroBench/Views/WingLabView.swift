@@ -1074,6 +1074,7 @@ struct CpPlot: View {
 struct WingInspector: View {
     @Environment(AppState.self) private var app
     @State private var sentNote: String?
+    @State private var modelHelp = false
 
     var body: some View {
         @Bindable var lab = app.wingLab
@@ -1246,6 +1247,8 @@ struct WingInspector: View {
             ForEach(WingLabModel.TurbulenceModel.allCases) { Text("\($0.title) · \($0.accuracy)").tag($0) }
         }
         Text(lab.turbulenceModel.purpose).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        Button { modelHelp.toggle() } label: { Label("More", systemImage: "questionmark.circle") }
+            .popover(isPresented: $modelHelp, arrowEdge: .trailing) { ModelHelpView() }
         Picker("Mesh", selection: Binding(get: { lab.meshLevel }, set: { lab.meshLevel = $0 })) {
             Text("Quick · Rough").tag("quick")
             Text("Coarse · Fair").tag("coarse")
