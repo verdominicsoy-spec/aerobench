@@ -524,3 +524,16 @@ def run_benchmark(workdir: Path, cores: int, su2_hint: str | None, progress=lamb
     partial.unlink(missing_ok=True)
     progress(100, "done")
     return run
+
+
+def results_view(results: Path = RESULTS_FILE) -> dict:
+    """What the accuracy window shows: the history, the settings a run now
+    would use, and the tunnel's own points (read from the download, never
+    committed; if it cannot be had, the reason instead)."""
+    history = json.loads(results.read_text())["runs"] if results.exists() else []
+    tunnel, reason = {}, None
+    try:
+        tunnel = {c.key: {"name": c.name, "re": c.re, "rows": [list(r) for r in c.rows]} for c in benchmark_cases()}
+    except EngineError as exc:
+        reason = exc.msg
+    return {"runs": history, "current": current_settings(), "tunnel": tunnel, "tunnel_error": reason}

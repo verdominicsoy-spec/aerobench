@@ -73,8 +73,16 @@ def _car_section(params: dict) -> dict:
     return cut(load_part(path, None)[0], float(params.get("y", 0.0)), setup)
 
 
+def _uiuc_results(params: dict) -> dict:
+    """The UIUC comparison's history and tunnel points, for the accuracy window."""
+    from .validation import results_view
+
+    return results_view()
+
+
 HANDLERS: dict[str, Callable[[dict], dict]] = {"wing-estimate": _wing_estimate, "lapsim-track": _lapsim_track,
-                                               "part-edit": _part_edit, "car-section": _car_section}
+                                               "part-edit": _part_edit, "car-section": _car_section,
+                                               "uiuc-results": _uiuc_results}
 
 
 def _warm_up() -> None:

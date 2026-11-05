@@ -214,3 +214,26 @@ def test_a_partial_with_other_settings_is_discarded(tmp_path):
     seen = []
     _run(tmp_path, rans_fn=lambda case, wd: seen.append(case.key) or _rans(case, wd))
     assert seen == ["a", "b"]
+
+
+def test_uiuc_results_without_the_tunnel_data_says_why(tmp_path, monkeypatch):
+    def offline(folders=None):
+        raise EngineError("could not download the UIUC low-speed airfoil data")
+    monkeypatch.setattr(v, "benchmark_cases", offline)
+    out = v.results_view(tmp_path / "none.json")
+    assert out["runs"] == [] and out["tunnel"] == {}
+    assert out["tunnel_error"] == "could not download the UIUC low-speed airfoil data"
+    assert out["current"] == v.current_settings()
+
+
+def test_uiuc_results_reads_the_history(tmp_path, monkeypatch):
+    monkeypatch.setattr(v, "benchmark_cases", lambda folders=None: _two_cases())
+    run = _run(tmp_path)
+    out = v.results_view(tmp_path / "uiuc_results.json")
+    assert out["runs"] == [run] and out["tunnel_error"] is None
+    assert out["tunnel"]["b"] == {"name": "B", "re": 3e5, "rows": [[0.0, 0.25, 0.008], [2.0, 0.47, 0.009]]}
+
+
+def test_the_warm_engine_serves_the_uiuc_results():
+    from aeroengine import serve
+    assert "uiuc-results" in serve.HANDLERS

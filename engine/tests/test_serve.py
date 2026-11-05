@@ -27,7 +27,7 @@ def test_answers_each_request_and_survives_bad_ones():
                        "params": {"elements": _elements(_starter()), "alphas": [0.0, 2.0], "speed": 15}})
     events = _replies(["not json", json.dumps({"id": 1, "command": "wing-rans"}), "",
                        json.dumps({"id": 2, "command": "wing-estimate", "params": {}}), good])
-    assert events[0]["type"] == "ready" and events[0]["commands"] == ["car-section", "lapsim-track", "part-edit", "wing-estimate"]
+    assert events[0]["type"] == "ready" and events[0]["commands"] == ["car-section", "lapsim-track", "part-edit", "uiuc-results", "wing-estimate"]
     replies = [e for e in events if e["type"] == "reply"]
     assert [r["id"] for r in replies] == [None, 1, 2, 3]
     assert "error" in replies[0] and "wing-rans" in replies[1]["error"] and "elements" in replies[2]["error"]
