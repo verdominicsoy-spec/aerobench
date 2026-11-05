@@ -80,18 +80,18 @@ extension AppState {
     }
 
     /// With a base car, the wing's rules box is the car's box for its end, where the wing sits
-    /// (no undo step: it follows the wing and its placement). `groundOn` puts the wing over the
-    /// ground at its place on the car: only when a combination is picked, so the ground can be
-    /// turned off afterwards (every wing edit calls this, and would turn it straight back on).
-    func syncCarRulesBox(groundOn: Bool = false) {
+    /// (no undo step: it follows the wing and its placement). Every wing edit calls this, so it
+    /// only moves a box that is on; `picked` (a combination was just picked) also turns the box
+    /// and the ground on. Either can then be turned off and stays off.
+    func syncCarRulesBox(picked: Bool = false) {
         let lab = wingLab
         guard let s = car.setup, !lab.wing.elements.isEmpty else { return }
         let d = carDraft ?? WingCard.make(wing: lab.wing, cl: 0, cd: 0, solver: "", id: "draft", name: "", revision: -1)
         guard let at = draftPlacement(of: d) else { return }
         // On a combination the wing is on the car, so over the ground at its place there.
-        if groundOn, car.selectedCombo != nil, lab.wing.rideHeight == nil { lab.live { $0.rideHeight = at.height / 1000 } }
+        if picked, car.selectedCombo != nil, lab.wing.rideHeight == nil { lab.live { $0.rideHeight = at.height / 1000 } }
         let box = CarRules.wingBox(d, placement: at, setup: s)
-        if lab.wing.rulesBox != box { lab.live { $0.rulesBox = box } }
+        if (picked || lab.wing.rulesBox != nil), lab.wing.rulesBox != box { lab.live { $0.rulesBox = box } }
     }
 
     /// The fastest-lap goal's car with a base car: car A with the base car and the other end's wing,
@@ -127,7 +127,7 @@ extension AppState {
             saveCar()
         }
         guard let at = carDraftAt else { return }
-        defer { syncCarRulesBox() }
+        defer { syncCarRulesBox(picked: true) }
         if wingLab.wing.rideHeight.map({ abs($0 * 1000 - at.height) > 0.01 }) ?? true {
             wingLab.edit { $0.rideHeight = at.height / 1000 }
         }

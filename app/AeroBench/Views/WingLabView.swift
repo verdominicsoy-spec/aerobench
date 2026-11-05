@@ -62,7 +62,7 @@ struct WingLabView: View {
         }
         .onChange(of: app.car.selected) {
             lab.carX = nil  // another combination: the wing takes its end's place there
-            app.syncCarRulesBox(groundOn: true)
+            app.syncCarRulesBox(picked: true)
         }
         .preference(key: ToolTakeawayKey.self, value: carTakeaway)
         .onAppear {
