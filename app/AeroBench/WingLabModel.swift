@@ -101,7 +101,7 @@ final class WingLabModel {
 
     // RANS
     enum TurbulenceModel: String, CaseIterable, Identifiable {
-        case sa, sst
+        case sst, sa
         case sstLM = "sst-lm"
 
         var id: String { rawValue }
@@ -114,13 +114,13 @@ final class WingLabModel {
         }
         var purpose: String {
             switch self {
-            case .sa: "Fully turbulent, robust, the usual first choice for attached flow and modest flap angles."
-            case .sst: "Fully turbulent, better at the edge of separation: big flap angles, near stall."
-            case .sstLM: "Langtry–Menter transition: laminar runs, laminar separation bubbles and where they close. The one for FS Reynolds numbers when the details matter; slower and touchier."
+            case .sa: "Fully turbulent, the lightest model; fine for attached flow and modest flap angles."
+            case .sst: "Fully turbulent, the default: converges reliably and holds up near stall. Drag reads a little high at FS Reynolds numbers."
+            case .sstLM: "Langtry–Menter transition: laminar runs, laminar separation bubbles and where they close. Closer drag against a clean wind tunnel, but slower and often won't settle at low angles or near stall."
             }
         }
     }
-    var turbulenceModel: TurbulenceModel = .sa
+    var turbulenceModel: TurbulenceModel = .sst
     var meshLevel = "medium"
     var predictTransition = true
     var turbulenceIntensity = 1.0  // percent

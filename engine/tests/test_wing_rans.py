@@ -88,7 +88,7 @@ def test_convergence_is_judged_not_assumed():
 
 
 def test_config_per_model():
-    case = Case(speed=20, rho=1.2, mu=1.8e-5, alpha_deg=5, ref_chord=0.4, ref_point=(0.1, 0), walls=["wall_0", "wall_1"])
+    case = Case(speed=20, rho=1.2, mu=1.8e-5, alpha_deg=5, ref_chord=0.4, ref_point=(0.1, 0), walls=["wall_0", "wall_1"], model="sa")
     sa = config(case, "m.su2")
     assert "KIND_TURB_MODEL= SA" in sa and "MARKER_HEATFLUX= ( wall_0, 0.0, wall_1, 0.0 )" in sa
     assert f"INC_VELOCITY_INIT= ( {20 * np.cos(np.radians(5))}" in sa
@@ -377,3 +377,13 @@ def test_rans_says_the_stalled_study_wing_separates_and_an_attached_one_does_not
     r = rans.solve(q, tmp_path / "a", tmp_path / "a" / "wing.su2", None, 6, None, lambda *a: None, lambda *a, **k: None,
                    field=False)
     assert r["converged"] and not r["separated"] and r["separation"] is None
+
+
+def test_default_model_is_fully_turbulent_sst():
+    # Fully turbulent SST is the default: it converged where SST with transition
+    # did not (UIUC Vol 1 check, 2026-11-05) and it is what STAR-CCM+ runs.
+    case = Case(speed=20.0, rho=1.225, mu=1.81e-5, alpha_deg=0.0, ref_chord=0.3, ref_point=(0.075, 0.0), walls=["wall_0"])
+    assert case.model == "sst"
+    cfg = config(case, "wing.su2")
+    assert "KIND_TURB_MODEL= SST" in cfg
+    assert "KIND_TRANS_MODEL" not in cfg

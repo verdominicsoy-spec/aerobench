@@ -24,6 +24,10 @@ import numpy as np
 from ..job import EngineError
 
 MODELS = {"sa": "Spalart-Allmaras", "sst": "SST", "sst-lm": "SST with Langtry-Menter transition"}
+# Fully turbulent SST: on the UIUC Vol 1 sections it converged where SST with
+# transition kept oscillating, and it passed NASA's NACA 0012 check at Re 6M.
+# Its drag reads high at low Reynolds number (3-25% at Re 200k).
+DEFAULT_MODEL = "sst"
 # Convective schemes. JST (central, light fourth-order dissipation) is the
 # default: SU2's incompressible upwind FDS doubled NACA 0012's pressure drag
 # at 10 degrees on meshes of a few tens of thousands of cells (and on NASA's
@@ -41,7 +45,7 @@ class Case:
     ref_chord: float
     ref_point: tuple[float, float]
     walls: list[str]
-    model: str = "sa"
+    model: str = DEFAULT_MODEL
     turbulence_intensity: float = 0.01  # for SST and transition, fraction
     iterations: int = 4000
     residual_drop: float = 4.0  # orders of magnitude, on the pressure residual

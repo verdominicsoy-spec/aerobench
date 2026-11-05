@@ -59,7 +59,7 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
         placed, ground = in_ground_effect(placed, alpha, height)
         flow_alpha = 0.0
     ref_chord = float(p.get("ref_chord", sum(chords)))
-    model = str(p.get("model", "sa"))
+    model = str(p.get("model", su2.DEFAULT_MODEL))
     if model not in su2.MODELS:
         raise EngineError(f"unknown model '{model}'", f"one of {', '.join(su2.MODELS)}")
     level = str(p.get("mesh", "medium"))
