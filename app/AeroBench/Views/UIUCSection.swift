@@ -90,7 +90,7 @@ struct UIUCSection: View {
                 .buttonStyle(S37ButtonStyle(kind: .prominent))
                 .disabled(!haveSU2 || running)
             if haveSU2 {
-                Text("About an hour on 12 cores. Wing Lab's own RANS runs share the cores meanwhile.")
+                Text("About four hours on 12 cores. Wing Lab's own RANS runs share the cores meanwhile.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("Needs SU2: install it under Solvers, RANS CFD.").font(.caption).foregroundStyle(S37.C.clayInk)

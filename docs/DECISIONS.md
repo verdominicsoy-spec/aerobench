@@ -1446,3 +1446,29 @@ NACA 4412 main reads 3% and the stalled study wing's main 33%, or a drag
 over three times the estimate's. Spec and plan:
 docs/superpowers/specs/2026-11-05-wing-design-card-design.md,
 docs/superpowers/plans/2026-11-05-wing-design-card.md.
+
+**The UIUC comparison in the accuracy window.** The accuracy window's
+section "Against the UIUC wind tunnel" sets the quick estimate and RANS
+against ten sections from the University of Illinois low-speed tests
+(volumes 1 to 3), each at its clean run nearest Re 300,000, on the tunnel
+model's measured shape re-panelled as the library stores every section, so
+geometry is the same and only the physics differs. Both solvers are scored
+by validation.py's rules at the tunnel's angles over the attached range;
+RANS is interpolated between its converged angles and runs one 2° step past
+each end of the tunnel's range. Runs go to data/validation/uiuc_results.json
+(only AeroBench's numbers; the GPL tunnel data is fetched, never committed)
+and are compared by model, mesh, turbulence intensity and the last commit
+that changed the engine. Claude reruns it after a big change to the physics;
+Recompute in the section runs it any time (about four hours on 12 cores).
+Clark-Y (B) and S8037 were swapped for PT-40 (A) and S8052: their measured
+outlines cross or hook at the trailing edge and will not mesh.
+
+First run (fully turbulent SST, fine mesh): the estimate's lift 8.2% and
+drag 9.6% off on average; RANS lift 6.3%, but drag 42% high (22 to 76% by
+section), because the tunnel's long laminar runs at Re 300,000 cut its drag
+and a fully turbulent model cannot see them; RANS converged at 69% of its
+angles. SG6043 and SD7037 would not mesh with laminar zones on (gmsh "Edge
+not recovered"): the mesher is fragile on near-sharp trailing edges, and a
+gmsh failure is now an EngineError rather than a crash. Spec and plan:
+docs/superpowers/specs/2026-11-05-uiuc-validation-section-design.md,
+docs/superpowers/plans/2026-11-05-uiuc-validation-section.md.
