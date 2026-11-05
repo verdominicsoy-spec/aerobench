@@ -43,6 +43,8 @@ public struct UIUCResults: Decodable, Sendable {
         public let re: Double
         public let estimate: [Point]
         public let rans: [Point]
+        /// Why RANS gave nothing for this section (the mesh or the solver failed), if it did.
+        public let ransError: String?
         public let errors: CaseErrors
         public var id: String { key }
     }

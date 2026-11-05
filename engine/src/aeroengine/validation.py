@@ -93,11 +93,14 @@ def fetch_uiuc(folder: Path | None = None, url: str = UIUC_VOLUME1, volume: int 
     except OSError as exc:
         raise EngineError("could not download the UIUC low-speed airfoil data", f"{url}: {exc}") from None
     folder.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(io.BytesIO(raw)) as z:
-        for name in z.namelist():
-            base = Path(name).name
-            if base in (f"DRAG{v}.TXT", f"COORD{v}.TXT", "GPL.TXT", f"BOOK{v}.TXT"):
-                (folder / base).write_bytes(z.read(name))
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as z:
+            for name in z.namelist():
+                base = Path(name).name
+                if base in (f"DRAG{v}.TXT", f"COORD{v}.TXT", "GPL.TXT", f"BOOK{v}.TXT"):
+                    (folder / base).write_bytes(z.read(name))
+    except zipfile.BadZipFile:  # a sign-in page or proxy answering in its place
+        raise EngineError("the UIUC download was not the data (a sign-in page or proxy?)", url) from None
     if not (folder / f"DRAG{v}.TXT").exists():
         raise EngineError(f"the UIUC download did not hold DRAG{v}.TXT", url)
     return folder
@@ -438,28 +441,38 @@ RANS_AIR = (0.30, 1.225, 1.81e-5)  # chord m, rho, mu: the speed is set to match
 
 def current_settings() -> dict:
     """What makes two runs comparable: the RANS model, mesh and turbulence
-    intensity the app uses by default, and the engine's commit. Cores only
-    change the speed, so they are not here."""
+    intensity the app uses by default, and the last commit that changed the
+    engine ("+" when the engine has uncommitted changes); app and docs
+    commits leave it alone. Cores only change the speed, so they are not here."""
     import subprocess
 
     from .wing import su2
 
+    def git(*args: str) -> str:
+        return subprocess.run(["git", "-C", str(data_dir().parent), *args, "--", "engine/src"],
+                              capture_output=True, text=True, timeout=10).stdout.strip()
+
     try:
-        commit = subprocess.run(["git", "-C", str(data_dir().parent), "rev-parse", "--short", "HEAD"],
-                                capture_output=True, text=True, timeout=10).stdout.strip() or None
-    except OSError:
+        commit = (git("log", "-1", "--format=%h") + ("+" if git("status", "--porcelain") else "")) or None
+    except (OSError, subprocess.TimeoutExpired):
         commit = None
     return {"model": su2.DEFAULT_MODEL, "mesh": "fine", "turbulence_intensity": su2.Case.turbulence_intensity,
             "commit": commit}
 
 
+def rans_alphas(case: Case) -> list[float]:
+    """Every 2 degrees, one step past each end of the tunnel's range, so every
+    tunnel angle sits between two RANS angles (the estimate is scored on all of them)."""
+    a = [r[0] for r in case.rows]
+    return [float(x) for x in np.arange(np.floor(min(a) / 2) * 2, np.ceil(max(a) / 2) * 2 + 0.1, 2.0)]
+
+
 def _sweep(case: Case, workdir: Path, cores: int, su2_hint: str | None, settings: dict) -> list[tuple]:
-    """RANS on the section, a Full polar every 2 degrees over the tunnel's range."""
+    """RANS on the section, a Full polar over rans_alphas."""
     from .wing import rans
 
     chord, rho, mu = RANS_AIR
-    a = [r[0] for r in case.rows]
-    alphas = [float(x) for x in np.arange(np.ceil(min(a) / 2) * 2, np.floor(max(a) / 2) * 2 + 0.1, 2.0)]
+    alphas = rans_alphas(case)
     el = {"coords": (case.coords * chord).tolist(), "unit": case.coords.tolist(), "chord": chord, "angle": 0.0, "inverted": False}
     p = {"elements": [el], "speed": case.re * mu / (rho * chord), "rho": rho, "mu": mu, "alphas": alphas,
          "order": "rising", "time_limit": 0, "mesh": settings["mesh"], "model": settings["model"],
@@ -500,12 +513,17 @@ def run_benchmark(workdir: Path, cores: int, su2_hint: str | None, progress=lamb
             continue
         progress(100 * k / len(cases), f"{case.name}: quick estimate and RANS")
         est = compare(case, sweep_max=False)
-        rows = rans_fn(case, workdir)
+        rans_error = None
+        try:
+            rows = rans_fn(case, workdir)
+        except EngineError as exc:  # one section's failure must not sink the other nine
+            rows, rans_error = [], exc.msg
         volume = next((int(n.split()[1]) for n in case.notes if n.startswith("volume ")), None)
         done.append({
             "key": case.key, "name": case.name, "volume": volume, "re": case.re,
             "estimate": [[r["alpha"], r["cl_estimate"], r["cd_estimate"]] for r in est["rows"]],
             "rans": [[float(a), float(cl), float(cd), bool(ok)] for a, cl, cd, ok in rows],
+            "rans_error": rans_error, "planned": len(rans_alphas(case)),
             "errors": {"estimate": {"lift": est["lift_error_mean"], "drag": est["drag_error_mean"],
                                     "lift_signed": est["lift_error_signed"]},
                        "rans": errors(case, *rans_at_tunnel(case, rows))},
@@ -514,11 +532,12 @@ def run_benchmark(workdir: Path, cores: int, su2_hint: str | None, progress=lamb
         partial.write_text(json.dumps({"settings": settings, "cases": done}))
     done.sort(key=lambda c: [x.key for x in cases].index(c["key"]))
     ran = [r for c in done for r in c["rans"]]
+    tried = sum(len(c["rans"]) or c["planned"] for c in done)  # a failed section's angles count as not converged
     run = {
         "date": datetime.datetime.now().isoformat(timespec="seconds"), "settings": settings, "cores": cores,
         "seconds": time.time() - started,
         "summary": {s: {e: _mean(c["errors"][s][e] for c in done) for e in ("lift", "drag")} for s in ("estimate", "rans")}
-        | {"converged": sum(r[3] for r in ran) / len(ran) if ran else None},
+        | {"converged": sum(r[3] for r in ran) / tried if tried else None},
         "cases": done,
     }
     history = json.loads(results.read_text()) if results.exists() else {"runs": []}

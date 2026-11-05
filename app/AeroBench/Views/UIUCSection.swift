@@ -89,9 +89,12 @@ struct UIUCSection: View {
             Button("Recompute") { app.recomputeUIUC() }
                 .buttonStyle(S37ButtonStyle(kind: .prominent))
                 .disabled(!haveSU2 || running)
-            Text(haveSU2 ? "About an hour on 12 cores. Wing Lab's own RANS runs share the cores meanwhile."
-                         : "Install SU2 from Wing Lab's Solvers section first.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if haveSU2 {
+                Text("About an hour on 12 cores. Wing Lab's own RANS runs share the cores meanwhile.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Needs SU2: install it under Solvers, RANS CFD.").font(.caption).foregroundStyle(S37.C.clayInk)
+            }
         }
         if let job = app.uiucJob, !job.status.isFinished || job.status == .failed { JobInlineStatus(job: job) }
     }
@@ -103,8 +106,10 @@ struct UIUCSection: View {
 
     private func caseLine(_ c: UIUCResults.Case) -> String {
         let e = c.errors
-        let rans = e.rans.lift == nil ? "RANS: no converged angles"
-            : "RANS lift \(percent(e.rans.lift)), drag \(percent(e.rans.drag))"
+        let rans = if let why = c.ransError { "RANS failed: \(why)" }
+            else if !c.rans.contains(where: \.converged) { "RANS: no converged angles" }
+            else if e.rans.lift == nil { "RANS: no converged angle in the attached range" }
+            else { "RANS lift \(percent(e.rans.lift)), drag \(percent(e.rans.drag))" }
         return "estimate lift \(percent(e.estimate.lift)), drag \(percent(e.estimate.drag)) · \(rans)"
     }
 

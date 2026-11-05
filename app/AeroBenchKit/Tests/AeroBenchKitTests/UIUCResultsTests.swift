@@ -11,7 +11,7 @@ final class UIUCResultsTests: XCTestCase {
         "cases": [{
           "key": "s1223", "name": "S1223 at Re 299,100", "volume": 1, "re": 299100.0,
           "estimate": [[0.0, 1.2, 0.018]],
-          "rans": [[0.0, 1.1, 0.021, true], [2.0, 1.3, 0.024, false]],
+          "rans": [[0.0, 1.1, 0.021, true], [2.0, 1.3, 0.024, false]], "rans_error": "gmsh produced no cells", "planned": 2,
           "errors": {"estimate": {"lift": 0.15, "drag": 0.12, "lift_signed": 0.15},
                      "rans": {"lift": null, "drag": null, "lift_signed": null}}
         }]
@@ -27,6 +27,7 @@ final class UIUCResultsTests: XCTestCase {
         let run = try XCTUnwrap(r.runs.first)
         XCTAssertEqual(run.cases.first?.rans.map(\.converged), [true, false])
         XCTAssertNil(run.cases.first?.errors.rans.lift)
+        XCTAssertEqual(run.cases.first?.ransError, "gmsh produced no cells")
         XCTAssertEqual(run.summary.converged, 0.5)
         XCTAssertEqual(r.tunnel["s1223"]?.rows.first?.cl, 1.07)
         XCTAssertNil(r.tunnelError)

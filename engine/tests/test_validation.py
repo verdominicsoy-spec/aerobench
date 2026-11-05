@@ -257,3 +257,46 @@ def test_the_benchmark_shapes_mesh_like_any_library_section(tmp_path):
                       edge=0.0015 * scale, wake_size=0.01 * scale, growth=growth, alpha_deg=7.0,
                       transition=[(0.467, 0.0606)], ground=None)
         assert build([c.coords * 0.3], st, tmp_path / f"{c.key}.su2", [False])["cells"] > 0, c.key
+
+
+def test_a_section_whose_rans_fails_is_recorded_and_the_run_finishes(tmp_path):
+    def rans(case, wd):
+        if case.key == "b":
+            raise EngineError("gmsh produced no cells")
+        return _rans(case, wd)
+    run = _run(tmp_path, rans_fn=rans)
+    b = run["cases"][1]
+    assert b["rans"] == [] and b["rans_error"] == "gmsh produced no cells"
+    assert b["errors"]["rans"]["lift"] is None
+    # b's two planned angles (0 and 2 degrees) count as not converged.
+    assert run["summary"]["converged"] == pytest.approx(2 / 4)
+
+
+def test_rans_angles_bracket_the_whole_tunnel_range():
+    case = v.Case("t", "t", "", 3e5, np.zeros((3, 2)), [(-2.68, 0.6, 0.04), (5.0, 1.5, 0.03), (16.38, 2.1, 0.05)])
+    assert v.rans_alphas(case) == [float(a) for a in range(-4, 19, 2)]
+
+
+def test_settings_name_the_engine_commit_not_every_commit(monkeypatch):
+    import subprocess
+
+    class Done:
+        def __init__(self, out):
+            self.stdout = out
+
+    def fake(args, **kw):
+        if "log" in args and "engine/src" in args:
+            return Done("abc1234\n")
+        if "status" in args and "engine/src" in args:
+            return Done(" M engine/src/aeroengine/validation.py\n")
+        return Done("fffffff\n")
+    monkeypatch.setattr(subprocess, "run", fake)
+    assert v.current_settings()["commit"] == "abc1234+"
+
+
+def test_a_download_that_is_not_a_zip_is_an_engine_error(tmp_path, monkeypatch):
+    import io
+    import urllib.request
+    monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout=60: io.BytesIO(b"<html>sign in to the wifi</html>"))
+    with pytest.raises(EngineError):
+        v.fetch_uiuc(tmp_path / "vol", volume=2)
