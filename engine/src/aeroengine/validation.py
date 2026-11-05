@@ -424,3 +424,103 @@ def run(keys: list[str] | None = None, progress=lambda pct, msg: None, uiuc_fold
     if with_survey and not keys:
         out["survey"] = survey(progress=lambda pct, msg: progress(50 + pct / 2, msg))
     return out
+
+
+# The benchmark run the accuracy window shows -----------------------------------------------------
+
+RESULTS_FILE = data_dir() / "validation" / "uiuc_results.json"
+RANS_AIR = (0.30, 1.225, 1.81e-5)  # chord m, rho, mu: the speed is set to match each tunnel run's Re
+
+
+def current_settings() -> dict:
+    """What makes two runs comparable: the RANS model, mesh and turbulence
+    intensity the app uses by default, and the engine's commit. Cores only
+    change the speed, so they are not here."""
+    import subprocess
+
+    from .wing import su2
+
+    try:
+        commit = subprocess.run(["git", "-C", str(data_dir().parent), "rev-parse", "--short", "HEAD"],
+                                capture_output=True, text=True, timeout=10).stdout.strip() or None
+    except OSError:
+        commit = None
+    return {"model": su2.DEFAULT_MODEL, "mesh": "fine", "turbulence_intensity": su2.Case.turbulence_intensity,
+            "commit": commit}
+
+
+def _sweep(case: Case, workdir: Path, cores: int, su2_hint: str | None, settings: dict) -> list[tuple]:
+    """RANS on the section, a Full polar every 2 degrees over the tunnel's range."""
+    from .wing import rans
+
+    chord, rho, mu = RANS_AIR
+    a = [r[0] for r in case.rows]
+    alphas = [float(x) for x in np.arange(np.ceil(min(a) / 2) * 2, np.floor(max(a) / 2) * 2 + 0.1, 2.0)]
+    el = {"coords": (case.coords * chord).tolist(), "unit": case.coords.tolist(), "chord": chord, "angle": 0.0, "inverted": False}
+    p = {"elements": [el], "speed": case.re * mu / (rho * chord), "rho": rho, "mu": mu, "alphas": alphas,
+         "order": "rising", "time_limit": 0, "mesh": settings["mesh"], "model": settings["model"],
+         "turbulence_intensity": settings["turbulence_intensity"]}
+    wd = workdir / case.key
+    wd.mkdir(parents=True, exist_ok=True)
+    sw = rans.sweep(p, wd, wd / "wing.su2", su2_hint, cores, None, lambda *a: None, lambda *a, **k: None)
+    return [(float(r["alpha"]), float(r["cl"]), float(r["cd"]), bool(r.get("converged")))
+            for r in sw["rows"] if r.get("alpha") is not None and r.get("cl") is not None]
+
+
+def _mean(values) -> float | None:
+    values = [x for x in values if x is not None]
+    return float(np.mean(values)) if values else None
+
+
+def run_benchmark(workdir: Path, cores: int, su2_hint: str | None, progress=lambda pct, msg: None,
+                  results: Path = RESULTS_FILE, cases: list[Case] | None = None, rans_fn=None) -> dict:
+    """The estimate and RANS on every benchmark case, appended to the results
+    file (newest first). Each finished case goes to a partial file beside it,
+    so a cancelled run with the same settings picks up where it stopped."""
+    import datetime
+    import time
+
+    settings = current_settings()
+    cases = cases if cases is not None else benchmark_cases()
+    rans_fn = rans_fn or (lambda case, wd: _sweep(case, wd, cores, su2_hint, settings))
+    partial = results.with_name("uiuc_partial.json")
+    done: list[dict] = []
+    if partial.exists():
+        saved = json.loads(partial.read_text())
+        if saved.get("settings") == settings:
+            done = saved.get("cases", [])
+    keys = {c["key"] for c in done}
+    started = time.time()
+    for k, case in enumerate(cases):
+        if case.key in keys:
+            continue
+        progress(100 * k / len(cases), f"{case.name}: quick estimate and RANS")
+        est = compare(case, sweep_max=False)
+        rows = rans_fn(case, workdir)
+        volume = next((int(n.split()[1]) for n in case.notes if n.startswith("volume ")), None)
+        done.append({
+            "key": case.key, "name": case.name, "volume": volume, "re": case.re,
+            "estimate": [[r["alpha"], r["cl_estimate"], r["cd_estimate"]] for r in est["rows"]],
+            "rans": [[float(a), float(cl), float(cd), bool(ok)] for a, cl, cd, ok in rows],
+            "errors": {"estimate": {"lift": est["lift_error_mean"], "drag": est["drag_error_mean"],
+                                    "lift_signed": est["lift_error_signed"]},
+                       "rans": errors(case, *rans_at_tunnel(case, rows))},
+        })
+        partial.parent.mkdir(parents=True, exist_ok=True)
+        partial.write_text(json.dumps({"settings": settings, "cases": done}))
+    done.sort(key=lambda c: [x.key for x in cases].index(c["key"]))
+    ran = [r for c in done for r in c["rans"]]
+    run = {
+        "date": datetime.datetime.now().isoformat(timespec="seconds"), "settings": settings, "cores": cores,
+        "seconds": time.time() - started,
+        "summary": {s: {e: _mean(c["errors"][s][e] for c in done) for e in ("lift", "drag")} for s in ("estimate", "rans")}
+        | {"converged": sum(r[3] for r in ran) / len(ran) if ran else None},
+        "cases": done,
+    }
+    history = json.loads(results.read_text()) if results.exists() else {"runs": []}
+    history["runs"].insert(0, run)
+    results.parent.mkdir(parents=True, exist_ok=True)
+    results.write_text(json.dumps(history, indent=1))
+    partial.unlink(missing_ok=True)
+    progress(100, "done")
+    return run

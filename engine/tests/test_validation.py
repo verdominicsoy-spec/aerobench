@@ -7,6 +7,8 @@ are skipped and say so."""
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 
@@ -145,3 +147,70 @@ def test_the_benchmark_cases():
         pytest.skip(f"UIUC data not available here: {exc.msg}")
     assert [c.key for c in cases] == [k for _, _, k in v.UIUC_BENCHMARK]
     assert all(abs(c.re / 300_000 - 1) < 0.05 and any(n.endswith(".dap") for n in c.notes) for c in cases)
+
+
+def _two_cases():
+    from aeroengine.wing.airfoils import naca4
+    c = np.asarray(naca4("2412"), float)
+    return [v.Case("a", "A", "", 3e5, c, [(0.0, 0.25, 0.008), (2.0, 0.47, 0.009), (4.0, 0.69, 0.010)], notes=["volume 1", "a.dap"]),
+            v.Case("b", "B", "", 3e5, c, [(0.0, 0.25, 0.008), (2.0, 0.47, 0.009)], notes=["volume 3", "b.dap"])]
+
+
+def _rans(case, workdir):
+    return [(0.0, 0.26, 0.009, True), (2.0, 0.48, 0.010, True)]
+
+
+def _run(tmp_path, **kw):
+    kw.setdefault("rans_fn", _rans)
+    return v.run_benchmark(tmp_path / "work", cores=1, su2_hint=None, progress=lambda *a: None,
+                           results=tmp_path / "uiuc_results.json", cases=_two_cases(), **kw)
+
+
+def test_missing_results_file_starts_a_new_history(tmp_path):
+    run = _run(tmp_path)
+    saved = json.loads((tmp_path / "uiuc_results.json").read_text())
+    assert saved["runs"] == [run]
+    assert [c["key"] for c in run["cases"]] == ["a", "b"] and run["cases"][1]["volume"] == 3
+    assert run["settings"]["model"] == v.current_settings()["model"] and run["cores"] == 1
+    assert run["cases"][0]["rans"] == [[0.0, 0.26, 0.009, True], [2.0, 0.48, 0.010, True]]
+    assert run["summary"]["converged"] == 1.0 and run["summary"]["rans"]["lift"] is not None
+    assert not (tmp_path / "uiuc_partial.json").exists()
+
+
+def test_a_run_is_appended_newest_first(tmp_path):
+    first = _run(tmp_path)
+    second = _run(tmp_path, rans_fn=lambda case, wd: [(0.0, 0.30, 0.009, True), (2.0, 0.50, 0.010, True)])
+    runs = json.loads((tmp_path / "uiuc_results.json").read_text())["runs"]
+    assert runs == [second, first]
+
+
+def test_summary_skips_cases_without_rans_errors_but_counts_their_angles(tmp_path):
+    def rans(case, wd):
+        return _rans(case, wd) if case.key == "a" else [(0.0, 0.3, 0.01, False), (2.0, 0.5, 0.01, False)]
+    run = _run(tmp_path, rans_fn=rans)
+    a, b = run["cases"]
+    assert b["errors"]["rans"]["lift"] is None
+    assert run["summary"]["rans"]["lift"] == pytest.approx(a["errors"]["rans"]["lift"])
+    assert run["summary"]["converged"] == pytest.approx(2 / 4)
+
+
+def test_a_cancelled_run_resumes_with_the_same_settings(tmp_path):
+    def fails_on_b(case, wd):
+        if case.key == "b":
+            raise KeyboardInterrupt
+        return _rans(case, wd)
+    with pytest.raises(KeyboardInterrupt):
+        _run(tmp_path, rans_fn=fails_on_b)
+    partial = json.loads((tmp_path / "uiuc_partial.json").read_text())
+    assert [c["key"] for c in partial["cases"]] == ["a"]
+    seen = []
+    run = _run(tmp_path, rans_fn=lambda case, wd: seen.append(case.key) or _rans(case, wd))
+    assert seen == ["b"] and [c["key"] for c in run["cases"]] == ["a", "b"]
+
+
+def test_a_partial_with_other_settings_is_discarded(tmp_path):
+    other = dict(v.current_settings(), model="sa")
+    (tmp_path / "uiuc_partial.json").write_text(json.dumps({"settings": other, "cases": [{"key": "a"}]}))
+    seen = []
+    _run(tmp_path, rans_fn=lambda case, wd: seen.append(case.key) or _rans(case, wd))
+    assert seen == ["a", "b"]
