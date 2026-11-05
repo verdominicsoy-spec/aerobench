@@ -216,12 +216,12 @@ def _model(name: str, coords: dict[str, np.ndarray]) -> str | None:
 UIUC_BENCHMARK = [
     ("S1223", 1, "s1223"), ("E423", 2, "e423"), ("S1210", 1, "s1210"), ("SG6043", 3, "sg6043"),
     ("SD7062 (B)", 3, "sd7062"), ("E387 (A)", 1, "e387"), ("SD7037 (B)", 1, "sd7037"),
-    ("PT-40 (A)", 3, "pt40"), ("SA7038", 3, "sa7038"), ("S8052", 3, "s8052"),
+    ("Clark-Y (B)", 3, "clarky"), ("SA7038", 3, "sa7038"), ("S8052", 3, "s8052"),
 ]
-# Clark-Y (B) and S8037 were in the first list; their measured outlines break the mesher
-# (Clark-Y's upper surface dips below its lower one at the trailing edge, S8037's lower
-# surface hooks past x = 1), so a flat-bottom trainer and a light-camber section that mesh
-# took their places.
+# S8037 was in the first list; its measured trailing edge (the lower surface curling up
+# through about 90 degrees in the last 0.1% of chord) still breaks the mesher, so S8052,
+# also light camber, took its place. Clark-Y (B), out for a while, meshes again now that
+# mesh.build trims a trailing edge that crosses itself.
 BENCHMARK_RE = 300_000  # an FS wing's Reynolds number
 
 

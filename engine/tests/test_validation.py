@@ -300,3 +300,36 @@ def test_a_download_that_is_not_a_zip_is_an_engine_error(tmp_path, monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout=60: io.BytesIO(b"<html>sign in to the wifi</html>"))
     with pytest.raises(EngineError):
         v.fetch_uiuc(tmp_path / "vol", volume=2)
+
+
+def test_measured_outlines_that_broke_the_mesher_now_mesh(tmp_path):
+    """The UIUC tunnel models whose meshes failed on 2026-11-05, at their lowest RANS angle with
+    the laminar zones the quick solver predicts there: thin, wiggly trailing edges (SG6043,
+    SD7037) and trailing edges that cross themselves (SD7080, S6063, Clark-Y). S8037 still
+    fails: its lower surface curls up through about 90 degrees in its last 0.1% of chord."""
+    from aeroengine.wing import rans
+    from aeroengine.wing.airfoils import normalise
+    from aeroengine.wing.mesh import Settings, build
+    from aeroengine.wing.viscous import polar
+    try:
+        folders = {vol: v.fetch_uiuc(volume=vol) for vol in (1, 3)}
+    except EngineError as exc:
+        pytest.skip(f"UIUC data not available here: {exc.msg}")
+    shapes = []
+    for vol, names in ((1, ["SD7037 (B)"]), (3, ["SG6043", "SD7080", "S6063", "Clark-Y (B)"])):
+        f = folders[vol]
+        runs = v.parse_runs((f / f"DRAG0{vol}.TXT").read_text(errors="replace"))
+        coords = v.parse_coords((f / f"COORD0{vol}.TXT").read_text(errors="replace"))
+        for name in names:
+            run = v.pick_run(runs, name)
+            case = v.Case(name, name, "", run["re"], normalise(coords[v._model(name, coords)])[0], sorted(run["rows"]))
+            shapes.append(case)
+    scale, growth = rans.MESH_LEVELS["fine"]
+    for c in shapes:
+        al = v.rans_alphas(c)
+        row = polar(c.coords, [al[0]], c.re, 9.0, False)["rows"][0]
+        st = Settings(re=c.re, ref_chord=0.3, surface_fine=0.0025 * scale, surface_coarse=0.008 * scale,
+                      edge=0.0015 * scale, wake_size=0.01 * scale, growth=growth, alpha_deg=0.5 * (al[0] + al[-1]),
+                      transition=[(row["transition_suction"], row["transition_pressure"])], ground=None)
+        m = build([c.coords * 0.3], st, tmp_path / "w.su2", [False])
+        assert m["cells"] > 0 and m["layers"] >= 10, c.key

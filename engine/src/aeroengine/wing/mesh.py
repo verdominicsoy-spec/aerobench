@@ -135,6 +135,43 @@ def _convex_corners(nodes: np.ndarray, closed: bool) -> list[int]:
     return [int(k) for k in idx] if closed else [int(k) + 1 for k in idx]
 
 
+def _segment_hit(a: np.ndarray, b: np.ndarray, c: np.ndarray, d: np.ndarray) -> np.ndarray | None:
+    """Where segment ab crosses segment cd, if it does."""
+    r, q = b - a, d - c
+    den = r[0] * q[1] - r[1] * q[0]
+    if abs(den) < 1e-300:
+        return None
+    t = ((c[0] - a[0]) * q[1] - (c[1] - a[1]) * q[0]) / den
+    u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den
+    return a + t * r if 0 < t < 1 and 0 < u < 1 else None
+
+
+def _untangle_trailing_edge(xy: np.ndarray, chord: float) -> tuple[np.ndarray, bool]:
+    """Repairs two faults of measured outlines at the trailing edge, which no
+    mesher can fill. A surface that runs past its end and hooks back to it
+    (UIUC S8037) ends at its aftmost point instead, leaving a small blunt
+    trailing edge. Surfaces that cross (the lower ending above the upper: UIUC
+    SD7080, S6063, Clark-Y) are cut where they cross, the innermost crossing in
+    the last 10% of chord, which becomes a sharp trailing edge."""
+    half = (len(xy) - 1) // 2
+    le, te = xy[half], 0.5 * (xy[0] + xy[-1])
+    axis = (te - le) / np.linalg.norm(te - le)
+    along = (xy - le) @ axis
+    first, last = int(np.argmax(along[:half])), half + int(np.argmax(along[half:]))
+    hooked = first != 0 or last != len(xy) - 1
+    xy = xy[first:last + 1]
+    half -= first
+    aft = ((xy - le) @ axis) / chord > 0.9
+    upper = [i for i in range(half) if aft[i] and aft[i + 1]]
+    lower = [j for j in range(half, len(xy) - 1) if aft[j] and aft[j + 1]]
+    for i in sorted(upper, reverse=True):  # innermost first
+        for j in sorted(lower):
+            p = _segment_hit(xy[i], xy[i + 1], xy[j], xy[j + 1])
+            if p is not None:
+                return np.vstack([p, xy[i + 1:j + 1], p]), True
+    return xy, hooked
+
+
 def build(elements: list[np.ndarray], s: Settings, out: Path, inverted: list[bool] | None = None) -> dict:
     """Meshes the wing and writes `out` (.su2) with markers wall_0, wall_1,
     ... and farfield. Returns statistics."""
@@ -169,123 +206,140 @@ def build(elements: list[np.ndarray], s: Settings, out: Path, inverted: list[boo
         raise EngineError(f"the slot is too narrow for wall layers ({min_gap * 1000:.2f} mm leaves room for {n_layers})",
                           "open the gap")
 
-    gmsh.initialize(interruptible=False)
-    try:
-        gmsh.option.setNumber("General.Terminal", 0)
-        gmsh.model.add("wing")
-        geo = gmsh.model.geo
-        loops, wall_curves, te_points, surface_counts = [], [], [], []
-        for e, xy in enumerate(elements):
-            suction, pressure = trans[e]
-            if inverted[e]:  # the suction side of an inverted element is its second (lower) half
-                suction, pressure = pressure, suction
-            nodes = _surface_nodes(xy, chords[e], suction, pressure, s)
-            gap = np.linalg.norm(nodes[0] - nodes[-1])
-            sharp = gap < 1e-4 * chords[e]
-            if sharp:
-                nodes = nodes[:-1]
-            tags = [geo.addPoint(x, y, 0) for x, y in nodes]
-            curves = [geo.addLine(tags[k], tags[k + 1]) for k in range(len(tags) - 1)]
-            curves.append(geo.addLine(tags[-1], tags[0]))  # the trailing edge face, or closing a sharp edge
-            loops.append(geo.addCurveLoop(curves))
-            wall_curves.append(curves)
-            te_points += [tags[0]] if sharp else [tags[0], tags[-1]]
-            # Other sharp convex corners (a slat cusp, the lip of a cove) need
-            # a fan too, or the wall layers leave a hole gmsh cannot close.
-            te_points += [tags[k] for k in _convex_corners(nodes, closed=sharp) if k != 0 and k != len(nodes) - 1]
-            surface_counts.append(len(nodes))
-        centre = np.mean(np.vstack(elements), axis=0)
-        r = s.farfield * s.ref_chord
-        c0 = geo.addPoint(centre[0], centre[1], 0)
-        floor = []
-        if s.ground is None:
-            ring = [geo.addPoint(centre[0] + r * np.cos(t), centre[1] + r * np.sin(t), 0) for t in (0, np.pi / 2, np.pi, 1.5 * np.pi)]
-            arcs = [geo.addCircleArc(ring[k], c0, ring[(k + 1) % 4]) for k in range(4)]
-            outer = geo.addCurveLoop(arcs)
-        else:
-            # The circle cut by the ground: arcs over the top, a flat floor under the wing.
-            depth = s.ground - centre[1]
-            half = float(np.sqrt(r * r - depth * depth))
-            right = geo.addPoint(centre[0] + half, s.ground, 0)
-            top = geo.addPoint(centre[0], centre[1] + r, 0)
-            left = geo.addPoint(centre[0] - half, s.ground, 0)
-            arcs = [geo.addCircleArc(right, c0, top), geo.addCircleArc(top, c0, left)]
-            floor = [geo.addLine(left, right)]
-            outer = geo.addCurveLoop(arcs + floor)
-        surface = geo.addPlaneSurface([outer] + loops)
-        geo.synchronize()
-        # Each wall segment gets exactly one cell along it: the spacing is ours.
-        for curves in wall_curves:
-            for cv in curves:
-                gmsh.model.mesh.setTransfiniteCurve(cv, 2)
-        for e, curves in enumerate(wall_curves):
-            gmsh.model.addPhysicalGroup(1, curves, name=f"wall_{e}")
-        gmsh.model.addPhysicalGroup(1, arcs, name="farfield")
-        if floor:
-            gmsh.model.addPhysicalGroup(1, floor, name="ground")
-        gmsh.model.addPhysicalGroup(2, [surface], name="fluid")
+    # gmsh lays one wall-layer thickness everywhere; over a thin, wiggly measured trailing
+    # edge the layers fold into each other and it gives up. Thinner layers keep the first
+    # cell (y+ about 1) and still hold the boundary layer's inner part; the rest is triangles.
+    trimmed = [False] * len(elements)
+    failure: Exception | None = None
+    done = False
+    for factor in (1.0, 0.5, 0.25):
+        layer = thickness * factor
+        if layers_for(first, s.growth, layer) < 10:
+            break
+        gmsh.initialize(interruptible=False)
+        try:
+            gmsh.option.setNumber("General.Terminal", 0)
+            gmsh.model.add("wing")
+            geo = gmsh.model.geo
+            loops, wall_curves, te_points, surface_counts = [], [], [], []
+            for e, xy in enumerate(elements):
+                suction, pressure = trans[e]
+                if inverted[e]:  # the suction side of an inverted element is its second (lower) half
+                    suction, pressure = pressure, suction
+                xy, cut = _untangle_trailing_edge(xy, chords[e])
+                trimmed[e] = cut
+                nodes = _surface_nodes(xy, chords[e], suction, pressure, s)
+                gap = np.linalg.norm(nodes[0] - nodes[-1])
+                sharp = gap < 1e-4 * chords[e]
+                if sharp:
+                    nodes = nodes[:-1]
+                tags = [geo.addPoint(x, y, 0) for x, y in nodes]
+                curves = [geo.addLine(tags[k], tags[k + 1]) for k in range(len(tags) - 1)]
+                curves.append(geo.addLine(tags[-1], tags[0]))  # the trailing edge face, or closing a sharp edge
+                loops.append(geo.addCurveLoop(curves))
+                wall_curves.append(curves)
+                te_points += [tags[0]] if sharp else [tags[0], tags[-1]]
+                # Other sharp convex corners (a slat cusp, the lip of a cove) need
+                # a fan too, or the wall layers leave a hole gmsh cannot close.
+                te_points += [tags[k] for k in _convex_corners(nodes, closed=sharp) if k != 0 and k != len(nodes) - 1]
+                surface_counts.append(len(nodes))
+            centre = np.mean(np.vstack(elements), axis=0)
+            r = s.farfield * s.ref_chord
+            c0 = geo.addPoint(centre[0], centre[1], 0)
+            floor = []
+            if s.ground is None:
+                ring = [geo.addPoint(centre[0] + r * np.cos(t), centre[1] + r * np.sin(t), 0) for t in (0, np.pi / 2, np.pi, 1.5 * np.pi)]
+                arcs = [geo.addCircleArc(ring[k], c0, ring[(k + 1) % 4]) for k in range(4)]
+                outer = geo.addCurveLoop(arcs)
+            else:
+                # The circle cut by the ground: arcs over the top, a flat floor under the wing.
+                depth = s.ground - centre[1]
+                half = float(np.sqrt(r * r - depth * depth))
+                right = geo.addPoint(centre[0] + half, s.ground, 0)
+                top = geo.addPoint(centre[0], centre[1] + r, 0)
+                left = geo.addPoint(centre[0] - half, s.ground, 0)
+                arcs = [geo.addCircleArc(right, c0, top), geo.addCircleArc(top, c0, left)]
+                floor = [geo.addLine(left, right)]
+                outer = geo.addCurveLoop(arcs + floor)
+            surface = geo.addPlaneSurface([outer] + loops)
+            geo.synchronize()
+            # Each wall segment gets exactly one cell along it: the spacing is ours.
+            for curves in wall_curves:
+                for cv in curves:
+                    gmsh.model.mesh.setTransfiniteCurve(cv, 2)
+            for e, curves in enumerate(wall_curves):
+                gmsh.model.addPhysicalGroup(1, curves, name=f"wall_{e}")
+            gmsh.model.addPhysicalGroup(1, arcs, name="farfield")
+            if floor:
+                gmsh.model.addPhysicalGroup(1, floor, name="ground")
+            gmsh.model.addPhysicalGroup(2, [surface], name="fluid")
 
-        fld = gmsh.model.mesh.field
-        bl = fld.add("BoundaryLayer")
-        fld.setNumbers(bl, "CurvesList", [c for cs in wall_curves for c in cs])
-        fld.setNumber(bl, "Size", first)
-        fld.setNumber(bl, "Ratio", s.growth)
-        fld.setNumber(bl, "Thickness", thickness)
-        fld.setNumber(bl, "Quads", 1)
-        fld.setNumbers(bl, "FanPointsList", te_points)
-        fld.setAsBoundaryLayer(bl)
+            fld = gmsh.model.mesh.field
+            bl = fld.add("BoundaryLayer")
+            fld.setNumbers(bl, "CurvesList", [c for cs in wall_curves for c in cs])
+            fld.setNumber(bl, "Size", first)
+            fld.setNumber(bl, "Ratio", s.growth)
+            fld.setNumber(bl, "Thickness", layer)
+            fld.setNumber(bl, "Quads", 1)
+            fld.setNumbers(bl, "FanPointsList", te_points)
+            fld.setAsBoundaryLayer(bl)
 
-        # Size away from the walls: surface spacing near the body, growing
-        # with distance; finer along each wake.
-        dist = fld.add("Distance")
-        fld.setNumbers(dist, "CurvesList", [c for cs in wall_curves for c in cs])
-        near = fld.add("Threshold")
-        fld.setNumber(near, "InField", dist)
-        fld.setNumber(near, "SizeMin", s.surface_coarse * min(chords))
-        fld.setNumber(near, "SizeMax", s.farfield_size * s.ref_chord)
-        fld.setNumber(near, "DistMin", thickness * 1.5)
-        fld.setNumber(near, "DistMax", 0.5 * s.farfield * s.ref_chord)
-        fld.setNumber(near, "Sigmoid", 0)
-        wakes = []
-        al = np.radians(s.alpha_deg)
-        direction = np.array([np.cos(al), np.sin(al)])
-        for xy in elements:
-            te = 0.5 * (xy[0] + xy[-1])
-            pts = [te + direction * s.ref_chord * s.wake_length * t for t in np.linspace(0, 1, 40)]
-            ptags = [geo.addPoint(p[0], p[1], 0) for p in pts]
-            gmsh.model.geo.synchronize()
-            w = fld.add("Distance")
-            fld.setNumbers(w, "PointsList", ptags)
-            th = fld.add("Threshold")
-            fld.setNumber(th, "InField", w)
-            fld.setNumber(th, "SizeMin", s.wake_size * s.ref_chord)
-            fld.setNumber(th, "SizeMax", s.farfield_size * s.ref_chord)
-            fld.setNumber(th, "DistMin", 0.05 * s.ref_chord)
-            fld.setNumber(th, "DistMax", 2.0 * s.ref_chord)
-            wakes.append(th)
-        mins = fld.add("Min")
-        fld.setNumbers(mins, "FieldsList", [near] + wakes)
-        fld.setAsBackgroundMesh(mins)
-        gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
-        gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
-        gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
-        gmsh.option.setNumber("Mesh.Algorithm", 6)  # Frontal-Delaunay triangles outside the layers
-        gmsh.model.mesh.generate(2)
-        # (no removeDuplicateNodes: it collapses the trailing edge fan into zero-area cells)
-        # The extra wake points are not part of the geometry's boundaries: drop them.
-        types, tags, _ = gmsh.model.mesh.getElements(2)
-        counts = {gmsh.model.mesh.getElementProperties(t)[0]: len(tg) for t, tg in zip(types, tags)}
-        out.parent.mkdir(parents=True, exist_ok=True)
-        gmsh.option.setNumber("Mesh.SaveAll", 0)
-        gmsh.write(str(out))
-        q = gmsh.model.mesh.getElementQualities(np.concatenate(tags).astype(np.int64).tolist(), "minSICN")
-    except EngineError:
-        raise
-    except Exception as exc:  # gmsh's own failures ("Edge not recovered", no cells): say so in words
+            # Size away from the walls: surface spacing near the body, growing
+            # with distance; finer along each wake.
+            dist = fld.add("Distance")
+            fld.setNumbers(dist, "CurvesList", [c for cs in wall_curves for c in cs])
+            near = fld.add("Threshold")
+            fld.setNumber(near, "InField", dist)
+            fld.setNumber(near, "SizeMin", s.surface_coarse * min(chords))
+            fld.setNumber(near, "SizeMax", s.farfield_size * s.ref_chord)
+            fld.setNumber(near, "DistMin", layer * 1.5)
+            fld.setNumber(near, "DistMax", 0.5 * s.farfield * s.ref_chord)
+            fld.setNumber(near, "Sigmoid", 0)
+            wakes = []
+            al = np.radians(s.alpha_deg)
+            direction = np.array([np.cos(al), np.sin(al)])
+            for xy in elements:
+                te = 0.5 * (xy[0] + xy[-1])
+                pts = [te + direction * s.ref_chord * s.wake_length * t for t in np.linspace(0, 1, 40)]
+                ptags = [geo.addPoint(p[0], p[1], 0) for p in pts]
+                gmsh.model.geo.synchronize()
+                w = fld.add("Distance")
+                fld.setNumbers(w, "PointsList", ptags)
+                th = fld.add("Threshold")
+                fld.setNumber(th, "InField", w)
+                fld.setNumber(th, "SizeMin", s.wake_size * s.ref_chord)
+                fld.setNumber(th, "SizeMax", s.farfield_size * s.ref_chord)
+                fld.setNumber(th, "DistMin", 0.05 * s.ref_chord)
+                fld.setNumber(th, "DistMax", 2.0 * s.ref_chord)
+                wakes.append(th)
+            mins = fld.add("Min")
+            fld.setNumbers(mins, "FieldsList", [near] + wakes)
+            fld.setAsBackgroundMesh(mins)
+            gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
+            gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
+            gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
+            gmsh.option.setNumber("Mesh.Algorithm", 6)  # Frontal-Delaunay triangles outside the layers
+            gmsh.model.mesh.generate(2)
+            # (no removeDuplicateNodes: it collapses the trailing edge fan into zero-area cells)
+            # The extra wake points are not part of the geometry's boundaries: drop them.
+            types, tags, _ = gmsh.model.mesh.getElements(2)
+            counts = {gmsh.model.mesh.getElementProperties(t)[0]: len(tg) for t, tg in zip(types, tags)}
+            out.parent.mkdir(parents=True, exist_ok=True)
+            gmsh.option.setNumber("Mesh.SaveAll", 0)
+            gmsh.write(str(out))
+            q = gmsh.model.mesh.getElementQualities(np.concatenate(tags).astype(np.int64).tolist(), "minSICN")
+            done = True
+            break
+        except EngineError:
+            raise
+        except Exception as exc:  # gmsh's own failures ("Edge not recovered", no cells)
+            failure = exc
+        finally:
+            gmsh.finalize()
+    if not done:
         raise EngineError("could not mesh the wing: try a coarser mesh or untick the laminar zones",
-                          f"gmsh: {exc}") from None
-    finally:
-        gmsh.finalize()
+                          f"gmsh: {failure}")
+    thickness, n_layers = layer, layers_for(first, s.growth, layer)
     tri = sum(v for k, v in counts.items() if "Triangle" in k)
     quad = sum(v for k, v in counts.items() if "Quadrilateral" in k)
     if tri + quad == 0:
@@ -295,4 +349,5 @@ def build(elements: list[np.ndarray], s: Settings, out: Path, inverted: list[boo
         "first_cell_height_m": float(first), "layer_thickness_m": float(thickness), "layers": int(n_layers),
         "min_gap_m": float(min_gap) if np.isfinite(min_gap) else None, "surface_nodes": surface_counts,
         "min_quality": float(np.min(q)), "bad_cells": int(np.sum(np.asarray(q) <= 0)),
+        "trailing_edge_trimmed": trimmed,
     }

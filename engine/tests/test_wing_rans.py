@@ -397,3 +397,55 @@ def test_a_shape_gmsh_cannot_mesh_is_an_engine_error(tmp_path):
     s = Settings(re=3e5, ref_chord=0.3, transition=[(0.4, 0.1)])
     with pytest.raises(EngineError, match="could not mesh"):
         build([eight * 0.3], s, tmp_path / "w.su2", [False])
+
+
+def _crossed_trailing_edge() -> np.ndarray:
+    # A NACA 0012 whose lower surface ends above its upper one, as measured tunnel
+    # models' outlines sometimes do (UIUC SD7080, S6063, Clark-Y): the outline crosses itself.
+    xy = np.asarray(naca4("0012"), float).copy()
+    xy[-4:, 1] += np.array([0.001, 0.002, 0.003, 0.004])
+    return xy
+
+
+def test_a_trailing_edge_that_crosses_itself_is_trimmed(tmp_path):
+    m = build([_crossed_trailing_edge() * 0.3], Settings(re=3e5, ref_chord=0.3, transition=[(1.0, 0.05)]),
+              tmp_path / "w.su2", [False])
+    assert m["cells"] > 0 and m["trailing_edge_trimmed"] == [True]
+
+
+def test_wall_layers_are_thinned_when_gmsh_cannot_fit_them(tmp_path, monkeypatch):
+    import gmsh
+
+    from aeroengine.wing.mesh import boundary_layer_thickness
+    real, calls = gmsh.model.mesh.generate, []
+
+    def first_fails(dim):
+        calls.append(dim)
+        if len(calls) == 1:
+            raise Exception("Edge not recovered: 1 2 444444")
+        return real(dim)
+    monkeypatch.setattr(gmsh.model.mesh, "generate", first_fails)
+    m = build([np.asarray(naca4("0012"), float) * 0.3], Settings(re=3e5, ref_chord=0.3), tmp_path / "w.su2", [False])
+    assert len(calls) == 2
+    assert m["layer_thickness_m"] == pytest.approx(0.5 * 1.2 * boundary_layer_thickness(3e5, 0.3))
+    assert m["layers"] >= 10
+
+
+def test_a_mesh_gmsh_never_manages_is_an_engine_error(tmp_path, monkeypatch):
+    import gmsh
+
+    def never(dim):
+        raise Exception("Edge not recovered: 1 2 444444")
+    monkeypatch.setattr(gmsh.model.mesh, "generate", never)
+    with pytest.raises(EngineError, match="could not mesh"):
+        build([np.asarray(naca4("0012"), float) * 0.3], Settings(re=3e5, ref_chord=0.3), tmp_path / "w.su2", [False])
+
+
+def test_a_surface_that_hooks_past_the_trailing_edge_is_trimmed():
+    # UIUC S8037's lower surface runs past its trailing-edge point and turns back to it:
+    # each surface must end at its aftmost point, which leaves a small blunt trailing edge.
+    from aeroengine.wing.mesh import _untangle_trailing_edge
+    xy = np.asarray(naca4("0012"), float).copy()
+    xy[-2] = [1.0008, xy[-1, 1] - 0.0004]
+    fixed, cut = _untangle_trailing_edge(xy, 1.0)
+    assert cut and fixed[-1].tolist() == xy[-2].tolist() and len(fixed) == len(xy) - 1
