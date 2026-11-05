@@ -1472,3 +1472,9 @@ not recovered"): the mesher is fragile on near-sharp trailing edges, and a
 gmsh failure is now an EngineError rather than a crash. Spec and plan:
 docs/superpowers/specs/2026-11-05-uiuc-validation-section-design.md,
 docs/superpowers/plans/2026-11-05-uiuc-validation-section.md.
+
+Second run, after the mesher repairs (crossed and hooked trailing edges
+trimmed, thinner wall layers when gmsh cannot fit the full ones), with
+Clark-Y (B) back in: all ten sections meshed and RANS converged at 85% of
+its angles (69% before). Estimate lift 8.4%, drag 8.8%; RANS lift 6.4%,
+drag 45% high (33 to 76% by section). 2.6 hours on 12 cores.
