@@ -48,7 +48,7 @@ from pathlib import Path
 import numpy as np
 
 from .job import EngineError
-from .wing.airfoils import data_dir, naca
+from .wing.airfoils import data_dir, naca, normalise
 
 UIUC_VOLUME = "https://m-selig.ae.illinois.edu/pd/pub/lsat/volume{:02d}.zip"
 UIUC_VOLUME1 = UIUC_VOLUME.format(1)
@@ -213,8 +213,12 @@ def _model(name: str, coords: dict[str, np.ndarray]) -> str | None:
 UIUC_BENCHMARK = [
     ("S1223", 1, "s1223"), ("E423", 2, "e423"), ("S1210", 1, "s1210"), ("SG6043", 3, "sg6043"),
     ("SD7062 (B)", 3, "sd7062"), ("E387 (A)", 1, "e387"), ("SD7037 (B)", 1, "sd7037"),
-    ("Clark-Y (B)", 3, "clarky"), ("SA7038", 3, "sa7038"), ("S8037", 3, "s8037"),
+    ("PT-40 (A)", 3, "pt40"), ("SA7038", 3, "sa7038"), ("S8052", 3, "s8052"),
 ]
+# Clark-Y (B) and S8037 were in the first list; their measured outlines break the mesher
+# (Clark-Y's upper surface dips below its lower one at the trailing edge, S8037's lower
+# surface hooks past x = 1), so a flat-bottom trainer and a light-camber section that mesh
+# took their places.
 BENCHMARK_RE = 300_000  # an FS wing's Reynolds number
 
 
@@ -242,7 +246,7 @@ def benchmark_cases(folders: dict[int, Path] | None = None) -> list[Case]:
             raise EngineError(f"UIUC volume {vol} has no clean run near Re {BENCHMARK_RE:,} with coordinates for {airfoil}")
         out.append(Case(key, f"{airfoil.split(' (')[0]} at Re {run['re']:,.0f}",
                         f"UIUC low-speed airfoil tests, Summary of Low-Speed Airfoil Data, Volume {vol} (m-selig.ae.illinois.edu)",
-                        run["re"], _unit(coords[model]), sorted(run["rows"]), notes=[f"volume {vol}", model]))
+                        run["re"], normalise(coords[model])[0], sorted(run["rows"]), notes=[f"volume {vol}", model]))
     return out
 
 

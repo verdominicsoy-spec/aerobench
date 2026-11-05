@@ -237,3 +237,23 @@ def test_uiuc_results_reads_the_history(tmp_path, monkeypatch):
 def test_the_warm_engine_serves_the_uiuc_results():
     from aeroengine import serve
     assert "uiuc-results" in serve.HANDLERS
+
+
+def test_the_benchmark_shapes_mesh_like_any_library_section(tmp_path):
+    """Measured outlines come re-panelled as the library stores every section;
+    raw, the S1223's open trailing edge and the Clark-Y's crossing points
+    broke the mesher once a laminar zone was in (2026-11-05)."""
+    from aeroengine.wing import rans
+    from aeroengine.wing.airfoils import POINTS
+    from aeroengine.wing.mesh import Settings, build
+    try:
+        cases = v.benchmark_cases()
+    except EngineError as exc:
+        pytest.skip(f"UIUC data not available here: {exc.msg}")
+    scale, growth = rans.MESH_LEVELS["fine"]
+    for c in cases:
+        assert len(c.coords) == POINTS
+        st = Settings(re=c.re, ref_chord=0.3, surface_fine=0.0025 * scale, surface_coarse=0.008 * scale,
+                      edge=0.0015 * scale, wake_size=0.01 * scale, growth=growth, alpha_deg=7.0,
+                      transition=[(0.467, 0.0606)], ground=None)
+        assert build([c.coords * 0.3], st, tmp_path / f"{c.key}.su2", [False])["cells"] > 0, c.key

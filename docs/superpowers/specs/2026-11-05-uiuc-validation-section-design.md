@@ -35,9 +35,9 @@ section.
   | SD7062 (B) | 3 | moderate camber, stall in range (to 15°) |
   | E387 (A) | 1 | the standard low-Re benchmark |
   | SD7037 (B) | 1 | widely used benchmark |
-  | Clark-Y (B) | 3 | classic flat-bottom section |
+  | PT-40 (A) | 3 | flat-bottom trainer section (in place of Clark-Y (B), whose measured outline crosses itself) |
   | SA7038 | 3 | light camber |
-  | S8037 | 3 | thick (16%), light camber |
+  | S8052 | 3 | light camber, 12% (in place of S8037, whose measured trailing edge hooks back) |
 
 - **Both solvers** on each section:
   - the quick estimate (NeuralFoil, what Wing Lab's live estimate gives a
