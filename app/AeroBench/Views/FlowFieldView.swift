@@ -6,7 +6,6 @@ import SwiftUI
 
 struct FlowFieldView: View {
     @Environment(AppState.self) private var app
-    @Environment(\.undoManager) private var undo
 
     var body: some View {
         @Bindable var flow = app.flow
@@ -25,7 +24,7 @@ struct FlowFieldView: View {
             case .explore: FlowExploreView()
             }
         }
-        .onAppear { flow.undoManager = undo }
+
     }
 }
 

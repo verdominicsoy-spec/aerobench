@@ -247,7 +247,7 @@ struct SideViewPane: View {
             dragging = hit(g.startLocation, f)
             if let pos = dragging, let combo = app.shownCombo {
                 startPlacement = pos == .front ? combo.front : combo.rear
-                if isDraft(pos) { app.wingLab.beginGesture() }  // the height is Wing Lab's: one undo step for the drag
+                if isDraft(pos) { app.wingLab.beginGesture("Move Wing on Car") }  // the height is Wing Lab's: one undo step for the drag
             }
         }
         guard let pos = dragging, var p = startPlacement, let c = card(p.card), let s = car.setup else { return }

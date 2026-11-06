@@ -64,6 +64,7 @@ enum Tool: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     @Environment(AppState.self) private var app
+    @Environment(\.undoManager) private var undo
     @State private var takeaway: String?
 
     var body: some View {
@@ -110,6 +111,11 @@ struct ContentView: View {
         .foregroundStyle(S37.C.ink)
         .navigationTitle(windowTitle)
         .task { app.setUpBundledEngineIfNeeded() }
+        .onAppear {
+            // Edit ▸ Undo walks these models' own histories
+            app.wingLab.undoManager = undo
+            app.flow.undoManager = undo
+        }
         .sheet(isPresented: Binding(get: { app.engineSetup.map { $0.phase != .done } ?? false },
                                     set: { if !$0 { app.engineSetup = nil } })) {
             EngineSetupView()

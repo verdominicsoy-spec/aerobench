@@ -132,3 +132,27 @@ Not checked with a built volume: the Explore panel's filled state was converted 
 | CAD menu | new | Open CAD File… ⇧⌘O, the standard views, Fit ⌘0, Orthographic, Measure, Section, Show Frame Rate, Check Geometry, Repair Geometry…, Repair to One Body…, Edit Part ⌘E, Save Part… (the old Part menu folds in) (4). |
 
 Shot: `2-after-cad-partial.jpg` shows the toolbar and side panel behind the open panel; the background screen tools can't reach a file chooser to load a model.
+
+CAD after shot with the empty state: `2-after-cad.jpg`.
+
+## Wing Lab
+
+| Element | Verdict | Why |
+| --- | --- | --- |
+| Header note "Draw the wing element by element…" | cut | Restates the screen (1). |
+| Header takeaway with the car's ClA and CdA | keep | Only with a base car; it's the whole car, which the screen doesn't show (1). |
+| Toolbar Undo and Redo buttons over a private history | change | The history now lives in the window's undo manager: Edit ▸ Undo names the step ("Undo Move Flap 1", "Undo Change Chord", "Undo Remove Flap 2") (3). |
+| Toolbar Library, Compare, Accuracy, Inspector | keep | Functional layer; tooltips say only the shortcut or what isn't on the label (1, 4). |
+| Canvas "SHOWING" / "LIVE ESTIMATE" / "OPTIMISING" tags | change | Sentence case, no uppercase tracking (9). |
+| Canvas hint (35 words) | change | 16 words (1). |
+| Wing / Car, library tabs, results tabs, rules box, study chart, sweep angle: system segmented | change | `S37Segmented` (2). |
+| Results summary mini cards | change | One strip of cells split by hairlines; the cell for the tab on show reads in sage (5, 9). |
+| Pressure and Polar behind tabs | change | Side by side when the pane is wide enough; the tab picks one when it isn't (5). |
+| Inspector grouped Form with footers | change | Flat sections. Long footers (flow, Lap Sim ClA maths, optimiser behaviour, rules data) move into one How it's calculated; one-line notes stay where they change the next action (1, 5). |
+| Element rows | change | Right-click: Duplicate and Remove (4). |
+| Element section | change | Duplicate beside Remove; the Gap / Overlap footer halved (1, 4). |
+| Snap, Lock angle, Lock chord | change | Toggle buttons in the compact size (2). |
+| Design card | change | Flat section, footer kept to what Design does (1). |
+| Optimiser, sweep, laminar-zone and SU2 notes | change | Each cut to one short sentence (1). |
+| Run polar empty-state button | change | sage37 glass (2). |
+| Wing menu | new | Design, Quick Estimate, Element Polar, Run CFD ⌘R, Start and Stop Study, Duplicate Element ⌘D, Remove Element, Pin / Swap / Clear A, Show Library ⌥⌘L, Show Inspector ⌥⌘I, the three exports (4). |

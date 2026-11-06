@@ -34,7 +34,7 @@ struct WingLabView: View {
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button { lab.showLibrary.toggle() } label: { Label("Library", systemImage: "sidebar.left") }
-                    .help(lab.showLibrary ? "Hide the airfoil library" : "Show the airfoil library")
+                    .help(lab.showLibrary ? "Hide library (⌥⌘L)" : "Show library (⌥⌘L)")
             }
             ToolbarItemGroup {
                 Menu {
@@ -51,13 +51,7 @@ struct WingLabView: View {
                 Button { openWindow(id: "accuracy") } label: { Label("Accuracy", systemImage: "questionmark.circle") }
                     .help("How far to trust each solver")
                 Button { lab.showInspector.toggle() } label: { Label("Inspector", systemImage: "sidebar.right") }
-                    .help(lab.showInspector ? "Hide the inspector" : "Show the inspector")
-                Button { lab.undo() } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
-                    .keyboardShortcut("z")
-                    .disabled(lab.undoStack.isEmpty)
-                Button { lab.redo() } label: { Label("Redo", systemImage: "arrow.uturn.forward") }
-                    .keyboardShortcut("z", modifiers: [.command, .shift])
-                    .disabled(lab.redoStack.isEmpty)
+                    .help(lab.showInspector ? "Hide inspector (⌥⌘I)" : "Show inspector (⌥⌘I)")
             }
         }
         .onChange(of: app.car.selected) {
@@ -81,13 +75,9 @@ struct CanvasHost: View {
     var body: some View {
         @Bindable var lab = app.wingLab
         VStack(spacing: 0) {
-            Picker("Canvas", selection: $lab.canvasMode) {
-                ForEach(WingLabModel.CanvasMode.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            .padding([.top, .horizontal], 8)
+            S37Segmented(options: WingLabModel.CanvasMode.allCases.map { ($0, $0.rawValue) }, selection: $lab.canvasMode)
+                .fixedSize()
+                .padding([.top, .horizontal], 8)
             switch lab.canvasMode {
             case .wing:
                 WingCanvas()
@@ -127,12 +117,9 @@ struct AirfoilLibraryPanel: View {
     var body: some View {
         @Bindable var lab = app.wingLab
         VStack(spacing: 0) {
-            Picker("Library", selection: $lab.libraryTab) {
-                ForEach(WingLabModel.LibraryTab.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(8)
+            S37Segmented(options: WingLabModel.LibraryTab.allCases.map { ($0, $0.rawValue) }, selection: $lab.libraryTab)
+                .fixedSize()
+                .padding(8)
             if lab.libraryTab == .cards {
                 ScrollView {
                     CardsPane(embedded: true) { card in
@@ -181,7 +168,7 @@ struct AirfoilLibraryPanel: View {
                 .listStyle(.plain)
                 Divider()
                 HStack {
-                    Text("\(shown.count) of \(lab.library.count)").font(.caption).foregroundStyle(.secondary)
+                    Text("\(shown.count) of \(lab.library.count)").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
                     if !lab.hidden.isEmpty {
                         Toggle("Show \(lab.hidden.count) hidden", isOn: $lab.showHidden).toggleStyle(.checkbox).font(.caption)
                     }
@@ -200,12 +187,12 @@ struct AirfoilLibraryPanel: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Airfoil library").font(.headline)
             Text("The UIUC airfoil database (about 1,600 sections) is downloaded to your Mac, not shipped with AeroBench. NACA 4 and 5-digit sections are always there.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
             Button("Download the Library") { app.downloadAirfoils() }
                 .buttonStyle(S37ButtonStyle(kind: .prominent))
             Button("NACA Sections Only") { app.buildAirfoilIndex() }
             if let error = lab.libraryError {
-                Text(error).font(.caption2).foregroundStyle(.secondary)
+                Text(error).font(.caption2).foregroundStyle(S37.C.inkSecondary)
             }
             Spacer()
         }
@@ -300,7 +287,7 @@ struct AirfoilRow: View {
                 Text(airfoil.name).lineLimit(1)
                 Text(String(format: "t %.1f%%  c %.1f%%", airfoil.thickness * 100, airfoil.camber * 100)
                      + (airfoil.teThickness > 0.002 ? String(format: "  TE %.1f%%", airfoil.teThickness * 100) : ""))
-                    .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                    .font(.caption2.monospacedDigit()).foregroundStyle(S37.C.inkSecondary)
                 if let p = polar {
                     Text(String(format: "Cl max %.2f at %.0f°  L/D %.0f", p.clMax, p.alphaClMax, p.ldMax) + (p.trusted ? "" : " ?"))
                         .font(.caption2.monospacedDigit()).foregroundStyle(p.trusted ? Color.secondary : S37.C.clayInk)
@@ -313,7 +300,7 @@ struct AirfoilRow: View {
                 .foregroundStyle(favourite ? S37.C.ochre : .secondary)
             Button(action: add) { Image(systemName: "plus.circle") }
                 .buttonStyle(.borderless)
-                .help("Add as the next element (or drag it onto the canvas)")
+                .help("Or drag it onto the canvas")
         }
         .contentShape(Rectangle())
         .onTapGesture(count: 2, perform: add)
@@ -407,6 +394,7 @@ struct WingCanvas: View {
                     }
                     .contextMenu {
                         if let i = lab.selection, lab.wing.elements.indices.contains(i) {
+                            Button("Duplicate \(WingIssue.label(i))") { lab.duplicate(i) }
                             Button("Remove \(WingIssue.label(i)) (\(lab.wing.elements[i].airfoil.name))", role: .destructive) { lab.remove(i) }
                         } else {
                             Text("Click an element to select it first")
@@ -426,16 +414,16 @@ struct WingCanvas: View {
     @ViewBuilder private func overlay(_ lab: WingLabModel) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text("SHOWING").font(.caption2.bold()).foregroundStyle(.secondary)
+                Text("Showing").font(.system(size: 12, weight: .semibold)).foregroundStyle(S37.C.inkSecondary)
                 Text((lab.pinned != nil && lab.replayIndex == nil ? "B: " : "") + lab.shownVersion)
                     .font(.caption.monospacedDigit()).lineLimit(1)
                 if let a = lab.pinned, lab.replayIndex == nil {
                     Text("A: " + a.version).font(.caption).foregroundStyle(S37.C.chart6).lineLimit(1)
                 }
             }
-            .help("Which version of the wing is on the canvas: a study trial, the from-scratch starter, or your own. \"Edited\" means changed since; Undo goes back.")
+            .help("\"Edited\": changed since it was put there; Undo goes back")
             HStack(spacing: 6) {
-                Text("LIVE ESTIMATE").font(.caption2.bold()).foregroundStyle(.secondary)
+                Text("Live estimate").font(.system(size: 12, weight: .semibold)).foregroundStyle(S37.C.inkSecondary)
                 // NeuralFoil's viscous numbers once they are in; the panel method's lift until then.
                 if let e = lab.estimate?.row(nearest: lab.wing.alpha), lab.liveStatus == nil {
                     Text(String(format: "Cl %.3f   Cd %.4f   L/D %.1f   α %.1f°", e.cl, e.cd, abs(e.cl) / max(e.cd, 1e-9), lab.wing.alpha))
@@ -458,21 +446,21 @@ struct WingCanvas: View {
             .buttonStyle(.borderless)
             if let stage = lab.designStage {
                 HStack(spacing: 8) {
-                    Text("SETTING UP").font(.caption2.bold()).foregroundStyle(S37.C.sageInk)
+                    Text("Setting up").font(.system(size: 12, weight: .semibold)).foregroundStyle(S37.C.sageInk)
                     Text(stage).font(.caption).lineLimit(1)
                     ProgressView().controlSize(.small)
                 }
             }
             if let job = lab.optimiseJob, !job.status.isFinished {
                 HStack(spacing: 8) {
-                    Text("OPTIMISING").font(.caption2.bold()).foregroundStyle(S37.C.sageInk)
+                    Text("Optimising").font(.system(size: 12, weight: .semibold)).foregroundStyle(S37.C.sageInk)
                     ProgressView(value: job.progress, total: 100).frame(width: 120)
-                    Text(job.progressMessage).font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
+                    Text(job.progressMessage).font(.caption.monospacedDigit()).foregroundStyle(S37.C.inkSecondary).lineLimit(1)
                 }
             }
             if let t = lab.replayTrial, let i = lab.replayIndex {
                 HStack(spacing: 8) {
-                    Text("TIME-LAPSE").font(.caption2.bold()).foregroundStyle(S37.C.clayInk)
+                    Text("Time-lapse").font(.system(size: 12, weight: .semibold)).foregroundStyle(S37.C.clayInk)
                     Text("trial \(t.number) (\(i + 1) of \(lab.replayOrder.count))").font(.caption.monospacedDigit())
                     if t.state == "fail" {
                         Text(t.reason ?? "failed").font(.caption).foregroundStyle(S37.C.critical).lineLimit(1)
@@ -480,9 +468,9 @@ struct WingCanvas: View {
                         Text(String(format: "downforce Cl %.3f", load)).font(.caption.monospacedDigit())
                     }
                     if let best = lab.replayBestSoFar {
-                        Text(String(format: "best so far %.4g", best)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        Text(String(format: "best so far %.4g", best)).font(.caption.monospacedDigit()).foregroundStyle(S37.C.inkSecondary)
                     }
-                    Text("dashed: the wing as drawn").font(.caption2).foregroundStyle(.secondary)
+                    Text("dashed: the wing as drawn").font(.caption2).foregroundStyle(S37.C.inkSecondary)
                 }
             }
             if lab.pinned != nil, lab.replayIndex == nil {
@@ -497,7 +485,7 @@ struct WingCanvas: View {
             if let r = lab.ransResult, lab.ransField != nil, lab.fieldOnCanvas {
                 if !lab.fieldIsCurrent {
                     Text("Flow field hidden: the wing has changed since the last RANS run.")
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .font(.caption2).foregroundStyle(S37.C.inkSecondary)
                 } else if !r.converged {
                     Text("This RANS run did not converge: the field is not a result.").font(.caption2).foregroundStyle(S37.C.clayInk)
                 }
@@ -510,8 +498,8 @@ struct WingCanvas: View {
                     FieldColorbar(scalar: scalar)
                 }
             }
-            Text("Drag an airfoil here to add an element, or onto one to swap its section. Drag an element to move it, the round handle to turn it, the square one to change its chord.")
-                .font(.caption2).foregroundStyle(.secondary)
+            Text("Drop an airfoil to add or swap an element. Drag to move; round handle turns, square resizes.")
+                .font(.caption2).foregroundStyle(S37.C.inkSecondary)
         }
         .padding(8)
     }
@@ -591,7 +579,7 @@ struct WingCanvas: View {
                 hatch.addLine(to: CGPoint(x: p0.x - 6, y: p0.y + 6))
             }
             ctx.stroke(hatch, with: .color(.secondary.opacity(0.5)), lineWidth: 0.8)
-            ctx.draw(Text(String(format: "Ground, %.0f mm below", (wing.rideHeight ?? 0) * 1000)).font(.caption2).foregroundStyle(.secondary),
+            ctx.draw(Text(String(format: "Ground, %.0f mm below", (wing.rideHeight ?? 0) * 1000)).font(.caption2).foregroundStyle(S37.C.inkSecondary),
                      at: CGPoint(x: m.view(g.point).x, y: m.view(g.point).y + 14))
         }
         for (i, e) in wing.elements.enumerated() {
@@ -607,7 +595,7 @@ struct WingCanvas: View {
             ctx.fill(path, with: onField ? GraphicsContext.Shading.color(Color(white: selected ? 0.7 : 0.55))
                                      : GraphicsContext.Shading.color(colour.opacity(selected ? 0.35 : 0.2)))
             ctx.stroke(path, with: .color(colour), lineWidth: selected ? 2 : 1.2)
-            ctx.draw(Text(WingIssue.label(i)).font(.caption2).foregroundStyle(.secondary),
+            ctx.draw(Text(WingIssue.label(i)).font(.caption2).foregroundStyle(S37.C.inkSecondary),
                      at: m.view(e.leadingEdge + SIMD2(0, (e.inverted ? 1 : -1) * 0.02)))
             if selected {
                 let le = m.view(e.leadingEdge), te = m.view(e.trailingEdge)
@@ -679,7 +667,8 @@ struct WingCanvas: View {
                     case .move(let i), .rotate(let i), .resize(let i):
                         lab.selection = i
                         gestureStart = lab.wing.elements[i]
-                        lab.beginGesture()
+                        let verb = if case .move = drag { "Move" } else if case .rotate = drag { "Turn" } else { "Resize" }
+                        lab.beginGesture("\(verb) \(WingIssue.label(i))")
                     case .pan:
                         panStart = pan
                     case nil:
@@ -740,16 +729,20 @@ struct WingResultsPane: View {
         VStack(alignment: .leading, spacing: 0) {
             ResultsSummary()
             Divider()
-            Picker("Results", selection: $lab.resultsTab) {
-                ForEach(WingLabModel.ResultsTab.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            .padding([.top, .horizontal], 8)
+            S37Segmented(options: WingLabModel.ResultsTab.allCases.map { ($0, $0.rawValue) }, selection: $lab.resultsTab)
+                .fixedSize()
+                .padding([.top, .horizontal], 8)
             switch lab.resultsTab {
-            case .pressure: CpPlot()
-            case .polar: PolarPlots()
+            case .pressure, .polar:
+                // Side by side when the pane is wide enough; otherwise the tab picks one
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 0) {
+                        CpPlot().frame(minWidth: 420)
+                        Rectangle().fill(S37.C.separator).frame(width: 1)
+                        PolarPlots().frame(minWidth: 420)
+                    }
+                    if lab.resultsTab == .pressure { CpPlot() } else { PolarPlots() }
+                }
             case .estimate: EstimateResults()
             case .cfd: CFDResults()
             case .study: StudyResults()
@@ -770,7 +763,7 @@ struct PolarPlots: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text("\(element), quick viscous (NeuralFoil), Re \(String(format: "%.0f", polar.re)), Ncrit \(String(format: "%.0f", polar.nCrit))")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
                     if rows.contains(where: { !$0.trusted }) {
                         Label("Hollow points: NeuralFoil is not confident there (usually past stall).", systemImage: "exclamationmark.triangle")
                             .font(.caption).foregroundStyle(S37.C.clayInk)
@@ -814,14 +807,15 @@ struct PolarPlots: View {
             let lab = app.wingLab
             VStack(spacing: 8) {
                 Text("No polar yet: NeuralFoil runs one element's section over a range of angles, a few seconds.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(S37.C.inkSecondary)
                 if let i = lab.selection, lab.wing.elements.indices.contains(i) {
-                    Button("Run Polar of \(WingIssue.label(i))") {
+                    Button("Run polar of \(WingIssue.label(i))") {
                         lab.solver = .quickViscous
                         app.runWingPolar()
                     }
+                    .buttonStyle(S37ButtonStyle())
                 } else {
-                    Text("Click an element on the canvas first.").font(.caption).foregroundStyle(.secondary)
+                    Text("Click an element on the canvas first.").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -837,11 +831,11 @@ struct CFDResults: View {
         let running = [lab.pinnedRansJob, lab.ransJob].contains { $0.map { !$0.status.isFinished } ?? false }
         HStack(spacing: 8) {
             Text("A and B side by side: their flow fields and the change between them (Field, Change from A).")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
             Spacer()
             if running {
                 ProgressView().controlSize(.small)
-                Text("running both…").font(.caption).foregroundStyle(.secondary)
+                Text("running both…").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
             } else {
                 Button("Run CFD on A and B") { app.runCFDOnBoth() }
                     .disabled(app.settings.su2Executable == nil)
@@ -882,7 +876,7 @@ struct CFDResults: View {
                 Text(points.count == 1
                      ? "One angle so far: run RANS at other wing angles (or a sweep, in free air) to draw the curves."
                      : "\(points.count) wing angles, the latest run at each, \(lab.turbulenceModel.rawValue) model.")
-                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.caption2).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
                 if points.contains(where: { !$0.good }) {
                     Text("Rust points did not converge: not results.").font(.caption2).foregroundStyle(S37.C.chart5)
                 }
@@ -901,12 +895,12 @@ struct CFDResults: View {
                 VStack(alignment: .leading, spacing: 4) {
                     if r.converged && r.averaged == true {
                         Label("Converged on average", systemImage: "checkmark.seal").foregroundStyle(S37.C.sageInk)
-                        Text(r.reason ?? "").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Text(r.reason ?? "").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
                     } else if r.converged {
                         Label("Converged", systemImage: "checkmark.seal").foregroundStyle(S37.C.sageInk)
                     } else {
                         Label("Not converged: not a result", systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
-                        Text(r.reason ?? "").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Text(r.reason ?? "").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
                     }
                     Text("\(r.modelName), \(r.meshLevel) mesh, Re \(String(format: "%.0f", r.re))").font(.caption)
                     Grid(alignment: .trailing, horizontalSpacing: 10, verticalSpacing: 2) {
@@ -930,12 +924,12 @@ struct CFDResults: View {
                     }
                     .font(.caption.monospacedDigit())
                     Text(String(format: "L/D %.1f · %ld iterations · residual down %.1f orders", r.liftToDrag, r.iterations, r.residualDrop))
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .font(.caption2).foregroundStyle(S37.C.inkSecondary)
                     Text("\(r.mesh.cells) cells: \(r.mesh.quads) quads (\(r.mesh.layers) wall layers), \(r.mesh.triangles) triangles")
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .font(.caption2).foregroundStyle(S37.C.inkSecondary)
                     if let attempts = r.attempts, attempts.count > 1 {
                         Text("Diverged at CFL \(attempts.dropLast().map { String(format: "%g", $0.cfl) }.joined(separator: ", ")); finished at CFL \(String(format: "%g", r.cfl ?? 0)).")
-                            .font(.caption2).foregroundStyle(.secondary)
+                            .font(.caption2).foregroundStyle(S37.C.inkSecondary)
                     }
                     if r.scheme == "fds" {
                         Text("Finished only on the upwind fallback scheme, which is more dissipative: drag reads high (about 40% at 10° on NACA 0012). Lift is fine for comparisons.")
@@ -958,7 +952,7 @@ struct CFDResults: View {
                         Text(lab.ransField == nil ? "No flow field for this run (from before the field view, or the flow file was not written)."
                              : lab.fieldIsCurrent ? "The flow field is on the canvas (Field, top left)."
                              : "The wing has changed since this run, so its flow field is not on the canvas.")
-                            .font(.caption2).foregroundStyle(.secondary)
+                            .font(.caption2).foregroundStyle(S37.C.inkSecondary)
                     }
                     Chart(points(r)) { p in
                         LineMark(x: .value("x (mm)", p.x), y: .value("−Cp", p.minusCp))
@@ -979,7 +973,7 @@ struct CFDResults: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(spacing: 8) {
-                Text("No CFD yet: a 2D RANS run of the whole wing with SU2, 2 to 5 minutes.").foregroundStyle(.secondary)
+                Text("No CFD yet: a 2D RANS run of the whole wing with SU2, 2 to 5 minutes.").foregroundStyle(S37.C.inkSecondary)
                 if app.settings.su2Executable == nil {
                     Text("Needs SU2: install it under Solvers, RANS CFD.").font(.caption).foregroundStyle(S37.C.clayInk)
                 }
@@ -1026,7 +1020,7 @@ struct CpPlot: View {
         let lab = app.wingLab
         let points = makePoints(lab)
         VStack(alignment: .leading, spacing: 2) {
-            Text("Surface pressure, inviscid (−Cp up)").font(.caption).foregroundStyle(.secondary)
+            Text("Surface pressure, inviscid (−Cp up)").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
             if points.isEmpty {
                 Rectangle().fill(.quaternary)
             } else {
@@ -1082,62 +1076,61 @@ struct WingInspector: View {
     var body: some View {
         @Bindable var lab = app.wingLab
         let wing = lab.wing
-        Form {
+        ScrollView {
+          VStack(alignment: .leading, spacing: S37.Space.s6) {
             DesignCard()
-            Section("Elements") {
+            S37Section("Elements") {
                 ForEach(Array(wing.elements.enumerated()), id: \.element.id) { i, e in
                     HStack {
-                        Text(WingIssue.label(i)).bold().frame(width: 50, alignment: .leading)
+                        Text(WingIssue.label(i)).fontWeight(.semibold).frame(width: 50, alignment: .leading)
                         Text(e.airfoil.name).lineLimit(1)
                         Spacer()
-                        if lab.selection == i { Image(systemName: "checkmark").foregroundStyle(S37.C.sage) }
+                        if lab.selection == i { Image(systemName: "checkmark").foregroundStyle(S37.C.sageInk) }
                     }
                     .contentShape(Rectangle())
                     .onTapGesture { lab.selection = i }
+                    .contextMenu {
+                        Button("Duplicate \(WingIssue.label(i))") { lab.duplicate(i) }
+                        Button("Remove \(WingIssue.label(i))", role: .destructive) { lab.remove(i) }
+                    }
                 }
                 Toggle("Inverted for downforce", isOn: Binding(
                     get: { wing.elements.first?.inverted ?? true },
-                    set: { on in lab.edit { w in for k in w.elements.indices { w.elements[k].inverted = on } } }))
-                HStack {
+                    set: { on in lab.edit(on ? "Invert Wing" : "Turn Wing Upright") { w in for k in w.elements.indices { w.elements[k].inverted = on } } }))
+                HStack(spacing: S37.Space.s2) {
                     Toggle("Snap", isOn: $lab.snap)
                     Toggle("Lock angle", isOn: $lab.lockAngle)
                     Toggle("Lock chord", isOn: $lab.lockChord)
                 }
-                .font(.caption)
+                .toggleStyle(S37ToggleButtonStyle())
+                .controlSize(.small)
+                .padding(.vertical, S37.Space.s2)
             }
 
             if let i = lab.selection, wing.elements.indices.contains(i) {
                 elementSection(lab, i)
             }
 
-            Section {
-                NumberField(label: "Minimum gap", unit: "mm", value: mm({ wing.minGap }, { v in lab.edit { $0.minGap = v } }))
+            S37Section("Wing", footer: app.car.setup != nil
+                       ? "The car's rules box for the \(wing.rulesFor == .front ? "front" : "rear") wing, from the base car." : nil) {
+                NumberField(label: "Minimum gap", unit: "mm", value: mm({ wing.minGap }, { v in lab.edit("Change Minimum Gap") { $0.minGap = v } }))
                 Toggle("Rules box", isOn: Binding(
                     get: { wing.rulesBox != nil },
                     set: { on in lab.edit { $0.rulesBox = on ? Wing.defaultRulesBox($0.rulesFor) : nil } }))
                     .disabled(app.car.setup != nil)
                 if let box = wing.rulesBox {
-                    Picker("Box for", selection: Binding(get: { wing.rulesFor },
-                                                         set: { p in lab.edit { $0.switchRules(to: p) } })) {
-                        Text("Front wing").tag(WingPosition.front)
-                        Text("Rear wing").tag(WingPosition.rear)
-                    }
-                    .pickerStyle(.segmented)
-                    NumberField(label: "Box from x", unit: "mm", value: mm({ box.minX }, { v in lab.edit { $0.rulesBox?.minX = v } }))
+                    S37Segmented(options: [(WingPosition.front, "Front wing"), (.rear, "Rear wing")],
+                                 selection: Binding(get: { wing.rulesFor }, set: { p in lab.edit("Change Rules Box") { $0.switchRules(to: p) } }))
+                        .fixedSize()
+                    NumberField(label: "Box from x", unit: "mm", value: mm({ box.minX }, { v in lab.edit("Change Box from x") { $0.rulesBox?.minX = v } }))
                         .disabled(app.car.setup != nil)
-                    NumberField(label: "Box to x", unit: "mm", value: mm({ box.maxX }, { v in lab.edit { $0.rulesBox?.maxX = v } }))
+                    NumberField(label: "Box to x", unit: "mm", value: mm({ box.maxX }, { v in lab.edit("Change Box to x") { $0.rulesBox?.maxX = v } }))
                         .disabled(app.car.setup != nil)
-                    NumberField(label: "Box from y", unit: "mm", value: mm({ box.minY }, { v in lab.edit { $0.rulesBox?.minY = v } }))
+                    NumberField(label: "Box from y", unit: "mm", value: mm({ box.minY }, { v in lab.edit("Change Box from y") { $0.rulesBox?.minY = v } }))
                         .disabled(app.car.setup != nil)
-                    NumberField(label: "Box to y", unit: "mm", value: mm({ box.maxY }, { v in lab.edit { $0.rulesBox?.maxY = v } }))
+                    NumberField(label: "Box to y", unit: "mm", value: mm({ box.maxY }, { v in lab.edit("Change Box to y") { $0.rulesBox?.maxY = v } }))
                         .disabled(app.car.setup != nil)
                 }
-            } header: {
-                Text("Wing")
-            } footer: {
-                Text(app.car.setup != nil
-                     ? "The rules box is the car's box for the \(wing.rulesFor == .front ? "front" : "rear") wing, from the base car, where the wing sits on it."
-                     : "The wing sits in its own plane, not on the car. The rules box is wherever you put it; data/rules/fs2027_aero.json has the FS and FSUK limits it comes from.")
             }
 
             flowSection(lab)
@@ -1146,50 +1139,67 @@ struct WingInspector: View {
             carSection
             lapSimSection(lab)
 
-            Section("Export") {
-                HStack {
+            S37Section("Export", footer: "Points in mm, in the wing's frame, ready for CATIA.") {
+                HStack(spacing: S37.Space.s3) {
                     Button("Elements as .dat…") { app.exportWingDat() }
                     Button("Points as CSV…") { app.exportWingCSV() }
+                    Button("Report as PDF…") { app.exportWingReport() }
                 }
-                Text("In mm, in the wing's frame, ready for CATIA.").font(.caption).foregroundStyle(.secondary)
-                Button("Report as PDF…") { app.exportWingReport() }
-                Text("One page: the wing, the conditions, every solver's latest answer, Cp, the polar and the flow field.")
-                    .font(.caption).foregroundStyle(.secondary)
+                .buttonStyle(S37ButtonStyle())
+                .controlSize(.small)
+                .padding(.vertical, S37.Space.s2)
             }
+
+            DisclosureGroup("How it's calculated") {
+                VStack(alignment: .leading, spacing: S37.Space.s3) {
+                    Text("Flow is shared by every solver. Ncrit 9 is a clean wind tunnel; lower (4 to 6) for the turbulent air behind a car, which trips the boundary layer sooner. The ground moves with the flow, as on track or a rolling road: an image wing in the quick solvers, a slip wall in RANS. Over a ground there's no RANS angle sweep: each angle needs its own mesh.")
+                    Text("ClA = −Cl × span × total chord × 3D factor (positive for downforce). Estimated, the factor is lifting-line theory on the aspect ratio raised by the endplates (Hoerner), AR_eff / (AR_eff + 2), and CdA gains induced drag CL² / (π AR_eff): a first number for a finite wing, not a 3D solution. The Lap Sim numbers use converged CFD if there is one, else the quick estimate, else the inviscid preview (optimistic) with the Cd typed in.")
+                    Text("Optimise runs the study for hand-picked variables (Design runs the whole chain). Wings that break the minimum gap or the rules box are never run; trials that fail or don't converge are recorded as failed and the study carries on. Stopping is safe: Resume picks up where it left off.")
+                    Text("The rules box limits come from data/rules/fs2027_aero.json (FS and FSUK). Without a base car the wing sits in its own plane and the box is wherever you put it.")
+                }
+                .font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, S37.Space.s2)
+            }
+            .font(.system(size: 14, weight: .semibold))
+          }
+          .padding(S37.Space.s5)
         }
-        .formStyle(.grouped)
     }
 
     @ViewBuilder private func elementSection(_ lab: WingLabModel, _ i: Int) -> some View {
         let e = lab.wing.elements[i]
-        Section {
-            NumberField(label: "Chord", unit: "mm", digits: 1, value: mm({ e.chord }, { v in lab.edit { $0.elements[i].chord = max(v, 0.005) } }))
-            NumberField(label: "Angle of attack", unit: "°", value: Binding(get: { e.angle }, set: { v in lab.edit { $0.elements[i].angle = v } }))
-            NumberField(label: "Leading edge x", unit: "mm", value: mm({ e.leadingEdge.x }, { v in lab.edit { $0.elements[i].leadingEdge.x = v } }))
-            NumberField(label: "Leading edge y", unit: "mm", value: mm({ e.leadingEdge.y }, { v in lab.edit { $0.elements[i].leadingEdge.y = v } }))
+        S37Section("\(WingIssue.label(i)): \(e.airfoil.name)",
+                   footer: i > 0 ? "Gap: from the trailing edge in front to this surface. Overlap: positive when this leading edge is ahead of that trailing edge." : nil) {
+            NumberField(label: "Chord", unit: "mm", digits: 1, value: mm({ e.chord }, { v in lab.edit("Change Chord") { $0.elements[i].chord = max(v, 0.005) } }))
+            NumberField(label: "Angle of attack", unit: "°", value: Binding(get: { e.angle }, set: { v in lab.edit("Change Angle of Attack") { $0.elements[i].angle = v } }))
+            NumberField(label: "Leading edge x", unit: "mm", value: mm({ e.leadingEdge.x }, { v in lab.edit("Change Leading Edge x") { $0.elements[i].leadingEdge.x = v } }))
+            NumberField(label: "Leading edge y", unit: "mm", value: mm({ e.leadingEdge.y }, { v in lab.edit("Change Leading Edge y") { $0.elements[i].leadingEdge.y = v } }))
             if i > 0 {
-                NumberField(label: "Gap", unit: "mm", value: mm({ lab.wing.gap(of: i) ?? 0 }, { v in lab.edit { $0.setGap(v, of: i) } }))
-                NumberField(label: "Overlap", unit: "mm", value: mm({ lab.wing.overlap(of: i) ?? 0 }, { v in lab.edit { $0.setOverlap(v, of: i) } }))
+                NumberField(label: "Gap", unit: "mm", value: mm({ lab.wing.gap(of: i) ?? 0 }, { v in lab.edit("Change Gap") { $0.setGap(v, of: i) } }))
+                NumberField(label: "Overlap", unit: "mm", value: mm({ lab.wing.overlap(of: i) ?? 0 }, { v in lab.edit("Change Overlap") { $0.setOverlap(v, of: i) } }))
             }
             if let r = lab.preview, r.cl.indices.contains(i) {
                 LabeledContent("Cl (inviscid)", value: String(format: "%.3f", r.cl[i]))
             }
-            Button("Remove \(WingIssue.label(i))", role: .destructive) { lab.remove(i) }
-        } header: {
-            Text("\(WingIssue.label(i)): \(e.airfoil.name)")
-        } footer: {
-            Text("Gap: from the element in front's trailing edge to this one's surface. Overlap: along the main chord, positive when this leading edge is ahead of that trailing edge. Typing either moves the element.")
+            HStack(spacing: S37.Space.s3) {
+                Button("Duplicate \(WingIssue.label(i))") { lab.duplicate(i) }
+                Button("Remove \(WingIssue.label(i))", role: .destructive) { lab.remove(i) }
+            }
+            .buttonStyle(S37ButtonStyle())
+            .controlSize(.small)
+            .padding(.vertical, S37.Space.s2)
         }
     }
 
     /// What every solver shares: the wing's angle to the flow and the air.
     @ViewBuilder private func flowSection(_ lab: WingLabModel) -> some View {
         let wing = lab.wing
-        Section {
+        S37Section("Flow", footer: "Ncrit 9 is a clean tunnel; 4 to 6 for the air behind a car.") {
             NumberField(label: "Wing angle to the flow", unit: "°", value: Binding(
                 get: { wing.alpha }, set: { v in lab.edit { $0.alpha = v } }))
-            NumberField(label: "Speed", unit: "m/s", value: Binding(get: { wing.speed }, set: { v in lab.edit { $0.speed = max(v, 0.1) } }))
-            NumberField(label: "Air density", unit: "kg/m³", value: Binding(get: { wing.rho }, set: { v in lab.edit { $0.rho = max(v, 0.01) } }))
+            NumberField(label: "Speed", unit: "m/s", value: Binding(get: { wing.speed }, set: { v in lab.edit("Change Speed") { $0.speed = max(v, 0.1) } }))
+            NumberField(label: "Air density", unit: "kg/m³", value: Binding(get: { wing.rho }, set: { v in lab.edit("Change Air Density") { $0.rho = max(v, 0.01) } }))
             NumberField(label: "Viscosity (×10⁻⁵)", unit: "Pa s", value: Binding(
                 get: { wing.mu * 1e5 }, set: { v in lab.edit { $0.mu = max(v, 0.01) * 1e-5 } }))
             ForEach(Array(wing.elements.enumerated()), id: \.element.id) { i, e in
@@ -1203,19 +1213,16 @@ struct WingInspector: View {
                 NumberField(label: "Ride height (lowest point)", unit: "mm", value: Binding(
                     get: { (wing.rideHeight ?? 0) * 1000 }, set: { v in lab.edit { $0.rideHeight = max(v, 1) / 1000 } }))
             }
-        } header: {
-            Text("Flow")
-        } footer: {
-            Text("Used by every solver. Ncrit 9 is a clean wind tunnel; lower (4 to 6) for the turbulent air behind a car, which trips the boundary layer sooner. The ground moves with the flow, as on track or a rolling road: an image wing in the quick solvers, a slip wall in RANS. Over a ground, a RANS angle sweep is not available (each angle needs its own mesh).")
         }
     }
 
     @ViewBuilder private func solversSection(_ lab: WingLabModel) -> some View {
-        Section {
-            FittingPicker(title: "Solver", selection: Binding(get: { lab.solver }, set: { lab.solver = $0 })) {
+        S37Section("Solvers") {
+            FittingPicker(title: "Solver", options: WingLabModel.Solver.allCases.map { ($0, "\($0.rawValue) · \($0.accuracy)") },
+                          selection: Binding(get: { lab.solver }, set: { lab.solver = $0 })) {
                 ForEach(WingLabModel.Solver.allCases) { Text("\($0.rawValue) · \($0.accuracy)").tag($0) }
             }
-            Text(lab.solver.purpose).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(lab.solver.purpose).font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
             switch lab.solver {
             case .live:
                 previewControls(lab)
@@ -1225,8 +1232,6 @@ struct WingInspector: View {
             case .rans:
                 ransControls(lab)
             }
-        } header: {
-            Text("Solvers")
         }
     }
 
@@ -1238,7 +1243,7 @@ struct WingInspector: View {
             Button("Polar of \(WingIssue.label(i)) (\(lab.wing.elements[i].airfoil.name))") { app.runWingPolar() }
                 .disabled(lab.polarJob.map { !$0.status.isFinished } ?? false)
         } else {
-            Text("Select an element.").foregroundStyle(.secondary)
+            Text("Select an element.").foregroundStyle(S37.C.inkSecondary)
         }
         if let job = lab.polarJob, !job.status.isFinished || job.status == .failed {
             JobInlineStatus(job: job)
@@ -1249,7 +1254,7 @@ struct WingInspector: View {
         Picker("Model", selection: Binding(get: { lab.turbulenceModel }, set: { lab.turbulenceModel = $0 })) {
             ForEach(WingLabModel.TurbulenceModel.allCases) { Text("\($0.title) · \($0.accuracy)").tag($0) }
         }
-        Text(lab.turbulenceModel.purpose).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        Text(lab.turbulenceModel.purpose).font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
         Button { modelHelp.toggle() } label: { Label("More", systemImage: "questionmark.circle") }
             .popover(isPresented: $modelHelp, arrowEdge: .trailing) { ModelHelpView() }
         Picker("Mesh", selection: Binding(get: { lab.meshLevel }, set: { lab.meshLevel = $0 })) {
@@ -1259,8 +1264,8 @@ struct WingInspector: View {
             Text("Fine · Best").tag("fine")
         }
         Toggle("Laminar zones from the quick viscous solver", isOn: Binding(get: { lab.predictTransition }, set: { lab.predictTransition = $0 }))
-        Text("Where each element's flow is still laminar gets a finer, flow-aligned wall mesh (structured quads); turbulent regions and wakes get unstructured cells. With a fully turbulent model the zones only refine the mesh.")
-            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        Text("Laminar zones get a finer, flow-aligned wall mesh.")
+            .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
         if lab.turbulenceModel != .sa {
             NumberField(label: "Turbulence intensity", unit: "%", value: Binding(get: { lab.turbulenceIntensity }, set: { lab.turbulenceIntensity = max($0, 0.01) }))
         }
@@ -1282,7 +1287,7 @@ struct WingInspector: View {
             JobInlineStatus(job: job)
         }
         if needsSU2 && haveSU2 {
-            Text("SU2 is installed now: run it again.").font(.caption).foregroundStyle(.secondary)
+            Text("SU2 is installed now: run it again.").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
         }
         if haveSU2, let job = lab.su2Job {
             JobInlineStatus(job: job)
@@ -1301,13 +1306,9 @@ struct WingInspector: View {
 
     @ViewBuilder private func optimiseSection(_ lab: WingLabModel) -> some View {
         let running = lab.optimiseJob.map { !$0.status.isFinished } ?? false
-        Section {
+        S37Section("Optimise") {
             variablesGrid(lab, running: running)
             studyControls(lab, running: running)
-        } header: {
-            Text("Optimise")
-        } footer: {
-            Text("The study in full, for hand-picked variables (the Design card above runs the whole chain). Wings that break the minimum gap or the rules box are never run. Trials that fail or do not converge are recorded as failed and the study carries on. Stopping is safe: Resume picks up where it left off.")
         }
     }
 
@@ -1333,7 +1334,7 @@ struct WingInspector: View {
         Grid(alignment: .center, horizontalSpacing: 4, verticalSpacing: 4) {
             GridRow {
                 Text("")
-                ForEach(kinds, id: \.self) { Text($0.title).font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.7) }
+                ForEach(kinds, id: \.self) { Text($0.title).font(.caption2).foregroundStyle(S37.C.inkSecondary).lineLimit(1).minimumScaleFactor(0.7) }
             }
             ForEach(Array(lab.wing.elements.indices), id: \.self) { i in
                 GridRow {
@@ -1355,7 +1356,7 @@ struct WingInspector: View {
                 ForEach(sections) { v in
                     let names = (v.choices ?? []).map { lab.airfoil($0)?.name ?? $0 }
                     Text("\(WingIssue.label(v.element)): " + (names.count > 1 ? names.joined(separator: ", ") : "finding sections…"))
-                        .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                        .font(.caption2).foregroundStyle(S37.C.inkSecondary).lineLimit(2)
                 }
                 HStack {
                     Button("Find Sections Again") { app.findShortlists() }
@@ -1381,10 +1382,10 @@ struct WingInspector: View {
         }
         if lab.optimise.objective == .minLapTime, let goal = app.lapGoalCar() {
             Text("Each trial is a lap of the Lap Sim's track (\(app.lapSim.track.kind.title)) in car A as the base car: \(goal.note).")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
         } else if lab.optimise.objective == .minLapTime {
-            Text("Each trial is a lap of the Lap Sim's track (\(app.lapSim.track.kind.title)) in car A, with this wing in place of the one under Use in the Lap Sim, using the 3D settings there.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("Each trial is a lap of \(app.lapSim.track.kind.title) in car A with this wing, using Use in the Lap Sim's 3D settings.")
+                .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
         }
         Picker("Each trial", selection: Binding(get: { lab.optimise.solver }, set: { lab.optimise.solver = $0 })) {
             Text("Estimate (tenths of a second)").tag("estimate")
@@ -1424,11 +1425,11 @@ struct WingInspector: View {
                     TextField("from", value: Binding(get: { v.low }, set: { lab.setBounds(of: v.id, low: $0) }),
                               format: .number.precision(.fractionLength(0...2)))
                         .multilineTextAlignment(.trailing)
-                    Text("to").foregroundStyle(.secondary)
+                    Text("to").foregroundStyle(S37.C.inkSecondary)
                     TextField("to", value: Binding(get: { v.high }, set: { lab.setBounds(of: v.id, high: $0) }),
                               format: .number.precision(.fractionLength(0...2)))
                         .multilineTextAlignment(.trailing)
-                    Text(v.unit).foregroundStyle(.secondary).font(.caption).frame(width: 64, alignment: .leading)
+                    Text(v.unit).foregroundStyle(S37.C.inkSecondary).font(.caption).frame(width: 64, alignment: .leading)
                 }
                 .disabled(running)
             }
@@ -1437,13 +1438,13 @@ struct WingInspector: View {
                 Text("CMA-ES").tag("cmaes")
             }
             .disabled(running)
-            Text("Ranges start at sensible defaults when a box is ticked (angles ±5°, gaps half to one and a half times, chords ±25%). Camber is added at mid-chord; the thickness's lower bound is the structural limit. CMA-ES does not handle section choices: they are sampled at random under it.")
-                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("CMA-ES samples section choices at random.")
+                .font(.caption2).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
         }
         Text(lab.optimise.solver == "estimate"
-             ? "Each trial is an estimate, as the live one, a few tenths of a second. A flap turned more than 25° past the element in front, or a main far past its stall angle, counts as separating and the search steers away." + (lab.optimise.checkBest > 0 ? " RANS checks run on the model and mesh under Solvers, 2 to 5 minutes each on 4 cores." : "")
+             ? "Each trial is a quick estimate, a few tenths of a second; separating wings are steered away from." + (lab.optimise.checkBest > 0 ? " RANS checks run on the model and mesh under Solvers, 2 to 5 minutes each on 4 cores." : "")
              : "\(app.settings.parallelTrials) trials at a time on \(app.settings.coresPerJob) cores each (Settings), each one RANS run with the model and mesh under Solvers.")
-            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
         if let problem = lab.optimiseProblem {
             Text(problem).font(.caption).foregroundStyle(S37.C.clayInk)
         }
@@ -1473,11 +1474,11 @@ struct WingInspector: View {
         NumberField(label: "To", unit: "°", value: Binding(get: { lab.estimateTo }, set: { lab.estimateTo = $0; app.scheduleLiveEstimate() }))
         NumberField(label: "Step", unit: "°", value: Binding(get: { lab.estimateStep }, set: { lab.estimateStep = max($0, 0.25); app.scheduleLiveEstimate() }))
         Text("Wing angles \(lab.estimateAngles.first.map { String(format: "%g", $0) } ?? "")° to \(lab.estimateAngles.last.map { String(format: "%g", $0) } ?? "")°, \(lab.estimateAngles.count) of them, and the wing's own.")
-            .font(.caption).foregroundStyle(.secondary)
+            .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
         if let status = lab.liveStatus {
-            Text(status).font(.caption).foregroundStyle(.secondary)
+            Text(status).font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
         } else if !lab.wing.issues.allSatisfy({ $0.kind == .outsideRules }) {
-            Text("Viscous part paused: elements overlap or are too close").font(.caption).foregroundStyle(.secondary)
+            Text("Viscous part paused: elements overlap or are too close").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
         }
     }
 
@@ -1486,7 +1487,7 @@ struct WingInspector: View {
             .disabled(lab.wing.rideHeight != nil)
             .help(lab.wing.rideHeight != nil ? "Over a ground each angle needs its own mesh, so there is no sweep" : "")
         if lab.sweepOn {
-            FittingPicker(title: "Sweep", selection: Binding(get: { lab.sweepRising }, set: { lab.sweepRising = $0 })) {
+            FittingPicker(title: "Sweep", options: [(false, "Quick scan"), (true, "Full polar")], selection: Binding(get: { lab.sweepRising }, set: { lab.sweepRising = $0 })) {
                 Text("Quick scan").tag(false)
                 Text("Full polar").tag(true)
             }
@@ -1494,15 +1495,15 @@ struct WingInspector: View {
             NumberField(label: "To", unit: "°", value: Binding(get: { lab.sweepTo }, set: { lab.sweepTo = $0 }))
             NumberField(label: "Step", unit: "°", value: Binding(get: { lab.sweepStep }, set: { lab.sweepStep = max($0, 0.5) }))
             Text("\(lab.sweepAngles.map { String(format: "%g°", $0) }.joined(separator: ", ")). " + (lab.sweepRising
-                 ? "On the \(lab.meshLevel) mesh: the lowest angle from rest, each next from the one below, so angles near maximum lift start from an attached flow. No time limit: several minutes an angle."
-                 : "Quick mesh; the middle angle from rest, the rest each from its neighbour. Never past 5 minutes: angles there is no time for are skipped and listed. About three angles fit on 4 cores."))
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                 ? "\(lab.meshLevel.capitalized) mesh, each angle from the one below. Several minutes an angle."
+                 : "Quick mesh, at most 5 minutes; angles that don't fit are skipped and listed."))
+                .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 
     @ViewBuilder private func su2Install(_ lab: WingLabModel) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("SU2 is built on your Mac from its source, once: 10 to 20 minutes. It needs Xcode's command line tools (xcode-select --install). With Open MPI (brew install open-mpi) first, it can use several cores.")
+            Text("Builds SU2 once, 10 to 20 minutes. Needs xcode-select --install; brew install open-mpi first for several cores.")
                 .font(.caption).fixedSize(horizontal: false, vertical: true)
             Button("Install SU2") { app.installSU2() }
                 .disabled(lab.su2Job.map { !$0.status.isFinished } ?? false)
@@ -1519,9 +1520,9 @@ struct WingInspector: View {
             }
             LabeledContent("Total, inviscid", value: String(format: "Cl %.3f   Cm %.3f", r.clTotal, r.cmTotal))
             Text(String(format: "On the total chord, %.0f mm. Solved in %.0f ms.", lab.wing.refChord * 1000, lab.previewMilliseconds))
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
         } else {
-            Text(lab.previewError ?? "Add an element.").foregroundStyle(.secondary)
+            Text(lab.previewError ?? "Add an element.").foregroundStyle(S37.C.inkSecondary)
         }
     }
 
@@ -1545,16 +1546,12 @@ struct WingInspector: View {
     }
 
     @ViewBuilder private var carSection: some View {
-        Section {
+        S37Section("Car", footer: "The wing being edited takes its end of the selected combination.") {
             BaseCarPane(embedded: true)
             if app.car.setup != nil {
                 SectionPane(embedded: true)
                 CombinationsPane(embedded: true)
             }
-        } header: {
-            Text("Car")
-        } footer: {
-            Text("The base car's 2D strips, and the combinations of front and rear cards on it. The wing being edited takes its end of the selected combination.")
         }
     }
 
@@ -1567,17 +1564,16 @@ struct WingInspector: View {
         let cl = best?.cl ?? 0
         let cd = best?.cd ?? lab.cdEstimate
         let add = wing.carContribution(cl: cl, cd: cd)
-        Section {
-            NumberField(label: "Span", unit: "mm", value: mm({ wing.span }, { v in lab.edit { $0.span = max(v, 0.01) } }))
+        S37Section("Use in the Lap Sim") {
+            NumberField(label: "Span", unit: "mm", value: mm({ wing.span }, { v in lab.edit("Change Span") { $0.span = max(v, 0.01) } }))
             Toggle("Estimate 3D from span and endplates", isOn: Binding(
                 get: { wing.endplateHeight != nil }, set: { on in lab.edit { $0.endplateHeight = on ? 0.25 : nil } }))
             if let f = wing.finite3D {
-                NumberField(label: "Endplate height", unit: "mm", value: mm({ wing.endplateHeight ?? 0 }, { v in lab.edit { $0.endplateHeight = max(v, 0) } }))
+                NumberField(label: "Endplate height", unit: "mm", value: mm({ wing.endplateHeight ?? 0 }, { v in lab.edit("Change Endplate Height") { $0.endplateHeight = max(v, 0) } }))
                 LabeledContent("3D lift factor", value: String(format: "%.2f", f.liftFactor))
-                    .help(String(format: "Aspect ratio %.1f, %.1f with endplates", f.aspectRatio, f.effectiveAspectRatio))
                 LabeledContent("Aspect ratio", value: String(format: "%.1f, %.1f with endplates", f.aspectRatio, f.effectiveAspectRatio))
             } else {
-                NumberField(label: "2D to 3D factor", value: Binding(get: { wing.factor3D }, set: { v in lab.edit { $0.factor3D = max(v, 0) } }))
+                NumberField(label: "2D to 3D factor", value: Binding(get: { wing.factor3D }, set: { v in lab.edit("Change 2D to 3D Factor") { $0.factor3D = max(v, 0) } }))
             }
             if let from {
                 LabeledContent("From the \(from.name)", value: String(format: "Cl %.3f   Cd %.4f", from.cl, from.cd))
@@ -1620,11 +1616,7 @@ struct WingInspector: View {
                 .fixedSize()
                 .disabled(from == nil && lab.preview == nil)
             }
-            if let note = sentNote { Text(note).font(.caption).foregroundStyle(.secondary) }
-        } header: {
-            Text("Use in the Lap Sim")
-        } footer: {
-            Text("ClA = −Cl × span × total chord × 3D factor (positive for downforce). Estimated, the factor is lifting-line theory on the aspect ratio raised by the endplates (Hoerner), AR_eff / (AR_eff + 2), and CdA gains induced drag CL² / (π AR_eff): a first number for a finite wing, not a 3D solution. Uses converged CFD if there is one, else the quick estimate, else the inviscid preview (optimistic) with the Cd typed in.")
+            if let note = sentNote { Text(note).font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary) }
         }
     }
 }
@@ -1684,7 +1676,7 @@ struct StudyResults: View {
             .padding()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            Text("Set up a study under Optimise and start it.").foregroundStyle(.secondary)
+            Text("Set up a study under Optimise and start it.").foregroundStyle(S37.C.inkSecondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -1693,15 +1685,15 @@ struct StudyResults: View {
         if let checks = s.checks, !checks.isEmpty { checkTable(s, checks, lab) }
         HStack(alignment: .firstTextBaseline) {
             Text("\(s.study): \(s.objectiveName)").bold()
-            Text(s.solver == "estimate" ? "estimates" : "RANS").font(.caption).foregroundStyle(.secondary)
+            Text(s.solver == "estimate" ? "estimates" : "RANS").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
             Text("\(s.complete + s.failed) of \(s.target) run · \(s.failed) failed · \((s.invalid ?? 0)) invalid wings skipped")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
             Spacer()
             if let b = s.bestTrial, let v = b.value {
                 Text(String(format: "best: trial %ld, %.4g", b.number, v)).font(.caption.monospacedDigit())
                 Button("Load Best") { lab.load(trial: b) }.font(.caption)
                 Button("Compare Start and Best") { app.compareStartAndBest() }.font(.caption)
-                    .help("The starting wing as A (dashed) and the best as B, so every chart and the A card show what the study changed. The CFD tab can then run both for their flow fields.")
+                    .help("Start as A (dashed), best as B, so every chart shows what the study changed")
             }
         }
         timeLapse(lab)
@@ -1754,7 +1746,7 @@ struct StudyResults: View {
                 Text(a.converged == true
                      ? String(format: "Ranked after calibrating on a RANS run of the starting wing: lift ×%.2f, drag ×%.2f of the estimate's.", a.clScale ?? 1, a.cdScale ?? 1)
                      : "The calibration run of the starting wing did not settle, so the ranking is the estimate's own.")
-                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.caption2).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
             }
             Grid(alignment: .trailing, horizontalSpacing: 10, verticalSpacing: 1) {
                 GridRow {
@@ -1771,7 +1763,7 @@ struct StudyResults: View {
                         Text(c.value.map { String(format: "%.4g", $0) } ?? "–")
                         let note = c.value == nil ? (c.reason ?? "failed") : (c.feasible == false ? "over limit" : "")
                         Text(note)
-                            .foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                            .foregroundStyle(S37.C.inkSecondary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
                             .help(note)
                             .textSelection(.enabled)
                     }
@@ -1837,10 +1829,7 @@ struct StudyResults: View {
 
     @ViewBuilder private func charts(_ s: WingStudy, _ lab: WingLabModel) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Picker("Chart", selection: $chart) {
-                ForEach(ChartKind.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented).labelsHidden().fixedSize().controlSize(.small)
+            S37Segmented(options: ChartKind.allCases.map { ($0, $0.rawValue) }, selection: $chart).fixedSize()
             switch chart {
             case .progress: bestSoFar(s, lab)
             case .front: scatter(s, lab)
@@ -1854,11 +1843,11 @@ struct StudyResults: View {
         if let est = lab.estimate, let here = est.row(nearest: lab.wing.alpha) {
             VStack(alignment: .leading, spacing: 2) {
                 Text((lab.selectedTrial.map { "Trial \($0)" } ?? "The wing on the canvas") + ", live estimate over the wing angle")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
                 PolarCharts(points: est.rows.map { .init(alpha: $0.alpha, cl: $0.cl, cd: $0.cd, good: $0.trusted) }, mark: here.alpha)
             }
         } else {
-            Text("Pick a trial in the table: its polars come from the live estimate.").font(.caption).foregroundStyle(.secondary)
+            Text("Pick a trial in the table: its polars come from the live estimate.").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
         }
     }
 
@@ -1979,10 +1968,8 @@ struct SweepStrip: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(sweep.timeLimit == 0 ? "Polar through stall" : "Sweep, quick mesh").font(.caption).bold()
-                Picker("Angle", selection: Binding(get: { lab.sweepRow ?? 0 }, set: { lab.showSweepRow($0) })) {
-                    ForEach(rows, id: \.offset) { i, r in Text(String(format: "%g°", r.alpha ?? 0)).tag(i) }
-                }
-                .pickerStyle(.segmented).labelsHidden()
+                S37Segmented(options: rows.map { ($0.offset, String(format: "%g°", $0.element.alpha ?? 0)) },
+                             selection: Binding(get: { lab.sweepRow ?? 0 }, set: { lab.showSweepRow($0) }))
                 Text(String(format: "%.0f s in all", sweep.seconds)
                      + (sweep.skipped.isEmpty ? "" : "; not run, out of time: " + sweep.skipped.map { String(format: "%g°", $0) }.joined(separator: ", ")))
                     .font(.caption2).foregroundStyle(sweep.skipped.isEmpty ? Color.secondary : S37.C.chart5)
@@ -2041,7 +2028,7 @@ struct EstimateResults: View {
                             .font(.caption).foregroundStyle(S37.C.chart5).fixedSize(horizontal: false, vertical: true)
                     }
                     Text("Panel method and NeuralFoil: lift within about 2% of RANS on a main-and-flap wing until the flap nears separation, drag about 10% high. For trends and screening; RANS CFD for numbers to keep.")
-                        .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        .font(.caption2).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(width: 290, alignment: .leading)
                 .scrollableColumn()
@@ -2051,7 +2038,7 @@ struct EstimateResults: View {
             }
             .padding(8)
         } else {
-            Text(app.wingLab.liveStatus ?? "The live estimate runs as you edit: add an element, or move apart ones that overlap.").foregroundStyle(.secondary)
+            Text(app.wingLab.liveStatus ?? "The live estimate runs as you edit: add an element, or move apart ones that overlap.").foregroundStyle(S37.C.inkSecondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -2121,7 +2108,7 @@ struct ResultsSummary: View {
         let forCar: (cl: Double, cd: Double, from: String)? = rans.flatMap { $0.converged ? ($0.cl, $0.cd, "CFD") : nil }
             ?? estimate.map { ($0.cl, $0.cd, "estimate") }
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: 0) {
                 card("Live estimate", tab: .estimate,
                      lines: estimate.map { [String(format: "Cl %.3f  Cd %.4f", $0.cl, $0.cd),
                                             String(format: "L/D %.1f", abs($0.cl) / max($0.cd, 1e-9)) + ($0.separating == true ? "  separating" : "")] }
@@ -2169,16 +2156,17 @@ struct ResultsSummary: View {
         return ["no results to compare"]
     }
 
+    /// One cell of the strip: label, then its numbers; clicking shows its tab
     private func card(_ title: String, tab: WingLabModel.ResultsTab?, lines: [String], warn: Bool = false, lab: WingLabModel) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption2.bold()).foregroundStyle(warn ? S37.C.clayInk : Color.secondary)
+            Text(title).font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(warn ? S37.C.clayInk : (tab != nil && lab.resultsTab == tab ? S37.C.sageInk : S37.C.inkTertiary))
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                Text(line).font(.caption.monospacedDigit()).lineLimit(1)
+                Text(line).font(.system(size: 13).monospacedDigit()).lineLimit(1)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).fill(lab.resultsTab == tab ? S37.C.sage.opacity(0.12) : Color.secondary.opacity(0.08)))
+        .padding(.horizontal, S37.Space.s3)
+        .overlay(alignment: .leading) { Rectangle().fill(S37.C.separator).frame(width: 1) }
         .contentShape(Rectangle())
         .onTapGesture { if let tab { lab.resultsTab = tab } }
     }
@@ -2195,15 +2183,14 @@ extension View {
 /// the pane is too narrow, so no option is ever cut off.
 struct FittingPicker<Value: Hashable, Content: View>: View {
     let title: String
+    /// The same options as `content`, for the segmented form
+    var options: [(Value, String)]
     @Binding var selection: Value
     @ViewBuilder var content: () -> Content
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            Picker(title, selection: $selection, content: content)
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
+            S37Segmented(options: options, selection: $selection).fixedSize()
             Picker(title, selection: $selection, content: content)
                 .pickerStyle(.menu)
         }

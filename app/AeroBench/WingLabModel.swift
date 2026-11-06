@@ -600,7 +600,7 @@ final class WingLabModel {
 
     /// Puts a card's wing on the canvas to edit (undoable); Save then updates that card.
     func open(card: WingCard) {
-        editStep { $0 = Step(wing: card.wing, cardID: card.id, carX: nil) }
+        editStep("Open \(card.name)") { $0 = Step(wing: card.wing, cardID: card.id, carX: nil) }
         markOrigin("card \(card.name)")
     }
 
@@ -658,26 +658,43 @@ final class WingLabModel {
 
     // MARK: Editing with undo
 
-    /// Records the current wing for undo, then applies a change.
-    func edit(_ change: (inout Wing) -> Void) {
-        editStep { change(&$0.wing) }
+    /// Records the current wing for undo as `name` ("Undo Change Chord"), then applies a change.
+    func edit(_ name: String = "Edit Wing", _ change: (inout Wing) -> Void) {
+        editStep(name) { change(&$0.wing) }
     }
 
     /// The same, for a change to where the wing sits on the car too.
-    func editStep(_ change: (inout Step) -> Void) {
+    func editStep(_ name: String = "Edit Wing", _ change: (inout Step) -> Void) {
         var next = step
         change(&next)
         guard next != step else { return }
-        undoStack.append(step)
-        if undoStack.count > 200 { undoStack.removeFirst() }
-        redoStack = []
+        push(name)
         step = next
     }
 
     /// For a drag: one undo step for the whole gesture.
-    func beginGesture() {
+    func beginGesture(_ name: String = "Move") {
+        push(name)
+    }
+
+    /// The window's, so Edit ▸ Undo and Redo walk this history by name
+    @ObservationIgnored weak var undoManager: UndoManager?
+    private var undoNames: [String] = []
+    private var redoNames: [String] = []
+
+    private func push(_ name: String) {
         undoStack.append(step)
+        undoNames.append(name)
+        if undoStack.count > 200 { undoStack.removeFirst(); undoNames.removeFirst() }
         redoStack = []
+        redoNames = []
+        register(name) { $0.undo() }
+    }
+
+    /// One entry in the undo manager per entry on these stacks
+    private func register(_ name: String, _ action: @escaping (WingLabModel) -> Void) {
+        undoManager?.registerUndo(withTarget: self) { model in MainActor.assumeIsolated { action(model) } }
+        undoManager?.setActionName(name)
     }
 
     /// Changes during a drag, without new undo steps.
@@ -689,16 +706,22 @@ final class WingLabModel {
 
     func undo() {
         guard let last = undoStack.popLast() else { return }
+        let name = undoNames.popLast() ?? "Edit Wing"
         redoStack.append(step)
+        redoNames.append(name)
         step = last
         clampSelection()
+        register(name) { $0.redo() }
     }
 
     func redo() {
         guard let next = redoStack.popLast() else { return }
+        let name = redoNames.popLast() ?? "Edit Wing"
         undoStack.append(step)
+        undoNames.append(name)
         step = next
         clampSelection()
+        register(name) { $0.undo() }
     }
 
     private func clampSelection() {
@@ -709,6 +732,9 @@ final class WingLabModel {
     func reset(to wing: Wing) {
         undoStack = []
         redoStack = []
+        undoNames = []
+        redoNames = []
+        undoManager?.removeAllActions(withTarget: self)
         self.wing = wing
         cardID = nil
         carX = nil
@@ -766,7 +792,7 @@ final class WingLabModel {
     func swapWithPinned() {
         guard let a = pinned else { return }
         pinned = current
-        edit { $0 = a.wing }
+        edit("Swap with A") { $0 = a.wing }
         markOrigin(a.version)
         estimate = a.estimate
         ransResult = a.rans
@@ -779,7 +805,7 @@ final class WingLabModel {
     /// Adds a section as the next element, behind the last one (or as the
     /// main element at the origin).
     func add(_ airfoil: Airfoil, at point: SIMD2<Double>? = nil) {
-        edit { w in
+        edit("Add \(WingIssue.label(wing.elements.count))") { w in
             let inverted = w.elements.first?.inverted ?? true
             if let last = w.elements.last {
                 let chord = max(last.chord * 0.45, 0.02)
@@ -798,14 +824,26 @@ final class WingLabModel {
     /// Drops a section onto an element: same chord, angle and place, new shape.
     func swap(_ airfoil: Airfoil, into index: Int) {
         guard wing.elements.indices.contains(index) else { return }
-        edit { $0.elements[index].airfoil = airfoil }
+        edit("Change \(WingIssue.label(index)) to \(airfoil.name)") { $0.elements[index].airfoil = airfoil }
         selection = index
     }
 
     func remove(_ index: Int) {
         guard wing.elements.indices.contains(index) else { return }
-        edit { $0.elements.remove(at: index) }
+        edit("Remove \(WingIssue.label(index))") { $0.elements.remove(at: index) }
         clampSelection()
+    }
+
+    /// A copy of an element just behind it, 10 mm downstream
+    func duplicate(_ index: Int) {
+        guard wing.elements.indices.contains(index) else { return }
+        edit("Duplicate \(WingIssue.label(index))") { w in
+            var copy = w.elements[index]
+            copy.id = UUID()
+            copy.leadingEdge.x += 0.01
+            w.elements.insert(copy, at: index + 1)
+        }
+        selection = index + 1
     }
 
     func element(at point: SIMD2<Double>) -> Int? {

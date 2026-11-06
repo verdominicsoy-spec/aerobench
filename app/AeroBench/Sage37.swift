@@ -460,6 +460,7 @@ struct S37Section<Rows: View>: View {
             }
             .font(.system(size: 14))
             .labeledContentStyle(S37LabeledContentStyle())
+            .toggleStyle(.switch)  // settings apply at once
             .background(RoundedRectangle(cornerRadius: S37.Radius.lgIn, style: .continuous).fill(S37.C.inset))
             if let footer {
                 Text(footer).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkSecondary)

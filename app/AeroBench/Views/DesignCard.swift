@@ -12,11 +12,12 @@ struct DesignCard: View {
         let d = lab.design
         let running = lab.designRun.map { !$0.status.isFinished } ?? false
         let hasBase = app.car.setup != nil && app.car.base != nil
-        Section {
+        S37Section("Design", footer: (app.designFrame.onCar ? "Fills the car's rules box for this end. " : "Fills Wing Lab's rules box. ")
+                   + "The estimate shortlists; RANS picks: a finalist counts only if it converges and stays attached.") {
             HStack(spacing: S37.Space.s2) {
                 chip(lab.wing.rulesFor == .front ? "Front wing" : "Rear wing") {
-                    Button("Front wing") { lab.edit { $0.switchRules(to: .front) } }
-                    Button("Rear wing") { lab.edit { $0.switchRules(to: .rear) } }
+                    Button("Front wing") { lab.edit("Make Front Wing") { $0.switchRules(to: .front) } }
+                    Button("Rear wing") { lab.edit("Make Rear Wing") { $0.switchRules(to: .rear) } }
                 }
                 chip(d.startFrom == .scratch ? "From scratch" : "From this wing") {
                     Button("From scratch") { lab.design.startFrom = .scratch }
@@ -26,7 +27,7 @@ struct DesignCard: View {
                     ForEach(2...5, id: \.self) { n in Button("\(n) elements") { lab.design.elements = n } }
                 }
                 .disabled(d.startFrom == .existing)
-                .help(d.startFrom == .existing ? "From this wing: its own elements" : "How many elements to lay out")
+                .help(d.startFrom == .existing ? "From this wing: its own elements" : "")
             }
             HStack(spacing: S37.Space.s2) {
                 chip(d.goal.title) {
@@ -34,7 +35,7 @@ struct DesignCard: View {
                         Button(g.title) { lab.design.goal = g }.disabled(g == .balance && !hasBase)
                     }
                 }
-                .help(d.goal == .balance || hasBase ? "What the design is for" : "Hit a balance needs the base car (inspector's Car section)")
+                .help(d.goal == .balance || hasBase ? "" : "Hit a balance needs the base car (inspector's Car section)")
                 chip("RANS on best \(d.checks)") {
                     ForEach([1, 3, 5], id: \.self) { n in Button("RANS on best \(n)") { lab.design.checks = n } }
                 }
@@ -53,19 +54,13 @@ struct DesignCard: View {
                 Button("Design") { app.runDesign() }
                     .buttonStyle(S37ButtonStyle(kind: .prominent))
                     .disabled(running)
-                Text(timeText).font(.caption).foregroundStyle(S37.C.inkSecondary)
+                Text(timeText).font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
             }
             if let job = lab.designRun, !job.status.isFinished || job.status == .failed { JobInlineStatus(job: job) }
             if app.settings.su2Executable == nil {
-                Text("No SU2: finalists are the estimate's, unchecked.").font(.caption).foregroundStyle(S37.C.clayInk)
+                Text("No SU2: finalists are the estimate's, unchecked.").font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.clayInk)
             }
             if let r = lab.designResult { finalists(r) }
-        } header: {
-            Text("Design")
-        } footer: {
-            Text(app.designFrame.onCar
-                 ? "Fills the car's rules box for this end, anywhere in it. The estimate shortlists; RANS picks: a finalist counts only if it converges and stays attached."
-                 : "Fills Wing Lab's rules box. The estimate shortlists; RANS picks: a finalist counts only if it converges and stays attached.")
         }
     }
 

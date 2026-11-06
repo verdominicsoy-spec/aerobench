@@ -70,6 +70,46 @@ struct AeroBenchCommands: Commands {
             }
             Divider()
         }
+        CommandMenu("Wing") {
+            let lab = app.wingLab
+            let inWing = app.tool == .wingLab
+            let busy: (JobItem?) -> Bool = { $0.map { !$0.status.isFinished } ?? false }
+            let selected = lab.selection.flatMap { lab.wing.elements.indices.contains($0) ? $0 : nil }
+            Button("Design") { app.runDesign() }
+                .disabled(!inWing || busy(lab.designRun))
+            Button("Quick Estimate") { app.runWingQuickEstimate() }
+                .disabled(!inWing || lab.wing.elements.isEmpty)
+            Button("Element Polar") { app.runWingPolar() }
+                .disabled(!inWing || selected == nil || busy(lab.polarJob))
+            Button("Run CFD") { app.runCFD() }
+                .keyboardShortcut("r")
+                .disabled(!inWing || app.settings.su2Executable == nil || lab.wing.elements.isEmpty
+                          || !lab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty || busy(lab.ransJob) || busy(lab.sweepJob))
+            Button(lab.optimiseJob.map { $0.status.isFinished } ?? true ? "Start Study" : "Study Running") { app.runWingOptimise() }
+                .disabled(!inWing || busy(lab.optimiseJob))
+            Button("Stop Study") { lab.optimiseJob.map(app.jobs.cancel) }
+                .disabled(!busy(lab.optimiseJob))
+            Divider()
+            Button("Duplicate Element") { selected.map(lab.duplicate) }
+                .keyboardShortcut("d")
+                .disabled(!inWing || selected == nil)
+            Button("Remove Element") { selected.map(lab.remove) }
+                .disabled(!inWing || selected == nil)
+            Divider()
+            Button(lab.pinned == nil ? "Pin This Wing as A" : "Pin This Wing as A Instead") { lab.pinCurrent() }
+                .disabled(lab.wing.elements.isEmpty)
+            Button("Swap A and This Wing") { lab.swapWithPinned() }.disabled(lab.pinned == nil)
+            Button("Clear A") { lab.pinned = nil }.disabled(lab.pinned == nil)
+            Divider()
+            Toggle("Show Library", isOn: Binding(get: { lab.showLibrary }, set: { lab.showLibrary = $0 }))
+                .keyboardShortcut("l", modifiers: [.command, .option])
+            Toggle("Show Inspector", isOn: Binding(get: { lab.showInspector }, set: { lab.showInspector = $0 }))
+                .keyboardShortcut("i", modifiers: [.command, .option])
+            Divider()
+            Button("Export Elements as .dat…") { app.exportWingDat() }
+            Button("Export Points as CSV…") { app.exportWingCSV() }
+            Button("Export Report as PDF…") { app.exportWingReport() }
+        }
         CommandMenu("Lap Sim") {
             Button("Run Lap Sim") { app.tool = .lapSim; app.runLapSim() }
                 .keyboardShortcut("r")
