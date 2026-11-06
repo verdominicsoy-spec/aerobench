@@ -462,7 +462,15 @@ def build(section: dict, wings: list[dict], setup: dict, preset: str, out: Path)
             if layers_for(first, 1.15, thickness) < 10:
                 thickness = first * 40
             bl = fld.add("BoundaryLayer")
-            fld.setNumbers(bl, "CurvesList", wing_curves)
+            # No room for the layers where a wing is nearer the body or a wheel than their thickness: a
+            # front wing's flap 2 mm proud of the nose it runs through had its layers grow into the nose's
+            # wall, and gmsh failed ("Edge not recovered"). Those segments get the triangles.
+            solid = [q for m_, q in shapes if not m_.startswith("wing_")]
+            layered = [c for c in wing_curves if not solid or min(
+                _seg_distance(np.array(gmsh.model.getValue(1, c, [t])[:2]), q)
+                for t in gmsh.model.getParametrizationBounds(1, c)[0] + gmsh.model.getParametrizationBounds(1, c)[1]
+                for q in solid) >= thickness]
+            fld.setNumbers(bl, "CurvesList", layered)
             fld.setNumber(bl, "Size", first)
             fld.setNumber(bl, "Ratio", 1.15)
             fld.setNumber(bl, "Thickness", thickness)

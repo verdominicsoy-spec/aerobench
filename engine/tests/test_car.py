@@ -400,3 +400,21 @@ def test_a_wing_s_own_chord_is_used_when_given():
     r = strips.combine(s, AXLES, 15, 1.225, [wing], "coarse")
     cl, cd = -60 * 0.4 / (Q * 0.25 * 0.4), 1.0 * 0.4 / (Q * 0.25 * 0.4)
     assert r["wings"][0]["cla"] == pytest.approx(car_contribution(cl, cd, 1.0, 0.25, 0.2)[0], rel=1e-6)
+
+
+
+@pytest.mark.parametrize("dip", [1.0, 2.0, 4.0])
+def test_a_flap_just_proud_of_the_nose_meshes(tmp_path, dip):
+    """A flap dipping a few mm below the nose's sloping underside it runs through (Car 2's front
+    wing at y 82 mm): its wall layers have no room there, and growing them made gmsh fail with
+    "Edge not recovered" at 2 mm."""
+    body = {"kind": "body", "points": [[80, 67], [0.2, 47.6], [-141.8, 29.3], [-1500, 29.3], [-1500, 400], [80, 400]]}
+    ang = np.arctan2(47.6 - 29.3, 0.2 + 141.8)
+    t = np.linspace(0, 2 * np.pi, 81)[:-1]
+    xs, zs = 63 * np.cos(t), 12 * np.sin(t)
+    x = -72 + xs * np.cos(ang) - zs * np.sin(ang)
+    z = 47.6 - 72.2 * np.tan(ang) + 12 - dip + xs * np.sin(ang) + zs * np.cos(ang)
+    wing = {"position": "front", "elements": [np.c_[x, z].tolist()], "span": 1.0, "factor3d": 1.0, "endplate": None}
+    st = car_mesh.build({"y": 0.0, "loops": [body], "open": []}, [wing], {"ground_z": 0.0, "speed": 20.0},
+                        "medium", tmp_path / "m.su2")
+    assert "wing_front" in st["markers"] and st["cells"] > 1000
