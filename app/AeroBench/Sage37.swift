@@ -400,9 +400,7 @@ struct S37FieldRow: View {
                     .padding(.trailing, 48)
             }
         }
-        .padding(.horizontal, S37.Space.s3)
         .padding(.vertical, error == nil ? 0 : S37.Space.s1)
-        .frame(minHeight: 40)
     }
 }
 
@@ -417,24 +415,37 @@ extension S37FieldRow {
 
 // MARK: sections and rows
 
-/// A titled group of rows in the pane's inset tint, hairlines between them
+/// A titled group of rows in the pane's inset tint, hairlines between them.
+/// Any view inside is a row: padded, at least 40 tall, labels left.
 struct S37Section<Rows: View>: View {
-    var title: String
+    var title: String?
+    var footer: String?
     @ViewBuilder var rows: Rows
-    init(_ title: String, @ViewBuilder rows: () -> Rows) { self.title = title; self.rows = rows() }
+    init(_ title: String? = nil, footer: String? = nil, @ViewBuilder rows: () -> Rows) {
+        self.title = title; self.footer = footer; self.rows = rows()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: S37.Space.s2) {
-            Text(title).font(.system(size: 16, weight: .semibold))
+            if let title { Text(title).font(.system(size: 16, weight: .semibold)) }
             VStack(alignment: .leading, spacing: 0) {
                 Group(subviews: rows) { subviews in
                     ForEach(Array(subviews.enumerated()), id: \.offset) { i, row in
                         if i > 0 { Rectangle().fill(S37.C.separator).frame(height: 1).padding(.horizontal, S37.Space.s3) }
                         row
+                            .padding(.horizontal, S37.Space.s3)
+                            .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
                     }
                 }
             }
+            .font(.system(size: 14))
+            .labeledContentStyle(S37LabeledContentStyle())
             .background(RoundedRectangle(cornerRadius: S37.Radius.lgIn, style: .continuous).fill(S37.C.inset))
+            if let footer {
+                Text(footer).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, S37.Space.s1)
+            }
         }
     }
 }
@@ -452,8 +463,17 @@ struct S37Row<Value: View>: View {
             value.lineLimit(1).truncationMode(.middle)
         }
         .font(.system(size: 14))
-        .padding(.horizontal, S37.Space.s3)
-        .frame(minHeight: 40)
+    }
+}
+
+/// LabeledContent as a row: the label left, the value right in secondary ink
+struct S37LabeledContentStyle: LabeledContentStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: S37.Space.s3) {
+            configuration.label.foregroundStyle(S37.C.ink)
+            Spacer(minLength: S37.Space.s3)
+            configuration.content.foregroundStyle(S37.C.inkSecondary).monospacedDigit()
+        }
     }
 }
 

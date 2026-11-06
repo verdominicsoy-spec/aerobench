@@ -36,7 +36,7 @@ final class FlowFieldModel {
     }
 
     var mode: Mode = .calibrate
-    /// The guided quick setup, or every setting.
+    /// All settings open under the setup steps
     var showAllSettings = false
 
     // Source and calibration
@@ -51,7 +51,30 @@ final class FlowFieldModel {
     var frameIndex = 0
     private(set) var frameImage: CGImage?
     var calibration = FlowCalibration() {
-        didSet { if calibration != oldValue { onCalibrationChange?() } }
+        didSet {
+            guard calibration != oldValue else { return }
+            onCalibrationChange?()
+            registerUndo(oldValue)
+        }
+    }
+    /// The window's, so Edit ▸ Undo steps back through calibration edits
+    @ObservationIgnored weak var undoManager: UndoManager?
+    @ObservationIgnored private var undoSuspended = false
+
+    private func registerUndo(_ old: FlowCalibration) {
+        guard !undoSuspended, let undoManager else { return }
+        undoManager.registerUndo(withTarget: self) { model in
+            MainActor.assumeIsolated { model.calibration = old }  // the didSet registers the redo
+        }
+        undoManager.setActionName("Calibration Change")
+    }
+
+    /// Changes that aren't edits (opening a video or a project): no undo,
+    /// and nothing older to undo into.
+    func withoutUndo(_ change: () -> Void) {
+        undoSuspended = true
+        change()
+        undoSuspended = false
     }
     @ObservationIgnored var onCalibrationChange: (() -> Void)?
     var tool: FrameTool = .none
@@ -137,13 +160,15 @@ final class FlowFieldModel {
             detectedFps = g.detectedFps
             detectedDuration = g.detectedDuration
             isVideo = g.isVideo
-            // The engine picks frames by the same rate and count, so both agree on frame i.
-            calibration.video = g.isVideo
-                ? .init(fps: g.fps, frames: g.frameCount, typedFps: typed?.typedFps, typedDuration: typed?.typedDuration)
-                : nil
-            calibration.sourceSize = [Int(g.size.width), Int(g.size.height)]
-            if calibration.planes.lastFrame == nil || (calibration.planes.lastFrame ?? 0) >= g.frameCount {
-                calibration.planes.lastFrame = g.frameCount - 1
+            withoutUndo {
+                // The engine picks frames by the same rate and count, so both agree on frame i.
+                calibration.video = g.isVideo
+                    ? .init(fps: g.fps, frames: g.frameCount, typedFps: typed?.typedFps, typedDuration: typed?.typedDuration)
+                    : nil
+                calibration.sourceSize = [Int(g.size.width), Int(g.size.height)]
+                if calibration.planes.lastFrame == nil || (calibration.planes.lastFrame ?? 0) >= g.frameCount {
+                    calibration.planes.lastFrame = g.frameCount - 1
+                }
             }
             frameIndex = min(frameIndex, g.frameCount - 1)
             await showFrame(frameIndex)

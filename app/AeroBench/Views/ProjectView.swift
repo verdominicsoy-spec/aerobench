@@ -82,7 +82,7 @@ struct ProjectDetailView: View {
                             .padding(S37.Space.s2)
                             .background(RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).fill(S37.C.recess))
                     }
-                    .padding(.horizontal, S37.Space.s3).padding(.vertical, S37.Space.s3)
+                    .padding(.vertical, S37.Space.s3)
                 }
                 S37Section("Engine checks") { EngineChecksView() }
             }
@@ -110,7 +110,6 @@ struct EngineChecksView: View {
             Label("Engine not found. Set the engine folder in Settings (⌘,) and run `uv sync` in it.",
                   systemImage: "exclamationmark.triangle")
                 .foregroundStyle(S37.C.clayInk)
-                .padding(S37.Space.s3)
         }
         S37Row("Ping") {
             if let job = app.pingJob { PingResultView(job: job) }

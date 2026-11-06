@@ -220,8 +220,6 @@ struct PrismLayerView: View {
                     Stepper("Number of layers", value: binding(\.layers, "Number of Layers"), in: 2...6).labelsHidden()
                         .frame(width: 40, alignment: .leading)
                 }
-                .padding(.horizontal, S37.Space.s3)
-                .frame(height: 40)
             }
             S37FieldRow(label: "Stretching", value: binding(\.stretching, "Stretching"),
                         error: stretching > 1 && stretching.isFinite ? nil : "Use stretching above 1")
@@ -276,13 +274,7 @@ struct PrismLayerView: View {
     }
 
     private func group<Rows: View>(_ title: String, @ViewBuilder rows: () -> Rows) -> some View {
-        VStack(alignment: .leading, spacing: S37.Space.s2) {
-            Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(S37.C.ink)
-            VStack(spacing: 0) { rows() }
-                .background(RoundedRectangle(cornerRadius: S37.concentric(S37.Radius.xlContent, S37.Space.s5), style: .continuous)
-                    .fill(S37.C.inset))
-        }
-        .frame(minWidth: 300, maxWidth: .infinity, alignment: .topLeading)
+        S37Section(title, rows: rows).frame(minWidth: 300, maxWidth: .infinity, alignment: .topLeading)
     }
 }
 

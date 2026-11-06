@@ -95,10 +95,9 @@ struct LapSimSetupView: View {
                     if usesPlaceholders {
                         Label("est. marks a placeholder, not team data", systemImage: "exclamationmark.triangle")
                             .font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.clayInk)
-                            .padding(.horizontal, S37.Space.s3).padding(.vertical, S37.Space.s2)
                     }
                     CarGrid(edit: { field, car in edit((\LapSimSetup.cars[car]).appending(path: field.keyPath), "Change \(field.label)") })
-                        .padding(S37.Space.s3)
+                        .padding(.vertical, S37.Space.s3)
                     HStack(spacing: S37.Space.s3) {
                         if setup.cars.count > 1 {
                             Button("Copy A to the others") {
@@ -112,7 +111,7 @@ struct LapSimSetupView: View {
                         }
                         .buttonStyle(S37ButtonStyle(kind: .plain))
                     }
-                    .padding(S37.Space.s3)
+                    .padding(.vertical, S37.Space.s2)
                 }
 
                 S37Section("Simulation") {
@@ -201,7 +200,6 @@ struct LapSimSetupView: View {
                 if !issues.isEmpty {
                     Label("\(issues.count) \(issues.count == 1 ? "place breaks" : "places break") the FS layout rules (it still runs)", systemImage: "exclamationmark.triangle")
                         .font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.clayInk)
-                        .padding(.horizontal, S37.Space.s3).padding(.vertical, S37.Space.s2)
                 }
             }
             S37Row(setup.track.drawn?.isUsable == true ? "Track editor" : "Nothing drawn yet") {

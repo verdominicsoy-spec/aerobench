@@ -2,72 +2,79 @@ import AeroBenchKit
 import AppKit
 import SwiftUI
 
-/// The guided setup: open the video, check what was found, measure one
-/// thing, type the plane positions, build. Everything else is automatic or
-/// in All Settings.
-struct FlowQuickSetupPanel: View {
+/// The one setup panel: open the video, check what was found, measure one
+/// thing, type the plane positions, build. Everything else is automatic, or
+/// under All settings at the bottom.
+struct FlowSetupPanel: View {
     @Environment(AppState.self) private var app
 
     var body: some View {
-        let flow = app.flow
+        @Bindable var flow = app.flow
         let cal = flow.calibration
-        Form {
-            videoSection(flow)
-            if flow.sourceURL != nil {
-                legendSection(flow, cal)
-                axesSection(flow, cal)
-                sizeSection(flow, cal)
-                planesSection(flow, cal)
-                buildSection(flow, cal)
+        ScrollView {
+            VStack(alignment: .leading, spacing: S37.Space.s6) {
+                videoSection(flow)
+                if flow.sourceURL != nil {
+                    legendSection(flow, cal)
+                    axesSection(flow, cal)
+                    sizeSection(flow, cal)
+                    planesSection(flow, cal)
+                    buildSection(flow, cal)
+                    DisclosureGroup(isExpanded: $flow.showAllSettings) {
+                        FlowAdvancedSettings().padding(.top, S37.Space.s3)
+                    } label: {
+                        Text("All settings").font(.system(size: 14, weight: .semibold)).foregroundStyle(S37.C.inkSecondary)
+                    }
+                }
             }
+            .padding(S37.Space.s5)
         }
-        .formStyle(.grouped)
     }
 
     // MARK: 1 Video
 
     @ViewBuilder private func videoSection(_ flow: FlowFieldModel) -> some View {
-        Section {
-            HStack {
-                Button(flow.sourceURL == nil ? "Open Video…" : "Open Another…") { app.openFlowSourcePanel() }
-                    .keyboardShortcut("o")
-                Menu("Try a Demo") {
+        S37Section("1 Video") {
+            HStack(spacing: S37.Space.s3) {
+                Button("Open another…") { app.openFlowSourcePanel() }
+                    .buttonStyle(S37ButtonStyle())
+                Menu("Try a demo") {
                     Button("Front View") { app.runFlowDemo(view: "front") }
                     Button("Rear View") { app.runFlowDemo(view: "rear") }
                     Button("Side View") { app.runFlowDemo(view: "side") }
                 }
+                .menuStyle(.borderlessButton)
                 .fixedSize()
             }
-            if flow.sourceURL == nil {
-                Text("A STAR-CCM+ video of a section plane stepping through the flow (mp4 or mov). You can also drop it on the window.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+            .padding(.vertical, S37.Space.s2)
             if let error = flow.loadError {
                 Label(error, systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
+            }
+            if flow.frameCount > 0 {
+                LabeledContent("Frames", value: "\(flow.frameCount), \(Int(flow.frameSize.width)) × \(Int(flow.frameSize.height))")
             }
             if let job = flow.detectJob, !job.status.isFinished {
                 HStack {
                     ProgressView().controlSize(.small)
-                    Text("Looking at the video…").font(.caption)
+                    Text("Looking at the video…")
                 }
             }
             ForEach(flow.detectNotes, id: \.self) { note in
-                Text(note).font(.caption).foregroundStyle(.secondary)
+                Text(note).font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
             }
             if flow.sourceURL != nil, flow.detectJob.map({ $0.status.isFinished }) ?? true {
-                Button("Look Again") { app.autoDetectFlow() }
-                    .buttonStyle(.link)
-                    .help("Find the plot, legend, axes and ground again (overwrites the crop, exclusions, colours and axes)")
+                Button("Look again") { app.autoDetectFlow() }
+                    .buttonStyle(S37ButtonStyle(kind: .plain))
+                    .help("Overwrites the crop, exclusions, colours and axes")
             }
-        } header: {
-            Text("1  Video")
         }
     }
 
     // MARK: 2 Legend
 
     @ViewBuilder private func legendSection(_ flow: FlowFieldModel, _ cal: FlowCalibration) -> some View {
-        Section {
+        let rangeOK = cal.valueRange.count == 2 && cal.valueRange[1] > cal.valueRange[0]
+        S37Section("2 Legend", footer: "The numbers at the ends of the colour bar: usually −1 and 1 for Cp0.") {
             if let image = flow.frameImage, let box = legendBox(cal), let legend = crop(image, box) {
                 Image(decorative: legend, scale: 1)
                     .resizable()
@@ -75,25 +82,18 @@ struct FlowQuickSetupPanel: View {
                     .aspectRatio(contentMode: .fit)
                     .frame(maxHeight: 70)
             }
-            NumberField(label: "Number at the low (left or bottom) end", value: Binding(
-                get: { cal.valueRange.first ?? -1 }, set: { flow.calibration.valueRange[0] = $0 }))
-            NumberField(label: "Number at the high end", value: Binding(
-                get: { cal.valueRange.last ?? 1 }, set: { flow.calibration.valueRange[1] = $0 }))
-            if !(cal.valueRange.count == 2 && cal.valueRange[1] > cal.valueRange[0]) {
-                Label("The high end must be bigger than the low end.", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(S37.C.clayInk).font(.caption)
-            }
-        } header: {
-            Text("2  Legend")
-        } footer: {
-            Text("Type the numbers written at the ends of the colour bar. For total pressure coefficient that is usually −1 and 1.")
+            S37FieldRow(label: "Low (left or bottom) end", value: Binding(
+                get: { cal.valueRange.first ?? -1 }, set: { flow.calibration.valueRange[0] = $0 }), width: 90)
+            S37FieldRow(label: "High end", value: Binding(
+                get: { cal.valueRange.last ?? 1 }, set: { flow.calibration.valueRange[1] = $0 }),
+                error: rangeOK ? nil : "Use a number above the low end", width: 90)
         }
     }
 
     // MARK: 3 Axes
 
     @ViewBuilder private func axesSection(_ flow: FlowFieldModel, _ cal: FlowCalibration) -> some View {
-        Section {
+        S37Section("3 Axes", footer: "Match the two pictures. X is red, Y green, Z blue; an end-on axis is a dot (towards you) or a cross (away).") {
             HStack(alignment: .top, spacing: 16) {
                 VStack(spacing: 4) {
                     if let image = flow.frameImage, let box = flow.detection?.triadBox, let triad = crop(image, box, pad: 12) {
@@ -101,30 +101,29 @@ struct FlowQuickSetupPanel: View {
                             .frame(width: 100, height: 100)
                     } else {
                         RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).fill(.quaternary).frame(width: 100, height: 100)
-                            .overlay { Text("Triad not found").font(.caption2).foregroundStyle(.secondary) }
+                            .overlay { Text("Triad not found").font(.system(size: 11)).foregroundStyle(S37.C.inkSecondary) }
                     }
-                    Text("In the video").font(.caption)
+                    Text("In the video").font(.system(size: 12, weight: .medium))
                 }
                 VStack(spacing: 4) {
                     TriadDrawing(axes: cal.axes, towardViewer: cal.sweepTowardViewer)
                         .frame(width: 100, height: 100)
                         .background(Color.white, in: RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous))
-                    Text("As set here").font(.caption)
+                    Text("As set here").font(.system(size: 12, weight: .medium))
                 }
             }
+            .padding(.vertical, S37.Space.s3)
             Picker("Arrow pointing right", selection: Binding(get: { cal.axes.right }, set: { flow.setAxes(right: $0) })) {
                 ForEach(FlowCalibration.Axes.choices, id: \.self) { Text(axisLabel($0, horizontal: true)).tag($0) }
             }
             Picker("Arrow pointing up", selection: Binding(get: { cal.axes.up }, set: { flow.setAxes(up: $0) })) {
                 ForEach(FlowCalibration.Axes.choices, id: \.self) { Text(axisLabel($0, horizontal: false)).tag($0) }
             }
-            if !cal.axes.isValid {
-                Label("Right and up must be different axes.", systemImage: "exclamationmark.triangle").foregroundStyle(S37.C.clayInk).font(.caption)
+            if cal.axes.isValid {
+                LabeledContent("Planes step along", value: cal.axes.sweepLetter)
+            } else {
+                Text("Pick a different axis for up than for right").font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.critical)
             }
-        } header: {
-            Text("3  Axes")
-        } footer: {
-            Text("Make the two pictures match: same letters pointing the same ways. X is red, Y green, Z blue; the axis seen end-on is a dot (towards you) or a cross (away).")
         }
     }
 
@@ -139,36 +138,34 @@ struct FlowQuickSetupPanel: View {
 
     @ViewBuilder private func sizeSection(_ flow: FlowFieldModel, _ cal: FlowCalibration) -> some View {
         let right = cal.axes.rightLetter
-        Section {
-            HStack {
-                Button(cal.measure?.pixelLength ?? 0 >= 2 ? "Measure Again" : "Measure") { flow.tool = .measure }
+        S37Section("4 Size", footer: right == "y"
+                   ? "Measure something whose width you know (the track, tyre centres, a wing's span) on a frame where the plane cuts it (cut geometry shows white). Bigger is better. Centred on the car, its middle is at y = 0."
+                   : "Measure something whose length you know (the wheelbase, say), then type where its middle is along \(right).") {
+            HStack(spacing: S37.Space.s3) {
+                Button(cal.measure?.pixelLength ?? 0 >= 2 ? "Measure again" : "Measure") { flow.tool = .measure }
+                    .buttonStyle(S37ButtonStyle())
                 if let m = cal.measure, m.pixelLength >= 2 {
-                    Text("\(Int(m.pixelLength)) px on frame \(m.frame)").font(.caption).foregroundStyle(.secondary)
+                    Text("\(Int(m.pixelLength)) px on frame \(m.frame)").font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkSecondary)
                     if m.frame != flow.frameIndex {
-                        Button("Show") { Task { await flow.showFrame(m.frame) } }.buttonStyle(.link)
+                        Button("Show") { Task { await flow.showFrame(m.frame) } }.buttonStyle(S37ButtonStyle(kind: .plain))
                     }
                 }
             }
+            .padding(.vertical, S37.Space.s2)
             NumberField(label: "Its real width", unit: "mm", value: Binding(
                 get: { (cal.measure?.width ?? 0) * 1000 }, set: { flow.setMeasure(width: $0 / 1000) }))
             NumberField(label: "Its middle is at \(right)", unit: "mm", value: Binding(
                 get: { (cal.measure?.centre ?? 0) * 1000 }, set: { flow.setMeasure(centre: $0 / 1000) }))
             if let m = cal.measure, m.pixelLength >= 2, m.pixelLength < 250 {
-                Label("That line is only \(Int(m.pixelLength)) px long, so a few pixels out is a few percent. Measure something bigger, or on a frame where it looks bigger.",
+                Label("Only \(Int(m.pixelLength)) px long, so a few pixels out is a few percent. Measure something bigger.",
                       systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(S37.C.clayInk).font(.caption)
+                    .foregroundStyle(S37.C.clayInk).font(.system(size: 12, weight: .medium))
             }
             if !cal.ground.track && cal.spatial.frames.count < 2 {
-                Label("No ground line was found, so the size can drift between planes. All Settings can calibrate a second frame.",
+                Label("No ground line found, so the size can drift between planes. All settings can calibrate a second frame.",
                       systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(S37.C.clayInk).font(.caption)
+                    .foregroundStyle(S37.C.clayInk).font(.system(size: 12, weight: .medium))
             }
-        } header: {
-            Text("4  Size")
-        } footer: {
-            Text(right == "y"
-                 ? "Find a frame where you can see something whose width you know (the track, between the tyre centres, or a wing's span), press Measure and drag across it. It has to be cut by the plane in that frame (the cut geometry shows white). The bigger it looks, the better. Its middle is at y = 0 if it is centred on the car."
-                 : "Find a frame where you can see something whose length you know (the wheelbase, between the axles, say), press Measure and drag across it, then type where its middle is along \(right).")
         }
     }
 
@@ -177,20 +174,15 @@ struct FlowQuickSetupPanel: View {
     @ViewBuilder private func planesSection(_ flow: FlowFieldModel, _ cal: FlowCalibration) -> some View {
         let sweep = cal.axes.sweepLetter
         let last = cal.planes.lastFrame ?? max(flow.frameCount - 1, 0)
-        Section {
+        S37Section("5 Plane positions", footer: "From STAR's plane sweep. Not sure which way round? Build anyway: the result says if they look reversed.") {
             if cal.planes.mode == "linear" {
                 NumberField(label: "First plane (frame \(cal.planes.firstFrame)) at \(sweep)", unit: "mm",
                             value: mm({ cal.planes.start }, { flow.calibration.planes.start = $0 }))
                 NumberField(label: "Last plane (frame \(last)) at \(sweep)", unit: "mm",
                             value: mm({ cal.planes.end }, { flow.calibration.planes.end = $0 }))
             } else {
-                Text("Plane positions are set in All Settings (\(cal.planes.mode == "csv" ? "from a CSV" : "from the camera")).")
-                    .font(.caption)
+                Text("Set under All settings (\(cal.planes.mode == "csv" ? "from a CSV" : "from the camera")).")
             }
-        } header: {
-            Text("5  Plane positions")
-        } footer: {
-            Text("Where the section plane was in the first and last frames, from STAR's plane sweep. Not sure which way round? Build anyway: the result says if they look reversed.")
         }
     }
 
@@ -199,29 +191,30 @@ struct FlowQuickSetupPanel: View {
     @ViewBuilder private func buildSection(_ flow: FlowFieldModel, _ cal: FlowCalibration) -> some View {
         let steps = cal.quickSteps
         let ready = cal.problems.isEmpty
-        Section {
+        S37Section("6 Build") {
             ForEach(steps) { step in
                 HStack(alignment: .firstTextBaseline) {
-                    Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(step.done ? S37.C.sageInk : .secondary)
+                    Image(systemName: step.done ? "checkmark.circle" : "circle")
+                        .foregroundStyle(step.done ? S37.C.sageInk : S37.C.inkTertiary)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(step.title)
-                        if !step.done { Text(step.hint).font(.caption).foregroundStyle(.secondary) }
+                        if !step.done { Text(step.hint).font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary) }
                     }
                 }
             }
             if !ready, steps.allSatisfy(\.done) {
-                ForEach(cal.problems, id: \.self) { Label($0, systemImage: "exclamationmark.triangle").foregroundStyle(S37.C.clayInk).font(.caption) }
+                ForEach(cal.problems, id: \.self) { Label($0, systemImage: "exclamationmark.triangle").foregroundStyle(S37.C.clayInk).font(.system(size: 12, weight: .medium)) }
             }
-            HStack {
-                Button("Check This Frame") { app.checkFlowFrame() }
+            HStack(spacing: S37.Space.s3) {
+                Button("Check this frame") { app.checkFlowFrame() }
+                    .buttonStyle(S37ButtonStyle())
                     .disabled(!ready || isRunning(flow.previewJob))
-                    .help("Runs one plane and shows it under the frame, to check before building")
+                    .help("Runs one plane and shows it under the frame")
                 Button("Build 3D") { app.reconstructFlow() }
-                    .keyboardShortcut("r")
                     .buttonStyle(S37ButtonStyle(kind: .prominent))
                     .disabled(!ready || isRunning(flow.reconstructJob))
             }
+            .padding(.vertical, S37.Space.s2)
             if let job = flow.reconstructJob {
                 JobInlineStatus(job: job)
                 if job.status == .failed { FailureAdvice(message: job.message ?? "", detail: job.detail ?? "") }
@@ -232,8 +225,6 @@ struct FlowQuickSetupPanel: View {
             if let ground = flow.reconstructStats["ground"] as? [String: Any] {
                 ImpliedCameraNote(ground: ground, sweep: cal.axes.sweepLetter)
             }
-        } header: {
-            Text("6  Build")
         }
     }
 

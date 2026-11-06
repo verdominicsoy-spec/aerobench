@@ -28,7 +28,8 @@ extension AppState {
                 return
             }
             do {
-                self.flow.calibration = try FlowCalibration.load(item.workdir.appendingPathComponent("demo_calibration.json"))
+                let demo = try FlowCalibration.load(item.workdir.appendingPathComponent("demo_calibration.json"))
+                self.flow.withoutUndo { self.flow.calibration = demo }
             } catch {
                 self.flow.loadError = error.localizedDescription
             }
@@ -331,7 +332,10 @@ extension AppState {
     func loadFlowState(fromProject project: URL) {
         flow.reset()
         let folder = ProjectStore.toolURL(for: project, tool: "flow")
-        flow.calibration = (try? FlowCalibration.load(folder.appendingPathComponent("calibration.json"))) ?? FlowCalibration()
+        flow.withoutUndo {
+            flow.calibration = (try? FlowCalibration.load(folder.appendingPathComponent("calibration.json"))) ?? FlowCalibration()
+        }
+        flow.undoManager?.removeAllActions(withTarget: flow)
         if let data = try? Data(contentsOf: folder.appendingPathComponent("state.json")),
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String],
            let path = obj["source"], !path.isEmpty, FileManager.default.fileExists(atPath: path) {

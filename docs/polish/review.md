@@ -80,3 +80,30 @@ Per tool, every visible element, with the principle it answers to (numbers from 
 | Track editor Loop picker | change | `S37Segmented` (2). |
 | Track editor "Drive it the other way round" and "Start again from a copy" tooltips | cut | Repeat their labels (1). |
 | Track editor instructions | change | Two paragraphs to one (1). |
+
+## Flow Field
+
+| Element | Verdict | Why |
+| --- | --- | --- |
+| Header note "Turn STAR's plane-sweep videos into a 3D flow field you can slice." | cut | Restates the screen (1). |
+| Calibrate / Explore | keep | Two separate jobs (build a volume, then read it); the current one is the raised segment, and the Flow menu ticks it (2, 10). |
+| Quick Setup / All Settings segmented control | change | One panel: the six steps, then an All settings disclosure with only what the steps don't already have (Open, Auto-detect, value range, axes, plane start and end and Run were in both) (2, 10). |
+| Two system grouped Forms | change | Titled groups of rows, one container level (2, 5). |
+| Open video and demo in the setup panel and again in the empty frame | change | With no video, only the frame's left-aligned empty state, Open video as its prominent button; Open another… once a video is open (2, 9). |
+| Step footers | change | Each cut to what changes the next action; the Size footer from 60 words to 30 (1). |
+| "The high end must be bigger than the low end." | change | Critical outline on High end with "Use a number above the low end" (7). |
+| "Right and up must be different axes." | change | Critical line under the axis pickers (7). |
+| Axes guidance in All Settings ("rear view +y / +z…") | cut | The two triad pictures do this job (1). |
+| Planes step along | keep | Shown in the Axes step as a row (5). |
+| Look again tooltip | change | Only the part the label doesn't say: it overwrites the crop, exclusions, colours and axes (1). |
+| Build 3D and Check this frame | keep | Build 3D the one prominent button; both in the Flow menu, Build 3D on ⌘R (4). |
+| Open Video ⌘O (clashed with Open Project) | change | Flow ▸ Open Video… ⌥⌘O (4). |
+| Save / Load calibration | keep | Under All settings and in the Flow menu (4). |
+| Calibration edits | change | Undoable ("Undo Calibration Change"), including Look again; opening a video or project isn't (3). |
+| Explore: centred "No Volume" in the 3D view and "No volume yet." in the panel | change | One left-aligned empty state with Calibrate as its button (9). |
+| Explore panel Form | change | Flat sections; the slice cut picker is `S37Segmented` (2). |
+| Explore footers | change | Shortened; "Marching cubes in the engine" cut (1). |
+| 3D view buttons | change | sage37 glass buttons (2). |
+| Frame preview note on ΔE | keep | Shortened; it says what to do when the number is high (1). |
+
+Not checked with a built volume: the Explore panel's filled state was converted but not seen on screen.
