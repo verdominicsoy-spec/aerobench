@@ -119,12 +119,16 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
                      progress=lambda pct, msg: progress(10 + 0.88 * pct, msg), env=env)
     result.pop("history_columns", None)
     surface = surface_cp(workdir / "surface.csv", placed)
-    separated, why = False, None
+    separated, why, wall_y_plus = False, None, None
     if (workdir / "flow.vtu").exists():
         try:
             separated, why = separation(surface_cf(workdir / "flow.vtu", placed))
         except Exception as exc:  # noqa: BLE001 - the run's numbers stand without the verdict
             log(f"no separation check: {exc}", level="warning")
+        try:
+            wall_y_plus = y_plus(workdir / "flow.vtu")
+        except Exception as exc:  # noqa: BLE001 - the run's numbers stand without it
+            log(f"no y+ check: {exc}", level="warning")
     if not result["converged"]:
         log(f"not converged: {result['reason']}", level="warning")
     view = None
@@ -142,7 +146,27 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     return {"alpha": alpha, "frame_turn": -alpha if ground is not None else 0.0,
             "re": re_ref, "mesh": mesh, "mesh_level": level, "transition": zones, "model": model,
             "model_name": su2.MODELS[model], **result, "surface": surface, "separated": separated, "separation": why,
+            "y_plus": wall_y_plus,
             "field": "flow.vtu" if (workdir / "flow.vtu").exists() else None, "field_view": view}
+
+
+def y_plus(vtu: Path) -> dict | None:
+    """The wall cells' y+ as SU2 reports it (zero away from the walls): the
+    largest, the 95th percentile and the mean over the wall points. The mesh
+    aims its first cell at y+ 1 from a flat-plate estimate; suction peaks run
+    faster than that, so this says how close it came."""
+    from .field import _read_vtu
+
+    _, _, arrays = _read_vtu(vtu)
+    yp = arrays.get("Y_Plus")
+    if yp is None:
+        return None
+    wall = np.asarray(yp, float).ravel()
+    wall = wall[wall > 0]
+    if wall.size == 0:
+        return None
+    return {"max": round(float(wall.max()), 3), "p95": round(float(np.percentile(wall, 95)), 3),
+            "mean": round(float(wall.mean()), 3)}
 
 
 # An element counts as separated when, on either surface, its wall skin
@@ -251,15 +275,17 @@ def sweep(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     was run is a balanced range about the middle. Every angle's iterations are capped by the time left,
     so the sweep never runs past the limit: an angle that hits the cap is
     reported as not converged, and angles there is no time to start are
-    listed as skipped. Each angle's files go to workdir/a<angle>."""
+    listed as skipped. Each angle's files go to workdir/a<angle>.
+
+    Over a ground the wing turns against it, so each angle is meshed again
+    and solved from rest (a restart needs the same mesh): slower, but the
+    same sweep."""
     import time
 
     alphas = sorted({float(a) for a in p.get("alphas", [])})
     if not alphas:
         raise EngineError("params.alphas must list the wing angles")
-    if p.get("ride_height") is not None:
-        raise EngineError("a sweep shares one mesh across angles, but over a ground each angle turns the wing "
-                          "against the ground and needs its own", "run the angles one at a time")
+    ground = p.get("ride_height") is not None
     limit = float(p.get("time_limit") or float("inf"))  # 0 or none: no limit
     max_iterations = int(p.get("iterations", 4000))
     if p.get("order") == "rising":
@@ -288,7 +314,8 @@ def sweep(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     for n, (a, near) in enumerate(order):
         left = limit - (time.time() - start)
         if done:
-            expected = restart_time if restart_time is not None else 0.5 * next(iter(done.values()))["seconds"]
+            first = next(iter(done.values()))["seconds"]
+            expected = first if ground else restart_time if restart_time is not None else 0.5 * first
             # No time limit (left is infinite): every angle gets the full iterations.
             cap = min(int(left / per_iteration), max_iterations) if per_iteration and left != float("inf") else max_iterations
             if expected > left or cap < 200:
@@ -302,7 +329,7 @@ def sweep(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
         t0 = time.time()
         lo, hi = 100 * n / len(order), 100 * (n + 1) / len(order)
         report = lambda pct, msg, lo=lo, hi=hi, a=a: progress(lo + (hi - lo) * pct / 100, f"{a:g}°: {msg}")
-        restart = solutions.get(near) if near is not None else None
+        restart = solutions.get(near) if near is not None and not ground else None
         q = {**base, "alpha": a, "iterations": min(max_iterations, cap)}
         try:
             r = solve(q, folder, mesh_file, su2_hint, cores, env, report, log, mesh_ready=ready, restart=restart)
@@ -319,8 +346,8 @@ def sweep(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
         seconds = round(time.time() - t0, 1)
         r.update(seconds=seconds, folder=folder.name, started_from=near if restart is not None else None)
         done[a] = r
-        ready = {"mesh": r["mesh"], "transition": r["transition"]}
-        if (folder / "restart.dat").exists():
+        ready = None if ground else {"mesh": r["mesh"], "transition": r["transition"]}
+        if not ground and (folder / "restart.dat").exists():
             solutions[a] = (folder / "restart.dat").resolve()
         if r.get("iterations"):
             per_iteration = max(per_iteration or 0.0, seconds / r["iterations"])

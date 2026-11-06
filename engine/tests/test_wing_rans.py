@@ -267,6 +267,26 @@ def test_sweep_chains_restarts_and_keeps_to_its_time_limit(monkeypatch, tmp_path
     assert calls[1]["iterations"] == 1200 and calls[4]["iterations"] == 600
 
 
+def test_a_sweep_over_a_ground_meshes_each_angle_and_starts_each_from_rest(monkeypatch, tmp_path):
+    """Over a ground the wing turns against it: no shared mesh, no restart from a neighbour."""
+    from aeroengine.wing import rans
+
+    calls = []
+
+    def fake_solve(p, workdir, mesh_file, su2_hint, cores, env, progress, log, field=True, mesh_ready=None, restart=None):
+        calls.append((p["alpha"], mesh_ready, restart))
+        (workdir / "restart.dat").write_text("x")
+        return {"alpha": p["alpha"], "cl": -1.0, "cd": 0.05, "converged": True, "iterations": 500,
+                "mesh": {"cells": 1}, "transition": [[0.0, 0.0]]}
+
+    monkeypatch.setattr(rans, "solve", fake_solve)
+    out = rans.sweep({"alphas": [0, 2, 4], "ride_height": 0.06}, tmp_path, tmp_path / "m.su2", None, 1, None,
+                     lambda *a: None, lambda *a, **k: None)
+    assert sorted(a for a, _, _ in calls) == [0.0, 2.0, 4.0]
+    assert all(ready is None and restart is None for _, ready, restart in calls)
+    assert [r["alpha"] for r in out["rows"]] == [0.0, 2.0, 4.0] and all(r["started_from"] is None for r in out["rows"])
+
+
 def test_a_restart_is_copied_in_under_a_short_name(monkeypatch, tmp_path):
     """SU2 aborts on a long solution path, so the engine copies the solution
     into the run folder and names it there."""
@@ -538,3 +558,17 @@ def test_an_upwind_run_that_diverges_tries_the_limiter_before_a_lower_cfl(monkey
     out = m.run(case, tmp_path / "m.su2", tmp_path, tmp_path / "SU2_CFD")
     assert tried == [("fds", 10.0), ("fds_limited", 10.0)] and out["scheme"] == "fds_limited"
     assert "SLOPE_LIMITER_FLOW= VENKATAKRISHNAN" in config(replace(case, scheme="fds_limited"), "m.su2")
+
+
+def test_wall_y_plus_is_read_from_the_walls_only(monkeypatch, tmp_path):
+    """SU2 writes y+ zero away from the walls: those points are not part of the wall's numbers."""
+    import numpy as np
+
+    from aeroengine.wing import field, rans
+
+    yp = np.array([0.0, 0.0, 0.5, 1.0, 1.5, 4.0] + [0.0] * 10)
+    monkeypatch.setattr(field, "_read_vtu", lambda path: (None, None, {"Y_Plus": yp}))
+    out = rans.y_plus(tmp_path / "flow.vtu")
+    assert out["max"] == 4.0 and out["mean"] == pytest.approx(1.75) and 1.5 < out["p95"] < 4.0
+    monkeypatch.setattr(field, "_read_vtu", lambda path: (None, None, {}))
+    assert rans.y_plus(tmp_path / "flow.vtu") is None

@@ -32,7 +32,10 @@ from ..job import EngineError
 class Settings:
     re: float  # on the reference chord
     ref_chord: float
-    y_plus: float = 1.0
+    # The flat-plate estimate below sizes the first cell for this y+; a high-lift wing's suction
+    # peaks run faster, so walls aimed at 1 read 2.6 (95th percentile, 5-element S1223 wing,
+    # Re 785,000). Aimed at 0.4 they read about 1, which SST with laminar zones needs.
+    y_plus: float = 0.4
     growth: float = 1.15  # wall-normal growth of the wall layers
     surface_fine: float = 0.0025  # surface spacing in laminar zones, fraction of each element's chord
     surface_coarse: float = 0.008  # elsewhere on the surface

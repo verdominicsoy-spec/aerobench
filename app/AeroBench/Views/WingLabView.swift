@@ -63,7 +63,6 @@ struct WingLabView: View {
             app.loadCar()
             app.refreshSections()
             if lab.library.isEmpty { lab.loadLibrary(engineDirectory: app.settings.engineDirectory) }
-            if lab.wing.elements.isEmpty && lab.undoStack.isEmpty { lab.reset(to: WingLabModel.starter) }
             app.syncCarRulesBox()
         }
         .onChange(of: lab.wing.rulesFor) { app.syncCarRulesBox() }
@@ -947,6 +946,7 @@ struct CFDResults: View {
                         Text(r.reason ?? "").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
                     }
                     Text("\(r.modelName), \(r.meshLevel) mesh, Re \(String(format: "%.0f", r.re))").font(.caption)
+                    MeshAdviceView(advice: app.meshAdvice(r), level: r.meshLevel, running: lab.ransJob.map { !$0.status.isFinished } ?? false) { app.runCFDOnMesh($0) }
                     Grid(alignment: .trailing, horizontalSpacing: 10, verticalSpacing: 2) {
                         GridRow {
                             Text("").gridColumnAlignment(.leading)
@@ -1215,7 +1215,7 @@ struct WingInspector: View {
 
             DisclosureGroup("How it's calculated") {
                 VStack(alignment: .leading, spacing: S37.Space.s3) {
-                    Text("Flow is shared by every solver. Ncrit 9 is a clean wind tunnel; lower (4 to 6) for the turbulent air behind a car, which trips the boundary layer sooner. The ground moves with the flow, as on track or a rolling road: an image wing in the quick solvers, a slip wall in RANS. Over a ground there's no RANS angle sweep: each angle needs its own mesh.")
+                    Text("Flow is shared by every solver. Ncrit 9 is a clean wind tunnel; lower (4 to 6) for the turbulent air behind a car, which trips the boundary layer sooner. The ground moves with the flow, as on track or a rolling road: an image wing in the quick solvers, a slip wall in RANS. Over a ground a RANS angle sweep meshes each angle again, so it takes longer.")
                     Text("ClA = −Cl × span × total chord × 3D factor (positive for downforce). Estimated, the factor is lifting-line theory on the aspect ratio raised by the endplates (Hoerner), AR_eff / (AR_eff + 2), and CdA gains induced drag CL² / (π AR_eff): a first number for a finite wing, not a 3D solution. The Lap Sim numbers use converged CFD if there is one, else the quick estimate, else the inviscid preview (optimistic) with the Cd typed in.")
                     Text("Optimise runs the study for hand-picked variables (Design runs the whole chain). Wings that break the minimum gap or the rules box are never run; trials that fail or don't converge are recorded as failed and the study carries on. Stopping is safe: Resume picks up where it left off.")
                     Text("The rules box limits come from data/rules/fs2027_aero.json (FS and FSUK). Without a base car the wing sits in its own plane and the box is wherever you put it.")
@@ -1543,9 +1543,8 @@ struct WingInspector: View {
     }
 
     @ViewBuilder private func ransSweepControls(_ lab: WingLabModel) -> some View {
-        Toggle("Vary the angle", isOn: Binding(get: { lab.sweepOn && lab.wing.rideHeight == nil }, set: { lab.sweepOn = $0 }))
-            .disabled(lab.wing.rideHeight != nil)
-            .help(lab.wing.rideHeight != nil ? "Over a ground each angle needs its own mesh, so there is no sweep" : "")
+        Toggle("Vary the angle", isOn: Binding(get: { lab.sweepOn }, set: { lab.sweepOn = $0 }))
+            .help(lab.wing.rideHeight != nil ? "Over a ground each angle is meshed again and solved from rest: slower than in free air" : "")
         if lab.sweepOn {
             FittingPicker(title: "Sweep", options: [(false, "Quick scan"), (true, "Full polar")], selection: Binding(get: { lab.sweepRising }, set: { lab.sweepRising = $0 })) {
                 Text("Quick scan").tag(false)
@@ -2151,10 +2150,12 @@ struct ResultsSummary: View {
                                             String(format: "L/D %.1f", abs($0.cl) / max($0.cd, 1e-9)) + ($0.separating == true ? "  separating" : "")] }
                         ?? lab.preview.map { [String(format: "Cl %.3f inviscid", wing.shownCl($0.clTotal)), lab.liveStatus ?? "no drag yet"] } ?? ["—"],
                      warn: estimate.map { !$0.trusted || $0.separating == true } ?? false, lab: lab)
+                let advice = rans.map { app.meshAdvice($0) }
                 card("RANS CFD", tab: .cfd,
                      lines: rans.map { [String(format: "Cl %.3f  Cd %.4f", wing.shownCl($0.cl), $0.cd),
-                                        ($0.converged ? String(format: "L/D %.1f", abs($0.cl) / max($0.cd, 1e-9)) : "not converged") + ", \($0.meshLevel)"] }
-                        ?? ["not run"], warn: rans.map { !$0.converged } ?? false, lab: lab)
+                                        ($0.converged ? String(format: "L/D %.1f", abs($0.cl) / max($0.cd, 1e-9)) : "not converged") + ", \($0.meshLevel)",
+                                        advice.map { MeshAdviceView.short($0) } ?? ""] }
+                        ?? ["not run"], warn: rans.map { !$0.converged } ?? false || advice?.verdict == .refine, lab: lab)
                 if let c = forCar {
                     let car = wing.carContribution(cl: c.cl, cd: c.cd)
                     card("On the car (\(c.from))", tab: nil,
@@ -2312,5 +2313,41 @@ struct MeshCanvas: View {
             .padding(6)
         }
         .background(S37.C.surface)
+    }
+}
+
+/// Whether more cells would make the run more accurate or reliable: the verdict, why, and
+/// a run one mesh level finer to check or improve it.
+struct MeshAdviceView: View {
+    let advice: MeshAdvice
+    let level: String  // the run's own: running on it again re-meshes the wall cells
+    let running: Bool
+    let run: (String) -> Void
+
+    /// One line for the results strip.
+    static func short(_ a: MeshAdvice) -> String {
+        switch a.verdict {
+        case .refine: "mesh: more cells would help"
+        case .enough: "mesh: enough cells"
+        case .unknown: "mesh: check on \(a.next ?? "medium")"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            switch advice.verdict {
+            case .refine: Label("More cells would make this more accurate", systemImage: "square.grid.3x3.fill").foregroundStyle(S37.C.clayInk)
+            case .enough: Label("Enough cells: more would not change it", systemImage: "checkmark.seal").foregroundStyle(S37.C.sageInk)
+            case .unknown: Label("Mesh: not known yet whether more cells would help", systemImage: "questionmark.square").foregroundStyle(S37.C.ochre)
+            }
+            ForEach(advice.reasons, id: \.self) { reason in
+                Text(reason).font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
+            }
+            if advice.verdict != .enough, let next = advice.next {
+                Button(next == level ? "Run Again on the \(next) Mesh" : "Run on the \(next) Mesh") { run(next) }
+                    .disabled(running)
+                    .help(next == level ? "Meshed again with thinner wall cells" : "The same wing and angle one level finer; the two are then compared here")
+            }
+        }
     }
 }

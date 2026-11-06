@@ -67,6 +67,13 @@ public struct WingRansResult: Codable, Equatable, Sendable {
     /// "jst" (the default) or "fds", the more dissipative fallback whose drag reads high.
     public var scheme: String?
     public var attempts: [Attempt]?
+    /// The wall cells' y+ as SU2 reported it (max, 95th percentile, mean); nil before it was recorded.
+    public struct YPlus: Codable, Equatable, Sendable {
+        public var max: Double
+        public var p95: Double
+        public var mean: Double
+    }
+    public var yPlus: YPlus?
 
     public static func decode(resultFile data: Data) throws -> WingRansResult {
         struct Wrapper: Decodable { var data: WingRansResult }

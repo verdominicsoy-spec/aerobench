@@ -147,6 +147,7 @@ final class WingLabModel {
     var ransResult: WingRansResult?
     /// The CFD tab's polar from earlier RANS runs, kept until the wing, its model or the runs change.
     @ObservationIgnored var ransPolarCache: (key: String, wing: [WingElement], points: [PolarCharts.Point])?
+    @ObservationIgnored var meshAdviceCache: (key: String, advice: MeshAdvice)?
     var ransFolder: URL?
 
     // The RANS mesh to look at (wing-mesh), and the wing it was made for
@@ -1057,18 +1058,6 @@ final class WingLabModel {
     func reloadStudy(project: URL) {
         let url = Self.studyFile(project: project, name: optimise.studyName).deletingPathExtension().appendingPathExtension("json")
         study = (try? Data(contentsOf: url)).flatMap { try? WingStudy.decode(exportFile: $0) }
-    }
-
-    /// A starting point: an inverted two-element NACA wing, so the canvas is
-    /// never empty on the first visit.
-    static var starter: Wing {
-        let s = Airfoil.naca4("4412")!
-        var w = Wing(elements: [
-            WingElement(airfoil: s, chord: 0.30, angle: 3, leadingEdge: .zero, inverted: true),
-            WingElement(airfoil: s, chord: 0.14, angle: 25, leadingEdge: SIMD2(0.27, 0.025), inverted: true),
-        ], span: 1.0, endplateHeight: 0.25)  // span and endplates: placeholders for the team's own
-        w.setGap(0.012, of: 1)
-        return w
     }
 }
 

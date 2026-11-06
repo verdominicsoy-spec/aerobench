@@ -377,7 +377,7 @@ extension AppState {
         lab.ransResult = nil
         lab.ransField = nil
         lab.resultsTab = .cfd
-        guard lab.sweepOn && wing.rideHeight == nil else {  // over a ground: one angle, its own mesh
+        guard lab.sweepOn else {
             lab.sweep = nil
             lab.ransJob = jobs.submit(command: "wing-rans", params: params, in: jobsRoot, onFinish: forThisProject { [weak self] item in
                 guard let self, item.status == .succeeded, let text = item.resultText else { return }
@@ -388,7 +388,7 @@ extension AppState {
             return
         }
         params["alphas"] = .array(lab.sweepAngles.map { .double($0) })
-        params["time_limit"] = .double(lab.sweepRising ? 0 : 300)
+        params["time_limit"] = .double(lab.sweepRising ? 0 : wing.rideHeight == nil ? 300 : 900)  // over a ground each angle is meshed and solved from rest
         if lab.sweepRising { params["order"] = .string("rising") }
         lab.sweep = nil
         lab.sweepRow = nil
@@ -572,6 +572,29 @@ extension AppState {
         let points = byAngle.values.sorted { $0.alpha < $1.alpha }
         lab.ransPolarCache = (key, lab.wing.elements, points)
         return points
+    }
+
+    /// Whether more cells would make this run more accurate or reliable: its wall y+, and this wing's
+    /// finished runs at the same angle on other mesh levels.
+    func meshAdvice(_ r: WingRansResult) -> MeshAdvice {
+        let lab = wingLab
+        let done = jobs.jobs.filter { $0.command == "wing-rans" && $0.status == .succeeded }
+        let key = "\(done.count)|\(done.first?.id ?? "")|\(r.meshLevel)|\(r.cl)|\(r.cd)|\(r.alpha ?? 0)"
+        if let c = lab.meshAdviceCache, c.key == key { return c.advice }
+        let outlines = lab.wing.elements.map { $0.placed() }
+        let others = done.compactMap { job -> WingRansResult? in
+            guard let text = job.resultText, let o = try? WingRansResult.decode(resultFile: Data(text.utf8)) else { return nil }
+            return o.meshLevel != r.meshLevel && o.converged && r.sameCase(as: o, sameWing: o.matches(outlines)) ? o : nil
+        }
+        let advice = r.meshAdvice(others: others)
+        lab.meshAdviceCache = (key, advice)
+        return advice
+    }
+
+    /// The same wing again on `level`: one finer, to compare the two, or its own, to mesh the walls again.
+    func runCFDOnMesh(_ level: String) {
+        wingLab.meshLevel = level
+        runCFD()
     }
 
     /// The fastest-lap objective races the Lap Sim's car A, with this wing in
