@@ -218,6 +218,8 @@ struct WingReportView: View {
                     .lineStyle(StrokeStyle(lineWidth: 0.8))
                     .foregroundStyle(.blue)
             }
+            .chartYScale(domain: CpSpikes.domain(points.map(\.minusCp)))
+            .chartXScale(domain: CpSpikes.domain(points.map(\.x)))
             .chartXAxisLabel("x (mm)")
             .font(.system(size: 7))
         }

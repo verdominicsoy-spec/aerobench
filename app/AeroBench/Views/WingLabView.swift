@@ -997,6 +997,8 @@ struct CFDResults: View {
                             .foregroundStyle(by: .value("Element", p.element))
                     }
                     .chartXAxisLabel("x (mm)").chartYAxisLabel("−Cp")
+                    .chartYScale(domain: CpSpikes.domain(points(r).map(\.minusCp)))
+                    .chartXScale(domain: CpSpikes.domain(points(r).map(\.x)))
                     .chartForegroundStyleScale(range: S37.series)
                 }
                 .opacity(r.converged ? 1 : 0.35)
@@ -1070,6 +1072,8 @@ struct CpPlot: View {
                 Rectangle().fill(.quaternary)
             } else {
                 Chart(points) { p in mark(p) }
+                    .chartYScale(domain: CpSpikes.domain(points.map(\.minusCp)))
+                    .chartXScale(domain: CpSpikes.domain(points.map(\.x)))
                     .chartLineStyleScale(domain: ["B", "A"], range: Self.lineStyles)
                     .chartForegroundStyleScale(range: S37.series)
                     .chartXAxisLabel("x (mm)")

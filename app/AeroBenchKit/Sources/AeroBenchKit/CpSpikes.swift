@@ -4,7 +4,7 @@ import Foundation
 /// the rest: the high end of any segment steeper than `limit` (−Cp per chord)
 /// is left out and the line breaks there.
 public enum CpSpikes {
-    public static let limit = 1000.0  // a jump of 10 in 1% of the chord
+    public static let limit = 300.0  // a jump of 3 in 1% of the chord
 
     /// For each point, the run it draws in (a new run after every cut), or nil when cut
     public static func runs(x: [Double], y: [Double]) -> [Int?] {
@@ -26,5 +26,14 @@ public enum CpSpikes {
             }
         }
         return out
+    }
+}
+
+extension CpSpikes {
+    /// The range the kept points need, padded 5%, so the chart doesn't round out past them
+    public static func domain(_ ys: [Double]) -> ClosedRange<Double> {
+        guard let lo = ys.min(), let hi = ys.max(), hi > lo else { return -1...1 }
+        let pad = (hi - lo) * 0.05
+        return (lo - pad)...(hi + pad)
     }
 }
