@@ -189,16 +189,25 @@ struct WingReportView: View {
         if let r = rans, !r.surface.isEmpty {
             source = "RANS"
             for (i, s) in r.surface.enumerated() {
-                for k in s.x.indices where k < s.cp.count {
-                    points.append(CpPoint(id: points.count, series: "\(i)", x: s.x[k] * 1000, minusCp: -s.cp[k]))
+                let ks = s.x.indices.filter { $0 < s.cp.count }
+                let runs = CpSpikes.runs(x: ks.map { s.x[$0] * 1000 }, y: ks.map { -s.cp[$0] })
+                for (k, run) in zip(ks, runs) {
+                    guard let run else { continue }
+                    points.append(CpPoint(id: points.count, series: "\(i) \(run)", x: s.x[k] * 1000, minusCp: -s.cp[k]))
                 }
             }
         } else if let p = preview, p.cp.count == wing.elements.count {
             for (i, e) in wing.elements.enumerated() {
                 let pts = e.placed()
+                guard pts.count > 1 else { continue }
                 let half = (pts.count - 1) / 2
-                for k in pts.indices where k < p.cp[i].count {
-                    points.append(CpPoint(id: points.count, series: "\(i)\(k <= half ? "u" : "l")", x: pts[k].x * 1000, minusCp: -p.cp[i][k]))
+                for (side, ks) in [("u", Array(0...half)), ("l", Array((half + 1)..<pts.count))] {
+                    let ks = ks.filter { $0 < p.cp[i].count }
+                    let runs = CpSpikes.runs(x: ks.map { pts[$0].x * 1000 }, y: ks.map { -p.cp[i][$0] })
+                    for (k, run) in zip(ks, runs) {
+                        guard let run else { continue }
+                        points.append(CpPoint(id: points.count, series: "\(i)\(side) \(run)", x: pts[k].x * 1000, minusCp: -p.cp[i][k]))
+                    }
                 }
             }
         }

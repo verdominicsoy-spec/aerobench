@@ -890,6 +890,7 @@ struct CFDResults: View {
         let element: String
         let x: Double
         let minusCp: Double
+        var run = 0
     }
 
     var body: some View {
@@ -992,7 +993,7 @@ struct CFDResults: View {
                             .font(.caption2).foregroundStyle(S37.C.inkSecondary)
                     }
                     Chart(points(r)) { p in
-                        LineMark(x: .value("x (mm)", p.x), y: .value("−Cp", p.minusCp))
+                        LineMark(x: .value("x (mm)", p.x), y: .value("−Cp", p.minusCp), series: .value("Series", "\(p.element) \(p.run)"))
                             .foregroundStyle(by: .value("Element", p.element))
                     }
                     .chartXAxisLabel("x (mm)").chartYAxisLabel("−Cp")
@@ -1030,10 +1031,16 @@ struct CFDResults: View {
         var id = 0
         for (i, s) in r.surface.enumerated() {
             let sides = s.side ?? Array(repeating: "", count: s.x.count)
-            for k in s.x.indices {
-                let series = sides[k].isEmpty ? WingIssue.label(i) : "\(WingIssue.label(i)) \(sides[k])"
-                out.append(Point(id: id, element: series, x: s.x[k] * 1000, minusCp: -s.cp[k]))
-                id += 1
+            let ks = s.x.indices.filter { $0 < s.cp.count }
+            for side in Set(ks.map { sides[$0] }) {
+                let mine = ks.filter { sides[$0] == side }
+                let runs = CpSpikes.runs(x: mine.map { s.x[$0] * 1000 }, y: mine.map { -s.cp[$0] })
+                for (k, run) in zip(mine, runs) {
+                    guard let run else { continue }
+                    let series = side.isEmpty ? WingIssue.label(i) : "\(WingIssue.label(i)) \(side)"
+                    out.append(Point(id: id, element: series, x: s.x[k] * 1000, minusCp: -s.cp[k], run: run))
+                    id += 1
+                }
             }
         }
         return out
@@ -1051,6 +1058,7 @@ struct CpPlot: View {
         let design: String
         let x: Double
         let minusCp: Double
+        var run = 0
     }
 
     var body: some View {
@@ -1074,7 +1082,7 @@ struct CpPlot: View {
     private static let lineStyles = [StrokeStyle(lineWidth: 1.2), StrokeStyle(lineWidth: 1, dash: [4, 3])]
 
     private func mark(_ p: Point) -> some ChartContent {
-        let series: String = p.design + " " + p.element
+        let series: String = p.design + " " + p.element + " \(p.run)"
         return LineMark(x: .value("x (mm)", p.x), y: .value("−Cp", p.minusCp), series: .value("Series", series))
             .foregroundStyle(by: .value("Element", p.element))
             .lineStyle(by: .value("Design", p.design))
@@ -1094,10 +1102,16 @@ struct CpPlot: View {
         for (i, e) in wing.elements.enumerated() {
             let pts = e.placed()
             let name = "\(WingIssue.label(i)) upper", lower = "\(WingIssue.label(i)) lower"
+            guard pts.count > 1 else { continue }
             let half = (pts.count - 1) / 2
-            for k in pts.indices where k < r.cp[i].count {
-                // The two surfaces as separate series so the line does not wrap round the nose.
-                out.append(Point(id: out.count, element: k <= half ? name : lower, design: design, x: pts[k].x * 1000, minusCp: -r.cp[i][k]))
+            // The two surfaces as separate series so the line does not wrap round the nose.
+            for (surface, ks) in [(name, Array(0...half)), (lower, Array((half + 1)..<pts.count))] {
+                let ks = ks.filter { $0 < r.cp[i].count }
+                let runs = CpSpikes.runs(x: ks.map { pts[$0].x * 1000 }, y: ks.map { -r.cp[i][$0] })
+                for (k, run) in zip(ks, runs) {
+                    guard let run else { continue }
+                    out.append(Point(id: out.count, element: surface, design: design, x: pts[k].x * 1000, minusCp: -r.cp[i][k], run: run))
+                }
             }
         }
     }
