@@ -164,12 +164,16 @@ extension AppState {
         lab.ransResult = nil
         lab.ransField = nil
         lab.resultsTab = .cfd
-        lab.ransJob = jobs.submit(command: "wing-rans", params: params, in: jobsRoot, onFinish: forThisProject { [weak self] item in
-            guard let self, item.status == .succeeded, let text = item.resultText else { return }
-            self.wingLab.ransResult = try? WingRansResult.decode(resultFile: Data(text.utf8))
-            self.wingLab.ransFolder = item.workdir
-            self.wingLab.ransField = self.wingLab.ransResult?.fieldView == nil ? nil : try? WingField.load(from: item.workdir)
-        })
+        lab.ransJob = jobs.submit(command: "wing-rans", params: params, in: jobsRoot, onFinish: forThisProject { [weak self] in self?.showRans($0) })
+    }
+
+    /// Shows a finished wing-rans run and keeps it with the project, so a reopened project shows it again.
+    private func showRans(_ item: JobItem) {
+        guard item.status == .succeeded, let text = item.resultText else { return }
+        wingLab.ransResult = try? WingRansResult.decode(resultFile: Data(text.utf8))
+        wingLab.ransFolder = item.workdir
+        wingLab.ransField = wingLab.ransResult?.fieldView == nil ? nil : try? WingField.load(from: item.workdir)
+        if let project, wingLab.ransResult != nil { try? WingRansResult.saveRun(folder: item.workdir, project: project.url) }
     }
 
     /// The mesh a RANS run would use, for the Mesh canvas: same settings, no SU2.
@@ -379,12 +383,7 @@ extension AppState {
         lab.resultsTab = .cfd
         guard lab.sweepOn else {
             lab.sweep = nil
-            lab.ransJob = jobs.submit(command: "wing-rans", params: params, in: jobsRoot, onFinish: forThisProject { [weak self] item in
-                guard let self, item.status == .succeeded, let text = item.resultText else { return }
-                self.wingLab.ransResult = try? WingRansResult.decode(resultFile: Data(text.utf8))
-                self.wingLab.ransFolder = item.workdir
-                self.wingLab.ransField = self.wingLab.ransResult?.fieldView == nil ? nil : try? WingField.load(from: item.workdir)
-            })
+            lab.ransJob = jobs.submit(command: "wing-rans", params: params, in: jobsRoot, onFinish: forThisProject { [weak self] in self?.showRans($0) })
             return
         }
         params["alphas"] = .array(lab.sweepAngles.map { .double($0) })

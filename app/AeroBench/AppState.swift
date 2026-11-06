@@ -237,6 +237,7 @@ final class AppState {
         wingLab.restoreVersion(fromProject: url)
         wingLab.optimise = WingLabModel.loadOptimise(fromProject: url) ?? .init()
         wingLab.restoreDesign(fromProject: url)
+        wingLab.restoreRans(fromProject: url)
         wingLab.reloadStudy(project: url)
         wingLab.markSaved()
         loadCar()  // the car is the project's: never write one project's car into another

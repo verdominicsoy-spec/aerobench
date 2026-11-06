@@ -1055,6 +1055,14 @@ final class WingLabModel {
         }
     }
 
+    /// The project's last RANS run, if its job folder is still there.
+    func restoreRans(fromProject project: URL) {
+        guard let (result, folder) = WingRansResult.loadRun(project: project) else { return }
+        ransResult = result
+        ransFolder = folder
+        ransField = result.fieldView == nil ? nil : try? WingField.load(from: folder)
+    }
+
     /// A design run's result, kept beside its study.
     static func designResultFile(project: URL, name: String) -> URL {
         studyFile(project: project, name: name).deletingPathExtension().appendingPathExtension("result.json")

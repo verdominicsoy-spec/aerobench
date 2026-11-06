@@ -83,6 +83,28 @@ public struct WingRansResult: Codable, Equatable, Sendable {
     }
 
     public var liftToDrag: Double { cd > 0 ? abs(cl) / cd : 0 }
+
+    /// A project's last RANS run: wing/rans.json names its job folder under
+    /// jobs/, so a reopened project shows the run again.
+    public static func savedRunFile(project: URL) -> URL {
+        ProjectStore.toolURL(for: project, tool: "wing").appendingPathComponent("rans.json")
+    }
+
+    public static func saveRun(folder: URL, project: URL) throws {
+        let file = savedRunFile(project: project)
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(["job": folder.lastPathComponent]).write(to: file, options: .atomic)
+    }
+
+    /// The saved run and its folder, or nil when there is none or its job folder is gone.
+    public static func loadRun(project: URL) -> (result: WingRansResult, folder: URL)? {
+        guard let data = try? Data(contentsOf: savedRunFile(project: project)),
+              let job = (try? JSONDecoder().decode([String: String].self, from: data))?["job"] else { return nil }
+        let folder = ProjectStore.jobsURL(for: project).appendingPathComponent(job)
+        guard let result = (try? Data(contentsOf: folder.appendingPathComponent("result.json")))
+            .flatMap({ try? decode(resultFile: $0) }) else { return nil }
+        return (result, folder)
+    }
 }
 
 /// The wing at several angles on the quick mesh (the engine's wing-sweep):

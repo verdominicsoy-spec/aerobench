@@ -161,6 +161,27 @@ final class WingPolarTests: XCTestCase {
 }
 
 final class WingRansResultTests: XCTestCase {
+    /// The last run is kept with the project by its job folder; a deleted folder shows nothing.
+    func testTheLastRunReopensWithTheProject() throws {
+        let project = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: project) }
+        XCTAssertNil(WingRansResult.loadRun(project: project))
+        let job = ProjectStore.jobsURL(for: project).appendingPathComponent("20261106-120000-abcd")
+        try FileManager.default.createDirectory(at: job, withIntermediateDirectories: true)
+        try Data("""
+        {"data": {"re": 1e6, "mesh": {"cells": 1, "triangles": 1, "quads": 0, "first_cell_height_m": 1e-5,
+          "layer_thickness_m": 0.01, "layers": 1}, "mesh_level": "quick", "transition": [], "model": "sa",
+          "model_name": "SA", "iterations": 10, "converged": true, "residual_drop": 3, "cl": 1.5, "cd": 0.1, "cm": 0,
+          "elements": [], "surface": []}}
+        """.utf8).write(to: job.appendingPathComponent("result.json"))
+        try WingRansResult.saveRun(folder: job, project: project)
+        let saved = try XCTUnwrap(WingRansResult.loadRun(project: project))
+        XCTAssertEqual(saved.result.cl, 1.5)
+        XCTAssertEqual(saved.folder.lastPathComponent, job.lastPathComponent)
+        try FileManager.default.removeItem(at: job)
+        XCTAssertNil(WingRansResult.loadRun(project: project))
+    }
+
     func testDecodesTheEngineResult() throws {
         let file = #"""
         {"data": {"re": 1000000.0, "mesh": {"file": "wing.su2", "cells": 70000, "triangles": 33000, "quads": 37000,
