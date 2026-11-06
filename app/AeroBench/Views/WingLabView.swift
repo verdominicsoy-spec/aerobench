@@ -123,7 +123,7 @@ extension WingLabView {
     var carTakeaway: String? {
         guard app.car.setup != nil, let q = app.shownQuick, let name = app.shownCombo?.name else { return nil }
         let rear = q.rearShare.map { String(format: ", %.0f %% rear", $0 * 100) } ?? ""
-        return String(format: "%@ with this wing: ClA %.2f m², CdA %.2f m²", name, q.cla, q.cda) + rear + " (quick)."
+        return String(format: "%@ with this wing, 2D: −Cl %.3f, Cd %.3f on %.2f m", name, -q.cl, q.cd, q.refLength) + rear + " (quick)."
     }
 }
 
@@ -1458,10 +1458,7 @@ struct WingInspector: View {
         if lab.optimise.objective == .minCdClTarget {
             NumberField(label: "Downforce Cl target", value: Binding(get: { lab.optimise.clTarget }, set: { lab.optimise.clTarget = $0 }))
         }
-        if lab.optimise.objective == .minLapTime, let goal = app.lapGoalCar() {
-            Text("Each trial is a lap of the Lap Sim's track (\(app.lapSim.track.kind.title)) in car A as the base car: \(goal.note).")
-                .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
-        } else if lab.optimise.objective == .minLapTime {
+        if lab.optimise.objective == .minLapTime {
             Text("Each trial is a lap of \(app.lapSim.track.kind.title) in car A with this wing, using Use in the Lap Sim's 3D settings.")
                 .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
         }
@@ -1610,13 +1607,6 @@ struct WingInspector: View {
         }
     }
 
-    private func sendCombo(_ combo: Combination, full: Bool, _ i: Int?) {
-        if let sent = app.sendCarToLapSim(combo.id, full: full, into: i) {
-            sentNote = "Lap Sim car \(sent.label) now has \(combo.name) (\(full ? "full" : "quick") numbers)."
-                + (sent.warnings.isEmpty ? "" : " Note: " + sent.warnings.joined(separator: "; ") + ".")
-        }
-    }
-
     private func send(_ cl: Double, _ cd: Double, into car: Int?) {
         let lab = app.wingLab
         let label = app.sendWingToLapSim(cl: cl, cd: cd, replacedCla: lab.replacedCla, replacedCda: lab.replacedCda, into: car)
@@ -1659,41 +1649,25 @@ struct WingInspector: View {
                 NumberField(label: "Cd (typed in: no estimate or CFD yet)", value: Binding(get: { lab.cdEstimate }, set: { lab.cdEstimate = $0 }))
             }
             LabeledContent("Adds", value: String(format: "ClA %.3f m²   CdA %.3f m²", add.cla, add.cda))
-            if app.car.setup != nil && app.car.base != nil, let combo = app.car.selectedCombo {
-                Menu("Send \(combo.name) to the Lap Sim") {
-                    ForEach(app.lapSim.cars.indices, id: \.self) { i in
-                        Button("Car \(LapSimSetup.labels[i]) (quick)") { sendCombo(combo, full: false, i) }
-                        if combo.full != nil { Button("Car \(LapSimSetup.labels[i]) (full)") { sendCombo(combo, full: true, i) } }
-                    }
-                    if app.lapSim.cars.count < LapSimSetup.maxCars { Button("New car (quick)") { sendCombo(combo, full: false, nil) } }
-                }
-                .fixedSize()
-                .help("The base car with both wings: ClA, CdA and the rear axle's share")
-                HStack {
-                    Button(lab.cardID == nil ? "Save as Car Card" : "Update Car Card") { saveCard(asNew: false) }
-                    if lab.cardID != nil { Button("Save as New Card") { saveCard(asNew: true) } }
-                }
-            } else {
-                NumberField(label: "Replaces: old wing's ClA", unit: "m²", value: Binding(get: { lab.replacedCla }, set: { lab.replacedCla = $0 }))
-                NumberField(label: "Replaces: old wing's CdA", unit: "m²", value: Binding(get: { lab.replacedCda }, set: { lab.replacedCda = $0 }))
-                HStack {
-                    Button(lab.cardID == nil ? "Save as Car Card" : "Update Car Card") { saveCard(asNew: false) }
-                    if lab.cardID != nil { Button("Save as New Card") { saveCard(asNew: true) } }
-                }
-                .help("A card for the car, with this wing as a \(wing.rulesFor == .front ? "front" : "rear") wing and these numbers")
-                Menu("Put in a Lap Sim Car") {
-                    let cars = app.lapSim.cars.indices
-                    ForEach(cars, id: \.self) { i in
-                        Button("Car \(LapSimSetup.labels[i]): swap its wing for this one") { send(cl, cd, into: i) }
-                    }
-                    if cars.count < LapSimSetup.maxCars {
-                        Divider()
-                        Button("New car \(LapSimSetup.labels[cars.count]): car A with this wing") { send(cl, cd, into: nil) }
-                    }
-                }
-                .fixedSize()
-                .disabled(from == nil && lab.preview == nil)
+            NumberField(label: "Replaces: old wing's ClA", unit: "m²", value: Binding(get: { lab.replacedCla }, set: { lab.replacedCla = $0 }))
+            NumberField(label: "Replaces: old wing's CdA", unit: "m²", value: Binding(get: { lab.replacedCda }, set: { lab.replacedCda = $0 }))
+            HStack {
+                Button(lab.cardID == nil ? "Save as Car Card" : "Update Car Card") { saveCard(asNew: false) }
+                if lab.cardID != nil { Button("Save as New Card") { saveCard(asNew: true) } }
             }
+            .help("A card for the car, with this wing as a \(wing.rulesFor == .front ? "front" : "rear") wing and these numbers")
+            Menu("Put in a Lap Sim Car") {
+                let cars = app.lapSim.cars.indices
+                ForEach(cars, id: \.self) { i in
+                    Button("Car \(LapSimSetup.labels[i]): swap its wing for this one") { send(cl, cd, into: i) }
+                }
+                if cars.count < LapSimSetup.maxCars {
+                    Divider()
+                    Button("New car \(LapSimSetup.labels[cars.count]): car A with this wing") { send(cl, cd, into: nil) }
+                }
+            }
+            .fixedSize()
+            .disabled(from == nil && lab.preview == nil)
             if let note = sentNote { Text(note).font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary) }
         }
     }

@@ -398,4 +398,12 @@ public struct Wing: Codable, Equatable, Sendable {
         let induced = cl3 * cl3 / (Double.pi * f.effectiveAspectRatio)
         return (-cl3 * area, (cd + induced) * area)
     }
+
+    /// The 2D coefficients a ClA and CdA were made from: carContribution undone.
+    public func sectionCoefficients(cla: Double, cda: Double) -> (cl: Double, cd: Double) {
+        let area = span * refChord
+        guard let f = finite3D else { return (-cla / (area * factor3D), cda / (area * factor3D)) }
+        let cl3 = -cla / area
+        return (cl3 / f.liftFactor, cda / area - cl3 * cl3 / (Double.pi * f.effectiveAspectRatio))
+    }
 }

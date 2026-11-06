@@ -165,21 +165,6 @@ extension AppState {
         return CarRules.wingBox(d, placement: at, setup: s)
     }
 
-    /// The fastest-lap goal's car with a base car: car A with the base car and the other end's wing,
-    /// at the balance the combination has now (the trial wing's numbers are added by the engine).
-    func lapGoalCar() -> (car: CarParameters, note: String)? {
-        guard car.base != nil, let combo = shownCombo, let d = carDraft else { return nil }
-        guard let others = quickResult(combo.without(d.position)), let now = quickResult(combo) else { return nil }
-        var c = lapSim.carA
-        c.cla = max(others.cla, 0)
-        c.cda = max(others.cda, 0)
-        if let r = now.rearShare { c.aeroBalanceDriven = min(max(r, 0), 1) }
-        let other = (d.position == .front ? combo.rear : combo.front).flatMap { p in car.card(p.card)?.name }
-        let note = "this wing on the car with " + (other ?? "no other wing")
-            + String(format: "; balance kept at %.0f %% rear", c.aeroBalanceDriven * 100)
-        return (c, note)
-    }
-
     /// The quick sum over the saved cards only (the draft left out).
     func quickResultSaved(_ combo: Combination) -> QuickResult? {
         guard let base = car.base, let setup = car.setup else { return nil }
@@ -386,46 +371,8 @@ extension AppState {
         Task { @MainActor in
             guard let data = try? await engine.request("wing-estimate", params: params),
                   let est = try? WingEstimate.decode(resultFile: data), let row = est.row(nearest: wing.alpha) else { return }
-            let add = wing.carContribution(cl: row.cl, cd: row.cd)
-            car.estimates[key] = (cla: add.cla, cda: add.cda)
+            car.estimates[key] = (cl: row.cl, cd: row.cd)
         }
-    }
-
-    /// A combination onto Lap Sim car `index` (a new one when nil): ClA, CdA and the rear share as
-    /// the driven axle's (rear-wheel drive). Returns the car's label and what the user should know
-    /// about the numbers sent (not converged, clamped, unverified moving ground, balance kept).
-    func sendCarToLapSim(_ id: String, full: Bool, into index: Int?) -> (label: String, warnings: [String])? {
-        guard let combo = car.combos.first(where: { $0.id == id }) else { return nil }
-        var warnings: [String] = []
-        let numbers: (cla: Double, cda: Double, rear: Double?)?
-        if full, let f = combo.full {
-            numbers = (f.cla, f.cda, f.rearShare)
-            if !f.converged { warnings.append("the full run did not converge") }
-            if f.groundMoving == true { warnings.append("it ran over a moving ground, which is unverified") }
-            if fullStale(combo) { warnings.append("the full result is out of date") }
-        } else {
-            // The selected combination is sent as shown: with the wing being edited on it.
-            let q = quickResult(id == car.selected ? shownCombo ?? combo : combo)
-            if id == car.selected, carDraftUnsaved { warnings.append("the edited wing is not saved") }
-            numbers = q.map { ($0.cla, $0.cda, $0.rearShare) }
-            if let b = car.base, !b.converged { warnings.append("the bare car's run did not converge") }
-            if !(q?.pendingEstimate.isEmpty ?? true) { warnings.append("a re-estimate was not back yet") }
-        }
-        guard let n = numbers else { return nil }
-        let i = index ?? lapSim.cars.count
-        guard i < LapSimSetup.maxCars else { return nil }
-        var target = index.map { lapSim.cars[$0] } ?? lapSim.carA
-        if n.cla < 0 { warnings.append(String(format: "ClA %.2f is lift: sent as 0", n.cla)) }
-        target.cla = max(n.cla, 0)
-        target.cda = max(n.cda, 0)
-        if let r = n.rear {
-            if r < 0 || r > 1 { warnings.append(String(format: "the rear share %.0f %% is outside 0 to 100: clamped", r * 100)) }
-            target.aeroBalanceDriven = min(max(r, 0), 1)
-        } else {
-            warnings.append("no rear share (no net downforce): the car's balance is kept")
-        }
-        if i < lapSim.cars.count { lapSim.cars[i] = target } else { lapSim.cars.append(target) }
-        return (LapSimSetup.labels[i], warnings)
     }
 }
 

@@ -11,7 +11,6 @@ struct DesignCard: View {
         @Bindable var lab = app.wingLab
         let d = lab.design
         let running = lab.designRun.map { !$0.status.isFinished } ?? false
-        let hasBase = app.car.setup != nil && app.car.base != nil
         S37Section("Design", footer: (app.designFrame.onCar ? "Fills the car's rules box for this end. " : "Fills Wing Lab's rules box. ")
                    + (d.checks == 0 ? "No RANS: the finalists are the estimate's best, unchecked."
                                     : "The estimate shortlists; RANS picks: a finalist counts only if it converges and stays attached.")) {
@@ -33,10 +32,10 @@ struct DesignCard: View {
             HStack(spacing: S37.Space.s2) {
                 chip(d.goal.title) {
                     ForEach(WingLabModel.DesignGoal.allCases) { g in
-                        Button(g.title) { lab.design.goal = g }.disabled(g == .balance && !hasBase)
+                        Button(g.title) { lab.design.goal = g }.disabled(g == .balance)
                     }
                 }
-                .help(d.goal == .balance || hasBase ? "" : "Hit a balance needs the base car (inspector's Car section)")
+                .help("Hit a balance needs a 3D car: car runs are 2D")
                 chip(d.checks == 0 ? "No RANS check" : "RANS on best \(d.checks)") {
                     Button("No RANS check") { lab.design.checks = 0 }
                     ForEach([1, 3, 5], id: \.self) { n in Button("RANS on best \(n)") { lab.design.checks = n } }
@@ -45,7 +44,7 @@ struct DesignCard: View {
                     .popover(isPresented: $more) { moreSettings.padding(S37.Space.s4).frame(width: 300) }
             }
             if d.goal == .maxClaCdaCap {
-                NumberField(label: hasBase ? "Car CdA at most" : "Wing CdA at most", unit: "m²",
+                NumberField(label: "Wing CdA at most", unit: "m²",
                             value: Binding(get: { lab.design.cdaCap }, set: { lab.design.cdaCap = max($0, 0.01) }))
             }
             if d.goal == .balance {

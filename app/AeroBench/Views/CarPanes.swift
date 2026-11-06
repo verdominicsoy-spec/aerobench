@@ -68,9 +68,8 @@ struct BaseCarPane: View {
                         .font(.caption).foregroundStyle(S37.C.inkSecondary)
                 }
                 if let b = car.base {
-                    Text(String(format: "ClA %.3f m²   CdA %.3f m²   ", b.cla, b.cda) + rearText(b.rearShare))
-                        .monospacedDigit()
-                    Text("Lift from 2D sections is not yet mesh-independent: compare drag and differences between cars, not this ClA alone.")
+                    if let t = twoD(b) { Text(t).monospacedDigit() }
+                    Text("2D, the centreline section per metre of width. Lift is not yet mesh-independent: compare drag and differences between cars, not this Cl alone.")
                         .font(.caption).foregroundStyle(S37.C.inkSecondary)
                     if !b.converged {
                         Text("The section did not converge").font(.caption).foregroundStyle(S37.C.clayInk)
@@ -552,7 +551,8 @@ struct CardRow: View {
                 if let open { Button("Open", action: open).help("Edit this card's wing") }
                 Button("Put on Car", action: put).disabled(car.selectedCombo == nil || car.setup == nil)
             }
-            Text(String(format: "ClA %.3f   CdA %.3f   ", card.cla, card.cda) + card.solver).font(.caption).monospacedDigit()
+            Text(String(format: "2D −Cl %.3f   Cd %.4f on its chord   ", -card.section.cl, card.section.cd) + card.solver)
+                .font(.caption).monospacedDigit()
             if let note = speedNote {
                 Text(note).font(.caption).foregroundStyle(S37.C.ochre)
             }
@@ -580,7 +580,6 @@ struct CombinationsPane: View {
     @Environment(AppState.self) private var app
     var embedded = false  // in Wing Lab's inspector: its section header is the title, no pane
     @Environment(\.undoManager) private var undo
-    @State private var note: String?
 
     var body: some View {
         @Bindable var car = app.car
@@ -599,7 +598,6 @@ struct CombinationsPane: View {
             } else if let j = car.fullJob, j.status == .failed {
                 Label(j.message ?? "The full run failed", systemImage: "xmark.octagon").font(.caption).foregroundStyle(S37.C.critical)
             }
-            if let note { Text(note).font(.caption).foregroundStyle(S37.C.sageInk) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .carPane(embedded)
@@ -629,7 +627,7 @@ struct CombinationsPane: View {
                 if stale { Text("Out of date").font(.caption.weight(.semibold)).foregroundStyle(S37.C.clayInk) }
             }
             if let q = quick {
-                Text(String(format: "Quick: ClA %.3f   CdA %.3f   ", q.cla, q.cda) + rearText(q.rearShare)
+                Text(String(format: "Quick: −Cl %.3f   Cd %.3f   ", -q.cl, q.cd) + rearText(q.rearShare)
                      + (q.usedEstimate.isEmpty ? "" : "  (re-estimated at the placed height)")
                      + (q.pendingEstimate.isEmpty ? "" : "  (card's own height: estimate pending)"))
                     .font(.caption).monospacedDigit()
@@ -637,25 +635,13 @@ struct CombinationsPane: View {
                 Text("Quick: run the bare car first").font(.caption).foregroundStyle(S37.C.inkSecondary)
             }
             if let f = combo.full {
-                Text(String(format: "Full (%@): ClA %.3f   CdA %.3f   ", f.mesh, f.cla, f.cda) + rearText(f.rearShare)
-                     + (f.converged ? "" : "  not converged") + String(format: "   (2D sum ClA %.3f)", f.cla2dWings))
+                Text(fullText(f) + (f.converged ? "" : "  not converged"))
                     .font(.caption).monospacedDigit().foregroundStyle(f.converged ? S37.C.ink : S37.C.clayInk)
             }
             HStack {
                 Button("Run Full") { app.runFull(combo.id) }
                     .disabled(car.base == nil || (car.fullJob.map { !$0.status.isFinished } ?? false))
                     .help(car.base == nil ? "Run the bare car at this mesh setting first" : "The section again with these wings in them")
-                Menu("Send to Lap Sim") {
-                    ForEach(app.lapSim.cars.indices, id: \.self) { i in
-                        Button("Car \(LapSimSetup.labels[i]) (quick)") { send(combo, full: false, i) }
-                        if combo.full != nil { Button("Car \(LapSimSetup.labels[i]) (full)") { send(combo, full: true, i) } }
-                    }
-                    if app.lapSim.cars.count < LapSimSetup.maxCars {
-                        Button("New car (quick)") { send(combo, full: false, nil) }
-                    }
-                }
-                .fixedSize()
-                .disabled(quick == nil)
                 Spacer()
                 Button("Remove") {
                     let old = car.combos
@@ -675,12 +661,6 @@ struct CombinationsPane: View {
         .onTapGesture { car.selected = combo.id }
     }
 
-    private func send(_ combo: Combination, full: Bool, _ i: Int?) {
-        if let sent = app.sendCarToLapSim(combo.id, full: full, into: i) {
-            note = "Lap Sim car \(sent.label) now has \(combo.name) (\(full ? "full" : "quick") numbers)."
-                + (sent.warnings.isEmpty ? "" : " Note: " + sent.warnings.joined(separator: "; ") + ".")
-        }
-    }
 }
 
 /// Wing Lab's Car tab: the selected combination with the wing being edited on it.
@@ -712,28 +692,26 @@ struct CarResults: View {
     @ViewBuilder private func numbers(_ combo: Combination, _ q: QuickResult) -> some View {
         let car = app.car
         HStack(alignment: .firstTextBaseline, spacing: S37.Space.s6) {
-            figure("ClA", String(format: "%.3f m²", q.cla))
-            figure("CdA", String(format: "%.3f m²", q.cda))
+            figure("−Cl", String(format: "%.3f", -q.cl))
+            figure("Cd", String(format: "%.3f", q.cd))
             figure("Rear", q.rearShare.map { String(format: "%.0f %%", $0 * 100) } ?? "–")
         }
-        Text("Quick, \(combo.name)" + (app.carDraftUnsaved ? ", using the wing being edited (not saved)" : "")
+        Text("Quick 2D sum, \(combo.name)" + String(format: ", on the car's %.2f m length", q.refLength) + (app.carDraftUnsaved ? ", using the wing being edited (not saved)" : "")
              + (q.usedEstimate.isEmpty ? "" : "; the other wing re-estimated at its placed height")
              + (q.pendingEstimate.isEmpty ? "" : "; an estimate is pending"))
             .font(.caption).foregroundStyle(S37.C.inkSecondary)
-        if let b = car.base {
-            Text(String(format: "Against the bare car: ClA %+.3f   CdA %+.3f", q.cla - b.cla, q.cda - b.cda))
+        if let b = car.base, let bcl = b.cl, let bcd = b.cd {
+            Text(String(format: "Against the bare car: −Cl %+.3f   Cd %+.3f", bcl - q.cl, q.cd - bcd))
                 .font(.caption).monospacedDigit()
         }
         if app.carDraftUnsaved, let stored = car.selectedCombo, let s = app.quickResultSaved(stored) {
-            Text(String(format: "Against the saved wings: ClA %+.3f   CdA %+.3f", q.cla - s.cla, q.cda - s.cda))
+            Text(String(format: "Against the saved wings: −Cl %+.3f   Cd %+.3f", s.cl - q.cl, q.cd - s.cd))
                 .font(.caption).monospacedDigit()
         }
         Divider()
         if let stored = car.selectedCombo, let f = stored.full {
             let stale = app.fullStale(stored)
-            Text(String(format: "Full (%@): ClA %.3f   CdA %.3f   ", f.mesh, f.cla, f.cda) + rearText(f.rearShare)
-                 + String(format: "   (2D sum ClA %.3f)", f.cla2dWings))
-                .font(.caption).monospacedDigit()
+            Text(fullText(f)).font(.caption).monospacedDigit()
             if stale {
                 Text("Out of date: the wings have changed since it ran.").font(.caption.weight(.semibold)).foregroundStyle(S37.C.clayInk)
             }
@@ -772,6 +750,21 @@ private extension View {
 
 private extension String {
     func ifEmpty(_ other: String) -> String { isEmpty ? other : self }
+}
+
+/// A run's 2D numbers: Cl and Cd on the car's length, downforce shown positive as Wing Lab's −Cl.
+private func twoD(_ r: CarResult) -> String? {
+    guard let cl = r.cl, let cd = r.cd, let l = r.refLength else { return nil }
+    return String(format: "−Cl %.3f   Cd %.3f on %.2f m   ", -cl, cd, l) + rearText(r.rearShare)
+}
+
+/// A full run: the car's 2D numbers, then each wing's on its own chord.
+private func fullText(_ f: CarResult) -> String {
+    guard let t = twoD(f) else { return "Full (\(f.mesh)): an older 3D run, run it again for 2D numbers" }
+    let wings = f.wings.compactMap { w in
+        w.cl.map { String(format: "%@ wing −Cl %.3f Cd %.4f", w.position, -$0, w.cd ?? 0) }
+    }
+    return "Full (\(f.mesh)): " + t + (wings.isEmpty ? "" : "   " + wings.joined(separator: ", ") + " on its chord")
 }
 
 private func rearText(_ share: Double?) -> String {

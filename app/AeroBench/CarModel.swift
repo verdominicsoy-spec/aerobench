@@ -45,8 +45,8 @@ final class CarModel {
     var status: String?
     var combosUnreadable = false  // combinations.json would not read: never written over
     var markingHeadRestraint = false
-    /// Quick estimates of cards placed off their own height, by "card@height mm".
-    var estimates: [String: (cla: Double, cda: Double)] = [:]
+    /// Quick estimates (2D Cl and Cd) of cards placed off their own height, by "card@height mm".
+    var estimates: [String: (cl: Double, cd: Double)] = [:]
     @ObservationIgnored var engine: WarmEngine?
     @ObservationIgnored var sectionRunner: LatestOnly<JSONValue, CarSection>?
 
@@ -82,7 +82,7 @@ final class CarModel {
     /// The bare car at the current settings: one section, same mesh, speed and ground and wheel options.
     var base: CarResult? {
         guard let b = bases[mesh] else { return nil }
-        return b.ranWith(flow, n: 1) ? b : nil  // n 1: the centreline alone, not the old strips
+        return b.ranWith(flow, n: 1) && b.cl != nil ? b : nil  // the centreline's 2D numbers, not the old strips or 3D
     }
 
     /// A bare-car result exists at this mesh but with other settings.

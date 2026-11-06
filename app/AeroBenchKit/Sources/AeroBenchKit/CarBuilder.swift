@@ -73,12 +73,13 @@ public struct CarSetup: Codable, Equatable, Sendable {
     }
 }
 
-/// The engine's car result (command car-strips): the car's ClA, CdA and rear axle share.
-/// Runs since the strips were dropped hold one section, the centreline, in strips.
+/// The engine's car result (command car-strips): the centreline section's 2D numbers,
+/// held in strips as one section. Older runs (strips across the car, 3D ClA and CdA)
+/// decode with no Cl: they are run again.
 public struct CarResult: Codable, Equatable, Sendable {
     public struct Strip: Codable, Equatable, Sendable {
         public var y: Double
-        public var width: Double
+        public var width: Double?  // older strips runs only
         public var lift: Double  // N/m, up +
         public var drag: Double
         public var xCp: Double?  // mm, car x; nil when the section carries no lift
@@ -100,24 +101,17 @@ public struct CarResult: Codable, Equatable, Sendable {
 
     public struct WingShare: Codable, Equatable, Sendable {
         public var position: String
-        public var cla: Double
-        public var cda: Double
-        public var cla2d: Double
-        public var cda2d: Double
-
-        enum CodingKeys: String, CodingKey {
-            case position, cla, cda
-            case cla2d = "cla_2d"
-            case cda2d = "cda_2d"
-        }
+        public var chord: Double?  // m
+        public var cl: Double?  // 2D, on its own chord, lift up +; nil in older runs
+        public var cd: Double?
     }
 
     public var mesh: String
     public var speed: Double
-    public var cla: Double
-    public var cda: Double
+    public var cl: Double?  // 2D, on refLength, lift up +: a car pressed down has a negative Cl
+    public var cd: Double?
+    public var refLength: Double?  // m, the section's extent along x
     public var rearShare: Double?
-    public var cla2dWings: Double
     public var strips: [Strip]
     public var converged: Bool
     public var wings: [WingShare]
@@ -154,26 +148,26 @@ public struct CarResult: Codable, Equatable, Sendable {
         return m
     }
 
-    public init(mesh: String, speed: Double, cla: Double, cda: Double, rearShare: Double?, cla2dWings: Double,
+    public init(mesh: String, speed: Double, cl: Double?, cd: Double?, refLength: Double?, rearShare: Double?,
                 strips: [Strip], converged: Bool, wings: [WingShare], n: Int? = nil, flow: JSONValue? = nil) {
         self.n = n
         self.flow = flow
         self.mesh = mesh
         self.speed = speed
-        self.cla = cla
-        self.cda = cda
+        self.cl = cl
+        self.cd = cd
+        self.refLength = refLength
         self.rearShare = rearShare
-        self.cla2dWings = cla2dWings
         self.strips = strips
         self.converged = converged
         self.wings = wings
     }
 
     enum CodingKeys: String, CodingKey {
-        case mesh, speed, cla, cda, strips, converged, wings, n, flow, failed, folder
+        case mesh, speed, cl, cd, strips, converged, wings, n, flow, failed, folder
+        case refLength = "ref_length"
         case rearShare = "rear_share"
         case openGaps = "open_gaps"
-        case cla2dWings = "cla_2d_wings"
     }
 
     public static func decode(resultFile data: Data) throws -> CarResult {
@@ -195,6 +189,9 @@ public struct WingCard: Codable, Equatable, Identifiable, Sendable {
     public var rideHeight: Double?  // m, the height its numbers were made at (nil: free air)
     public var speed: Double
     public var revision: Int
+
+    /// The 2D Cl and Cd on the wing's reference chord its ClA and CdA were made from.
+    public var section: (cl: Double, cd: Double) { wing.sectionCoefficients(cla: cla, cda: cda) }
 
     public init(id: String, name: String, position: WingPosition, wing: Wing, cla: Double, cda: Double, xcp: Double,
                 solver: String, rideHeight: Double?, speed: Double, revision: Int) {
@@ -433,8 +430,9 @@ public struct Combination: Codable, Equatable, Identifiable, Sendable {
 }
 
 public struct QuickResult: Equatable, Sendable {
-    public var cla: Double
-    public var cda: Double
+    public var cl: Double  // 2D, on the bare car's refLength, lift up +
+    public var cd: Double
+    public var refLength: Double
     public var rearShare: Double?
     public var usedEstimate: [WingPosition]
     public var pendingEstimate: [WingPosition] = []  // re-estimate asked for, not back yet: the card's own numbers meanwhile
@@ -447,19 +445,22 @@ public func needsEstimate(_ card: WingCard, height: Double) -> Bool {
     return card.position == .front
 }
 
-/// The base car's numbers plus each placed card's, each wing's downforce
-/// acting at its own centre of pressure for the axle split. A card placed
-/// more than 1 mm off the height its numbers were made at is re-estimated
-/// there through `estimate` (card, height in m).
+/// In 2D: the bare car's section plus each placed card's section, each
+/// wing's lift acting at its own centre of pressure for the axle split, as
+/// Cl and Cd on the bare car's length. A card placed more than 1 mm off the
+/// height its numbers were made at is re-estimated there through `estimate`
+/// (card, height in m: its 2D Cl and Cd). Nil for a bare car without 2D numbers.
 public func quick(base: CarResult, combo: Combination, cards: [WingCard], setup: CarSetup,
-                  estimate: (WingCard, Double) -> (cla: Double, cda: Double)?) -> QuickResult {
-    var cla = base.cla, cda = base.cda
-    var rear = (base.rearShare ?? 0) * base.cla
+                  estimate: (WingCard, Double) -> (cl: Double, cd: Double)?) -> QuickResult? {
+    guard let bcl = base.cl, let bcd = base.cd, let length = base.refLength, length > 0 else { return nil }
+    // Forces over the dynamic pressure, per metre of width (m).
+    var lift = bcl * length, drag = bcd * length
+    var rear = (base.rearShare ?? 0) * lift
     var used: [WingPosition] = [], pending: [WingPosition] = []
     let xf = setup.axleX("F"), xr = setup.axleX("R")
     for p in [combo.front, combo.rear].compactMap({ $0 }) {
         guard let c = cards.first(where: { $0.id == p.card }) else { continue }
-        var n = (cla: c.cla, cda: c.cda)
+        var n = c.section
         if needsEstimate(c, height: p.height / 1000) {
             if let e = estimate(c, p.height / 1000) {
                 n = e
@@ -469,9 +470,11 @@ public func quick(base: CarResult, combo: Combination, cards: [WingCard], setup:
             }
         }
         let xcp = setup.axleX(c.position == .front ? "F" : "R") + p.x - c.xcp * 1000
-        cla += n.cla
-        cda += n.cda
-        rear += n.cla * (xf - xcp) / (xf - xr)
+        let l = n.cl * c.wing.refChord
+        lift += l
+        drag += n.cd * c.wing.refChord
+        rear += l * (xf - xcp) / (xf - xr)
     }
-    return QuickResult(cla: cla, cda: cda, rearShare: abs(cla) > 1e-9 ? rear / cla : nil, usedEstimate: used, pendingEstimate: pending)
+    return QuickResult(cl: lift / length, cd: drag / length, refLength: length, rearShare: abs(lift) > 1e-9 ? rear / lift : nil,
+                       usedEstimate: used, pendingEstimate: pending)
 }

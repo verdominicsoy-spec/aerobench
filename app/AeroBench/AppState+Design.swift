@@ -64,17 +64,6 @@ extension AppState {
         p["checks"] = .int(settings.su2Executable == nil ? 0 : d.checks)
         p["min_thickness"] = .double(d.minThickness / 100)
         p["min_gap"] = .double(wing.minGap)
-        if f.onCar, let s = car.setup, car.base != nil {
-            let end = wing.rulesFor
-            let others = (car.selectedCombo ?? Combination(id: "", name: "")).without(end)
-            if let q = quickResult(others) {
-                let b = CarRules.box(end, setup: s)
-                p["car"] = .object(["base_cla": .double(q.cla), "base_cda": .double(q.cda),
-                                    "base_rear_cla": .double((q.rearShare ?? 0) * q.cla),
-                                    "axle_front": .double((b.maxX - s.axleX("F")) / 1000),
-                                    "axle_rear": .double((b.maxX - s.axleX("R")) / 1000)])
-            }
-        }
         if d.goal == .minLapTime { p["lap"] = try lapObjectiveParams() }
         if d.startFrom == .existing {
             guard let offset = f.offset else { throw WingLabError("Put the wing on the car first, or start from scratch.") }
