@@ -59,7 +59,6 @@ struct WingLabView: View {
             lab.carHeight = nil
             app.syncCarRulesBox(picked: true)
         }
-        .preference(key: ToolTakeawayKey.self, value: carTakeaway)
         .onAppear {
             app.loadCar()
             app.refreshSections()
@@ -91,11 +90,7 @@ struct CanvasHost: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(S37.Space.s4)
                     } else {
-                        VStack(spacing: 6) {
-                            SideViewPane()
-                            CarFlowPane()
-                        }
-                        .padding(6)
+                        SideViewPane().padding(6)
                     }
                 }
                 .scrollIndicators(.never)
@@ -115,15 +110,6 @@ struct CanvasModePicker: View {
         @Bindable var lab = app.wingLab
         S37Segmented(options: WingLabModel.CanvasMode.allCases.map { ($0, $0.rawValue) }, selection: $lab.canvasMode)
             .fixedSize()
-    }
-}
-
-extension WingLabView {
-    /// With a base car, the car with this wing on it; otherwise Wing Lab's own note.
-    var carTakeaway: String? {
-        guard app.car.setup != nil, let q = app.shownQuick, let name = app.shownCombo?.name else { return nil }
-        let rear = q.rearShare.map { String(format: ", %.0f %% rear", $0 * 100) } ?? ""
-        return String(format: "%@ with this wing, 2D: −Cl %.3f, Cd %.3f on %.2f m", name, -q.cl, q.cd, q.refLength) + rear + " (quick)."
     }
 }
 
@@ -804,7 +790,6 @@ struct WingResultsPane: View {
             case .estimate: EstimateResults()
             case .cfd: CFDResults()
             case .study: StudyResults()
-            case .car: CarResults()
             }
         }
     }

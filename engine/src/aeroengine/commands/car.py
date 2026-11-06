@@ -1,4 +1,4 @@
-"""car-*: the car builder's base car, sections and 2D car runs."""
+"""car-*: the car builder's base car (its wheels and ground)."""
 
 from __future__ import annotations
 
@@ -21,21 +21,3 @@ def car_setup(ctx: JobContext) -> dict:
 
     ctx.emit.progress(10, "reading the car")
     return setup(_step(ctx), ctx.params.get("forward", "+x"), ctx.params.get("up", "+z"))
-
-
-@command("car-strips")
-def car_strips(ctx: JobContext) -> dict:
-    """The car (and any placed wings) as its centreline section, solved in SU2."""
-    import json
-
-    from ..car.totals import run
-
-    setup = ctx.params.get("setup")
-    if not isinstance(setup, dict) or not setup.get("wheels"):
-        raise EngineError("params.setup must be a car setup with its wheels", "run car-setup first")
-    flow = ctx.params.get("flow") or {"speed": setup.get("speed", 15.0)}
-    result = run(setup, list(ctx.params.get("wings") or []), flow, ctx.params.get("preset", "medium"), ctx.workdir,
-                 ctx.params.get("su2") or ctx.options.su2_path, ctx.options.cores, ctx.emit.progress,
-                 int(ctx.params.get("iterations", 6000)))
-    (ctx.workdir / "car_result.json").write_text(json.dumps(result, indent=1))
-    return result

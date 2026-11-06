@@ -15,7 +15,7 @@ extension AppState {
     // MARK: The wing being edited, on the car
 
     /// The wing Wing Lab is editing, as a card with its best numbers: the card it came from
-    /// (same end) or "draft". Never saved; the quick sum uses it in place of its end's card.
+    /// (same end) or "draft". Never saved; the car shows it in place of its end's card.
     var carDraft: WingCard? {
         let lab = wingLab
         let saved = car.card(lab.cardID).flatMap { $0.position == lab.wing.rulesFor ? $0 : nil }
@@ -46,14 +46,6 @@ extension AppState {
         return combo.draftPlacement(d, setup: s)
     }
 
-    /// The selected combination's full result no longer describes what is shown: its own rule,
-    /// or the wing being edited differs from what ran.
-    func fullStale(_ combo: Combination) -> Bool {
-        guard combo.full != nil else { return false }
-        if combo.isStale(cards: car.cards, baseRevision: car.baseRevision) { return true }
-        return combo.id == car.selected && (carDraftUnsaved || shownCombo != car.selectedCombo)
-    }
-
     /// The selected combination as shown: the draft on its end.
     var shownCombo: Combination? {
         guard let combo = car.selectedCombo else { return nil }
@@ -65,19 +57,6 @@ extension AppState {
     var shownCards: [WingCard] {
         guard let d = carDraft else { return car.cards }
         return car.cards.filter { $0.id != d.id } + [d]
-    }
-
-    var shownQuick: QuickResult? { shownCombo.flatMap { quickResult($0) } }
-
-    /// The quick sum over the shown cards (the draft included).
-    func quickResult(_ combo: Combination) -> QuickResult? {
-        guard let base = car.base, let setup = car.setup else { return nil }
-        // Only the selected combination carries the wing being edited; it is never re-estimated
-        // (it sits at its own ride height), and never takes its saved card's cached estimate.
-        let cards = combo.id == car.selected ? shownCards : car.cards
-        return quick(base: base, combo: combo, cards: cards, setup: setup) { [estimates = car.estimates] card, h in
-            card.revision < 0 ? nil : estimates["\(card.id)@\(Int((h * 1000).rounded()))"]
-        }
     }
 
     /// With a base car, the wing's rules box is the car's box for its end, where the wing sits
@@ -165,14 +144,6 @@ extension AppState {
         return CarRules.wingBox(d, placement: at, setup: s)
     }
 
-    /// The quick sum over the saved cards only (the draft left out).
-    func quickResultSaved(_ combo: Combination) -> QuickResult? {
-        guard let base = car.base, let setup = car.setup else { return nil }
-        return quick(base: base, combo: combo, cards: car.cards, setup: setup) { [estimates = car.estimates] card, h in
-            estimates["\(card.id)@\(Int((h * 1000).rounded()))"]
-        }
-    }
-
     /// Puts the draft on the car: makes the first combination if there is none, and turns on
     /// Wing Lab's ground at the placed height (one undo step) so both show the same numbers.
     func putDraftOnCar() {
@@ -233,7 +204,6 @@ extension AppState {
             lab.carX = nil
             lab.carHeight = nil
         }
-        car.estimates = car.estimates.filter { !$0.key.hasPrefix("\(card.id)@") }  // made of the old numbers
         saveCar()
         return card
     }
@@ -241,23 +211,12 @@ extension AppState {
     func loadCar() {
         car.load(project: workFolder)
         rememberCarSetup()
-        requestEstimates()
-    }
-
-    /// Asks for every placed card's re-estimate the quick sums need (after loading, assigning, moving).
-    func requestEstimates() {
-        for combo in car.combos {
-            for p in [combo.front, combo.rear].compactMap({ $0 }) {
-                if let c = car.card(p.card), needsEstimate(c, height: p.height / 1000) { estimateCard(c, height: p.height / 1000) }
-            }
-        }
     }
 
     func saveCar() {
         rememberCarSetup()
         do {
             if let s = car.setup { try CarStore.save(s, workFolder) }
-            try CarStore.save(car.state, workFolder)
             if !car.combosUnreadable { try CarStore.save(car.combos, workFolder) }
             for c in car.cards { try CarStore.save(c, workFolder) }
         } catch {
@@ -285,7 +244,6 @@ extension AppState {
                 var s = try CarSetup.decode(resultFile: Data(text.utf8))
                 s.headRestraint = self.car.setup?.headRestraint
                 self.car.setup = s
-                self.car.baseRevision += 1
                 self.saveCar()
                 self.refreshSections()
             } catch {
@@ -295,7 +253,6 @@ extension AppState {
     }
 
     func setupChanged() {
-        car.baseRevision += 1
         saveCar()
     }
 
@@ -313,69 +270,4 @@ extension AppState {
             }
         }
     }
-
-    private func runParams(wings: [JSONValue]) -> [String: JSONValue]? {
-        guard let s = car.setup, let setup = try? JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(s)) else { return nil }
-        var p: [String: JSONValue] = ["setup": setup, "flow": car.flow, "preset": .string(car.mesh), "wings": .array(wings)]
-        if let su2 = settings.su2Path.nilIfEmpty { p["su2"] = .string(su2) }
-        return p
-    }
-
-    func runBareCar() {
-        guard let params = runParams(wings: []) else { return }
-        car.baseJob = jobs.submit(command: "car-strips", params: params, in: jobsRoot) { [weak self] item in
-            guard let self, item.status == .succeeded, let text = item.resultText else { return }
-            do {
-                var r = try CarResult.decode(resultFile: Data(text.utf8))
-                r.folder = item.workdir.lastPathComponent
-                self.car.bases[r.mesh] = r
-                try CarStore.save(base: r, self.workFolder)
-                self.car.baseRevision += 1
-                self.saveCar()
-            } catch {
-                self.show("Could not read the bare car's result", error)
-            }
-        }
-    }
-
-    /// Full: the section again with the placed wings, at the baseline's mesh.
-    func runFull(_ id: String) {
-        // The wing being edited is saved to its card first, so the full result belongs to saved cards.
-        if id == car.selected, carDraft != nil, carDraftUnsaved || shownCombo != car.selectedCombo { saveWingCard(asNew: false) }
-        guard let combo = car.combos.first(where: { $0.id == id }), car.base != nil,
-              let params = runParams(wings: car.placedWings(combo)) else { return }
-        // Recorded against what ran: anything changed while it runs leaves it out of date.
-        let ranCards = car.cards, ranBase = car.baseRevision
-        car.fullJob = jobs.submit(command: "car-strips", params: params, in: jobsRoot) { [weak self] item in
-            guard let self, item.status == .succeeded, let text = item.resultText,
-                  let i = self.car.combos.firstIndex(where: { $0.id == id }) else { return }
-            do {
-                var r = try CarResult.decode(resultFile: Data(text.utf8))
-                r.folder = item.workdir.lastPathComponent
-                self.car.combos[i].recordFull(r, ran: combo, cards: ranCards, baseRevision: ranBase)
-                self.saveCar()
-            } catch {
-                self.show("Could not read the full result", error)
-            }
-        }
-    }
-
-    /// Re-estimates a card at a placed height (the warm engine's quick estimate), for the quick sum.
-    func estimateCard(_ card: WingCard, height: Double) {
-        guard needsEstimate(card, height: height) else { return }
-        let key = "\(card.id)@\(Int((height * 1000).rounded()))"
-        guard car.estimates[key] == nil, let engine = carEngine() else { return }
-        var wing = card.wing
-        wing.rideHeight = height
-        let params = JSONValue.object(estimateParams(wing))
-        Task { @MainActor in
-            guard let data = try? await engine.request("wing-estimate", params: params),
-                  let est = try? WingEstimate.decode(resultFile: data), let row = est.row(nearest: wing.alpha) else { return }
-            car.estimates[key] = (cl: row.cl, cd: row.cd)
-        }
-    }
-}
-
-private extension String {
-    var nilIfEmpty: String? { trimmingCharacters(in: .whitespaces).isEmpty ? nil : self }
 }

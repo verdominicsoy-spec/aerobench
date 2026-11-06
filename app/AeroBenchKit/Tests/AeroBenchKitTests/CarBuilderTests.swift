@@ -70,18 +70,6 @@ final class CarBuilderTests: XCTestCase {
         XCTAssertEqual(at.height, 10, accuracy: 1e-9)  // its numbers are made there; the box flags it, the car does not move it
     }
 
-    func testAFullResultIsRecordedAgainstWhatRanNotWhatIsThereWhenItEnds() {
-        let c = card(.front)
-        var ran = Combination(id: "k", name: "K")
-        ran.front = Placement(card: c.id, x: 600, height: 60)
-        var now = ran
-        now.front?.x = 650  // moved while the run was going
-        let result = CarResult(mesh: "coarse", speed: 15, cl: -0.3, cd: 0.4, refLength: 3, rearShare: 0.5, strips: [], converged: true, wings: [])
-        now.recordFull(result, ran: ran, cards: [c], baseRevision: 0)
-        XCTAssertEqual(now.fullFront, ran.front)
-        XCTAssertTrue(now.isStale(cards: [c], baseRevision: 0))
-    }
-
     func testTheCarsBoxInTheWingsFrame() {
         let c = card(.front)
         let b = CarRules.wingBox(c, placement: Placement(card: c.id, x: 600, height: 60), setup: setup())
@@ -130,40 +118,6 @@ final class CarBuilderTests: XCTestCase {
         XCTAssertEqual(pts.map(\.y).min()!, -48 + 60, accuracy: 1e-6)
     }
 
-    func testQuickSumAndBalanceIn2D() {
-        let front = card(.front, cla: 0.8)
-        var combo = Combination(id: "a", name: "A")
-        combo.front = Placement(card: front.id, x: 600, height: 60)
-        let q = quick(base: base(), combo: combo, cards: [front], setup: setup()) { _, _ in nil }!
-        // Per metre over q: the bare car's -0.3 x 3 m, the wing's own 2D section on its 0.3 m chord.
-        let wing = front.section
-        XCTAssertEqual(wing.cl, -0.8 / 0.3, accuracy: 1e-9)  // a 1 m span, factor 1: ClA 0.8 is Cl -2.67 on 0.3 m
-        let lift = -0.9 + wing.cl * 0.3, drag = 0.4 * 3 + wing.cd * 0.3
-        XCTAssertEqual(q.cl, lift / 3, accuracy: 1e-9)
-        XCTAssertEqual(q.cd, drag / 3, accuracy: 1e-9)
-        XCTAssertEqual(q.refLength, 3)
-        let expected = (0.6 * -0.9 + wing.cl * 0.3 * -600.0 / 1550.0) / lift  // 600 mm ahead of the front axle
-        XCTAssertEqual(q.rearShare ?? .nan, expected, accuracy: 1e-9)
-        XCTAssertEqual(q.usedEstimate, [])
-    }
-
-    func testAWingMovedOffItsHeightIsReEstimated() {
-        let front = card(.front, cla: 0.8, rideHeight: 0.05)
-        var combo = Combination(id: "a", name: "A")
-        combo.front = Placement(card: front.id, x: 600, height: 80)
-        let q = quick(base: base(), combo: combo, cards: [front], setup: setup()) { _, h in
-            XCTAssertEqual(h, 0.08, accuracy: 1e-12)
-            return (cl: -2.0, cd: 0.1)
-        }!
-        XCTAssertEqual(q.usedEstimate, [.front])
-        XCTAssertEqual(q.cl, (-0.9 - 2.0 * 0.3) / 3, accuracy: 1e-9)
-    }
-
-    func testAnOlder3DBareCarGivesNoQuickSum() {
-        let old = CarResult(mesh: "maxed", speed: 15, cl: nil, cd: nil, refLength: nil, rearShare: 0.6, strips: [], converged: true, wings: [])
-        XCTAssertNil(quick(base: old, combo: Combination(id: "a", name: "A"), cards: [], setup: setup()) { _, _ in nil })
-    }
-
     func testACardsSectionUndoesItsCarContribution() {
         var w = card(.front).wing
         w.span = 1.2
@@ -179,86 +133,5 @@ final class CarBuilderTests: XCTestCase {
             XCTAssertEqual(back3.cl, -1.4, accuracy: 1e-9)
             XCTAssertEqual(back3.cd, 0.06, accuracy: 1e-9)
         }
-    }
-
-    private func base() -> CarResult {
-        CarResult(mesh: "maxed", speed: 15, cl: -0.3, cd: 0.4, refLength: 3, rearShare: 0.6, strips: [], converged: true, wings: [])
-    }
-
-    func testAFullResultGoesOutOfDateWhenAnythingChanges() {
-        var front = card(.front)
-        var combo = Combination(id: "a", name: "A")
-        combo.front = Placement(card: front.id, x: 600, height: 60)
-        XCTAssertFalse(combo.isStale(cards: [front], baseRevision: 3))  // no full result: nothing to be out of date
-        combo.recordFull(base(), cards: [front], baseRevision: 3)
-        XCTAssertFalse(combo.isStale(cards: [front], baseRevision: 3))
-        combo.front?.x = 620
-        XCTAssertTrue(combo.isStale(cards: [front], baseRevision: 3))  // the wing moved since
-        combo.front?.x = 600
-        front.revision += 1
-        XCTAssertTrue(combo.isStale(cards: [front], baseRevision: 3))  // the card was edited since
-        XCTAssertTrue(combo.isStale(cards: [card(.front)], baseRevision: 4))  // the bare car was run again
-    }
-
-    func testAPendingReEstimateIsFlagged() {
-        var combo = Combination(id: "a", name: "A")
-        let inGround = card(.front, cla: 0.8, rideHeight: 0.05)
-        combo.front = Placement(card: inGround.id, x: 600, height: 80)
-        XCTAssertEqual(quick(base: base(), combo: combo, cards: [inGround], setup: setup()) { _, _ in nil }?.pendingEstimate, [.front])
-        let freeAir = card(.front, cla: 0.8, rideHeight: nil)  // a front wing designed in free air, placed over the ground
-        combo.front = Placement(card: freeAir.id, x: 600, height: 80)
-        XCTAssertEqual(quick(base: base(), combo: combo, cards: [freeAir], setup: setup()) { _, h in
-            XCTAssertEqual(h, 0.08, accuracy: 1e-12)
-            return (cl: -2.0, cd: 0.1)
-        }?.usedEstimate, [.front])
-    }
-
-    func testABaselineMatchesTheSameSettingsHoweverNumbersDecode() {
-        let asSent = JSONValue.object(["speed": .double(15), "ground": .object(["moving": .bool(false), "speed": .double(15)]),
-                                       "wheels": .object(["rotating": .bool(true), "speed": .double(15)])])
-        let asRead = JSONValue.object(["speed": .int(15), "ground": .object(["moving": .bool(false), "speed": .int(15)]),
-                                       "wheels": .object(["rotating": .bool(true), "speed": .int(15)])])
-        var b = base()
-        b.n = 7
-        b.flow = asRead
-        XCTAssertTrue(b.ranWith(asSent, n: 7))
-        XCTAssertFalse(b.ranWith(asSent, n: 5))
-        let moving = JSONValue.object(["speed": .double(15), "ground": .object(["moving": .bool(true), "speed": .double(15)]),
-                                       "wheels": .object(["rotating": .bool(true), "speed": .double(15)])])
-        XCTAssertFalse(b.ranWith(moving, n: 7))
-    }
-
-    func testANullCentreOfPressureDecodes() throws {
-        let json = #"""
-        {"data": {"mesh": "coarse", "speed": 15, "cla": 0, "cda": 0.5, "rear_share": null, "cla_2d_wings": 0, "converged": true,
-          "wings": [], "n": 7, "flow": {"speed": 15, "ground": {"moving": false, "speed": 15}}, "open_gaps": 3,
-          "failed": [{"y": 200, "width": 150, "reason": "SU2 diverged at every CFL tried"}],
-          "strips": [{"y": 50, "width": 100, "lift": 0, "drag": 5, "x_cp": null, "converged": true, "wing_lift": {}, "wing_drag": {}}]}}
-        """#
-        let r = try CarResult.decode(resultFile: Data(json.utf8))
-        XCTAssertNil(r.strips[0].xCp)
-        XCTAssertNil(r.rearShare)
-        XCTAssertEqual(r.n, 7)
-        XCTAssertEqual(r.groundMoving, false)
-        XCTAssertEqual(r.openGaps, 3)
-        XCTAssertEqual(r.failed?.first?.y, 200)
-        XCTAssertNil(r.cl)  // an older 3D strips run: no 2D numbers, so it is run again
-    }
-
-    func testDecodesACarResult() throws {
-        let json = #"""
-        {"data": {"mesh": "coarse", "speed": 15, "cl": -0.4, "cd": 0.5, "ref_length": 3.07, "rear_share": 0.4, "n": 1,
-          "converged": false, "wings": [{"position": "front", "chord": 0.3, "cl": -2.4, "cd": 0.13}],
-          "strips": [{"y": 0, "lift": -10, "drag": 5, "x_cp": -1000, "converged": false,
-                      "reason": "residual fell 1.0 orders", "wing_lift": {"front": -3}, "wing_drag": {"front": 1}}]}}
-        """#
-        let r = try CarResult.decode(resultFile: Data(json.utf8))
-        XCTAssertEqual(r.rearShare, 0.4)
-        XCTAssertFalse(r.converged)
-        XCTAssertEqual(r.strips[0].wingLift["front"], -3)
-        XCTAssertEqual(r.wings[0].cl, -2.4)
-        XCTAssertEqual(r.cl, -0.4)
-        XCTAssertEqual(r.refLength, 3.07)
-        XCTAssertNil(r.strips[0].width)
     }
 }

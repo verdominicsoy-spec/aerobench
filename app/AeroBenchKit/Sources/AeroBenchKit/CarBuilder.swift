@@ -73,109 +73,6 @@ public struct CarSetup: Codable, Equatable, Sendable {
     }
 }
 
-/// The engine's car result (command car-strips): the centreline section's 2D numbers,
-/// held in strips as one section. Older runs (strips across the car, 3D ClA and CdA)
-/// decode with no Cl: they are run again.
-public struct CarResult: Codable, Equatable, Sendable {
-    public struct Strip: Codable, Equatable, Sendable {
-        public var y: Double
-        public var width: Double?  // older strips runs only
-        public var lift: Double  // N/m, up +
-        public var drag: Double
-        public var xCp: Double?  // mm, car x; nil when the section carries no lift
-        public var converged: Bool
-        public var reason: String?
-        public var wingLift: [String: Double]
-        public var wingDrag: [String: Double]
-        public var folder: String?  // its run in the job folder: section (strip_3 in older runs)
-        public var fieldView: String?  // field.json in that folder, when the flow was sampled
-
-        enum CodingKeys: String, CodingKey {
-            case y, width, lift, drag, converged, reason, folder
-            case fieldView = "field_view"
-            case xCp = "x_cp"
-            case wingLift = "wing_lift"
-            case wingDrag = "wing_drag"
-        }
-    }
-
-    public struct WingShare: Codable, Equatable, Sendable {
-        public var position: String
-        public var chord: Double?  // m
-        public var cl: Double?  // 2D, on its own chord, lift up +; nil in older runs
-        public var cd: Double?
-    }
-
-    public var mesh: String
-    public var speed: Double
-    public var cl: Double?  // 2D, on refLength, lift up +: a car pressed down has a negative Cl
-    public var cd: Double?
-    public var refLength: Double?  // m, the section's extent along x
-    public var rearShare: Double?
-    public var strips: [Strip]
-    public var converged: Bool
-    public var wings: [WingShare]
-    public struct Failure: Codable, Equatable, Sendable {
-        public var y: Double
-        public var width: Double
-        public var reason: String
-    }
-
-    public var n: Int?  // sections across half the car: 1 now, more in older strips runs
-    public var failed: [Failure]?  // older strips runs: strips that would not solve, left out of the totals
-    public var openGaps: Int?  // places the CAD's cut did not close, over all sections
-    public var flow: JSONValue?  // the speed, ground and wheel options it was run with
-    public var folder: String?  // the job's folder in the project's jobs, where the section's flow is
-
-    /// Run with these settings: same section count, and the same speeds and options, numbers
-    /// compared as numbers (the engine's 15.0 can come back as the integer 15).
-    public func ranWith(_ other: JSONValue, n: Int) -> Bool {
-        func same(_ a: JSONValue?, _ b: JSONValue?) -> Bool {
-            switch (a, b) {
-            case (.object(let x)?, .object(let y)?):
-                return Set(x.keys) == Set(y.keys) && x.keys.allSatisfy { same(x[$0], y[$0]) }
-            case (.int(let x)?, .double(let y)?), (.double(let y)?, .int(let x)?): return abs(Double(x) - y) < 1e-9
-            case (.double(let x)?, .double(let y)?): return abs(x - y) < 1e-9
-            default: return a == b
-            }
-        }
-        return self.n == n && same(flow, other)
-    }
-
-    /// Whether it ran over a moving ground (unverified on the real car), when recorded.
-    public var groundMoving: Bool? {
-        guard case .object(let f)? = flow, case .object(let g)? = f["ground"], case .bool(let m)? = g["moving"] else { return nil }
-        return m
-    }
-
-    public init(mesh: String, speed: Double, cl: Double?, cd: Double?, refLength: Double?, rearShare: Double?,
-                strips: [Strip], converged: Bool, wings: [WingShare], n: Int? = nil, flow: JSONValue? = nil) {
-        self.n = n
-        self.flow = flow
-        self.mesh = mesh
-        self.speed = speed
-        self.cl = cl
-        self.cd = cd
-        self.refLength = refLength
-        self.rearShare = rearShare
-        self.strips = strips
-        self.converged = converged
-        self.wings = wings
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case mesh, speed, cl, cd, strips, converged, wings, n, flow, failed, folder
-        case refLength = "ref_length"
-        case rearShare = "rear_share"
-        case openGaps = "open_gaps"
-    }
-
-    public static func decode(resultFile data: Data) throws -> CarResult {
-        struct Envelope: Decodable { var data: CarResult }
-        return try JSONDecoder().decode(Envelope.self, from: data).data
-    }
-}
-
 /// A Wing Lab wing saved for the car: its section and its own numbers.
 public struct WingCard: Codable, Equatable, Identifiable, Sendable {
     public var id: String
@@ -357,38 +254,15 @@ public enum CarRules {
     }
 }
 
-/// One car to compare: the base car with a front and a rear card, either optional.
+/// A way to fit the car: the base car with a front and a rear card placed, either optional.
 public struct Combination: Codable, Equatable, Identifiable, Sendable {
     public var id: String
     public var name: String
     public var front: Placement?
     public var rear: Placement?
-    public var full: CarResult?
-    // What the full result was run with: it is out of date once any of it changes.
-    public var fullFront: Placement?
-    public var fullRear: Placement?
-    public var cardRevisions: [String: Int] = [:]
-    public var baseRevision = 0
-
     public init(id: String, name: String) {
         self.id = id
         self.name = name
-    }
-
-    public mutating func recordFull(_ result: CarResult, cards: [WingCard], baseRevision: Int) {
-        recordFull(result, ran: self, cards: cards, baseRevision: baseRevision)
-    }
-
-    /// The result of a run of `ran` (as it was when the run was asked for, with `cards` then):
-    /// anything changed since makes it out of date.
-    public mutating func recordFull(_ result: CarResult, ran: Combination, cards: [WingCard], baseRevision: Int) {
-        full = result
-        fullFront = ran.front
-        fullRear = ran.rear
-        cardRevisions = Dictionary(uniqueKeysWithValues: [ran.front, ran.rear].compactMap { $0 }.compactMap { p in
-            cards.first { $0.id == p.card }.map { ($0.id, $0.revision) }
-        })
-        self.baseRevision = baseRevision
     }
 
     /// Where the wing being edited goes: its end's slot, or the start spot when that end is empty,
@@ -415,66 +289,4 @@ public struct Combination: Codable, Equatable, Identifiable, Sendable {
         if position == .front { c.front = nil } else { c.rear = nil }
         return c
     }
-
-    /// The full result no longer describes this car: a wing moved or was swapped, a card was
-    /// edited, or the bare car was run again. Quick numbers are always current.
-    public func isStale(cards: [WingCard], baseRevision: Int) -> Bool {
-        guard full != nil else { return false }
-        if baseRevision != self.baseRevision || front != fullFront || rear != fullRear { return true }
-        for p in [front, rear].compactMap({ $0 }) {
-            guard let c = cards.first(where: { $0.id == p.card }) else { return true }
-            if cardRevisions[c.id] != c.revision { return true }
-        }
-        return false
-    }
-}
-
-public struct QuickResult: Equatable, Sendable {
-    public var cl: Double  // 2D, on the bare car's refLength, lift up +
-    public var cd: Double
-    public var refLength: Double
-    public var rearShare: Double?
-    public var usedEstimate: [WingPosition]
-    public var pendingEstimate: [WingPosition] = []  // re-estimate asked for, not back yet: the card's own numbers meanwhile
-}
-
-/// Whether a card placed at `height` (m) needs its numbers re-estimated there:
-/// off the height they were made at, or a front wing made in free air now over the ground.
-public func needsEstimate(_ card: WingCard, height: Double) -> Bool {
-    if let h = card.rideHeight { return abs(height - h) > 0.001 }
-    return card.position == .front
-}
-
-/// In 2D: the bare car's section plus each placed card's section, each
-/// wing's lift acting at its own centre of pressure for the axle split, as
-/// Cl and Cd on the bare car's length. A card placed more than 1 mm off the
-/// height its numbers were made at is re-estimated there through `estimate`
-/// (card, height in m: its 2D Cl and Cd). Nil for a bare car without 2D numbers.
-public func quick(base: CarResult, combo: Combination, cards: [WingCard], setup: CarSetup,
-                  estimate: (WingCard, Double) -> (cl: Double, cd: Double)?) -> QuickResult? {
-    guard let bcl = base.cl, let bcd = base.cd, let length = base.refLength, length > 0 else { return nil }
-    // Forces over the dynamic pressure, per metre of width (m).
-    var lift = bcl * length, drag = bcd * length
-    var rear = (base.rearShare ?? 0) * lift
-    var used: [WingPosition] = [], pending: [WingPosition] = []
-    let xf = setup.axleX("F"), xr = setup.axleX("R")
-    for p in [combo.front, combo.rear].compactMap({ $0 }) {
-        guard let c = cards.first(where: { $0.id == p.card }) else { continue }
-        var n = c.section
-        if needsEstimate(c, height: p.height / 1000) {
-            if let e = estimate(c, p.height / 1000) {
-                n = e
-                used.append(c.position)
-            } else {
-                pending.append(c.position)
-            }
-        }
-        let xcp = setup.axleX(c.position == .front ? "F" : "R") + p.x - c.xcp * 1000
-        let l = n.cl * c.wing.refChord
-        lift += l
-        drag += n.cd * c.wing.refChord
-        rear += l * (xf - xcp) / (xf - xr)
-    }
-    return QuickResult(cl: lift / length, cd: drag / length, refLength: length, rearShare: abs(lift) > 1e-9 ? rear / lift : nil,
-                       usedEstimate: used, pendingEstimate: pending)
 }

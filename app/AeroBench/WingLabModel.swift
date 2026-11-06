@@ -91,7 +91,6 @@ final class WingLabModel {
         case estimate = "Estimate"
         case cfd = "CFD"
         case study = "Study"
-        case car = "Car"
 
         var id: String { rawValue }
     }

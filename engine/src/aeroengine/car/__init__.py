@@ -1,1 +1,1 @@
-"""Car builder: the base car, its sections, and 2D car runs with wings on it."""
+"""Car builder: the base car (wheels, ground) and its sections, for placing wings."""
