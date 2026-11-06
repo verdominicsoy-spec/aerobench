@@ -364,3 +364,98 @@ struct S37Segmented<T: Hashable>: View {
         }
     }
 }
+
+// MARK: field row
+
+/// The one dense field row: label left, a recessed number field, its unit.
+/// An error outlines the field in critical and says the fix under it.
+struct S37FieldRow: View {
+    var label: String
+    var unit: String = ""
+    @Binding var value: Double?
+    var prompt: String? = nil
+    var error: String? = nil
+    var width: CGFloat = 112
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: S37.Space.s1) {
+            HStack(spacing: S37.Space.s2) {
+                Text(label).font(.system(size: 14)).foregroundStyle(S37.C.ink).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: S37.Space.s2)
+                TextField(label, value: $value, format: .number, prompt: prompt.map { Text($0) })
+                    .textFieldStyle(.plain).labelsHidden().multilineTextAlignment(.trailing)
+                    .font(.system(size: 14)).monospacedDigit()
+                    .padding(.horizontal, S37.Space.s2).frame(width: width, height: 28)
+                    .background(RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).fill(S37.C.recess))
+                    .overlay {
+                        if error != nil {
+                            RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).strokeBorder(S37.C.critical, lineWidth: 2)
+                        }
+                    }
+                Text(unit).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkTertiary)
+                    .frame(width: 40, alignment: .leading)
+            }
+            if let error {
+                Text(error).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.critical)
+                    .padding(.trailing, 48)
+            }
+        }
+        .padding(.horizontal, S37.Space.s3)
+        .padding(.vertical, error == nil ? 0 : S37.Space.s1)
+        .frame(minHeight: 40)
+    }
+}
+
+extension S37FieldRow {
+    /// A field that always holds a number: clearing it keeps the last one
+    init(label: String, unit: String = "", value: Binding<Double>, error: String? = nil, width: CGFloat = 112) {
+        self.init(label: label, unit: unit,
+                  value: Binding<Double?>(get: { value.wrappedValue }, set: { if let v = $0 { value.wrappedValue = v } }),
+                  error: error, width: width)
+    }
+}
+
+// MARK: empty state
+
+/// What's missing, left-aligned: a headline, one plain line and the action
+struct S37EmptyState<Actions: View>: View {
+    var title: String
+    var line: String
+    @ViewBuilder var actions: Actions
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: S37.Space.s3) {
+            Text(title).font(.system(size: 20, weight: .semibold)).foregroundStyle(S37.C.ink)
+            Text(line).font(.system(size: 14)).foregroundStyle(S37.C.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: S37.Space.s3) { actions }.padding(.top, S37.Space.s1)
+        }
+        .frame(maxWidth: 440, alignment: .leading)
+        .padding(S37.Space.s8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+extension S37EmptyState where Actions == EmptyView {
+    init(title: String, line: String) { self.init(title: title, line: line) { EmptyView() } }
+}
+
+// MARK: undo
+
+/// The target undo registrations hang off when the edit isn't an object's
+final class S37UndoTarget: NSObject { static let shared = S37UndoTarget() }
+
+extension Binding where Value: Equatable {
+    /// The same binding, with every change registered for undo as `name`
+    /// ("Undo Change Velocity"). Undoing goes back through this binding, so
+    /// redo registers itself.
+    func undoable(_ undo: UndoManager?, _ name: String) -> Binding<Value> {
+        Binding(get: { wrappedValue }, set: { new in
+            let old = wrappedValue
+            guard new != old else { return }
+            wrappedValue = new
+            undo?.registerUndo(withTarget: S37UndoTarget.shared) { _ in self.undoable(undo, name).wrappedValue = old }
+            undo?.setActionName(name)
+        })
+    }
+}

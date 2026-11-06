@@ -4,18 +4,24 @@ import SwiftUI
 
 /// Prism layer settings for STAR 2606's custom prism control: the three
 /// values it takes side by side at one size, each with a copy button, then
-/// the inputs.
+/// the inputs. Flow and length start from the project (Wing Lab's speed, air
+/// and main chord); a typed value stays typed, per project.
 struct PrismLayerView: View {
-    @AppStorage("prism.velocity") private var velocity = 15.0
-    @AppStorage("prism.density") private var density = 1.225
-    @AppStorage("prism.yPlus") private var yPlus = 1.0
-    @AppStorage("prism.viscosity") private var viscosity = 1.81e-5
-    @AppStorage("prism.chord") private var length = 0.3
-    @AppStorage("prism.clearance") private var clearance = 0.0  // mm, 0: no wall nearby
-    @AppStorage("prism.layers") private var wallFunctionLayers = 4
-    @AppStorage("prism.stretching") private var stretching = 1.2
+    @Environment(AppState.self) private var app
+    @Environment(\.undoManager) private var undo
     @State private var showWorking = false
     @State private var copied: String?  // the value whose button shows a tick
+
+    private var inputs: PrismInputs { app.prism.inputs }
+    private var wing: Wing { app.wingLab.wing }
+    private var velocity: Double { inputs.velocity ?? wing.speed }
+    private var density: Double { inputs.density ?? wing.rho }
+    private var viscosity: Double { inputs.viscosity ?? wing.mu }
+    private var length: Double { inputs.length ?? wing.elements.map(\.chord).max() ?? 0.3 }
+    private var yPlus: Double { inputs.yPlus }
+    private var stretching: Double { inputs.stretching }
+    private var wallFunctionLayers: Int { inputs.layers }
+    private var clearance: Double { inputs.clearance }
 
     var body: some View {
         let layer = PrismLayer(velocity: velocity, density: density, yPlus: yPlus, viscosity: viscosity, length: length,
@@ -26,20 +32,12 @@ struct PrismLayerView: View {
             page(layer)
             ScrollView { page(layer) }.scrollIndicators(.never)
         }
-        .preference(key: ToolTakeawayKey.self, value: layer == nil ? "Every value must be a number above zero, and stretching above 1." : nil)
     }
 
     private func page(_ layer: PrismLayer?) -> some View {
         VStack(alignment: .leading, spacing: S37.Space.s6) {
-            if let layer {
-                results(layer)
-            } else {
-                Text("Every value must be a number above zero, and stretching above 1.")
-                    .foregroundStyle(S37.C.clayInk)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .s37Pane()
-            }
-            inputs(layer)
+            if let layer { results(layer) }  // otherwise the bad field says how to fix it
+            inputPane
         }
         .padding(6)
     }
@@ -48,12 +46,11 @@ struct PrismLayerView: View {
     private func results(_ layer: PrismLayer) -> some View {
         VStack(alignment: .leading, spacing: S37.Space.s4) {
             HStack(alignment: .top, spacing: 0) {
-                output("Number of Prism Layers", "\(layer.layers)", "",
-                       note: layer.treatment == .resolved ? "From the near wall cell at stretching \(decimal(layer.stretching))" : "Wall functions, \(decimal(layer.stretching)) stretching")
+                output("Number of Prism Layers", "\(layer.layers)", "")
                 hairline
                 output("Prism Layer Total Thickness", millimetres(layer.total), "mm",
                        aside: layer.capped ? "uncapped \(millimetres(layer.uncappedTotal)) mm" : nil,
-                       note: layer.capped ? (layer.treatment == .resolved ? "Capped at a third of the gap" : "The layers that fit in a third of the gap") : layer.treatment == .resolved ? "The full boundary layer" : "Sum of the layers")
+                       note: layer.capped ? (layer.treatment == .resolved ? "Capped at a third of the gap" : "The layers that fit in a third of the gap") : nil)
                 hairline
                 output("Prism Layer Near Wall Thickness", millimetres(layer.firstCell), "mm",
                        note: "Goes in the prism control, not a surface size")
@@ -86,7 +83,7 @@ struct PrismLayerView: View {
 
     private var hairline: some View { Rectangle().fill(S37.C.separator).frame(width: 1) }
 
-    private func output(_ field: String, _ figure: String, _ unit: String, aside: String? = nil, note: String) -> some View {
+    private func output(_ field: String, _ figure: String, _ unit: String, aside: String? = nil, note: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: S37.Space.s2) {
             HStack(spacing: S37.Space.s2) {
                 Text(field).font(.system(size: 12, weight: .semibold)).foregroundStyle(S37.C.inkSecondary)
@@ -98,7 +95,7 @@ struct PrismLayerView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Copy \(field)")
-                .help("Copy \(figure)")
+                .help("Copy")
             }
             let value = HStack(alignment: .firstTextBaseline, spacing: S37.Space.s1) {
                 Text(figure).font(.system(size: 32, weight: .semibold)).tracking(-0.9).monospacedDigit()
@@ -115,8 +112,10 @@ struct PrismLayerView: View {
             } else {
                 value
             }
-            Text(note).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkTertiary)
-                .fixedSize(horizontal: false, vertical: true)
+            if let note {
+                Text(note).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .textSelection(.enabled)
         .padding(.horizontal, S37.Space.s4)
@@ -152,28 +151,23 @@ struct PrismLayerView: View {
         }
     }
 
-    private func inputs(_ layer: PrismLayer?) -> some View {
+    private var inputPane: some View {
         VStack(alignment: .leading, spacing: S37.Space.s5) {
-            HStack(spacing: S37.Space.s2) {
-                Text("Preset").font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkTertiary)
-                Menu("Choose") {
+            HStack(spacing: S37.Space.s4) {
+                Menu("Preset") {
                     Button("Wing / floor") { fill(yPlus: 1, layers: nil, stretching: 1.2) }
                     Button("Body / wheels") { fill(yPlus: 40, layers: 4, stretching: 1.25) }
                     Button("Suspension") { fill(yPlus: 40, layers: 3, stretching: 1.3) }
                 }
                 .menuStyle(.borderlessButton).fixedSize()
-                .font(.system(size: 12, weight: .semibold))
-            }
-            HStack(spacing: S37.Space.s3) {
-                // shows the maths that's running; the mode follows Target y+, so it takes no clicks
-                S37Segmented(options: [(PrismLayer.WallTreatment.resolved, "Resolved (y+ ≈ 1)"),
-                                       (.wallFunctions, "Wall functions (y+ 30 to 100)")],
-                             selection: .constant(treatment))
-                    .allowsHitTesting(false)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(treatment == .resolved ? "Mode: resolved" : "Mode: wall functions")
-                Text("Set by Target y+").font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkTertiary)
-                    .fixedSize()
+                .font(.system(size: 14, weight: .semibold))
+                // the mode follows Target y+, so it's shown, not picked
+                Text(treatment == .resolved ? "Resolved, y+ about 1" : "Wall functions, y+ 30 to 100")
+                    .font(.system(size: 14)).foregroundStyle(S37.C.inkSecondary)
+                if inputs != PrismInputs() {
+                    Button("Use project values") { set(\.self, PrismInputs(), "Use Project Values") }
+                        .buttonStyle(S37ButtonStyle(kind: .plain))
+                }
             }
             // three columns where they fit, then two, then one
             ViewThatFits(in: .horizontal) {
@@ -199,16 +193,20 @@ struct PrismLayerView: View {
 
     private var flowGroup: some View {
         group("Flow") {
-            field("Velocity", "m/s", $velocity)
-            field("Density", "kg/m³", $density)
-            field("Target y+", "", $yPlus)
+            S37FieldRow(label: "Velocity", unit: "m/s", value: project(\.velocity, velocity, "Velocity"),
+                        error: positive(velocity, "a speed", "m/s"))
+            S37FieldRow(label: "Density", unit: "kg/m³", value: project(\.density, density, "Density"),
+                        error: positive(density, "a density", "kg/m³"))
+            S37FieldRow(label: "Target y+", value: binding(\.yPlus, "Target y+"), error: positive(yPlus, "a y+", ""))
         }
     }
 
     private var geometryGroup: some View {
         group("Geometry") {
-            field("Reference length", "m", $length)
-            field("Nearest gap to another wall", "mm", gap, hint: "floor to ground, arm to floor, slot gap")
+            S37FieldRow(label: "Reference length", unit: "m", value: project(\.length, length, "Reference Length"),
+                        error: positive(length, "a length", "m"))
+            S37FieldRow(label: "Nearest gap to another wall", unit: "mm", value: gap, prompt: "none",
+                        error: clearance < 0 ? "Use a gap above 0 mm, or leave it empty" : nil, width: 72)
         }
     }
 
@@ -219,14 +217,16 @@ struct PrismLayerView: View {
                     Text("Number of layers").font(.system(size: 14)).foregroundStyle(S37.C.ink)
                     Spacer(minLength: S37.Space.s2)
                     Text("\(wallFunctionLayers)").font(.system(size: 14)).monospacedDigit()
-                    Stepper("Number of layers", value: $wallFunctionLayers, in: 2...6).labelsHidden()
+                    Stepper("Number of layers", value: binding(\.layers, "Number of Layers"), in: 2...6).labelsHidden()
                         .frame(width: 40, alignment: .leading)
                 }
                 .padding(.horizontal, S37.Space.s3)
                 .frame(height: 40)
             }
-            field("Stretching", "", $stretching)
-            field("Viscosity", "Pa·s", $viscosity)
+            S37FieldRow(label: "Stretching", value: binding(\.stretching, "Stretching"),
+                        error: stretching > 1 && stretching.isFinite ? nil : "Use stretching above 1")
+            S37FieldRow(label: "Viscosity", unit: "Pa·s", value: project(\.viscosity, viscosity, "Viscosity"),
+                        error: positive(viscosity, "a viscosity", "Pa·s"))
         }
     }
 
@@ -235,9 +235,29 @@ struct PrismLayerView: View {
 
     /// A preset sets y+, and the mode follows
     private func fill(yPlus: Double, layers: Int?, stretching: Double) {
-        self.yPlus = yPlus
-        self.stretching = stretching
-        if let layers { wallFunctionLayers = layers }
+        var next = inputs
+        next.yPlus = yPlus
+        next.stretching = stretching
+        if let layers { next.layers = layers }
+        set(\.self, next, "Preset")
+    }
+
+    /// "Use a speed above 0 m/s" when the value can't be used
+    private func positive(_ value: Double, _ what: String, _ unit: String) -> String? {
+        value > 0 && value.isFinite ? nil : "Use \(what) above 0" + (unit.isEmpty ? "" : " \(unit)")
+    }
+
+    private func set<V: Equatable>(_ key: WritableKeyPath<PrismInputs, V>, _ value: V, _ name: String) {
+        app.prism.set(key, value, name, undo: undo)
+    }
+
+    private func binding<V: Equatable>(_ key: WritableKeyPath<PrismInputs, V>, _ name: String) -> Binding<V> {
+        Binding(get: { inputs[keyPath: key] }, set: { set(key, $0, name) })
+    }
+
+    /// A value that follows the project until it's typed
+    private func project(_ key: WritableKeyPath<PrismInputs, Double?>, _ shown: Double, _ name: String) -> Binding<Double> {
+        Binding(get: { shown }, set: { set(key, $0, name) })
     }
 
     private func copy(_ text: String, _ key: String) {
@@ -252,7 +272,7 @@ struct PrismLayerView: View {
 
     /// The clearance as an optional, so an empty box means no wall nearby
     private var gap: Binding<Double?> {
-        Binding(get: { clearance > 0 ? clearance : nil }, set: { clearance = $0 ?? 0 })
+        Binding(get: { clearance > 0 ? clearance : nil }, set: { set(\.clearance, $0 ?? 0, "Nearest Gap") })
     }
 
     private func group<Rows: View>(_ title: String, @ViewBuilder rows: () -> Rows) -> some View {
@@ -264,35 +284,59 @@ struct PrismLayerView: View {
         }
         .frame(minWidth: 300, maxWidth: .infinity, alignment: .topLeading)
     }
-
-    private func field(_ label: String, _ unit: String, _ value: Binding<Double>) -> some View {
-        field(label, unit, Binding<Double?>(get: { value.wrappedValue }, set: { if let v = $0 { value.wrappedValue = v } }))
-    }
-
-    private func field(_ label: String, _ unit: String, _ value: Binding<Double?>, hint: String? = nil) -> some View {
-        HStack(spacing: S37.Space.s2) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(label).font(.system(size: 14)).foregroundStyle(S37.C.ink).fixedSize(horizontal: false, vertical: true)
-                if let hint {
-                    Text(hint).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Spacer(minLength: S37.Space.s2)
-            TextField(label, value: value, format: .number, prompt: hint == nil ? nil : Text("none"))
-                .textFieldStyle(.plain).labelsHidden().multilineTextAlignment(.trailing)
-                .font(.system(size: 14)).monospacedDigit()
-                .padding(.horizontal, S37.Space.s2).frame(width: hint == nil ? 112 : 72, height: 28)
-                .background(RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).fill(S37.C.recess))
-            Text(unit).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkTertiary)
-                .frame(width: 40, alignment: .leading)
-        }
-        .padding(.horizontal, S37.Space.s3)
-        .frame(minHeight: 40)
-        .padding(.vertical, hint == nil ? 0 : S37.Space.s1)
-    }
 }
 
 private func decimal(_ value: Double) -> String {
     value.formatted(.number.precision(.significantDigits(1...3)))
+}
+
+/// Prism Layer's inputs for one project. A nil value follows the project
+/// (Wing Lab's speed, air and main chord); a typed one stays typed.
+struct PrismInputs: Codable, Equatable {
+    var velocity: Double?
+    var density: Double?
+    var viscosity: Double?
+    var length: Double?
+    var yPlus = 1.0
+    var clearance = 0.0  // mm, 0: no wall nearby
+    var layers = 4
+    var stretching = 1.2
+}
+
+/// The open project's Prism Layer inputs, kept in the user defaults per project
+@MainActor @Observable
+final class PrismModel {
+    private(set) var inputs = PrismInputs()
+    private var key = PrismModel.key(nil)
+
+    static func key(_ project: URL?) -> String { "prism.inputs." + (project?.standardizedFileURL.path ?? "none") }
+
+    func load(project: URL?) {
+        key = Self.key(project)
+        inputs = Self.read(key)
+    }
+
+    /// One edit, undoable as `name`. Undo writes back to the project it came
+    /// from, even if another one is open by then.
+    func set<V: Equatable>(_ path: WritableKeyPath<PrismInputs, V>, _ value: V, _ name: String, undo: UndoManager?) {
+        edit(key, path, value, name, undo)
+    }
+
+    private func edit<V: Equatable>(_ key: String, _ path: WritableKeyPath<PrismInputs, V>, _ value: V, _ name: String,
+                                    _ undo: UndoManager?) {
+        var stored = key == self.key ? inputs : Self.read(key)
+        let old = stored[keyPath: path]
+        guard old != value else { return }
+        stored[keyPath: path] = value
+        if key == self.key { inputs = stored }
+        UserDefaults.standard.set(try? JSONEncoder().encode(stored), forKey: key)
+        undo?.registerUndo(withTarget: self) { model in
+            MainActor.assumeIsolated { model.edit(key, path, old, name, undo) }
+        }
+        undo?.setActionName(name)
+    }
+
+    private static func read(_ key: String) -> PrismInputs {
+        UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode(PrismInputs.self, from: $0) } ?? PrismInputs()
+    }
 }

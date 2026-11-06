@@ -24,6 +24,7 @@ final class AppState {
     let car = CarModel()
     let flow: FlowFieldModel
     let wingLab: WingLabModel
+    let prism = PrismModel()
     var project: OpenProject?
     /// A packaged app setting up its engine; nil otherwise.
     var engineSetup: EngineSetup?
@@ -195,6 +196,7 @@ final class AppState {
         wingLab.reloadStudy(project: workFolder)
         jobs.loadHistory(from: jobsRoot)
         showLatestLapSim()
+        prism.load(project: nil)
     }
 
     /// Anything not yet written to the project: the wing lab compares with its files.
@@ -233,6 +235,7 @@ final class AppState {
         jobs.loadHistory(from: jobsRoot)
         showLatestLapSim()
         loadFlowState(fromProject: url)
+        prism.load(project: url)
     }
 
     private func noteRecent(_ url: URL) {
