@@ -28,7 +28,7 @@ extension AppState {
             }
             return DesignFrame(box: CarRules.designBox(end, setup: s), freeAir: false, offset: offset, onCar: true)
         }
-        let box = wing.rulesBox ?? Wing.defaultRulesBox(wing.rulesFor)
+        let box = wing.rulesBox ?? rulesBox(for: wing.rulesFor)  // the last base car's, if this project has none
         if let h = wing.rideHeight, !pts.isEmpty {
             let shift = SIMD2(-box.minX, h - lo.y)  // the ground at y = 0
             return DesignFrame(box: RulesBox(minX: 0, minY: box.minY + shift.y, maxX: box.maxX - box.minX, maxY: box.maxY + shift.y),

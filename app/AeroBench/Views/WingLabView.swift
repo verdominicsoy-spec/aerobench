@@ -64,7 +64,9 @@ struct WingLabView: View {
             app.refreshSections()
             if lab.library.isEmpty { lab.loadLibrary(engineDirectory: app.settings.engineDirectory) }
             if lab.wing.elements.isEmpty && lab.undoStack.isEmpty { lab.reset(to: WingLabModel.starter) }
+            app.syncCarRulesBox()
         }
+        .onChange(of: lab.wing.rulesFor) { app.syncCarRulesBox() }
     }
 }
 
@@ -1133,7 +1135,10 @@ struct WingInspector: View {
                 NumberField(label: "Minimum gap", unit: "mm", value: mm({ wing.minGap }, { v in lab.edit("Change Minimum Gap") { $0.minGap = v } }))
                 Toggle("Rules box", isOn: Binding(
                     get: { wing.rulesBox != nil },
-                    set: { on in lab.edit { $0.rulesBox = on ? Wing.defaultRulesBox($0.rulesFor) : nil } }))
+                    set: { on in
+                        let box = app.rulesBox(for: wing.rulesFor)  // from the last base car when this project has none
+                        lab.edit(on ? "Turn On Rules Box" : "Turn Off Rules Box") { $0.rulesBox = on ? box : nil }
+                    }))
                     .disabled(app.car.setup != nil)
                 if let box = wing.rulesBox {
                     S37Segmented(options: [(WingPosition.front, "Front wing"), (.rear, "Rear wing")],

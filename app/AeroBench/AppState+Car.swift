@@ -85,13 +85,48 @@ extension AppState {
     /// and the ground on. Either can then be turned off and stays off.
     func syncCarRulesBox(picked: Bool = false) {
         let lab = wingLab
-        guard let s = car.setup, !lab.wing.elements.isEmpty else { return }
+        guard let s = rulesSetup, !lab.wing.elements.isEmpty else { return }
         let d = carDraft ?? WingCard.make(wing: lab.wing, cl: 0, cd: 0, solver: "", id: "draft", name: "", revision: -1)
-        guard let at = draftPlacement(of: d) else { return }
+        guard let at = rulesPlacement(of: d) else { return }
         // On a combination the wing is on the car, so over the ground at its place there.
         if picked, car.selectedCombo != nil, lab.wing.rideHeight == nil { lab.live { $0.rideHeight = at.height / 1000 } }
         let box = CarRules.wingBox(d, placement: at, setup: s)
-        if (picked || lab.wing.rulesBox != nil), lab.wing.rulesBox != box { lab.live { $0.rulesBox = box } }
+        // Without a base car, a box someone typed stays; Wing Lab's old fixed one is replaced
+        let typed = car.setup == nil && lab.wing.rulesBox.map { $0 != Wing.defaultRulesBox(lab.wing.rulesFor) } ?? false
+        if (picked || lab.wing.rulesBox != nil), !typed, lab.wing.rulesBox != box { lab.live { $0.rulesBox = box } }
+    }
+
+    // MARK: Rules box without a base car
+
+    private static let lastSetupKey = "car.lastSetup"
+
+    /// The base car most recently set up in any project
+    var lastCarSetup: CarSetup? {
+        UserDefaults.standard.data(forKey: Self.lastSetupKey).flatMap { try? JSONDecoder().decode(CarSetup.self, from: $0) }
+    }
+
+    func rememberCarSetup() {
+        guard let s = car.setup, let data = try? JSONEncoder().encode(s) else { return }
+        UserDefaults.standard.set(data, forKey: Self.lastSetupKey)
+    }
+
+    /// The car the FS 2027 box comes from: this project's base car, else the last one used
+    var rulesSetup: CarSetup? { car.setup ?? lastCarSetup }
+
+    /// Where the wing sits for its rules box: on the selected combination, or at its end's start place
+    func rulesPlacement(of d: WingCard) -> Placement? {
+        if car.setup != nil { return draftPlacement(of: d) }
+        return lastCarSetup.map { Combination(id: "", name: "").draftPlacement(d, setup: $0) }
+    }
+
+    /// The box a wing at `position` gets when its rules box is switched on
+    func rulesBox(for position: WingPosition) -> RulesBox {
+        var wing = wingLab.wing
+        wing.rulesFor = position
+        guard let s = rulesSetup, !wing.elements.isEmpty else { return Wing.defaultRulesBox(position) }
+        let d = WingCard.make(wing: wing, cl: 0, cd: 0, solver: "", id: "draft", name: "", revision: -1)
+        guard let at = rulesPlacement(of: d) else { return Wing.defaultRulesBox(position) }
+        return CarRules.wingBox(d, placement: at, setup: s)
     }
 
     /// The fastest-lap goal's car with a base car: car A with the base car and the other end's wing,
@@ -182,6 +217,7 @@ extension AppState {
 
     func loadCar() {
         car.load(project: workFolder)
+        rememberCarSetup()
         requestEstimates()
     }
 
@@ -195,6 +231,7 @@ extension AppState {
     }
 
     func saveCar() {
+        rememberCarSetup()
         do {
             if let s = car.setup { try CarStore.save(s, workFolder) }
             try CarStore.save(car.state, workFolder)
