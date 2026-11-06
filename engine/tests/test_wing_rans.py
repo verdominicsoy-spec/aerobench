@@ -491,3 +491,27 @@ def test_wing_mesh_writes_the_rans_mesh_and_runs_no_su2(tmp_path):
     cells, _ = _su2_cells(tmp_path / "w" / "wing.su2")
     assert len(cells) == data["mesh"]["cells"]
     assert not (tmp_path / "w" / "su2.cfg").exists()  # meshed only
+
+
+def test_a_residual_that_climbs_is_divergence(tmp_path):
+    """Car 2's strip at y 82 mm: the residual climbed 8 orders over 6000 iterations without SU2
+    ever saying "has diverged" (no NaN), so the lower CFLs were never tried and its 1e21 N/m
+    lift went into the car's totals. A residual 3 orders above where it started is divergence."""
+    import stat
+    import sys
+
+    from aeroengine.wing import su2 as m
+
+    fake = tmp_path / "SU2_CFD"
+    fake.write_text(f"#!{sys.executable}\n"
+                    "import time\n"
+                    "for it in range(400):\n"
+                    "    print(f'| {it} | {-4 + 0.02 * it:.3f} | 0.5 | 0.1 |', flush=True)\n"
+                    "time.sleep(60)\n")
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    case = Case(speed=20, rho=1.2, mu=1.8e-5, alpha_deg=5, ref_chord=0.4, ref_point=(0.1, 0), walls=["wall_0"])
+    work = tmp_path / "w"
+    work.mkdir()
+    with pytest.raises(m.Diverged) as caught:
+        m._run_once(case, work / "m.su2", work, fake, 1, None, None)
+    assert 150 <= caught.value.iteration <= 160  # -4 + 3 = -1, reached at iteration 150

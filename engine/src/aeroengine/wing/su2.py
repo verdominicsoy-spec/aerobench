@@ -202,7 +202,8 @@ def judge(history: dict[str, np.ndarray], case: Case) -> dict:
     if not ok:
         parts = []
         if drop < case.residual_drop:
-            parts.append(f"residual fell {drop:.1f} orders, needs {case.residual_drop:.1f}")
+            parts.append(f"residual fell {drop:.1f} orders, needs {case.residual_drop:.1f}" if drop >= 0
+                         else f"residual rose {-drop:.1f} orders, needs to fall {case.residual_drop:.1f}")
         if dcl > case.tolerance:
             parts.append(f"Cl still moving ({dcl:.1e} over the last {case.window} iterations)")
         if dcd > case.tolerance:
@@ -257,6 +258,9 @@ WRITE_EVERY = 100
 STOP_AFTER_WRITE = 20  # iterations after a write before stopping, so the files are complete
 
 CFL_STEPS = (25.0, 10.0, 4.0)  # tried in turn when SU2 diverges
+# A pressure residual this many orders above its start is divergence, NaN or not: Car 2's strip at
+# y 82 mm climbed 8 orders over 6000 iterations to a lift of 1e21 N/m without SU2 ever saying so.
+CLIMB_ORDERS = 3.0
 FALLBACK = ("fds", 10.0)  # last resort: the more dissipative scheme, flagged in the result
 
 
@@ -359,6 +363,7 @@ def _run_once(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
     screen: dict[str, list[float]] = {"rms[P]": [], "CL": [], "CD": []}
     strict = replace(case, tolerance=case.tolerance / 2)
     stopped = False
+    climbed = None  # the iteration the residual climbed past CLIMB_ORDERS above its start
     try:
         for line in proc.stdout:  # type: ignore[union-attr]
             log.write(line)
@@ -373,6 +378,11 @@ def _run_once(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
                 report(10 + 85 * min(it / case.iterations, 1), f"iteration {it}")
                 for key, v in zip(screen, vals):
                     screen[key].append(v)
+                res = screen["rms[P]"]
+                if len(res) > 5 and res[-1] > max(res[:5]) + CLIMB_ORDERS:
+                    climbed = it
+                    proc.terminate()
+                    break
                 if it % WRITE_EVERY == STOP_AFTER_WRITE and len(screen["CL"]) > case.window:
                     if judge({k: np.array(v) for k, v in screen.items()}, strict)["converged"]:
                         stopped = True
@@ -384,6 +394,8 @@ def _run_once(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
         log.close()
         if proc.poll() is None:
             proc.kill()
+    if climbed is not None:
+        raise Diverged(climbed)
     history_file = workdir / "history.csv"
     if not stopped and proc.returncode != 0 and any("has diverged" in line for line in tail):
         last = 0
