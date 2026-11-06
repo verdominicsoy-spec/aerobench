@@ -201,6 +201,7 @@ final class AppState {
         if hasUnsavedChanges { saveProject() }
         project = nil
         pingJob = nil
+        wingLab.clearResults()
         loadCar()  // the car is the project's: never write one project's car into another
         refreshSections()
         wingLab.reloadStudy(project: workFolder)
@@ -231,6 +232,7 @@ final class AppState {
         project = OpenProject(url: url, manifest: manifest)
         pingJob = nil
         lapSim = LapSimSetup.load(fromProject: url) ?? LapSimSetup()
+        wingLab.clearResults()
         wingLab.reset(to: WingLabModel.load(fromProject: url) ?? WingLabModel.starter)
         wingLab.restoreVersion(fromProject: url)
         wingLab.optimise = WingLabModel.loadOptimise(fromProject: url) ?? .init()
@@ -246,6 +248,17 @@ final class AppState {
         showLatestLapSim()
         loadFlowState(fromProject: url)
         prism.load(project: url)
+    }
+
+    /// A job's completion for the project open when it was asked for. Once another project is
+    /// open it is dropped: the run still finishes into its own project's jobs folder, but never
+    /// lands in the views or files of the project open now.
+    func forThisProject(_ body: @escaping (JobItem) -> Void) -> (JobItem) -> Void {
+        let folder = workFolder
+        return { [weak self] item in
+            guard let self, self.workFolder == folder else { return }
+            body(item)
+        }
     }
 
     private func noteRecent(_ url: URL) {
@@ -291,9 +304,9 @@ final class AppState {
         }
         do {
             let params = try lapSim.jobParams(lapsimFolder: lapSimFolder)
-            lapSimJob = jobs.submit(command: "lapsim", params: params, in: jobsRoot) { [weak self] item in
+            lapSimJob = jobs.submit(command: "lapsim", params: params, in: jobsRoot, onFinish: forThisProject { [weak self] item in
                 self?.loadLapSimResult(from: item)
-            }
+            })
         } catch {
             show("Could not start the lap sim", error)
         }

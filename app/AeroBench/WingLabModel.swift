@@ -978,6 +978,44 @@ final class WingLabModel {
     }
 
     /// The Design card as the project left it, and its last finalists (beside the study).
+    /// What runs made for the open project, cleared when another opens (as a relaunch would):
+    /// another project's CFD, estimate or study must never be shown, pinned or saved on a card here.
+    func clearResults() {
+        pauseReplay()
+        replayIndex = nil
+        polar = nil
+        polarElement = nil
+        polarJob = nil
+        ransJob = nil
+        ransResult = nil
+        ransPolarCache = nil
+        ransFolder = nil
+        ransField = nil
+        meshJob = nil
+        mesh = nil
+        meshPath = nil
+        meshOf = nil
+        meshInfo = nil
+        estimate = nil
+        sweep = nil
+        sweepFolder = nil
+        sweepJob = nil
+        sweepRow = nil
+        study = nil
+        optimiseJob = nil
+        designRun = nil
+        designResult = nil
+        designShown = nil
+        designStage = nil
+        designJob = nil
+        shortlists = [:]
+        shortlistJob = nil
+        selectedTrial = nil
+        pinned = nil
+        pinnedRansJob = nil
+        showChange = false
+    }
+
     func restoreDesign(fromProject project: URL) {
         let url = ProjectStore.toolURL(for: project, tool: "wing").appendingPathComponent("design.json")
         let saved = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode(SavedDesign.self, from: $0) }

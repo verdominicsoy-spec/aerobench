@@ -100,15 +100,17 @@ extension AppState {
         lab.designShown = nil
         let resultFile = WingLabModel.designResultFile(project: workFolder, name: lab.designName!)
         saveProject()  // the chips and the study's name, so a relaunch can resume it
+        let folder = workFolder
         lab.designRun = jobs.submit(command: "wing-design", params: params, in: jobsRoot) { [weak self] item in
             guard let self else { return }
+            let here = self.workFolder == folder  // the result file is its own project's either way
             guard item.status == .succeeded, let text = item.resultText,
                   let r = try? WingDesignResult.decode(resultFile: Data(text.utf8)) else {
-                if item.status == .failed { self.show("The design did not finish", WingLabError(item.message ?? "The design failed.")) }
+                if item.status == .failed, here { self.show("The design did not finish", WingLabError(item.message ?? "The design failed.")) }
                 return
             }
             try? Data(text.utf8).write(to: resultFile, options: .atomic)
-            self.wingLab.designResult = r
+            if here { self.wingLab.designResult = r }
         }
     }
 

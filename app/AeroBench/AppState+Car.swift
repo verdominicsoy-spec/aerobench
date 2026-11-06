@@ -234,7 +234,7 @@ extension AppState {
 
     func runCarSetup(_ url: URL) {
         car.status = nil
-        car.setupJob = jobs.submit(command: "car-setup", params: ["path": .string(url.path)], in: jobsRoot) { [weak self] item in
+        car.setupJob = jobs.submit(command: "car-setup", params: ["path": .string(url.path)], in: jobsRoot, onFinish: forThisProject { [weak self] item in
             guard let self else { return }
             guard item.status == .succeeded, let text = item.resultText else {
                 self.car.status = item.message ?? "The car could not be read"
@@ -249,7 +249,7 @@ extension AppState {
             } catch {
                 self.show("Could not read the car setup", error)
             }
-        }
+        })
     }
 
     func setupChanged() {

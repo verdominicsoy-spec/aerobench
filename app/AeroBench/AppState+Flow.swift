@@ -21,7 +21,7 @@ extension AppState {
     func runFlowDemo(view: String = "front") {
         flow.loadError = nil
         let params: [String: JSONValue] = ["frames": .int(121), "perspective": .bool(true), "view": .string(view)]
-        _ = jobs.submit(command: "flow-demo", params: params, in: jobsRoot) { [weak self] item in
+        _ = jobs.submit(command: "flow-demo", params: params, in: jobsRoot, onFinish: forThisProject { [weak self] item in
             guard let self else { return }
             guard item.status == .succeeded else {
                 self.flow.loadError = item.message ?? "The demo could not be generated."
@@ -38,7 +38,7 @@ extension AppState {
                 self.flow.detectNotes = ["A synthetic sweep with its setup already filled in. Press Build 3D."]
                 self.autoDetectFlow(apply: false)
             }
-        }
+        })
     }
 
     /// Opens a video the user picked and finds the plot, legend, axes and
@@ -84,13 +84,13 @@ extension AppState {
                 "frame": .int(flow.frameIndex),
             ]
             flow.previewImage = nil
-            flow.previewJob = jobs.submit(command: "flow-preview", params: params, in: jobsRoot) { [weak self] item in
+            flow.previewJob = jobs.submit(command: "flow-preview", params: params, in: jobsRoot, onFinish: forThisProject { [weak self] item in
                 guard let self, item.status == .succeeded else { return }
                 self.flow.previewImage = FrameGrabber.loadImage(item.workdir.appendingPathComponent("preview.png"))
                 if let text = item.resultText, let obj = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] {
                     self.flow.previewStats = obj["data"] as? [String: Any] ?? [:]
                 }
-            }
+            })
         } catch {
             show("Could not check the frame", error)
         }
@@ -102,12 +102,12 @@ extension AppState {
             let calibration = try flow.calibration.jsonValue()
             let params: [String: JSONValue] = ["source": .string(source.path), "calibration": calibration]
             flow.reconstructStats = [:]
-            flow.reconstructJob = jobs.submit(command: "flow-reconstruct", params: params, in: jobsRoot) { [weak self] item in
+            flow.reconstructJob = jobs.submit(command: "flow-reconstruct", params: params, in: jobsRoot, onFinish: forThisProject { [weak self] item in
                 if let text = item.resultText, let obj = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] {
                     self?.flow.reconstructStats = obj["data"] as? [String: Any] ?? [:]
                 }
                 self?.loadFlowVolume(from: item, firstLook: true)
-            }
+            })
         } catch {
             show("Could not start the reconstruction", error)
         }
@@ -140,13 +140,13 @@ extension AppState {
         _ = jobs.submit(command: "flow-iso", params: [
             "volume": .string(folder.appendingPathComponent("volume.npz").path),
             "levels": .array([.double(level)]),
-        ], in: jobsRoot) { [weak self] item in
+        ], in: jobsRoot, onFinish: forThisProject { [weak self] item in
             guard let self, let i = self.flow.isoLevels.firstIndex(where: { $0.id == id }) else { return }
             self.flow.isoLevels[i].computing = false
             guard item.status == .succeeded, self.flow.isoLevels[i].level == level else { return }
             self.flow.isoLevels[i].model = try? ModelLoader.load(item.workdir.appendingPathComponent("iso.glb"))
             self.flow.updateIsosurfaces()
-        }
+        })
     }
 
     /// Meshes the no-fluid region once per volume, then shows or hides it.

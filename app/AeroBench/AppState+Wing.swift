@@ -147,10 +147,10 @@ extension AppState {
         lab.polar = nil
         lab.polarElement = i
         lab.resultsTab = .polar
-        lab.polarJob = jobs.submit(command: "wing-polar", params: params, in: jobsRoot) { [weak self] item in
+        lab.polarJob = jobs.submit(command: "wing-polar", params: params, in: jobsRoot, onFinish: forThisProject { [weak self] item in
             guard let self, item.status == .succeeded, let text = item.resultText else { return }
             self.wingLab.polar = try? WingPolar.decode(resultFile: Data(text.utf8))
-        }
+        })
     }
 
     /// Meshes the wing and runs SU2 on it (on the Solvers mesh, or `mesh`).
@@ -164,12 +164,12 @@ extension AppState {
         lab.ransResult = nil
         lab.ransField = nil
         lab.resultsTab = .cfd
-        lab.ransJob = jobs.submit(command: "wing-rans", params: params, in: jobsRoot) { [weak self] item in
+        lab.ransJob = jobs.submit(command: "wing-rans", params: params, in: jobsRoot, onFinish: forThisProject { [weak self] item in
             guard let self, item.status == .succeeded, let text = item.resultText else { return }
             self.wingLab.ransResult = try? WingRansResult.decode(resultFile: Data(text.utf8))
             self.wingLab.ransFolder = item.workdir
             self.wingLab.ransField = self.wingLab.ransResult?.fieldView == nil ? nil : try? WingField.load(from: item.workdir)
-        }
+        })
     }
 
     /// The mesh a RANS run would use, for the Mesh canvas: same settings, no SU2.
@@ -180,7 +180,7 @@ extension AppState {
         var params = ransParams()
         params["elements"] = elementsParam()
         let level = lab.meshLevel
-        lab.meshJob = jobs.submit(command: "wing-mesh", params: params, in: jobsRoot) { item in
+        lab.meshJob = jobs.submit(command: "wing-mesh", params: params, in: jobsRoot, onFinish: forThisProject { item in
             guard item.status == .succeeded else { return }
             let url = item.workdir.appendingPathComponent("wing.su2")
             let stats = item.resultData?["mesh"] as? [String: Any]
@@ -200,7 +200,7 @@ extension AppState {
                     lab.meshInfo = "\(level.capitalized) mesh: \(n("cells")) cells (\(n("quads")) quads, \(n("triangles")) triangles), \(n("layers")) wall layers"
                 }
             }
-        }
+        })
     }
 
     /// Flow and solver settings shared by a RANS run and every optimiser trial
@@ -285,7 +285,7 @@ extension AppState {
         params["storage"] = .string(file.path)
         params["name"] = .string(file.deletingPathExtension().lastPathComponent)
         lab.resultsTab = .study
-        let job = jobs.submit(command: "wing-optimise", params: params, in: jobsRoot) { [weak self] item in
+        let job = jobs.submit(command: "wing-optimise", params: params, in: jobsRoot, onFinish: forThisProject { [weak self] item in
             guard let self else { return }
             if item.status == .succeeded, let text = item.resultText, let s = try? WingStudy.decode(resultFile: Data(text.utf8)) {
                 self.wingLab.study = s
@@ -294,14 +294,16 @@ extension AppState {
             }
             self.wingLab.designStage = nil
             if setup.loadBest { self.loadStudyBest(succeeded: item.status == .succeeded) }
-        }
+        })
         lab.optimiseJob = job
         // The engine rewrites the export after every trial; follow it.
         let export = file.deletingPathExtension().appendingPathExtension("json")
+        let folder = workFolder
         Task { @MainActor [weak self] in
             var seen: Date?
             while !job.status.isFinished {
                 try? await Task.sleep(for: .seconds(2))
+                guard self?.workFolder == folder else { return }  // another project is open: its study is not this
                 let date = (try? FileManager.default.attributesOfItem(atPath: export.path)[.modificationDate]) as? Date
                 guard let self, let date, date != seen else { continue }
                 seen = date
@@ -377,12 +379,12 @@ extension AppState {
         lab.resultsTab = .cfd
         guard lab.sweepOn && wing.rideHeight == nil else {  // over a ground: one angle, its own mesh
             lab.sweep = nil
-            lab.ransJob = jobs.submit(command: "wing-rans", params: params, in: jobsRoot) { [weak self] item in
+            lab.ransJob = jobs.submit(command: "wing-rans", params: params, in: jobsRoot, onFinish: forThisProject { [weak self] item in
                 guard let self, item.status == .succeeded, let text = item.resultText else { return }
                 self.wingLab.ransResult = try? WingRansResult.decode(resultFile: Data(text.utf8))
                 self.wingLab.ransFolder = item.workdir
                 self.wingLab.ransField = self.wingLab.ransResult?.fieldView == nil ? nil : try? WingField.load(from: item.workdir)
-            }
+            })
             return
         }
         params["alphas"] = .array(lab.sweepAngles.map { .double($0) })
@@ -390,7 +392,7 @@ extension AppState {
         if lab.sweepRising { params["order"] = .string("rising") }
         lab.sweep = nil
         lab.sweepRow = nil
-        lab.sweepJob = jobs.submit(command: "wing-sweep", params: params, in: jobsRoot) { [weak self] item in
+        lab.sweepJob = jobs.submit(command: "wing-sweep", params: params, in: jobsRoot, onFinish: forThisProject { [weak self] item in
             guard let self, item.status == .succeeded, let text = item.resultText,
                   let s = try? WingSweep.decode(resultFile: Data(text.utf8)) else { return }
             self.wingLab.sweep = s
@@ -398,7 +400,7 @@ extension AppState {
             // Start on the angle nearest the wing's own.
             let near = s.rows.indices.min { abs((s.rows[$0].alpha ?? 0) - wing.alpha) < abs((s.rows[$1].alpha ?? 0) - wing.alpha) }
             if let near { self.wingLab.showSweepRow(near) }
-        }
+        })
     }
 
     /// Builds SU2 from source into the repo's build/su2 (once, 10 to 20 minutes).
@@ -430,7 +432,7 @@ extension AppState {
             "speed": .double(wing.speed), "rho": .double(wing.rho), "mu": .double(wing.mu),
             "n_crit": .double(lab.nCrit), "min_thickness": .double(lab.design.minThickness / 100),
         ]
-        lab.shortlistJob = jobs.submit(command: "wing-shortlist", params: params, in: jobsRoot) { [weak self] item in
+        lab.shortlistJob = jobs.submit(command: "wing-shortlist", params: params, in: jobsRoot, onFinish: forThisProject { [weak self] item in
             guard let self else { return }
             let d = JSONDecoder()
             d.keyDecodingStrategy = .convertFromSnakeCase
@@ -441,7 +443,7 @@ extension AppState {
                 return
             }
             self.wingLab.setShortlists(Dictionary(uniqueKeysWithValues: r.shortlists.enumerated().map { ($0.offset, $0.element.map(\.key)) }))
-        }
+        })
     }
 
     // MARK: Start against best
@@ -522,13 +524,13 @@ extension AppState {
         var params = ransParams(a.wing)
         params["elements"] = elementsParam(a.wing)
         params["mesh"] = .string("quick")
-        lab.pinnedRansJob = jobs.submit(command: "wing-rans", params: params, in: jobsRoot) { [weak self] item in
+        lab.pinnedRansJob = jobs.submit(command: "wing-rans", params: params, in: jobsRoot, onFinish: forThisProject { [weak self] item in
             guard let self, item.status == .succeeded, let text = item.resultText,
                   self.wingLab.pinned?.wing == a.wing else { return }
             let r = try? WingRansResult.decode(resultFile: Data(text.utf8))
             self.wingLab.pinned?.rans = r
             self.wingLab.pinned?.field = r?.fieldView == nil ? nil : try? WingField.load(from: item.workdir)
-        }
+        })
     }
 
     /// The study's best on the canvas: RANS's pick if it checked any, else the estimate's.
