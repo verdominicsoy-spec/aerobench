@@ -47,7 +47,9 @@ struct TrackEditorView: View {
     let request: TrackEditorRequest
 
     @State private var track = DrawnTrack()
-    @State private var history: [DrawnTrack] = []
+    @Environment(\.undoManager) private var undo
+    @State private var undoTarget = S37UndoTarget()  // this sheet's edits, dropped when it closes
+    @State private var dragStart: (track: DrawnTrack, name: String)?
     @State private var selected: Int?
     @State private var bounds = TrackMapping.Bounds(DrawnTrack())
     @State private var zoom = 1.0
@@ -72,24 +74,21 @@ struct TrackEditorView: View {
                 }
                 .fixedSize()
                 .disabled(copying)
-                .help("Start again from a copy of another track")
-                Picker("Loop", selection: Binding(get: { track.closed }, set: { closed in edit { $0.closed = closed } })) {
-                    Text("Closed").tag(true)
-                    Text("Open").tag(false)
-                }
-                .pickerStyle(.segmented)
-                .fixedSize()
-                .help("Closed: a lap circuit (endurance). Open: start to finish (autocross).")
-                Button("Reverse") { edit { $0 = $0.reversed() } }
-                    .help("Drive it the other way round")
+                S37Segmented(options: [(true, "Closed"), (false, "Open")],
+                             selection: Binding(get: { track.closed }, set: { closed in edit(closed ? "Close Loop" : "Open Loop") { $0.closed = closed } }))
+                    .fixedSize()
+                    .help("Closed: a lap circuit (endurance). Open: start to finish (autocross).")
+                Button("Reverse") { edit("Reverse Track") { $0 = $0.reversed() } }
+                    .buttonStyle(S37ButtonStyle())
                     .disabled(!track.isUsable)
-                Button("Undo") { undo() }
-                    .keyboardShortcut("z")
-                    .disabled(history.isEmpty)
                 Spacer()
-                Button { zoom /= 1.25 } label: { Image(systemName: "minus.magnifyingglass") }
-                Button { zoom *= 1.25 } label: { Image(systemName: "plus.magnifyingglass") }
-                Button("Fit") { refit() }
+                Group {
+                    Button { zoom /= 1.25 } label: { Label("Zoom out", systemImage: "minus.magnifyingglass") }
+                    Button { zoom *= 1.25 } label: { Label("Zoom in", systemImage: "plus.magnifyingglass") }
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(S37ButtonStyle())
+                Button("Fit") { refit() }.buttonStyle(S37ButtonStyle())
             }
             .padding(12)
             Divider()
@@ -120,6 +119,7 @@ struct TrackEditorView: View {
                 }
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
+                    .buttonStyle(S37ButtonStyle(kind: .plain))
                     .keyboardShortcut(.cancelAction)
                 Button("Done") {
                     app.lapSim.track.drawn = track
@@ -134,6 +134,7 @@ struct TrackEditorView: View {
         }
         .frame(minWidth: 960, idealWidth: 1100, minHeight: 640, idealHeight: 760)
         .onDeleteCommand(perform: deleteSelected)
+        .onDisappear { undo?.removeAllActions(withTarget: undoTarget) }  // Done hands the track to Lap Sim's own undo
         .task {
             if let kind = request.copyFrom {
                 copy(kind)
@@ -178,8 +179,8 @@ struct TrackEditorView: View {
                                     .foregroundStyle(issue.kind == .tooTight ? S37.C.critical : S37.C.clayInk)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
-                            Text("FS rules D 7.1.1 and D 6.1.1. The Lap Sim still runs a track that breaks them.")
-                                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            Text("FS rules D 7.1.1 and D 6.1.1.")
+                                .font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkSecondary)
                         }
                     }
                 }
@@ -188,14 +189,12 @@ struct TrackEditorView: View {
                     Text("Point \(i + 1)").font(.headline)
                     Text("x \(track.nodes[i].x, format: .number.precision(.fractionLength(1))) m, y \(track.nodes[i].y, format: .number.precision(.fractionLength(1))) m")
                         .font(.callout.monospacedDigit())
-                    Button("Delete Point", action: deleteSelected)
+                    Button("Delete point", action: deleteSelected).buttonStyle(S37ButtonStyle())
                         .disabled(track.nodes.count <= (track.closed ? 3 : 2))
                 }
                 Divider()
-                Text("Drag a point to move it. Click a point to show its handles; drag them to bend the line through it. Click the line to add a point, and press Delete to remove the selected one. Drag empty space to pan.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Text("The band is the 3 m minimum track width. The triangle marks the start and the way round.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text("Drag a point to move it, its handles to bend the line. Click the line to add a point; Delete removes the selected one. Drag empty space to pan. The band is the 3 m minimum width; the triangle marks the start and direction.")
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
             }
             .padding(14)
         }
@@ -313,7 +312,8 @@ struct TrackEditorView: View {
                 }
             }
             .onEnded { _ in
-                if case .pan = drag {} else if history.last == track { history.removeLast() }  // a click, not an edit
+                if let start = dragStart, start.track != track { registerUndo(start.track, start.name) }  // a click isn't an edit
+                dragStart = nil
                 drag = nil
             }
     }
@@ -327,21 +327,21 @@ struct TrackEditorView: View {
         if let i = selected, i < track.nodes.count {
             let node = track.nodes[i]
             for (out, h) in [(true, node.outHandle), (false, node.inHandle)] where (h * h).sum() > 1e-12 && near(node.point + h, 8) {
-                history.append(track)
+                dragStart = (track, "Bend Point \(i + 1)")
                 drag = .handle(i, out: out)
                 return
             }
         }
         if let i = track.nodes.indices.min(by: { dist(track.nodes[$0].point, location, m) < dist(track.nodes[$1].point, location, m) }),
            near(track.nodes[i].point, 9) {
-            history.append(track)
+            dragStart = (track, "Move Point \(i + 1)")
             selected = i
             dragOrigin = track.nodes[i].point
             drag = .node(i)
             return
         }
         if let hit = track.nearest(to: m.world(location)), hit.distance * m.scale <= 7 {
-            history.append(track)
+            dragStart = (track, "Add Point")
             let i = track.split(segment: hit.segment, at: hit.t)
             selected = i
             dragOrigin = track.nodes[i].point
@@ -358,20 +358,26 @@ struct TrackEditorView: View {
         return hypot(q.x - location.x, q.y - location.y)
     }
 
-    private func edit(_ change: (inout DrawnTrack) -> Void) {
-        history.append(track)
+    private func edit(_ name: String, _ change: (inout DrawnTrack) -> Void) {
+        let before = track
         change(&track)
+        if track != before { registerUndo(before, name) }
     }
 
-    private func undo() {
-        guard let last = history.popLast() else { return }
-        track = last
-        if let i = selected, i >= track.nodes.count { selected = nil }
+    /// Edit ▸ Undo puts `before` back; undoing registers the redo the same way.
+    private func registerUndo(_ before: DrawnTrack, _ name: String) {
+        undo?.registerUndo(withTarget: undoTarget) { _ in
+            let after = track
+            track = before
+            if let i = selected, i >= track.nodes.count { selected = nil }
+            registerUndo(after, name)
+        }
+        undo?.setActionName(name)
     }
 
     private func deleteSelected() {
         guard let i = selected, track.nodes.indices.contains(i), track.nodes.count > (track.closed ? 3 : 2) else { return }
-        edit { $0.nodes.remove(at: i) }
+        edit("Delete Point \(i + 1)") { $0.nodes.remove(at: i) }
         selected = nil
     }
 
@@ -387,8 +393,9 @@ struct TrackEditorView: View {
         Task { @MainActor in
             do {
                 let copy = try await app.drawnCopy(of: kind)
-                if !track.nodes.isEmpty { history.append(track) }
+                let before = track
                 track = copy
+                if !before.nodes.isEmpty { registerUndo(before, "Copy Track") }
                 selected = nil
                 status = nil
                 refit()

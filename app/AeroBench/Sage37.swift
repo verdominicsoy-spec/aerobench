@@ -415,6 +415,48 @@ extension S37FieldRow {
     }
 }
 
+// MARK: sections and rows
+
+/// A titled group of rows in the pane's inset tint, hairlines between them
+struct S37Section<Rows: View>: View {
+    var title: String
+    @ViewBuilder var rows: Rows
+    init(_ title: String, @ViewBuilder rows: () -> Rows) { self.title = title; self.rows = rows() }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: S37.Space.s2) {
+            Text(title).font(.system(size: 16, weight: .semibold))
+            VStack(alignment: .leading, spacing: 0) {
+                Group(subviews: rows) { subviews in
+                    ForEach(Array(subviews.enumerated()), id: \.offset) { i, row in
+                        if i > 0 { Rectangle().fill(S37.C.separator).frame(height: 1).padding(.horizontal, S37.Space.s3) }
+                        row
+                    }
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: S37.Radius.lgIn, style: .continuous).fill(S37.C.inset))
+        }
+    }
+}
+
+/// Label left, its value or control right
+struct S37Row<Value: View>: View {
+    var label: String
+    @ViewBuilder var value: Value
+    init(_ label: String, @ViewBuilder value: () -> Value) { self.label = label; self.value = value() }
+
+    var body: some View {
+        HStack(spacing: S37.Space.s3) {
+            Text(label).foregroundStyle(S37.C.ink)
+            Spacer(minLength: S37.Space.s3)
+            value.lineLimit(1).truncationMode(.middle)
+        }
+        .font(.system(size: 14))
+        .padding(.horizontal, S37.Space.s3)
+        .frame(minHeight: 40)
+    }
+}
+
 // MARK: empty state
 
 /// What's missing, left-aligned: a headline, one plain line and the action

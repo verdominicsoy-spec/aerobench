@@ -69,6 +69,13 @@ struct AeroBenchCommands: Commands {
             }
             Divider()
         }
+        CommandMenu("Lap Sim") {
+            Button("Run Lap Sim") { app.tool = .lapSim; app.runLapSim() }
+                .keyboardShortcut("r")
+                .disabled(app.tool != .lapSim || app.lapSimRunning)
+            Button("Cancel Lap Sim") { app.lapSimJob.map(app.jobs.cancel) }
+                .disabled(!app.lapSimRunning)
+        }
         CommandMenu("Jobs") {
             let job = app.tool == .jobs ? app.jobs.selected : nil  // only the job on screen
             Button("Cancel Job") { job.map(app.jobs.cancel) }

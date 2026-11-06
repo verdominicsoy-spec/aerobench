@@ -54,186 +54,202 @@ struct CarField: Identifiable {
 
 struct LapSimSetupView: View {
     @Environment(AppState.self) private var app
+    @Environment(\.undoManager) private var undo
     @State private var editor: TrackEditorRequest?
+    @State private var editorStart: LapSimTrack?  // the track as the editor opened, for undoing Done
+    @State private var showWorking = false
 
     var body: some View {
-        @Bindable var app = app
         let setup = app.lapSim
         let usesPlaceholders = CarField.all.contains { field in setup.cars.contains { field.isPlaceholder($0) } }
 
-        Form {
-            if usesPlaceholders {
-                Section {
-                    Label("Values marked est. are placeholder estimates, not team data. Every value here is editable and saved with the project.",
-                          systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(S37.C.clayInk)
+        ScrollView {
+            VStack(alignment: .leading, spacing: S37.Space.s6) {
+                S37Section("Track") {
+                    S37Row("Track") {
+                        Picker("Track", selection: edit(\.track.kind, "Change Track")) {
+                            ForEach([LapSimTrackKind.endurance, .autocross, .fsg, .fsi, .testTrack, .skidpad, .acceleration, .csv, .drawn], id: \.self) { Text(Self.trackTitle($0)).tag($0) }
+                        }
+                        .labelsHidden().fixedSize()
+                    }
+                    trackRows(setup)
+                    if setup.track.kind != .drawn {
+                        S37Row("Track editor") {
+                            Button("Edit a copy…") { openEditor(TrackEditorRequest(copyFrom: setup.track.kind)) }
+                                .buttonStyle(S37ButtonStyle())
+                                .disabled(setup.track.kind == .csv && setup.track.csvPath == nil)
+                        }
+                    }
                 }
-            }
 
-            Section("Track") {
-                Picker("Track", selection: $app.lapSim.track.kind) {
-                    Text("Estimated endurance lap (about 1 km)").tag(LapSimTrackKind.endurance)
-                    Text("Estimated autocross (standing start)").tag(LapSimTrackKind.autocross)
-                    Text("FSG Hockenheim, trackdrive (309 m)").tag(LapSimTrackKind.fsg)
-                    Text("FSI Varano, trackdrive (218 m)").tag(LapSimTrackKind.fsi)
-                    Text("Test track (synthetic)").tag(LapSimTrackKind.testTrack)
-                    Text("Skidpad").tag(LapSimTrackKind.skidpad)
-                    Text("Acceleration").tag(LapSimTrackKind.acceleration)
-                    Text("Imported CSV").tag(LapSimTrackKind.csv)
-                    Text("Drawn").tag(LapSimTrackKind.drawn)
-                }
-                switch setup.track.kind {
-                case .endurance, .autocross:
-                    HStack {
-                        Stepper("Layout \(setup.track.seed)", value: $app.lapSim.track.seed, in: 1...9999)
+                S37Section("Car") {
+                    S37Row("Cars") {
+                        Text("\(setup.cars.count)").monospacedDigit()
+                        Stepper("Cars", value: Binding(get: { app.lapSim.cars.count }, set: { n in
+                            // A new car starts as a copy of A; fewer drops the last.
+                            var cars = app.lapSim.cars
+                            while cars.count < n { cars.append(app.lapSim.carA) }
+                            edit(\.cars, n > setup.cars.count ? "Add Car" : "Remove Car").wrappedValue = Array(cars.prefix(n))
+                        }), in: 1...LapSimSetup.maxCars).labelsHidden()
+                    }
+                    if usesPlaceholders {
+                        Label("est. marks a placeholder, not team data", systemImage: "exclamationmark.triangle")
+                            .font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.clayInk)
+                            .padding(.horizontal, S37.Space.s3).padding(.vertical, S37.Space.s2)
+                    }
+                    CarGrid(edit: { field, car in edit((\LapSimSetup.cars[car]).appending(path: field.keyPath), "Change \(field.label)") })
+                        .padding(S37.Space.s3)
+                    HStack(spacing: S37.Space.s3) {
+                        if setup.cars.count > 1 {
+                            Button("Copy A to the others") {
+                                edit(\.cars, "Copy A to the Others").wrappedValue = Array(repeating: app.lapSim.carA, count: app.lapSim.cars.count)
+                            }
+                            .buttonStyle(S37ButtonStyle())
+                        }
                         Spacer()
-                        Button("Another Layout") { app.lapSim.track.seed += 1 }
-                    }
-                    Text("Generated within the 2027 FS rules for the event (straights under 80 m, a slalom at the rules' cone spacing, nothing tighter than the 9 m turning diameter, about 1 km for endurance), with corners like the FSG and FSI layouts but a little more open. The same number always gives the same track. For comparing cars on a typical layout, not predicting an event time.")
-                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                case .testTrack:
-                    Text("Closed loop of about 381 m with a 12.4 m tightest radius. For checking the sim, not a real event.")
-                        .font(.caption).foregroundStyle(.secondary)
-                case .fsg, .fsi:
-                    Text("A real event layout: the driverless trackdrive course from AMZ's fssim simulator (MIT licence), cone lines turned into a centreline. Shorter than an endurance lap, so compare cars on it rather than predicting event times.")
-                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                case .skidpad:
-                    NumberRow(label: "Centreline radius", unit: "m", value: $app.lapSim.track.skidpadRadius,
-                              isDefault: setup.track.skidpadRadius == LapSimTrack.defaultSkidpadRadius)
-                case .acceleration:
-                    NumberRow(label: "Length", unit: "m", value: $app.lapSim.track.accelerationLength,
-                              isDefault: setup.track.accelerationLength == LapSimTrack.defaultAccelerationLength)
-                    NumberRow(label: "Start speed", unit: "km/h", value: scaled($app.lapSim.startSpeed, 3.6), isDefault: false)
-                case .csv:
-                    LabeledContent("File") {
-                        HStack {
-                            Text(setup.track.csvPath.map { ($0 as NSString).lastPathComponent } ?? "none")
-                                .lineLimit(1).truncationMode(.middle)
-                            Button("Import…") { app.importTrackCSV() }
+                        Button("Reset to placeholders") {
+                            edit(\.cars, "Reset to Placeholders").wrappedValue = Array(repeating: .placeholder, count: app.lapSim.cars.count)
                         }
+                        .buttonStyle(S37ButtonStyle(kind: .plain))
                     }
-                    Picker("Loop", selection: $app.lapSim.track.csvClosed) {
-                        Text("Detect").tag(Bool?.none)
-                        Text("Closed").tag(Bool?.some(true))
-                        Text("Open").tag(Bool?.some(false))
-                    }
-                    Picker("File units", selection: $app.lapSim.track.csvScale) {
-                        Text("m").tag(1.0)
-                        Text("mm").tag(0.001)
-                    }
-                    NumberRow(label: "Point scatter (smoothing)", unit: "m", value: $app.lapSim.track.smoothing, isDefault: false)
-                    NumberRow(label: "Start speed (open tracks)", unit: "km/h", value: scaled($app.lapSim.startSpeed, 3.6), isDefault: false)
-                case .drawn:
-                    if let drawn = setup.track.drawn, drawn.isUsable {
-                        let samples = drawn.samples()
-                        let issues = drawn.issues(samples)
-                        LabeledContent(drawn.source.map { "From \($0)" } ?? "Drawn") {
-                            Text("\(samples.last?.s ?? 0, format: .number.precision(.fractionLength(0))) m, \(drawn.closed ? "closed" : "open"), \(drawn.nodes.count) points")
-                        }
-                        if !issues.isEmpty {
-                            Label("\(issues.count) \(issues.count == 1 ? "place breaks" : "places break") the FS layout rules (it still runs)", systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(S37.C.clayInk)
-                        }
-                    } else {
-                        Text("Nothing drawn yet. Open the editor and copy a track to start from.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Button("Edit Track…") { editor = TrackEditorRequest() }
-                    if setup.track.drawn?.closed == false {
-                        NumberRow(label: "Start speed", unit: "km/h", value: scaled($app.lapSim.startSpeed, 3.6), isDefault: false)
-                    }
+                    .padding(S37.Space.s3)
                 }
-                if setup.track.kind != .drawn {
-                    Button("Edit a Copy…") { editor = TrackEditorRequest(copyFrom: setup.track.kind) }
-                        .help("Opens this track in the track editor. Done replaces the drawn track; Cancel leaves it.")
-                        .disabled(setup.track.kind == .csv && setup.track.csvPath == nil)
-                }
-            }
 
-            Section {
-                Stepper("Cars: \(setup.cars.count)", value: Binding(get: { setup.cars.count }, set: { n in
-                    // A new car starts as a copy of A; fewer drops the last.
-                    while app.lapSim.cars.count < n { app.lapSim.cars.append(app.lapSim.carA) }
-                    app.lapSim.cars = Array(app.lapSim.cars.prefix(n))
-                }), in: 1...LapSimSetup.maxCars)
-                .help("A, and up to four more to compare with it. Wing Lab can put a wing in any of them.")
-                CarGrid()
-                HStack {
-                    if setup.cars.count > 1 {
-                        Button("Copy A to the Others") {
-                            app.lapSim.cars = Array(repeating: app.lapSim.carA, count: app.lapSim.cars.count)
-                        }
+                S37Section("Simulation") {
+                    S37FieldRow(label: "Resampling step", unit: "m", value: edit(\.ds, "Change Resampling Step"), width: 90)
+                    S37Row("Endurance laps") {
+                        Text("\(setup.enduranceLaps)").monospacedDigit()
+                        Stepper("Endurance laps", value: edit(\.enduranceLaps, "Change Endurance Laps"), in: 1...200).labelsHidden()
                     }
-                    Spacer()
-                    Button("Reset to placeholders") {
-                        app.lapSim.cars = Array(repeating: .placeholder, count: app.lapSim.cars.count)
+                    S37Row("ClA and CdA sensitivities") {
+                        Toggle("ClA and CdA sensitivities", isOn: edit(\.sensitivities, "Change Sensitivities"))
+                            .labelsHidden().toggleStyle(.switch)
                     }
                 }
-            } header: {
-                Text("Car")
-            } footer: {
-                Text("With a CoG height or a tyre load sensitivity, each axle holds its own share of the cornering force with its own load, so the downforce balance against the weight split matters; the rear (driven) axle gains weight under acceleration. All four at 0 is the plain point mass.")
-            }
 
-            Section("Simulation") {
-                NumberRow(label: "Resampling step", unit: "m", value: $app.lapSim.ds, isDefault: false)
-                Stepper("Endurance laps: \(setup.enduranceLaps)", value: $app.lapSim.enduranceLaps, in: 1...200)
-                Toggle("ClA and CdA sensitivities", isOn: $app.lapSim.sensitivities)
-            }
-
-            Section {
-                HStack {
-                    Button("Run Lap Sim") { app.runLapSim() }
-                        .buttonStyle(S37ButtonStyle(kind: .prominent))
-                        .keyboardShortcut("r")
-                        .disabled(isRunning)
-                    if let job = app.lapSimJob, !job.status.isFinished {
-                        ProgressView(value: job.progress, total: 100).frame(maxWidth: 160)
-                        Button("Cancel") { app.jobs.cancel(job) }
+                DisclosureGroup(isExpanded: $showWorking) {
+                    VStack(alignment: .leading, spacing: S37.Space.s3) {
+                        if let note = Self.trackNote(setup.track.kind) { Text(note) }
+                        Text("With a CoG height or a tyre load sensitivity, each axle holds its own share of the cornering force with its own load, so the downforce balance against the weight split matters; the rear (driven) axle gains weight under acceleration. All four at 0 is the plain point mass.")
+                        Text("ClA worth 1 m² CdA is the exchange rate: at equal lap time, one extra m² of CdA is paid for by this much extra ClA.")
                     }
-                }
-                if let job = app.lapSimJob, job.status == .failed || job.status == .cancelled {
-                    Label(job.message ?? job.status.rawValue, systemImage: "xmark.octagon")
-                        .foregroundStyle(S37.C.critical)
-                        .textSelection(.enabled)
-                    if let detail = job.detail {
-                        Text(detail).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(6).textSelection(.enabled)
-                    }
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, S37.Space.s2)
+                } label: {
+                    Text("How it's calculated").font(.system(size: 14, weight: .semibold)).foregroundStyle(S37.C.inkSecondary)
                 }
             }
+            .padding(S37.Space.s5)
         }
-        .formStyle(.grouped)
-        .sheet(item: $editor) { TrackEditorView(request: $0) }
+        .scrollIndicators(.automatic)
+        .sheet(item: $editor, onDismiss: {
+            // Done changes the project's track: one undo puts it back
+            if let start = editorStart, start != app.lapSim.track {
+                let done = app.lapSim.track
+                app.lapSim.track = start
+                edit(\.track, "Edit Track").wrappedValue = done
+            }
+            editorStart = nil
+        }) { TrackEditorView(request: $0) }
     }
 
-    private var isRunning: Bool {
-        guard let job = app.lapSimJob else { return false }
-        return !job.status.isFinished
+    @ViewBuilder private func trackRows(_ setup: LapSimSetup) -> some View {
+        switch setup.track.kind {
+        case .endurance, .autocross:
+            S37Row("Layout") {
+                Text("\(setup.track.seed)").monospacedDigit()
+                Stepper("Layout", value: edit(\.track.seed, "Change Layout"), in: 1...9999).labelsHidden()
+            }
+        case .testTrack, .fsg, .fsi:
+            EmptyView()
+        case .skidpad:
+            S37FieldRow(label: "Centreline radius", unit: "m", value: edit(\.track.skidpadRadius, "Change Radius"), width: 90)
+        case .acceleration:
+            S37FieldRow(label: "Length", unit: "m", value: edit(\.track.accelerationLength, "Change Length"), width: 90)
+            S37FieldRow(label: "Start speed", unit: "km/h", value: scaled(edit(\.startSpeed, "Change Start Speed"), 3.6), width: 90)
+        case .csv:
+            S37Row("File") {
+                Text(setup.track.csvPath.map { ($0 as NSString).lastPathComponent } ?? "none").foregroundStyle(S37.C.inkSecondary)
+                Button("Import…") { app.importTrackCSV() }.buttonStyle(S37ButtonStyle())
+            }
+            S37Row("Loop") {
+                Picker("Loop", selection: edit(\.track.csvClosed, "Change Loop")) {
+                    Text("Detect").tag(Bool?.none)
+                    Text("Closed").tag(Bool?.some(true))
+                    Text("Open").tag(Bool?.some(false))
+                }
+                .labelsHidden().fixedSize()
+            }
+            S37Row("File units") {
+                Picker("File units", selection: edit(\.track.csvScale, "Change File Units")) {
+                    Text("m").tag(1.0)
+                    Text("mm").tag(0.001)
+                }
+                .labelsHidden().fixedSize()
+            }
+            S37FieldRow(label: "Point scatter (smoothing)", unit: "m", value: edit(\.track.smoothing, "Change Smoothing"), width: 90)
+            S37FieldRow(label: "Start speed (open tracks)", unit: "km/h", value: scaled(edit(\.startSpeed, "Change Start Speed"), 3.6), width: 90)
+        case .drawn:
+            if let drawn = setup.track.drawn, drawn.isUsable {
+                let samples = drawn.samples()
+                let issues = drawn.issues(samples)
+                S37Row(drawn.source.map { "From \($0)" } ?? "Drawn") {
+                    Text("\(samples.last?.s ?? 0, format: .number.precision(.fractionLength(0))) m, \(drawn.closed ? "closed" : "open"), \(drawn.nodes.count) points")
+                        .monospacedDigit()
+                }
+                if !issues.isEmpty {
+                    Label("\(issues.count) \(issues.count == 1 ? "place breaks" : "places break") the FS layout rules (it still runs)", systemImage: "exclamationmark.triangle")
+                        .font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.clayInk)
+                        .padding(.horizontal, S37.Space.s3).padding(.vertical, S37.Space.s2)
+                }
+            }
+            S37Row(setup.track.drawn?.isUsable == true ? "Track editor" : "Nothing drawn yet") {
+                Button("Edit track…") { openEditor(TrackEditorRequest()) }.buttonStyle(S37ButtonStyle())
+            }
+            if setup.track.drawn?.closed == false {
+                S37FieldRow(label: "Start speed", unit: "km/h", value: scaled(edit(\.startSpeed, "Change Start Speed"), 3.6), width: 90)
+            }
+        }
+    }
+
+    private func openEditor(_ request: TrackEditorRequest) {
+        editorStart = app.lapSim.track
+        editor = request
+    }
+
+    /// A setup value, undoable as `name`
+    private func edit<V: Equatable>(_ key: WritableKeyPath<LapSimSetup, V>, _ name: String) -> Binding<V> {
+        Binding(get: { app.lapSim[keyPath: key] }, set: { app.lapSim[keyPath: key] = $0 }).undoable(undo, name)
     }
 
     private func scaled(_ binding: Binding<Double>, _ scale: Double) -> Binding<Double> {
         Binding(get: { binding.wrappedValue * scale }, set: { binding.wrappedValue = $0 / scale })
     }
-}
 
-struct NumberRow: View {
-    let label: String
-    let unit: String
-    @Binding var value: Double
-    let isDefault: Bool
+    static func trackTitle(_ kind: LapSimTrackKind) -> String {
+        switch kind {
+        case .endurance: "Estimated endurance lap (about 1 km)"
+        case .autocross: "Estimated autocross (standing start)"
+        case .fsg: "FSG Hockenheim, trackdrive (309 m)"
+        case .fsi: "FSI Varano, trackdrive (218 m)"
+        case .testTrack: "Test track (synthetic)"
+        case .skidpad: "Skidpad"
+        case .acceleration: "Acceleration"
+        case .csv: "Imported CSV"
+        case .drawn: "Drawn"
+        }
+    }
 
-    var body: some View {
-        LabeledContent {
-            HStack(spacing: 6) {
-                if isDefault { PlaceholderTag() }
-                TextField(label, value: $value, format: .number)
-                    .labelsHidden()
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 90)
-                Text(unit).foregroundStyle(.secondary).frame(width: 44, alignment: .leading)
-            }
-        } label: {
-            Text(label)
+    /// Where the track comes from, for How it's calculated
+    static func trackNote(_ kind: LapSimTrackKind) -> String? {
+        switch kind {
+        case .endurance, .autocross:
+            "Generated layouts follow the 2027 FS rules for the event (straights under 80 m, a slalom at the rules' cone spacing, nothing tighter than the 9 m turning diameter, about 1 km for endurance), with corners like the FSG and FSI layouts but a little more open. The same layout number always gives the same track. For comparing cars on a typical layout, not predicting an event time."
+        case .testTrack: "The test track is a closed loop of about 381 m with a 12.4 m tightest radius, for checking the sim."
+        case .fsg, .fsi:
+            "FSG and FSI are the driverless trackdrive courses from AMZ's fssim simulator (MIT licence), cone lines turned into a centreline. Shorter than an endurance lap: compare cars on them rather than predicting event times."
+        default: nil
         }
     }
 }
@@ -244,16 +260,18 @@ struct PlaceholderTag: View {
 
     var body: some View {
         Text(compact ? "●" : "est.")
-            .font(compact ? .system(size: 6) : .caption2)
+            .font(.system(size: compact ? 6 : 11, weight: .medium))
             .foregroundStyle(S37.C.clayInk)
             .fixedSize()
-            .help("Placeholder estimate, not team data")
+            .accessibilityLabel("Placeholder estimate")
     }
 }
 
 /// Car parameters, one column per car (A to E).
 struct CarGrid: View {
     @Environment(AppState.self) private var app
+    /// The undoable binding for one car's field
+    var edit: (CarField, Int) -> Binding<Double>
 
     var body: some View {
         let cars = app.lapSim.cars.indices
@@ -262,30 +280,30 @@ struct CarGrid: View {
         Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
             GridRow {
                 Text("")
-                ForEach(cars, id: \.self) { Text(LapSimSetup.labels[$0]).bold().gridColumnAlignment(.trailing) }
+                ForEach(cars, id: \.self) { Text(LapSimSetup.labels[$0]).font(.system(size: 14, weight: .semibold)).gridColumnAlignment(.trailing) }
                 Text("")
             }
             ForEach(CarField.all) { field in
                 GridRow {
                     Text(field.label)
                     ForEach(cars, id: \.self) { cell(field, $0, width: width) }
-                    Text(field.unit).foregroundStyle(.secondary)
+                    Text(field.unit).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkTertiary)
                 }
             }
         }
+        .font(.system(size: 14))
     }
 
     private func cell(_ field: CarField, _ car: Int, width: CGFloat) -> some View {
-        let binding = Binding<Double>(
-            get: { app.lapSim.cars[car][keyPath: field.keyPath] * field.scale },
-            set: { app.lapSim.cars[car][keyPath: field.keyPath] = $0 / field.scale }
-        )
+        let value = edit(field, car)
+        let binding = Binding<Double>(get: { value.wrappedValue * field.scale }, set: { value.wrappedValue = $0 / field.scale })
         return HStack(spacing: 4) {
             if field.isPlaceholder(app.lapSim.cars[car]) { PlaceholderTag(compact: app.lapSim.cars.count > 2) }
             TextField(field.label, value: binding, format: .number)
-                .labelsHidden()
-                .multilineTextAlignment(.trailing)
-                .frame(width: width)
+                .textFieldStyle(.plain).labelsHidden()
+                .multilineTextAlignment(.trailing).monospacedDigit()
+                .padding(.horizontal, S37.Space.s2).frame(width: width, height: 24)
+                .background(RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).fill(S37.C.recess))
         }
     }
 }
@@ -298,93 +316,82 @@ struct LapSimResultsView: View {
     @State private var gainConfig = 1
 
     var body: some View {
-        if let output = app.lapSimOutput {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    header(output)
-                    SummaryGrid(result: output.result)
-                    if output.result.a.sensitivity != nil {
-                        SensitivityView(result: output.result)
-                    }
-                    chartBox("Speed") {
-                        Chart(output.speed) { p in
-                            LineMark(x: .value("Distance", p.s), y: .value("Speed", p.kmh))
-                                .foregroundStyle(by: .value("Config", p.config))
+        VStack(alignment: .leading, spacing: 0) {
+            LapSimRunBar().padding(S37.Space.s5)
+            if let output = app.lapSimOutput {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: S37.Space.s6) {
+                        header(output)
+                        SummaryGrid(result: output.result)
+                        if output.result.a.sensitivity != nil {
+                            SensitivityView(result: output.result)
                         }
-                        .chartXAxisLabel("Distance (m)")
-                        .chartYAxisLabel("Speed (km/h)")
-                        .chartForegroundStyleScale(range: S37.series)
-                        .frame(height: 240)
-                    }
-                    if !output.delta.isEmpty {
-                        chartBox("Time against A") {
-                            Chart {
-                                RuleMark(y: .value("Zero", 0)).foregroundStyle(.secondary)
-                                ForEach(output.delta) { p in
-                                    LineMark(x: .value("Distance", p.s), y: .value("Δt", p.dt))
-                                        .foregroundStyle(by: .value("Config", p.config))
-                                }
+                        chartBox("Speed") {
+                            Chart(output.speed) { p in
+                                LineMark(x: .value("Distance", p.s), y: .value("Speed", p.kmh))
+                                    .foregroundStyle(by: .value("Config", p.config))
                             }
                             .chartXAxisLabel("Distance (m)")
-                            .chartYAxisLabel("Car − A (s), negative means ahead of A")
+                            .chartYAxisLabel("Speed (km/h)")
                             .chartForegroundStyleScale(range: S37.series)
-                            .frame(height: 200)
+                            .frame(height: 240)
                         }
-                    }
-                    chartBox("Track map, coloured by speed") {
+                        if !output.delta.isEmpty {
+                            chartBox("Time against A") {
+                                Chart {
+                                    RuleMark(y: .value("Zero", 0)).foregroundStyle(S37.C.inkTertiary)
+                                    ForEach(output.delta) { p in
+                                        LineMark(x: .value("Distance", p.s), y: .value("Δt", p.dt))
+                                            .foregroundStyle(by: .value("Config", p.config))
+                                    }
+                                }
+                                .chartXAxisLabel("Distance (m)")
+                                .chartYAxisLabel("Car − A (s), negative means ahead of A")
+                                .chartForegroundStyleScale(range: S37.series)
+                                .frame(height: 200)
+                            }
+                        }
+                        chartBox("Track map, coloured by speed") {
+                            if output.labels.count > 1 {
+                                carPicker($mapConfig, output.labels.indices)
+                            }
+                            TrackMap(output: output, points: output.maps[min(mapConfig, output.maps.count - 1)])
+                        }
                         if output.labels.count > 1 {
-                            carPicker($mapConfig, output.labels.indices)
-                        }
-                        TrackMap(output: output, points: output.maps[min(mapConfig, output.maps.count - 1)])
-                    }
-                    if output.labels.count > 1 {
-                        let car = min(max(gainConfig, 1), output.labels.count - 1)
-                        chartBox("Where \(output.labels[car]) gains and loses on A") {
-                            if output.labels.count > 2 { carPicker($gainConfig, 1..<output.labels.count) }
-                            if let gain = output.gains[car] { GainMap(gain: gain, output: output, label: output.labels[car]) }
+                            let car = min(max(gainConfig, 1), output.labels.count - 1)
+                            chartBox("Where \(output.labels[car]) gains and loses on A") {
+                                if output.labels.count > 2 { carPicker($gainConfig, 1..<output.labels.count) }
+                                if let gain = output.gains[car] { GainMap(gain: gain, output: output, label: output.labels[car]) }
+                            }
                         }
                     }
+                    .padding([.horizontal, .bottom], S37.Space.s5)
                 }
-                .padding()
-            }
-        } else {
-            ContentUnavailableView {
-                Label("No Lap Sim Results", systemImage: "flag.checkered")
-            } description: {
-                Text("Pick a track and check the car values on the left, then run it (⌘R). The track map shows here.")
-            } actions: {
-                Button("Run Lap Sim") { app.runLapSim() }
-                    .buttonStyle(S37ButtonStyle(kind: .prominent))
-                    .disabled(app.lapSimJob.map { !$0.status.isFinished } ?? false)
+            } else {
+                S37EmptyState(title: "No lap times yet",
+                              line: "Run the lap sim for times, speed traces and the track map.")
             }
         }
     }
 
     private func carPicker(_ selection: Binding<Int>, _ cars: Range<Int>) -> some View {
-        Picker("Car", selection: selection) {
-            ForEach(cars, id: \.self) { Text(LapSimSetup.labels[$0]).tag($0) }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .fixedSize()
+        S37Segmented(options: cars.map { ($0, LapSimSetup.labels[$0]) }, selection: selection).fixedSize()
     }
 
     private func header(_ output: LapSimOutput) -> some View {
         let track = output.result.track
         return VStack(alignment: .leading, spacing: 2) {
-            Text(track.name).font(.title2).bold()
+            Text(track.name).font(.system(size: 20, weight: .semibold))
             Text("\(track.length, format: .number.precision(.fractionLength(1))) m, \(track.closed ? "closed loop, flying lap" : "open, standing start"), step \(track.ds, format: .number.precision(.fractionLength(3))) m")
-                .foregroundStyle(.secondary)
-            Text("Job \(output.jobID)").font(.caption.monospaced()).foregroundStyle(.secondary)
+                .font(.system(size: 14)).foregroundStyle(S37.C.inkSecondary).monospacedDigit()
+            Text("Job \(output.jobID)").font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(S37.C.inkTertiary)
         }
     }
 
     private func chartBox<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 8) { content() }
-                .padding(4)
-        } label: {
-            Text(title).bold()
+        VStack(alignment: .leading, spacing: S37.Space.s3) {
+            Text(title).font(.system(size: 16, weight: .semibold))
+            content()
         }
     }
 }
@@ -413,8 +420,8 @@ struct TrackMap: View {
                     .clipShape(Capsule())
                 Text("\(output.kmhRange.upperBound, format: .number.precision(.fractionLength(0))) km/h")
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(S37.C.inkSecondary)
         }
     }
 
@@ -439,7 +446,7 @@ struct SummaryGrid: View {
         Grid(alignment: .trailing, horizontalSpacing: 24, verticalSpacing: 6) {
             GridRow {
                 Text("").gridColumnAlignment(.leading)
-                ForEach(configs) { Text($0.id).bold() }
+                ForEach(configs) { Text($0.id).font(.system(size: 14, weight: .semibold)) }
             }
             Divider()
             row("Lap time", configs) { seconds($0.lapTime) }
@@ -491,11 +498,12 @@ struct SensitivityView: View {
 
     var body: some View {
         let configs = NamedConfig.list(result)
-        GroupBox {
+        VStack(alignment: .leading, spacing: S37.Space.s3) {
+            Text("Sensitivities").font(.system(size: 16, weight: .semibold))
             Grid(alignment: .trailing, horizontalSpacing: 24, verticalSpacing: 6) {
                 GridRow {
                     Text("").gridColumnAlignment(.leading)
-                    ForEach(configs) { Text($0.id).bold() }
+                    ForEach(configs) { Text($0.id).font(.system(size: 14, weight: .semibold)) }
                 }
                 Divider()
                 GridRow {
@@ -518,12 +526,9 @@ struct SensitivityView: View {
                 }
             }
             .font(.body.monospacedDigit())
-            Text("Exchange rate: at equal lap time, one extra m² of CdA is paid for by this much extra ClA. A device with ΔClA/ΔCdA above it gains lap time here.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text("A device with ΔClA/ΔCdA above ClA worth 1 m² CdA gains lap time here.")
+                .font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-        } label: {
-            Text("Sensitivities").bold()
         }
     }
 
@@ -568,8 +573,8 @@ struct GainMap: View {
                     .clipShape(Capsule())
                 Text(String(format: "%@ loses %.3f s/100 m", label, gain.limit))
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(S37.C.inkSecondary)
         }
     }
 
@@ -580,5 +585,33 @@ struct GainMap: View {
         return f < 0
             ? Color(red: grey * (1 + f), green: grey + (0.75 - grey) * -f, blue: grey * (1 + f))
             : Color(red: grey + (0.85 - grey) * f, green: grey * (1 - f), blue: grey * (1 - f))
+    }
+}
+
+/// Run Lap Sim, its progress and what went wrong, at the top of the results
+struct LapSimRunBar: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: S37.Space.s2) {
+            HStack(spacing: S37.Space.s3) {
+                Button("Run lap sim") { app.runLapSim() }
+                    .buttonStyle(S37ButtonStyle(kind: .prominent))
+                    .disabled(app.lapSimRunning)
+                if let job = app.lapSimJob, !job.status.isFinished {
+                    ProgressView(value: job.progress, total: 100).frame(maxWidth: 160)
+                    Button("Cancel") { app.jobs.cancel(job) }.buttonStyle(S37ButtonStyle(kind: .plain))
+                }
+            }
+            if let job = app.lapSimJob, job.status == .failed || job.status == .cancelled {
+                Label(job.message ?? job.status.rawValue, systemImage: "xmark.octagon")
+                    .foregroundStyle(S37.C.critical)
+                    .textSelection(.enabled)
+                if let detail = job.detail {
+                    Text(detail).font(.system(size: 12, design: .monospaced)).foregroundStyle(S37.C.inkSecondary)
+                        .lineLimit(6).textSelection(.enabled)
+                }
+            }
+        }
     }
 }

@@ -53,3 +53,30 @@ Per tool, every visible element, with the principle it answers to (numbers from 
 | Engine checks rows | keep | sage37 buttons; the dummy job's duration and Keep mesh remembered (2, 5). |
 | Toolbar Show in Finder | change | Reveal in Finder, also File ▸ Reveal Project in Finder (4). |
 | Ping Engine, Run Dummy Job | change | Also in the Jobs menu (4). |
+
+## Lap Sim
+
+| Element | Verdict | Why |
+| --- | --- | --- |
+| Header note "Lap time against ClA and CdA on the event tracks." | cut | Restates the screen (1). |
+| Clay banner "Values marked est. are placeholder estimates… Every value here is editable and saved…" | change | One line, "est. marks a placeholder, not team data", inside the Car group it describes (1). |
+| System grouped Form inside the pane | change | Titled groups of rows on the inset tint, one container level (2, 5). |
+| Track picker | keep | Same order and names. |
+| Layout stepper and Another Layout | change | The stepper alone: two controls did the same thing (2). |
+| Generated-track, test-track and FSG/FSI paragraphs | change | Into How it's calculated (1). |
+| Edit a Copy… tooltip explaining Done and Cancel | cut | The sheet's buttons say it (1). |
+| Cars stepper tooltip | cut | Repeats what the grid shows (1). |
+| Car grid | keep | Recessed fields, monospaced digits, the est. tag; every value undoable (3, 8). |
+| Copy A to the Others, Reset to placeholders | change | sage37 glass and plain buttons; both undoable (2, 3). |
+| Load-transfer footer | change | Into How it's calculated (1). |
+| Run Lap Sim at the bottom of the setup form, and again in the empty state | change | One prominent Run lap sim at the top of the results pane, always visible; Lap Sim ▸ Run Lap Sim ⌘R (2, 4). |
+| Centred "No Lap Sim Results" | change | Left-aligned headline and one line (9). |
+| Results title in `.title2` bold | change | Headline 20 semibold (8). |
+| Summary grid | keep | The answer, monospaced digits (5). |
+| Sensitivities group box inside the scroll inside the pane | change | Flat section; the exchange-rate definition moves to How it's calculated, the decision rule stays (1, 5). |
+| Chart group boxes | change | Flat titled sections (9). |
+| System segmented car pickers | change | `S37Segmented` (2). |
+| Track editor Undo button and its private history | change | Edit ▸ Undo with named actions ("Undo Move Point 3"); Done is one undoable "Edit Track" in Lap Sim (3, 4). |
+| Track editor Loop picker | change | `S37Segmented` (2). |
+| Track editor "Drive it the other way round" and "Start again from a copy" tooltips | cut | Repeat their labels (1). |
+| Track editor instructions | change | Two paragraphs to one (1). |

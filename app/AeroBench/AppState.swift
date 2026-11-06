@@ -45,6 +45,7 @@ final class AppState {
         didSet { if lapSim != oldValue { project?.isDirty = true } }
     }
     var lapSimJob: JobItem?
+    var lapSimRunning: Bool { lapSimJob.map { !$0.status.isFinished } ?? false }
     var lapSimOutput: LapSimOutput?
     /// The accuracy window's UIUC comparison (AppState+UIUC).
     var uiuc: UIUCResults?
