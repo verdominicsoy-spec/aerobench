@@ -1134,8 +1134,8 @@ struct WingInspector: View {
             }
 
             flowSection(lab)
-            solversSection(lab)
             optimiseSection(lab)
+            solversSection(lab)
             carSection
             lapSimSection(lab)
 
