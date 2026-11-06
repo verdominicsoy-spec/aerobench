@@ -120,6 +120,31 @@ final class JobManager {
         return item
     }
 
+    /// The job Jobs shows; nil shows the newest
+    var selectedID: JobItem.ID?
+    var selected: JobItem? { jobs.first { $0.id == selectedID } ?? jobs.first }
+
+    /// The same command and inputs again, as a new job in the same jobs
+    /// folder. Its result stays in Jobs: the tool that first ran it isn't told.
+    @discardableResult
+    func runAgain(_ item: JobItem) -> JobItem? {
+        guard let data = try? Data(contentsOf: item.workdir.appendingPathComponent(JobFolder.jobFile)),
+              let spec = try? AeroJSON.decoder().decode(JobSpec.self, from: data) else { return nil }
+        let job = submit(command: spec.command, params: spec.params, keepMesh: spec.options.keepMesh,
+                         in: item.workdir.deletingLastPathComponent())
+        selectedID = job.id
+        return job
+    }
+
+    func revealInFinder(_ item: JobItem) {
+        NSWorkspace.shared.activateFileViewerSelecting([item.workdir])
+    }
+
+    func copyLog(_ item: JobItem) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(item.logText, forType: .string)
+    }
+
     func cancel(_ item: JobItem) {
         switch item.status {
         case .queued:

@@ -4,32 +4,37 @@ import SwiftUI
 
 struct JobsView: View {
     @Environment(AppState.self) private var app
-    @State private var selectedID: JobItem.ID?
 
     var body: some View {
-        HSplitView {
-            List(app.jobs.jobs, selection: $selectedID) { job in
-                JobRow(job: job)
+        let jobs = app.jobs
+        if jobs.jobs.isEmpty {
+            S37EmptyState(title: "No jobs yet", line: "Every engine run from every tool lands here.") {
+                Button("Ping engine") { app.runPing() }.buttonStyle(S37ButtonStyle())
             }
-            .scrollContentBackground(.hidden)
             .s37Region()
-            .frame(minWidth: 260, idealWidth: 320, maxWidth: 420)
-
-            Group {
-                if let job = app.jobs.jobs.first(where: { $0.id == selectedID }) {
-                    JobDetailView(job: job)
-                } else if !app.jobs.jobs.isEmpty {  // with no jobs at all, the one empty state below says so
-                    ContentUnavailableView("No Job Selected", systemImage: "list.bullet.rectangle",
-                                           description: Text("Pick a job to see its progress, log and result."))
+        } else {
+            HSplitView {
+                List(jobs.jobs, selection: Binding(get: { jobs.selected?.id }, set: { jobs.selectedID = $0 })) { job in
+                    JobRow(job: job)
+                        .contextMenu {
+                            Button("Reveal in Finder") { jobs.revealInFinder(job) }
+                            Button("Copy Log") { jobs.copyLog(job) }
+                            Button("Run Again") { jobs.runAgain(job) }
+                            if !job.status.isFinished {
+                                Divider()
+                                Button("Cancel Job") { jobs.cancel(job) }.disabled(job.cancelRequested)
+                            }
+                        }
                 }
-            }
-            .s37Region()
-            .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .overlay {
-            if app.jobs.jobs.isEmpty {
-                ContentUnavailableView("No Jobs Yet", systemImage: "list.bullet.rectangle",
-                                       description: Text("Ping the engine or run the dummy job from the Project screen."))
+                .scrollContentBackground(.hidden)
+                .s37Region()
+                .frame(minWidth: 260, idealWidth: 320, maxWidth: 420)
+
+                Group {
+                    if let job = jobs.selected { JobDetailView(job: job) }
+                }
+                .s37Region()
+                .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
@@ -40,11 +45,11 @@ struct JobStatusIcon: View {
 
     var body: some View {
         switch status {
-        case .queued: Image(systemName: "clock").foregroundStyle(.secondary)
+        case .queued: Image(systemName: "clock").foregroundStyle(S37.C.inkSecondary)
         case .running: Image(systemName: "play.circle").foregroundStyle(S37.C.sageInk)
         case .succeeded: Image(systemName: "checkmark.circle").foregroundStyle(S37.C.sageInk)
         case .failed: Image(systemName: "xmark.octagon").foregroundStyle(S37.C.critical)
-        case .cancelled: Image(systemName: "stop.circle").foregroundStyle(.secondary)
+        case .cancelled: Image(systemName: "stop.circle").foregroundStyle(S37.C.inkSecondary)
         }
     }
 }
@@ -56,17 +61,17 @@ struct JobRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 JobStatusIcon(status: job.status)
-                Text(job.title).bold()
+                Text(job.title).font(.system(size: 14, weight: .semibold))
                 Spacer()
                 Text(job.created, format: .dateTime.day().month().hour().minute().second())
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12, weight: .medium)).monospacedDigit()
+                    .foregroundStyle(S37.C.inkTertiary)
             }
             if job.status == .running {
                 ProgressView(value: job.progress, total: 100)
             }
             if let line = subtitle {
-                Text(line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(line).font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).lineLimit(1)
             }
         }
         .padding(.vertical, 2)
@@ -87,72 +92,65 @@ struct JobDetailView: View {
     private static let previewLimit = 20_000
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: S37.Space.s4) {
+            HStack(alignment: .firstTextBaseline, spacing: S37.Space.s2) {
                 JobStatusIcon(status: job.status)
-                Text(job.title).font(.title2).bold()
-                Text(job.status.rawValue).foregroundStyle(.secondary)
+                Text(job.title).font(.system(size: 20, weight: .semibold))
+                Text(job.status.rawValue).font(.system(size: 14)).foregroundStyle(S37.C.inkSecondary)
                 Spacer()
                 if !job.status.isFinished {
-                    Button("Cancel", role: .cancel) { app.jobs.cancel(job) }
+                    Button("Cancel job") { app.jobs.cancel(job) }
+                        .buttonStyle(S37ButtonStyle())
                         .disabled(job.cancelRequested)
                 }
-                Button("Show in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([job.workdir])
-                }
+                Button("Run again") { app.jobs.runAgain(job) }.buttonStyle(S37ButtonStyle())
+                Button("Reveal in Finder") { app.jobs.revealInFinder(job) }.buttonStyle(S37ButtonStyle())
             }
-            Text("\(job.command)  \(job.id)").font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+            Text("\(job.command)  \(job.id)").font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(S37.C.inkTertiary).textSelection(.enabled)
 
             if job.status == .running || job.status == .succeeded {
                 ProgressView(value: job.progress, total: 100) {
-                    Text(job.progressMessage.isEmpty ? " " : job.progressMessage).font(.caption)
+                    Text(job.progressMessage.isEmpty ? " " : job.progressMessage).font(.system(size: 12))
                 }
             }
 
             if job.status == .failed, let message = job.message {
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Label(message, systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
-                        if let detail = job.detail {
-                            ScrollView {
-                                Text(detail)
-                                    .font(.caption.monospaced())
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .frame(maxHeight: 120)
-                        }
-                    }
-                }
+                Label(message, systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
+                if let detail = job.detail { inset(detail, maxHeight: 120) }
             }
 
             if let result = job.resultText {
-                GroupBox {
-                    ScrollView {
-                        // One Text can't lay out a large file (it draws blank), so show the start.
-                        Text(result.count > Self.previewLimit ? String(result.prefix(Self.previewLimit)) + "\n…" : result)
-                            .font(.caption.monospaced())
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: S37.Space.s2) {
+                    Text("result.json").font(.system(size: 14, weight: .semibold))
+                    if result.count > Self.previewLimit {
+                        Text("first \(Self.previewLimit / 1000) kB of \(result.utf8.count / 1000) kB")
+                            .font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkTertiary)
                     }
-                    .frame(maxHeight: 160)
-                } label: {
-                    HStack {
-                        Text("result.json")
-                        if result.count > Self.previewLimit {
-                            Text("first \(Self.previewLimit / 1000) kB of \(result.utf8.count / 1000) kB").foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button("Open") { NSWorkspace.shared.open(job.workdir.appendingPathComponent(JobFolder.resultFile)) }
-                            .buttonStyle(.link)
-                    }
-                    .font(.caption)
+                    Spacer()
+                    Button("Open") { NSWorkspace.shared.open(job.workdir.appendingPathComponent(JobFolder.resultFile)) }
+                        .buttonStyle(S37ButtonStyle(kind: .plain))
                 }
+                // One Text can't lay out a large file (it draws blank), so show the start.
+                inset(result.count > Self.previewLimit ? String(result.prefix(Self.previewLimit)) + "\n…" : result, maxHeight: 160)
             }
 
             LogView(lines: job.log)
         }
-        .padding()
+        .padding(S37.Space.s5)
+    }
+
+    /// Monospaced text in the pane's inset tint, scrolling past `maxHeight`
+    private func inset(_ text: String, maxHeight: CGFloat) -> some View {
+        ScrollView {
+            Text(text)
+                .font(.system(size: 12, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(S37.Space.s3)
+        }
+        .frame(maxHeight: maxHeight)
+        .background(RoundedRectangle(cornerRadius: S37.Radius.md, style: .continuous).fill(S37.C.inset))
     }
 }
 

@@ -65,6 +65,20 @@ struct AeroBenchCommands: Commands {
             }
             Divider()
         }
+        CommandMenu("Jobs") {
+            let job = app.tool == .jobs ? app.jobs.selected : nil  // only the job on screen
+            Button("Cancel Job") { job.map(app.jobs.cancel) }
+                .keyboardShortcut(".")
+                .disabled(job.map { $0.status.isFinished || $0.cancelRequested } ?? true)
+            Button("Run Again") { job.map { app.jobs.runAgain($0) } }
+                .disabled(job == nil)
+            Divider()
+            Button("Reveal in Finder") { job.map(app.jobs.revealInFinder) }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(job == nil)
+            Button("Copy Log") { job.map(app.jobs.copyLog) }
+                .disabled(job == nil)
+        }
         CommandMenu("Part") {
             Button(app.partEdit.on ? "Stop Editing Part" : "Edit Part") {
                 app.partEdit.on ? app.exitPartEdit() : app.enterPartEdit()
