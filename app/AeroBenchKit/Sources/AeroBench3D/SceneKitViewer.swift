@@ -7,7 +7,8 @@ import simd
 public final class SceneKitViewer: Viewer3D {
     private let scnView: OrbitSCNView
     private var orbit = OrbitCamera()
-    /// Orbit centre set by double-clicking; nil means the view centre.
+    /// Orbit centre for the current drag or rotate gesture: the point under
+    /// the cursor where it started.
     private var pivot: SIMD3<Double>?
     /// Point the current pinch or scroll zooms toward, fixed for the gesture.
     private var gestureAnchor: SIMD3<Double>?
@@ -108,7 +109,7 @@ public final class SceneKitViewer: Viewer3D {
         doubleClick.numberOfClicksRequired = 2
         doubleClick.delaysPrimaryMouseButtonEvents = false
         doubleClickTarget.action = { [weak self] gesture in
-            MainActor.assumeIsolated { self?.setPivot(at: gesture.location(in: gesture.view)) }
+            MainActor.assumeIsolated { self?.focus(at: gesture.location(in: gesture.view)) }
         }
         scnView.addGestureRecognizer(doubleClick)
         scnView.onInput = { [weak self] input in self?.handle(input) }
@@ -280,8 +281,14 @@ public final class SceneKitViewer: Viewer3D {
 
     private func handle(_ input: OrbitSCNView.Input) {
         switch input {
+        case .orbitBegan(let location):
+            pivot = pointUnder(location)
+            return
         case .orbit(let dx, let dy):
             orbit.orbit(dx: dx, dy: dy, about: pivot)
+        case .focus(let location):
+            focus(at: location)
+            return
         case .pan(let dx, let dy):
             orbit.pan(dx: dx, dy: dy, viewHeight: Double(scnView.bounds.height))
         case .hover(let location):
@@ -297,29 +304,33 @@ public final class SceneKitViewer: Viewer3D {
         applyCamera()
     }
 
+    /// The nearest thing shown under a view location: the model (parts,
+    /// isosurfaces, object, car) or the slice. nil over empty space.
+    private func surfacePoint(_ location: CGPoint) -> SIMD3<Double>? {
+        let options: [SCNHitTestOption: Any] = [.searchMode: SCNHitTestSearchMode.closest.rawValue, .ignoreHiddenNodes: true]
+        let hits = [modelRoot, sliceNode].compactMap { root in
+            scnView.hitTest(location, options: options.merging([.rootNode: root]) { $1 }).first
+        }
+        return hits.map { SIMD3<Double>($0.simdWorldCoordinates) }
+            .min { simd_distance($0, orbit.position) < simd_distance($1, orbit.position) }
+    }
+
     /// The surface point under a view location, or the target plane there.
     private func pointUnder(_ location: CGPoint) -> SIMD3<Double> {
-        let hits = scnView.hitTest(location, options: [
-            .searchMode: SCNHitTestSearchMode.closest.rawValue,
-            .ignoreHiddenNodes: true,
-            .rootNode: modelRoot,
-        ])
-        if let hit = hits.first {
-            return SIMD3<Double>(hit.simdWorldCoordinates)
-        }
+        if let p = surfacePoint(location) { return p }
         let size = scnView.bounds.size
         let ndc = SIMD2<Double>(Double(location.x / max(size.width, 1)) * 2 - 1, Double(location.y / max(size.height, 1)) * 2 - 1)
         return orbit.pointOnTargetPlane(ndc: ndc, aspect: aspect)
     }
 
-    /// Double-click a surface to orbit around that point.
-    private func setPivot(at location: CGPoint) {
-        let hits = scnView.hitTest(location, options: [
-            .searchMode: SCNHitTestSearchMode.closest.rawValue,
-            .ignoreHiddenNodes: true,
-            .rootNode: modelRoot,
-        ])
-        pivot = hits.first.map { SIMD3<Double>($0.simdWorldCoordinates) }
+    /// Double-click (or trackpad smart zoom): centre the view on the surface
+    /// point there, keeping the distance; over empty space, fit everything.
+    private func focus(at location: CGPoint) {
+        guard let p = surfacePoint(location) else { return fitAll() }
+        let shift = p - orbit.target
+        orbit.position += shift
+        orbit.target += shift
+        applyCamera()
     }
 
     // MARK: Picking and markers
@@ -572,15 +583,19 @@ extension SceneKitViewer {
     }
 }
 
-/// SCNView that turns mouse and trackpad input into camera moves.
+/// SCNView that turns mouse and trackpad input into camera moves. Orbits
+/// pivot about the point under the cursor where the drag or gesture began.
 ///   drag: orbit        shift/option-drag, right-drag, middle-drag: pan
 ///   pinch: zoom at the cursor        mouse wheel or command-scroll: zoom at the cursor
-///   two-finger scroll on a trackpad: pan
+///   two-finger scroll on a trackpad: pan        trackpad rotate: turn about the up axis
+///   double-click or two-finger double-tap: centre on the point (empty space: fit)
 final class OrbitSCNView: SCNView {
     enum Phase { case discrete, began, changed, ended, cancelled }
 
     enum Input {
+        case orbitBegan(at: CGPoint)
         case orbit(dx: Double, dy: Double)
+        case focus(at: CGPoint)
         case pan(dx: Double, dy: Double)
         case zoom(factor: Double, at: CGPoint, phase: Phase)
         case hover(at: CGPoint)
@@ -604,8 +619,10 @@ final class OrbitSCNView: SCNView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        last = location(event)
+        let p = location(event)
+        last = p
         panning = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.option)
+        if !panning { onInput?(.orbitBegan(at: p)) }
     }
 
     override func mouseDragged(with event: NSEvent) { drag(event, pan: panning) }
@@ -625,18 +642,36 @@ final class OrbitSCNView: SCNView {
         onInput?(pan ? .pan(dx: dx, dy: dy) : .orbit(dx: dx, dy: dy))
     }
 
+    /// A trackpad's two-finger scroll pans; a mouse wheel (or command-scroll) zooms.
+    /// Trackpad scrolls have precise deltas and always carry a gesture or momentum
+    /// phase; a smooth-scrolling mouse can send precise deltas but no phase.
+    static func scrollPans(precise: Bool, phase: NSEvent.Phase, momentumPhase: NSEvent.Phase, command: Bool) -> Bool {
+        precise && !command && !(phase.isEmpty && momentumPhase.isEmpty)
+    }
+
     override func scrollWheel(with event: NSEvent) {
-        let trackpad = event.hasPreciseScrollingDeltas
-        if trackpad && !event.modifierFlags.contains(.command) {
+        if Self.scrollPans(precise: event.hasPreciseScrollingDeltas, phase: event.phase,
+                           momentumPhase: event.momentumPhase, command: event.modifierFlags.contains(.command)) {
             // Same convention as a scroll view: AppKit has already applied the
             // user's natural-scrolling setting to the deltas.
             onInput?(.pan(dx: Double(event.scrollingDeltaX), dy: Double(-event.scrollingDeltaY)))
             return
         }
-        let amount = Double(event.scrollingDeltaY) * (trackpad ? 0.01 : 0.1)
+        // Shift turns a mouse wheel into horizontal scrolling; zoom with it all the same.
+        let delta = event.scrollingDeltaY != 0 ? event.scrollingDeltaY : event.scrollingDeltaX
+        let amount = Double(delta) * (event.hasPreciseScrollingDeltas ? 0.01 : 0.1)
         guard amount != 0 else { return }
         onInput?(.zoom(factor: exp(-amount), at: location(event), phase: Self.phase(event.phase)))
     }
+
+    override func rotate(with event: NSEvent) {
+        if event.phase.contains(.began) { onInput?(.orbitBegan(at: location(event))) }
+        // Degrees anticlockwise; the model turns with the fingers, as seen from above
+        // (orbit turns 0.008 rad per point, and dragging right turns it anticlockwise).
+        onInput?(.orbit(dx: Double(event.rotation) * .pi / 180 / 0.008, dy: 0))
+    }
+
+    override func smartMagnify(with event: NSEvent) { onInput?(.focus(at: location(event))) }
 
     override func magnify(with event: NSEvent) {
         onInput?(.zoom(factor: 1 / max(1 + Double(event.magnification), 0.05), at: location(event), phase: Self.phase(event.phase)))

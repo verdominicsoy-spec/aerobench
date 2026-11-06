@@ -57,6 +57,35 @@ final class OrbitCameraTests: XCTestCase {
         XCTAssertEqual(simd_distance(c.position, pivot), simd_distance(camera(ortho: false).position, pivot), accuracy: 1e-9)
     }
 
+    /// A pivot picked under the cursor off the view centre (as on mouse-down)
+    /// stays under the cursor through a whole drag, in both projections.
+    func testOrbitAboutAClickedPointKeepsItUnderTheCursor() {
+        for ortho in [false, true] {
+            var c = camera(ortho: ortho)
+            let cursor = SIMD2<Double>(-0.55, 0.35)
+            let pivot = c.pointOnTargetPlane(ndc: cursor, aspect: aspect) + c.forward * 0.3
+            let before = c.project(pivot, aspect: aspect)
+            for step in 0..<20 { c.orbit(dx: 12, dy: step < 10 ? 6 : -9, about: pivot) }
+            let after = c.project(pivot, aspect: aspect)
+            XCTAssertEqual(before.x, after.x, accuracy: 1e-9, "ortho \(ortho)")
+            XCTAssertEqual(before.y, after.y, accuracy: 1e-9, "ortho \(ortho)")
+            XCTAssertNotEqual(c.target, camera(ortho: ortho).target, "the view turned about the pivot, not the target")
+        }
+    }
+
+    func testMouseWheelZoomsAndTrackpadScrollPans() {
+        // Trackpad two-finger scroll: precise deltas with a gesture or momentum phase.
+        XCTAssertTrue(OrbitSCNView.scrollPans(precise: true, phase: .began, momentumPhase: [], command: false))
+        XCTAssertTrue(OrbitSCNView.scrollPans(precise: true, phase: .changed, momentumPhase: [], command: false))
+        XCTAssertTrue(OrbitSCNView.scrollPans(precise: true, phase: [], momentumPhase: .changed, command: false))
+        // Command-scroll on a trackpad zooms.
+        XCTAssertFalse(OrbitSCNView.scrollPans(precise: true, phase: .changed, momentumPhase: [], command: true))
+        // A mouse wheel: line deltas, no phase.
+        XCTAssertFalse(OrbitSCNView.scrollPans(precise: false, phase: [], momentumPhase: [], command: false))
+        // A smooth-scrolling mouse: precise deltas but no phase.
+        XCTAssertFalse(OrbitSCNView.scrollPans(precise: true, phase: [], momentumPhase: [], command: false))
+    }
+
     func testOrbitNeverFlipsOverTheTop() {
         var c = camera(ortho: false)
         for _ in 0..<200 { c.orbit(dx: 0, dy: -50) }
