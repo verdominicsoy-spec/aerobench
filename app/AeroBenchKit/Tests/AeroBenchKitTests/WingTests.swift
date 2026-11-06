@@ -464,6 +464,39 @@ final class AirfoilReshapeTests: XCTestCase {
         XCTAssertEqual(again.elements[1].airfoil, cambered)
         XCTAssertEqual(again.elements[1].airfoil.name, "NACA 0012 (camber +2.0%, thickness 100%)")
     }
+
+    func testShapedSectionsAreMeasured() throws {
+        // measured() reads a section the engine's way: NACA 4412 is 12% thick near 30% chord, 4% camber at 40%.
+        let naca4412 = try XCTUnwrap(Airfoil.naca4("4412"))
+        var wrong = naca4412
+        (wrong.thickness, wrong.camber) = (0.5, 0.5)
+        let m = wrong.measured()
+        XCTAssertEqual(m.thickness, 0.12, accuracy: 1e-3)
+        XCTAssertEqual(m.thicknessX, 0.3, accuracy: 0.03)
+        XCTAssertEqual(m.camber, 0.04, accuracy: 1e-4)
+        XCTAssertEqual(m.camberX, 0.4, accuracy: 0.01)
+
+        // A reshape of a reshape: the numbers follow the shape, not the sums of the requests.
+        let twice = naca4412.reshaped(camber: 0.02, thickness: 1).reshaped(camber: 0, thickness: 0.5)
+        XCTAssertEqual(twice.thickness, 0.06, accuracy: 1e-3)
+        XCTAssertEqual(twice.camber, twice.measured().camber)
+        XCTAssertLessThan(twice.camber, 0.06 - 2e-4)  // the parabola peaks at 50%, the 4412's camber at 40%
+
+        // A study that started on a reshaped wing: its base is not the library section.
+        let naca0012 = try XCTUnwrap(Airfoil.naca4("0012"))
+        XCTAssertEqual(naca0012.studyBase(recorded: naca0012.coords), naca0012)
+        let base = naca0012.studyBase(recorded: naca4412.coords)
+        XCTAssertEqual(base.name, "NACA 0012 (study start)")
+        XCTAssertEqual(base.camber, 0.04, accuracy: 1e-4)
+        XCTAssertEqual(base.reshaped(camber: 0, thickness: 0.5).name, "NACA 0012 (study start) (camber +0.0%, thickness 50%)")
+
+        // Saved wings with the old summed numbers are measured again on load.
+        var stale = naca4412.reshaped(camber: 0, thickness: 0.5)
+        stale.thickness = 0.12
+        let wing = Wing(elements: [WingElement(airfoil: stale, chord: 0.3)])
+        let loaded = try JSONDecoder().decode(Wing.self, from: JSONEncoder().encode(wing))
+        XCTAssertEqual(loaded.elements[0].airfoil.thickness, 0.06, accuracy: 1e-3)
+    }
 }
 
 final class FiniteWingTests: XCTestCase {

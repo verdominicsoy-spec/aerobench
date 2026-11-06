@@ -176,6 +176,10 @@ public struct Wing: Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         elements = try c.decodeIfPresent([WingElement].self, forKey: .elements) ?? []
+        // Older saves kept a reshaped section's thickness and camber as sums, wrong when the base was reshaped too.
+        for i in elements.indices where elements[i].airfoil.key.hasPrefix("shaped/") {
+            elements[i].airfoil = elements[i].airfoil.measured()
+        }
         alpha = try c.decodeIfPresent(Double.self, forKey: .alpha) ?? 0
         rulesBox = try c.decodeIfPresent(RulesBox.self, forKey: .rulesBox)
         rulesFor = try c.decodeIfPresent(WingPosition.self, forKey: .rulesFor) ?? .rear

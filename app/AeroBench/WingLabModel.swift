@@ -595,9 +595,7 @@ final class WingLabModel {
         }
         guard let recorded = study.baseSections, recorded.count == originals.count else { return originals }
         return zip(originals, recorded).map { original, unit in
-            var a = original
-            a.coords = unit.compactMap { $0.count == 2 ? SIMD2($0[0], $0[1]) : nil }
-            return a
+            original.studyBase(recorded: unit.compactMap { $0.count == 2 ? SIMD2($0[0], $0[1]) : nil })
         }
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import simd
 
 /// An optimisation study as the engine exports it after every trial
 /// (<study>.json beside the Optuna file), or as wing-optimise's result.
@@ -221,25 +222,17 @@ extension Wing {
 extension Airfoil {
     /// The engine's reshape (geometry.py): camber added as a parabola,
     /// `camber` of the chord at mid-chord and none at either end, and the
-    /// thickness about the camber line scaled by `thickness`.
+    /// thickness about the camber line scaled by `thickness`. Thickness and
+    /// camber are measured on the new shape, so they stay true when the base
+    /// was itself reshaped.
     public func reshaped(camber: Double, thickness: Double) -> Airfoil {
         guard camber != 0 || thickness != 1, coords.count > 4,
               let i = coords.indices.min(by: { coords[$0].x < coords[$1].x }) else { return self }
         let upper = Array(coords[...i].reversed()), lower = Array(coords[i...])
 
-        func at(_ surface: [SIMD2<Double>], _ x: Double) -> Double {
-            let s = surface.sorted { $0.x < $1.x }
-            guard let first = s.first, let last = s.last else { return 0 }
-            if x <= first.x { return first.y }
-            if x >= last.x { return last.y }
-            var k = 1
-            while k < s.count - 1 && s[k].x < x { k += 1 }
-            let a = s[k - 1], b = s[k]
-            return b.x > a.x ? a.y + (b.y - a.y) * (x - a.x) / (b.x - a.x) : a.y
-        }
         func moved(_ points: [SIMD2<Double>], _ other: [SIMD2<Double>]) -> [SIMD2<Double>] {
             points.map { p in
-                let mean = 0.5 * (p.y + at(other, p.x))
+                let mean = 0.5 * (p.y + Self.y(other, at: p.x))
                 return SIMD2(p.x, mean + camber * 4 * p.x * (1 - p.x) + thickness * (p.y - mean))
             }
         }
@@ -247,8 +240,52 @@ extension Airfoil {
         out.coords = Array(moved(upper, lower).reversed()) + Array(moved(lower, upper).dropFirst())
         out.name = String(format: "%@ (camber %+.1f%%, thickness %.0f%%)", name, camber * 100, thickness * 100)
         out.key = key.hasPrefix("shaped/") ? key : "shaped/" + key
-        out.camber += camber
-        out.thickness *= thickness
+        return out.measured()
+    }
+
+    /// Thickness, camber and trailing-edge gap as the engine measures them
+    /// (airfoils.section): at 400 cosine-spaced stations, thickness is the
+    /// largest gap between the surfaces and camber the mean line where it is
+    /// furthest from the chord.
+    public func measured() -> Airfoil {
+        guard coords.count > 4, let i = coords.indices.min(by: { coords[$0].x < coords[$1].x }) else { return self }
+        let upper = Array(coords[...i]), lower = Array(coords[i...])
+        var out = self
+        out.thickness = -.infinity
+        out.camber = 0
+        out.camberX = 0
+        for k in 0..<400 {
+            let x = 0.5 * (1 - cos(Double.pi * Double(k) / 399))
+            let yu = Self.y(upper, at: x), yl = Self.y(lower, at: x)
+            if yu - yl > out.thickness { (out.thickness, out.thicknessX) = (yu - yl, x) }
+            if abs(0.5 * (yu + yl)) > abs(out.camber) { (out.camber, out.camberX) = (0.5 * (yu + yl), x) }
+        }
+        out.teThickness = simd_length(coords[0] - coords[coords.count - 1])
         return out
+    }
+
+    /// The section a study's shapes are relative to: the library's section with
+    /// the coordinates the study recorded. A study started on an already
+    /// reshaped wing recorded that shape, so the name says so and the thickness
+    /// and camber are measured on it, rather than the library section's.
+    public func studyBase(recorded: [SIMD2<Double>]) -> Airfoil {
+        let same = recorded.count == coords.count && zip(recorded, coords).allSatisfy { simd_distance($0, $1) < 1e-5 }
+        guard !same else { return self }
+        var a = self
+        a.coords = recorded
+        a.name = name + " (study start)"
+        return a.measured()
+    }
+
+    /// A surface's y at x, by linear interpolation along x.
+    static func y(_ surface: [SIMD2<Double>], at x: Double) -> Double {
+        let s = surface.sorted { $0.x < $1.x }
+        guard let first = s.first, let last = s.last else { return 0 }
+        if x <= first.x { return first.y }
+        if x >= last.x { return last.y }
+        var k = 1
+        while k < s.count - 1 && s[k].x < x { k += 1 }
+        let a = s[k - 1], b = s[k]
+        return b.x > a.x ? a.y + (b.y - a.y) * (x - a.x) / (b.x - a.x) : a.y
     }
 }
