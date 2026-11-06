@@ -341,7 +341,8 @@ extension AppState {
         car.baseJob = jobs.submit(command: "car-strips", params: params, in: jobsRoot) { [weak self] item in
             guard let self, item.status == .succeeded, let text = item.resultText else { return }
             do {
-                let r = try CarResult.decode(resultFile: Data(text.utf8))
+                var r = try CarResult.decode(resultFile: Data(text.utf8))
+                r.folder = item.workdir.lastPathComponent
                 self.car.bases[r.mesh] = r
                 try CarStore.save(base: r, self.workFolder)
                 self.car.baseRevision += 1
@@ -364,7 +365,8 @@ extension AppState {
             guard let self, item.status == .succeeded, let text = item.resultText,
                   let i = self.car.combos.firstIndex(where: { $0.id == id }) else { return }
             do {
-                let r = try CarResult.decode(resultFile: Data(text.utf8))
+                var r = try CarResult.decode(resultFile: Data(text.utf8))
+                r.folder = item.workdir.lastPathComponent
                 self.car.combos[i].recordFull(r, ran: combo, cards: ranCards, baseRevision: ranBase)
                 self.saveCar()
             } catch {

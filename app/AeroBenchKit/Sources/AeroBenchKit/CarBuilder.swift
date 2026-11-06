@@ -85,9 +85,12 @@ public struct CarResult: Codable, Equatable, Sendable {
         public var reason: String?
         public var wingLift: [String: Double]
         public var wingDrag: [String: Double]
+        public var folder: String?  // its run in the job folder, e.g. strip_3
+        public var fieldView: String?  // field.json in that folder, when the flow was sampled
 
         enum CodingKeys: String, CodingKey {
-            case y, width, lift, drag, converged, reason
+            case y, width, lift, drag, converged, reason, folder
+            case fieldView = "field_view"
             case xCp = "x_cp"
             case wingLift = "wing_lift"
             case wingDrag = "wing_drag"
@@ -127,6 +130,7 @@ public struct CarResult: Codable, Equatable, Sendable {
     public var failed: [Failure]?  // strips that would not solve: the totals leave them out
     public var openGaps: Int?  // places the CAD's cut did not close, over all strips
     public var flow: JSONValue?  // the speed, ground and wheel options it was run with
+    public var folder: String?  // the job's folder in the project's jobs, where each strip's flow is
 
     /// Run with these settings: same strip count, and the same speeds and options, numbers
     /// compared as numbers (the engine's 15.0 can come back as the integer 15).
@@ -165,7 +169,7 @@ public struct CarResult: Codable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case mesh, speed, cla, cda, strips, converged, wings, n, flow, failed
+        case mesh, speed, cla, cda, strips, converged, wings, n, flow, failed, folder
         case rearShare = "rear_share"
         case openGaps = "open_gaps"
         case cla2dWings = "cla_2d_wings"

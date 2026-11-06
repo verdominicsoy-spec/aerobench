@@ -24,9 +24,10 @@ public struct WingField: Sendable {
         var vInf: Double?
         var scalars: [Scalar]
         var streamlines: [[[Double]]]
+        var outlines: [[[Double]]]?
 
         enum CodingKeys: String, CodingKey {
-            case nx, ny, window, scalars, streamlines
+            case nx, ny, window, scalars, streamlines, outlines
             case vInf = "v_inf"
         }
     }
@@ -37,6 +38,8 @@ public struct WingField: Sendable {
     public let window: (x0: Double, y0: Double, x1: Double, y1: Double)
     public let scalars: [Scalar]
     public let streamlines: [[SIMD2<Double>]]
+    /// The solids the flow goes round, in the field's frame (older fields have none).
+    public let outlines: [[SIMD2<Double>]]
     /// One nx * ny block per scalar, rows from the bottom; NaN where there is no flow.
     let values: [[Float]]
 
@@ -62,6 +65,7 @@ public struct WingField: Sendable {
         window = (h.window[0], h.window[1], h.window[2], h.window[3])
         scalars = h.scalars
         streamlines = h.streamlines.map { $0.compactMap { $0.count == 2 ? SIMD2($0[0], $0[1]) : nil } }
+        outlines = (h.outlines ?? []).map { $0.compactMap { $0.count == 2 ? SIMD2($0[0], $0[1]) : nil } }
         values = blocks
     }
 

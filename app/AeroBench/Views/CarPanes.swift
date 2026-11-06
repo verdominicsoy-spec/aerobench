@@ -330,6 +330,149 @@ struct SideViewPane: View {
     }
 }
 
+// MARK: Flow
+
+/// The flow round the car: one strip of the bare car's run or of the selected
+/// combination's full run, a scalar of its field with the strip's solids and
+/// streamlines over it, as Wing Lab shows a RANS run's field.
+struct CarFlowPane: View {
+    @Environment(AppState.self) private var app
+    @State private var hover: SIMD2<Double>?  // in the field's frame
+
+    /// The run shown, and what it is called.
+    private var run: (result: CarResult, name: String)? {
+        let car = app.car
+        if !car.flowBare, let combo = car.selectedCombo, let f = combo.full {
+            return (f, combo.name + (app.fullStale(combo) ? " (out of date)" : ""))
+        }
+        return car.base.map { ($0, "Bare car") }
+    }
+
+    var body: some View {
+        @Bindable var car = app.car
+        VStack(alignment: .leading, spacing: S37.Space.s3) {
+            HStack {
+                Text("Flow").font(.system(size: 20, weight: .semibold))
+                Spacer()
+                if let combo = car.selectedCombo, combo.full != nil, car.base != nil {
+                    Picker("Run", selection: $car.flowBare) {
+                        Text("\(combo.name), full").tag(false)
+                        Text("Bare car").tag(true)
+                    }
+                    .pickerStyle(.menu).fixedSize().font(.caption)
+                }
+            }
+            if let run {
+                let strips = run.result.strips
+                let k = min(car.flowStrip, max(strips.count - 1, 0))
+                HStack {
+                    Picker("Strip", selection: Binding(get: { k }, set: { car.flowStrip = $0 })) {
+                        ForEach(strips.indices, id: \.self) { i in Text(String(format: "y %.0f mm", strips[i].y)).tag(i) }
+                    }
+                    .pickerStyle(.menu).fixedSize().font(.caption)
+                    .help("Which plane across the car: the strips run from the centreline out")
+                    if let f = field(run.result, k) {
+                        Picker("Field", selection: $car.flowScalar) {
+                            ForEach(f.scalars) { Text($0.name).tag($0.key) }
+                        }
+                        .pickerStyle(.menu).fixedSize().font(.caption)
+                        Toggle("Streamlines", isOn: $car.flowStreamlines).toggleStyle(.checkbox).font(.caption)
+                    }
+                    Spacer()
+                }
+                if strips.isEmpty {
+                    note("No strip of \(run.name) solved.")
+                } else if let f = field(run.result, k), let scalar = f.scalars.first(where: { $0.key == car.flowScalar }) ?? f.scalars.first {
+                    GeometryReader { geo in
+                        let m = FlowMapping(field: f, size: geo.size)
+                        Canvas { ctx, _ in draw(ctx, m, f, scalar, converged: strips[k].converged) }
+                            .onContinuousHover { phase in
+                                if case .active(let p) = phase { hover = m.field(p) } else { hover = nil }
+                            }
+                    }
+                    .frame(height: 300)
+                    HStack {
+                        FieldColorbar(scalar: scalar)
+                        Spacer()
+                        if let p = hover, let v = f.value(scalar.key, at: p), let s = car.setup {
+                            // The field's frame is the mesh's: x along the flow (minus car x), y up from the ground, m.
+                            Text(String(format: "%@ %.3f at x %.0f, z %.0f mm", scalar.name, v, -1000 * p.x, 1000 * p.y + s.groundZ))
+                                .font(.caption.monospacedDigit())
+                        }
+                    }
+                    if !strips[k].converged { note("This strip did not converge: the field is not a result.") }
+                } else {
+                    note("\(run.name) has no flow field saved for this strip: run it again to see one.")
+                }
+            } else {
+                note("Run the bare car, or a combination's full run, to see the flow round it.")
+            }
+        }
+        .s37Pane()
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text).font(.caption).foregroundStyle(S37.C.inkSecondary)
+    }
+
+    private func field(_ r: CarResult, _ k: Int) -> WingField? {
+        guard let job = r.folder, r.strips.indices.contains(k), let strip = r.strips[k].folder, r.strips[k].fieldView != nil else { return nil }
+        return app.car.flowField(app.jobsRoot.appendingPathComponent(job).appendingPathComponent(strip))
+    }
+
+    private func draw(_ ctx: GraphicsContext, _ m: FlowMapping, _ f: WingField, _ scalar: WingField.Scalar, converged: Bool) {
+        if let image = app.car.flowImage(scalar.key) {
+            var g = ctx
+            if !converged { g.opacity = 0.5 }
+            g.draw(Image(decorative: image, scale: 1), in: m.rect)
+        }
+        if app.car.flowStreamlines {
+            var path = Path()
+            for line in f.streamlines where line.count > 1 {
+                path.move(to: m.view(line[0]))
+                for p in line.dropFirst() { path.addLine(to: m.view(p)) }
+            }
+            ctx.stroke(path, with: .color(.black.opacity(0.4)), lineWidth: 0.6)
+        }
+        // Over the field the solids are solid, so the car reads against the colours.
+        for o in f.outlines where o.count > 2 {
+            var path = Path()
+            path.move(to: m.view(o[0]))
+            for p in o.dropFirst() { path.addLine(to: m.view(p)) }
+            path.closeSubpath()
+            ctx.fill(path, with: .color(Color(white: 0.55)))
+            ctx.stroke(path, with: .color(S37.C.inkTertiary), lineWidth: 0.8)
+        }
+        var ground = Path()
+        ground.move(to: m.view(SIMD2(f.window.x0, 0)))
+        ground.addLine(to: m.view(SIMD2(f.window.x1, 0)))
+        ctx.stroke(ground, with: .color(S37.C.inkSecondary), lineWidth: 1.5)
+    }
+}
+
+/// A field's window (m, y up) fitted into the view, the flow running left to right.
+private struct FlowMapping {
+    let x0: Double, y1: Double, scale: Double, origin: CGPoint
+    let rect: CGRect
+
+    init(field f: WingField, size: CGSize) {
+        let w = f.window.x1 - f.window.x0, h = f.window.y1 - f.window.y0
+        scale = min(size.width / w, size.height / h)
+        origin = CGPoint(x: (size.width - w * scale) / 2, y: (size.height - h * scale) / 2)
+        x0 = f.window.x0
+        y1 = f.window.y1
+        rect = CGRect(x: origin.x, y: origin.y, width: w * scale, height: h * scale)
+    }
+
+    func view(_ p: SIMD2<Double>) -> CGPoint {
+        CGPoint(x: origin.x + (p.x - x0) * scale, y: origin.y + (y1 - p.y) * scale)
+    }
+
+    func field(_ p: CGPoint) -> SIMD2<Double> {
+        SIMD2(x0 + (p.x - origin.x) / scale, y1 - (p.y - origin.y) / scale)
+    }
+}
+
 // MARK: Section
 
 struct SectionPane: View {

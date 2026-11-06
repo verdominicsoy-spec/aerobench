@@ -1,4 +1,5 @@
 import AeroBenchKit
+import CoreGraphics
 import Foundation
 import Observation
 
@@ -51,6 +52,32 @@ final class CarModel {
     @ObservationIgnored var sectionRunner: LatestOnly<JSONValue, CarSection>?
 
     static let meshes = ["coarse", "medium", "maxed"]
+
+    // The flow view: a strip of a run, one scalar of its field.
+    var flowBare = false  // the bare car's run even when the selected combination has a full one
+    var flowStrip = 0
+    var flowScalar = "cp"
+    var flowStreamlines = true
+    @ObservationIgnored private var flowCache: (folder: URL, field: WingField?)?
+    @ObservationIgnored private var flowImages: [String: CGImage] = [:]
+
+    /// A strip's field (field.json and field.bin in its folder), read once and kept.
+    func flowField(_ folder: URL) -> WingField? {
+        if let c = flowCache, c.folder == folder { return c.field }
+        let f = try? WingField.load(from: folder)
+        flowCache = (folder, f)
+        flowImages = [:]
+        return f
+    }
+
+    /// The kept field's scalar as an image.
+    func flowImage(_ key: String) -> CGImage? {
+        if let image = flowImages[key] { return image }
+        guard let f = flowCache?.field else { return nil }
+        let image = WingLabModel.image(f.pixels(key), f.nx, f.ny)
+        flowImages[key] = image
+        return image
+    }
 
     var selectedCombo: Combination? { combos.first { $0.id == selected } }
 

@@ -82,3 +82,18 @@ def test_field_is_resampled_masked_and_traced(tmp_path):
     for line in h["streamlines"][:5]:
         line = np.array(line)
         assert np.ptp(line[:, 1]) < 1e-6 and line[-1, 0] > line[0, 0]
+
+
+def test_window_and_trailing_edges_can_be_given(tmp_path):
+    """The car's field: its own window (from the ground up), streamlines
+    seeded only behind the wings, and the solid outlines in the header."""
+    from aeroengine.wing.field import extract
+
+    square = np.array([[0, 0], [1, 0], [1, 0.3], [0, 0.3], [0, 0]], float)
+    _write_vtu(tmp_path / "flow.vtu", square)
+    h = extract(tmp_path / "flow.vtu", [square], tmp_path / "out", nx=100, window=(-1.0, 0.5, 2.0, 1.5), trailing=[])
+    assert h["window"] == [-1.0, 0.5, 2.0, 1.5] and h["ny"] == 33
+    assert h["outlines"] == [square.tolist()]
+    unseeded = extract(tmp_path / "flow.vtu", [square], tmp_path / "out2", nx=100, trailing=[])
+    seeded = extract(tmp_path / "flow.vtu", [square], tmp_path / "out3", nx=100)
+    assert len(unseeded["streamlines"]) < len(seeded["streamlines"])  # none behind the square's trailing edge

@@ -100,6 +100,7 @@ def run(setup: dict, wings: list[dict], flow: dict, preset: str, workdir: Path, 
             failed.append({"y": float(y), "width": float(width), "reason": e.msg + (f": {e.detail}" if e.detail else "")})
             continue
         r["width"] = width
+        r["folder"] = f"strip_{k + 1}"  # its run, and field.json when it has one, in the job folder
         r["open_gaps"] = len(sec.get("open", [])) // 2
         results.append(r)
     out = combine(results, setup, float(flow.get("speed", setup.get("speed", 15.0))), car_case.RHO, wings, preset, flow,

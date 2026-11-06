@@ -91,7 +91,11 @@ struct CanvasHost: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(S37.Space.s4)
                     } else {
-                        SideViewPane().padding(6)
+                        VStack(spacing: 6) {
+                            SideViewPane()
+                            CarFlowPane()
+                        }
+                        .padding(6)
                     }
                 }
                 .scrollIndicators(.never)

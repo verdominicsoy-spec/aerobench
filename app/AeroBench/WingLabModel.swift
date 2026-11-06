@@ -225,7 +225,7 @@ final class WingLabModel {
         return image
     }
 
-    private static func image(_ px: [UInt8], _ w: Int, _ h: Int) -> CGImage? {
+    static func image(_ px: [UInt8], _ w: Int, _ h: Int) -> CGImage? {
         guard let provider = CGDataProvider(data: Data(px) as CFData) else { return nil }
         return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
                        space: CGColorSpace(name: CGColorSpace.sRGB)!,

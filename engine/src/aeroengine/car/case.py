@@ -159,6 +159,7 @@ def solve_section(section: dict, wings: list[dict], setup: dict, flow: dict, pre
                    walls=_walls(stats["markers"]), model="sst", iterations=iterations, cfl=10.0, multigrid=0, scheme="fds",
                    markers=stats["markers"], setup=setup, flow=flow)
     out = su2.run(case, mesh_file, workdir, su2.find_su2(su2_hint), cores, progress)
+    view = _field(section, wings, setup, workdir, progress)
     q = 0.5 * RHO * speed * speed
     lift, drag = out["cl"] * q, out["cd"] * q
     # The moment origin is on the ground line, so moment over lift is the point where the lift alone
@@ -174,4 +175,27 @@ def solve_section(section: dict, wings: list[dict], setup: dict, flow: dict, pre
                 wing_x[pos] = -1000.0 * row["cmz"] / row["cl"]
     return {"y": float(section["y"]), "lift": float(lift), "drag": float(drag), "x_cp": x_cp, "wing_x_cp": wing_x,
             "converged": bool(out["converged"]), "reason": out.get("reason"), "iterations": out["iterations"],
-            "wing_lift": wing_lift, "wing_drag": wing_drag, "cells": stats["cells"]}
+            "wing_lift": wing_lift, "wing_drag": wing_drag, "cells": stats["cells"], "field_view": view}
+
+
+def _field(section: dict, wings: list[dict], setup: dict, workdir: Path, progress) -> str | None:
+    """The strip's flow for the app's field view, in the mesh's frame (m, flow
+    along +x, the ground at y 0): the car from a quarter of its length ahead
+    to 0.6 of it behind, up to a quarter of its length above its top."""
+    from ..wing.field import extract
+
+    if not (workdir / "flow.vtu").exists():
+        return None
+    ground = float(setup["ground_z"])
+    solids = [car_mesh._to_m(lp["points"], ground) for lp in section.get("loops", [])]
+    foils = [car_mesh._to_m(el, ground) for w in wings for el in w["elements"]]
+    allp = np.vstack(solids + foils)
+    lo, hi = allp.min(axis=0), allp.max(axis=0)
+    length = float(max(hi[0] - lo[0], 0.1))
+    progress(98, "sampling the flow field")
+    try:
+        extract(workdir / "flow.vtu", solids + foils, workdir, nx=1024, trailing=foils,
+                window=(lo[0] - 0.25 * length, 0.0, hi[0] + 0.6 * length, hi[1] + 0.25 * length))
+        return "field.json"
+    except Exception:  # noqa: BLE001 - the strip's forces stand without the picture
+        return None

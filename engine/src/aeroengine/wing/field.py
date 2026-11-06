@@ -3,7 +3,7 @@ resampled onto a regular grid (linear on SU2's own cells, so nothing is
 interpolated across an element or a slot), a few scalars, and streamlines.
 
 Written as field.json (sizes, window, scalars with their ranges and
-colormaps, streamlines) and field.bin (float32, little-endian, one nx * ny
+colormaps, streamlines, the solid outlines) and field.bin (float32, little-endian, one nx * ny
 block per scalar in the order listed, rows from the bottom; NaN inside the
 elements and outside the mesh)."""
 
@@ -61,14 +61,19 @@ def _read_vtu(path: Path):
     return pts, np.array(tris, dtype=np.int64), arrays
 
 
-def extract(vtu: Path, placed: list[np.ndarray], out_dir: Path, nx: int = 640) -> dict:
+def extract(vtu: Path, placed: list[np.ndarray], out_dir: Path, nx: int = 640,
+            window: tuple[float, float, float, float] | None = None,
+            trailing: list[np.ndarray] | None = None) -> dict:
     """Resamples the solution in vtu around the elements (placed outlines,
-    m) and writes field.json and field.bin in out_dir. Returns the header."""
+    m) and writes field.json and field.bin in out_dir. Returns the header.
+    window (x0, y0, x1, y1, m) overrides the one around the elements, and
+    trailing the outlines whose
+    trailing edges seed streamlines (default: all of placed)."""
     import matplotlib.tri as mtri
 
     pts, tris, arrays = _read_vtu(vtu)
-    # Free-stream speed: the velocity far from the wing (SU2's far field holds it).
     vel = arrays["Velocity"][:, :2].astype(float)
+    # Free-stream speed: the velocity far from the wing (SU2's far field holds it).
     centre = np.mean(np.vstack(placed), axis=0)
     far = np.linalg.norm(pts - centre, axis=1)
     v_inf = float(np.median(np.linalg.norm(vel[far > 0.9 * far.max()], axis=1)))
@@ -78,6 +83,8 @@ def extract(vtu: Path, placed: list[np.ndarray], out_dir: Path, nx: int = 640) -
     span = float(max(hi[0] - lo[0], hi[1] - lo[1]))
     x0, x1 = lo[0] - 0.3 * span, hi[0] + 0.8 * span
     y0, y1 = lo[1] - 0.4 * span, hi[1] + 0.4 * span
+    if window is not None:
+        x0, y0, x1, y1 = window
     ny = max(int(round(nx * (y1 - y0) / (x1 - x0))), 8)
     xs = x0 + (np.arange(nx) + 0.5) * (x1 - x0) / nx
     ys = y0 + (np.arange(ny) + 0.5) * (y1 - y0) / ny
@@ -127,9 +134,10 @@ def extract(vtu: Path, placed: list[np.ndarray], out_dir: Path, nx: int = 640) -
                         "colormap": _colormap(kind)})
         blocks.append(f.astype("<f4"))
 
-    lines = _streamlines(xs, ys, u, v, placed, span)
+    lines = _streamlines(xs, ys, u, v, placed if trailing is None else trailing, span)
     header = {"nx": nx, "ny": ny, "window": [float(x0), float(y0), float(x1), float(y1)], "v_inf": v_inf,
-              "scalars": scalars, "streamlines": [np.round(np.vstack([l[::4], l[-1:]]), 4).tolist() for l in lines]}
+              "scalars": scalars, "streamlines": [np.round(np.vstack([l[::4], l[-1:]]), 4).tolist() for l in lines],
+              "outlines": [np.round(np.asarray(xy, float), 4).tolist() for xy in placed]}
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "field.bin").write_bytes(b"".join(b.tobytes() for b in blocks))
     (out_dir / "field.json").write_text(json.dumps(header))
@@ -139,7 +147,7 @@ def extract(vtu: Path, placed: list[np.ndarray], out_dir: Path, nx: int = 640) -
 def _streamlines(xs: np.ndarray, ys: np.ndarray, u: np.ndarray, v: np.ndarray, placed: list[np.ndarray],
                  span: float) -> list[np.ndarray]:
     """Streamlines from evenly spaced seeds upstream, plus seeds just behind
-    each trailing edge traced both ways, so slot flow and any recirculation
+    each trailing edge (of the outlines in placed) traced both ways, so slot flow and any recirculation
     behind an element show up."""
     dx, dy = xs[1] - xs[0], ys[1] - ys[0]
     h = 0.5 * min(dx, dy)
