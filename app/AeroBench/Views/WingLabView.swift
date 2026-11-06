@@ -56,6 +56,7 @@ struct WingLabView: View {
         }
         .onChange(of: app.car.selected) {
             lab.carX = nil  // another combination: the wing takes its end's place there
+            lab.carHeight = nil
             app.syncCarRulesBox(picked: true)
         }
         .preference(key: ToolTakeawayKey.self, value: carTakeaway)
@@ -1190,8 +1191,7 @@ struct WingInspector: View {
                     set: { on in
                         let box = app.rulesBox(for: wing.rulesFor)  // from the last base car when this project has none
                         lab.edit(on ? "Turn On Rules Box" : "Turn Off Rules Box") { $0.rulesBox = on ? box : nil }
-                    }))
-                    .disabled(app.car.setup != nil)
+                    }))  // off by default, on a car too
                 if let box = wing.rulesBox {
                     S37Segmented(options: [(WingPosition.front, "Front wing"), (.rear, "Rear wing")],
                                  selection: Binding(get: { wing.rulesFor }, set: { p in lab.edit("Change Rules Box") { $0.switchRules(to: p) } }))

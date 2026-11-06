@@ -22,14 +22,17 @@ final class WingLabModel {
         var wing: Wing
         var cardID: String?
         var carX: Double?
+        var carHeight: Double? = nil
     }
     private(set) var undoStack: [Step] = []
     private(set) var redoStack: [Step] = []
     /// Where the wing sits on the car (mm ahead of its axle) once moved there; nil, its end's place.
     var carX: Double?
+    /// Its height on the car (mm, lowest point above ground) once moved there with the ground off
+    var carHeight: Double?
     private var step: Step {
-        get { Step(wing: wing, cardID: cardID, carX: carX) }
-        set { wing = newValue.wing; cardID = newValue.cardID; carX = newValue.carX }
+        get { Step(wing: wing, cardID: cardID, carX: carX, carHeight: carHeight) }
+        set { wing = newValue.wing; cardID = newValue.cardID; carX = newValue.carX; carHeight = newValue.carHeight }
     }
     var selection: Int?
     var snap = true
@@ -749,6 +752,7 @@ final class WingLabModel {
         self.wing = wing
         cardID = nil
         carX = nil
+        carHeight = nil
         origin = nil
         selection = wing.elements.isEmpty ? nil : 0
         recompute()

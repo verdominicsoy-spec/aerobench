@@ -38,8 +38,9 @@ extension AppState {
     private func draftPlacement(of d: WingCard) -> Placement? {
         guard let s = car.setup else { return nil }
         var combo = car.selectedCombo ?? Combination(id: "", name: "")
-        if let x = wingLab.carX {  // moved on the car: held here until Save puts it in the combination
-            let p = Placement(card: d.id, x: x, height: (d.position == .front ? combo.front : combo.rear)?.height ?? 0)
+        if wingLab.carX != nil || wingLab.carHeight != nil {  // moved on the car: held here until Save puts it in the combination
+            let slot = d.position == .front ? combo.front : combo.rear
+            let p = Placement(card: d.id, x: wingLab.carX ?? slot?.x ?? 0, height: wingLab.carHeight ?? slot?.height ?? 0)
             if d.position == .front { combo.front = p } else { combo.rear = p }
         }
         return combo.draftPlacement(d, setup: s)
@@ -97,7 +98,8 @@ extension AppState {
             guard abs(implied.x - stored.x) > 0.01 || abs(implied.height - stored.height) > 0.01 else { return }
             if let last, last != now {
                 lab.carX = implied.x
-                lab.live { $0.rideHeight = implied.height / 1000 }
+                // the height goes to the ground only when the ground is on
+                if lab.wing.rideHeight != nil { lab.live { $0.rideHeight = implied.height / 1000 } } else { lab.carHeight = implied.height }
             } else {
                 let next = CarRules.wingBox(d, placement: stored, setup: s)
                 lab.live { $0.rulesBox = next }
@@ -106,12 +108,11 @@ extension AppState {
         }
         defer { lab.rulesAnchor = anchor(lab.wing) }
         guard let at = rulesPlacement(of: d) else { return }
-        // On a combination the wing is on the car, so over the ground at its place there.
-        if picked, car.selectedCombo != nil, lab.wing.rideHeight == nil { lab.live { $0.rideHeight = at.height / 1000 } }
         let box = CarRules.wingBox(d, placement: at, setup: s)
         // Without a base car, a box someone typed stays; Wing Lab's old fixed one is replaced
         let typed = car.setup == nil && lab.wing.rulesBox.map { $0 != Wing.defaultRulesBox(lab.wing.rulesFor) } ?? false
-        if (picked || lab.wing.rulesBox != nil), !typed, lab.wing.rulesBox != box { lab.live { $0.rulesBox = box } }
+        // Off unless turned on: a pick only re-places a box that's already there
+        if lab.wing.rulesBox != nil, !typed, lab.wing.rulesBox != box { lab.live { $0.rulesBox = box } }
     }
 
     /// The wing's lowest and most upstream point: where it sits in its own frame
@@ -126,6 +127,7 @@ extension AppState {
         var p = (d.position == .front ? combo.front : combo.rear) ?? Placement.start(card: d, setup: s)
         p.card = d.id
         if let x = wingLab.carX { p.x = x }
+        if let h = wingLab.carHeight { p.height = h }
         if let h = d.wing.rideHeight { p.height = h * 1000 }
         return p
     }
@@ -195,11 +197,8 @@ extension AppState {
             car.selected = car.combos.first?.id
             saveCar()
         }
-        guard let at = carDraftAt else { return }
-        defer { syncCarRulesBox(picked: true) }
-        if wingLab.wing.rideHeight.map({ abs($0 * 1000 - at.height) > 0.01 }) ?? true {
-            wingLab.edit { $0.rideHeight = at.height / 1000 }
-        }
+        guard carDraftAt != nil else { return }
+        syncCarRulesBox(picked: true)  // the ground stays as it is: on only when turned on
     }
 
     /// Moves the draft on the car: its height is Wing Lab's ride height and its x Wing Lab's carX,
@@ -208,11 +207,15 @@ extension AppState {
         guard carDraft != nil else { return }
         let h = p.height / 1000
         // Held in Wing Lab (its undo) until Save: the combination's own wing stays where it was.
+        let ground = wingLab.wing.rideHeight != nil  // the height goes to the ground only when it's on
         if live {
-            wingLab.live { $0.rideHeight = h }
+            if ground { wingLab.live { $0.rideHeight = h } } else { wingLab.carHeight = p.height }
             wingLab.carX = p.x
         } else {
-            wingLab.editStep { $0.wing.rideHeight = h; $0.carX = p.x }
+            wingLab.editStep {
+                if ground { $0.wing.rideHeight = h } else { $0.carHeight = p.height }
+                $0.carX = p.x
+            }
         }
         syncCarRulesBox()
     }
@@ -243,6 +246,7 @@ extension AppState {
             let p = Placement(card: card.id, x: at.x, height: at.height)
             if position == .front { car.combos[i].front = p } else { car.combos[i].rear = p }
             lab.carX = nil
+            lab.carHeight = nil
         }
         car.estimates = car.estimates.filter { !$0.key.hasPrefix("\(card.id)@") }  // made of the old numbers
         saveCar()
