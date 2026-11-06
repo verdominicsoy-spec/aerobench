@@ -1,17 +1,22 @@
 import Foundation
 
-/// Airfoil coordinates from a CSV file: x and y in the first two columns,
-/// comma, semicolon or tab separated, with or without a header row, as one
-/// Selig loop or as upper and lower surfaces, in any chord length. The result
-/// is a Selig .dat the engine's import reads like any other.
+/// Airfoil coordinates from a CSV file: comma, semicolon or tab separated,
+/// with or without a header row, as one Selig loop or as upper and lower
+/// surfaces, in any chord length. x and y are the columns a header names x and
+/// y, else the last two numbers in each row. A text column, or a label row
+/// before each block of points, names the element the points belong to, so a
+/// multi-element wing export (element,index,x_mm,y_mm) gives one section per
+/// element. Each becomes a Selig .dat the engine's import reads like any other.
 public enum AirfoilCSV {
-    public enum ParseError: LocalizedError, Equatable {
+    public indirect enum ParseError: LocalizedError, Equatable {
         case tooFewPoints(Int)
         case notANumber(line: Int, field: String)
         case oneColumn(line: Int)
         case tooManyBlocks(Int)
         case notAnAirfoil
         case zeroChord
+        case severalElements(Int)
+        case inElement(String, ParseError)
 
         public var errorDescription: String? {
             switch self {
@@ -27,38 +32,96 @@ public enum AirfoilCSV {
                 return "The points are not an airfoil outline: give one loop that starts at the trailing edge (Selig order), or the upper and lower surfaces one after the other."
             case .zeroChord:
                 return "Every point has the same x, so there is no chord."
+            case .severalElements(let n):
+                return "The file holds \(n) elements, not one section."
+            case .inElement(let name, let error):
+                return "\(name): \(error.errorDescription ?? "")"
             }
         }
     }
 
-    /// Points in Selig order (trailing edge, upper surface, leading edge,
-    /// lower surface), scaled to unit chord with the leading edge at x = 0.
+    public struct Element: Equatable, Sendable {
+        /// From an element column or a label row; nil for a lone section.
+        public var name: String?
+        /// Selig order, scaled so x runs 0 to 1 (unit chord for a section at 0°;
+        /// the engine's import derotates a placed element).
+        public var points: [SIMD2<Double>]
+    }
+
+    /// Label rows that only split one section into its surfaces.
+    private static let surfaceWords = ["upper", "lower", "top", "bottom", "suction", "pressure", "surface"]
+
+    /// The points of a file that holds one section.
     public static func parse(_ text: String) throws -> [SIMD2<Double>] {
+        let elements = try parseElements(text)
+        guard elements.count == 1 else { throw ParseError.severalElements(elements.count) }
+        return elements[0].points
+    }
+
+    /// Every element in the file, in the order they first appear.
+    public static func parseElements(_ text: String) throws -> [Element] {
         let lines = text.components(separatedBy: .newlines)
         let separator: Character = text.contains("\t") ? "\t" : text.contains(";") ? ";" : ","
         let trim = CharacterSet.whitespaces.union(CharacterSet(charactersIn: "\"'\u{FEFF}"))
-        var blocks: [[SIMD2<Double>]] = [[]]
+        var columns: (x: Int, y: Int)?  // from a header that names x and y
+        var groups: [(name: String?, blocks: [[SIMD2<Double>]])] = [(nil, [[]])]
+        func breakBlock() {
+            if !groups[groups.count - 1].blocks[groups[groups.count - 1].blocks.count - 1].isEmpty {
+                groups[groups.count - 1].blocks.append([])
+            }
+        }
+        func start(_ name: String) {
+            if groups[groups.count - 1].blocks.joined().isEmpty { groups[groups.count - 1].name = name } else { groups.append((name, [[]])) }
+        }
         for (i, line) in lines.enumerated() {
             let fields = line.split(separator: separator, omittingEmptySubsequences: false)
                 .map { $0.trimmingCharacters(in: trim) }
             if fields.allSatisfy(\.isEmpty) {  // blank line: a break between surfaces
-                if !blocks[blocks.count - 1].isEmpty { blocks.append([]) }
+                breakBlock()
                 continue
             }
             // Double(_:) ignores the user's locale, so "1,184" never reads as 1184. With a
             // semicolon or tab separator a comma can only be a decimal mark.
             let numbers = fields.map { Double(separator == "," ? $0 : $0.replacingOccurrences(of: ",", with: ".")) }
-            if numbers.allSatisfy({ $0 == nil }) {  // header or a label such as "upper"
-                if !blocks[blocks.count - 1].isEmpty { blocks.append([]) }
+            if numbers.allSatisfy({ $0 == nil }) {  // a header, a surface label or an element's name
+                let lower = fields.map { $0.lowercased() }
+                if let x = lower.firstIndex(where: { $0.hasPrefix("x") }), let y = lower.firstIndex(where: { $0.hasPrefix("y") }) {
+                    columns = columns ?? (x, y)  // a header, perhaps repeated before each element
+                } else if lower.contains(where: { f in surfaceWords.contains { f.contains($0) } }) {
+                    breakBlock()
+                } else {
+                    start(fields.filter { !$0.isEmpty }.joined(separator: " "))
+                }
                 continue
             }
             guard fields.count >= 2 else { throw ParseError.oneColumn(line: i + 1) }
-            for k in 0..<2 where numbers[k] == nil || !numbers[k]!.isFinite {
-                throw ParseError.notANumber(line: i + 1, field: fields[k])
+            let numeric = numbers.indices.filter { numbers[$0] != nil }
+            if columns == nil && numeric.count < 2 {
+                throw ParseError.notANumber(line: i + 1, field: fields[numbers.firstIndex(where: { $0 == nil })!])
             }
-            blocks[blocks.count - 1].append(SIMD2(numbers[0]!, numbers[1]!))
+            let (xi, yi) = columns ?? (numeric[numeric.count - 2], numeric[numeric.count - 1])
+            for k in [xi, yi] where k >= fields.count || numbers[k] == nil || !numbers[k]!.isFinite {
+                throw ParseError.notANumber(line: i + 1, field: k < fields.count ? fields[k] : "")
+            }
+            if let label = fields.indices.first(where: { numbers[$0] == nil && !fields[$0].isEmpty && $0 != xi && $0 != yi }),
+               fields[label] != groups[groups.count - 1].name {
+                start(fields[label])
+            }
+            groups[groups.count - 1].blocks[groups[groups.count - 1].blocks.count - 1].append(SIMD2(numbers[xi]!, numbers[yi]!))
         }
-        blocks.removeAll(where: \.isEmpty)
+        let filled = groups.filter { !$0.blocks.joined().isEmpty }
+        guard !filled.isEmpty else { throw ParseError.tooFewPoints(0) }
+        return try filled.map { g in
+            do {
+                return Element(name: g.name, points: try outline(g.blocks.filter { !$0.isEmpty }))
+            } catch let error as ParseError where g.name != nil && filled.count > 1 {
+                throw ParseError.inElement(g.name!, error)
+            }
+        }
+    }
+
+    /// One section's blocks of points as a Selig loop scaled to unit x extent.
+    private static func outline(_ blocks: [[SIMD2<Double>]]) throws -> [SIMD2<Double>] {
         let count = blocks.reduce(0) { $0 + $1.count }
         guard count >= 6 else { throw ParseError.tooFewPoints(count) }
         guard blocks.count <= 2 else { throw ParseError.tooManyBlocks(blocks.count) }

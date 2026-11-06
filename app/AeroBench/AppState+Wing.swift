@@ -48,12 +48,16 @@ extension AppState {
         for url in panel.urls {
             guard ["csv", "tsv"].contains(url.pathExtension.lowercased()) else { paths.append(url.path); continue }
             do {
-                let name = url.deletingPathExtension().lastPathComponent
-                let dat = AirfoilCSV.dat(name: name, points: try AirfoilCSV.parse(String(contentsOf: url, encoding: .utf8)))
+                // A multi-element file (a wing's points) gives one section per element.
+                let stem = url.deletingPathExtension().lastPathComponent
+                let elements = try AirfoilCSV.parseElements(String(contentsOf: url, encoding: .utf8))
                 try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
-                let out = temp.appendingPathComponent(name + ".dat")
-                try dat.write(to: out, atomically: true, encoding: .utf8)
-                paths.append(out.path)
+                for e in elements {
+                    let name = e.name.map { "\(stem) \($0)" } ?? stem
+                    let out = temp.appendingPathComponent(name.replacingOccurrences(of: "/", with: "_") + ".dat")
+                    try AirfoilCSV.dat(name: name, points: e.points).write(to: out, atomically: true, encoding: .utf8)
+                    paths.append(out.path)
+                }
             } catch {
                 failed.append("\(url.lastPathComponent): \(error.localizedDescription)")
             }

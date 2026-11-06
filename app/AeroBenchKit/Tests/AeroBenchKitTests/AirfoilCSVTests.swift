@@ -1,4 +1,5 @@
 import XCTest
+import simd
 @testable import AeroBenchKit
 
 final class AirfoilCSVTests: XCTestCase {
@@ -80,6 +81,44 @@ final class AirfoilCSVTests: XCTestCase {
         XCTAssertEqual(error((0..<10).map { "\($0 % 3),\($0)" }.joined(separator: "\n")), .notAnAirfoil)
         XCTAssertEqual(error((0..<10).map { "2,\($0)" }.joined(separator: "\n")), .zeroChord)
         XCTAssertNotNil(AirfoilCSV.ParseError.notANumber(line: 3, field: "abc").errorDescription)
+    }
+
+    /// Wing Lab's own "Export Wing Points" layout (element,index,x_mm,y_mm), as in
+    /// a three-element S1223 wing: one section per element, named by the column.
+    func testMultiElementWingExport() throws {
+        let wing = Wing(elements: [
+            WingElement(airfoil: Airfoil.naca4("4412")!, chord: 0.48, angle: 8, leadingEdge: .zero, inverted: true),
+            WingElement(airfoil: Airfoil.naca4("4412")!, chord: 0.16, angle: 19, leadingEdge: SIMD2(0.47, 0.03), inverted: true),
+            WingElement(airfoil: Airfoil.naca4("4412")!, chord: 0.08, angle: 32, leadingEdge: SIMD2(0.62, 0.09), inverted: true),
+        ])
+        let text = wing.csvFile()
+        XCTAssertTrue(text.hasPrefix("element,index,x_mm,y_mm\nMain,0,"))
+        let elements = try AirfoilCSV.parseElements(text)
+        XCTAssertEqual(elements.map(\.name), ["Main", "Flap 1", "Flap 2"])
+        for (e, placed) in zip(elements, wing.elements.map { $0.placed() }) {
+            // The same outline, scaled to unit x extent, in Selig order either way round.
+            let lo = placed.map(\.x).min()!, c = placed.map(\.x).max()! - lo
+            let want = placed.map { SIMD2(($0.x - lo) / c, $0.y / c) }
+            XCTAssertEqual(e.points.count, want.count)
+            let forward = zip(e.points, want).allSatisfy { simd_distance($0, $1) < 1e-5 }
+            let backward = zip(e.points, want.reversed()).allSatisfy { simd_distance($0, $1) < 1e-5 }
+            XCTAssertTrue(forward || backward, "\(e.name ?? "")")
+        }
+        XCTAssertThrowsError(try AirfoilCSV.parse(text)) { XCTAssertEqual($0 as? AirfoilCSV.ParseError, .severalElements(3)) }
+
+        // The same without the header, and with a label row and header before each element.
+        let bare = text.split(separator: "\n").dropFirst().joined(separator: "\n")
+        XCTAssertEqual(try AirfoilCSV.parseElements(bare), elements)
+        let labelled = "Main\nx,y\n" + csv(foil) + "\nFlap 1\nx,y\n" + csv(foil, chord: 0.3)
+        let two = try AirfoilCSV.parseElements(labelled)
+        XCTAssertEqual(two.map(\.name), ["Main", "Flap 1"])
+        assertFoil(two[1].points)
+        // A bad element is named in the message.
+        let short = labelled + "\nFlap 2\n0.1,0.2\n0.3,0.4"
+        XCTAssertThrowsError(try AirfoilCSV.parseElements(short)) {
+            XCTAssertEqual($0 as? AirfoilCSV.ParseError, .inElement("Flap 2", .tooFewPoints(2)))
+            XCTAssertEqual(($0 as? LocalizedError)?.errorDescription, "Flap 2: Only 2 x,y rows: an airfoil needs at least six.")
+        }
     }
 
     func testDatRoundTrip() throws {
