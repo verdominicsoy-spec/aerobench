@@ -1,3 +1,4 @@
+import AeroBenchKit
 import AppKit
 import Foundation
 
@@ -22,17 +23,17 @@ extension AppState {
         return c.isEmpty || c.hasPrefix("$(") ? nil : c
     }
 
+    /// When this build was made: its executable's date, for a build with no stamped commit.
+    nonisolated static var builtDate: Date? {
+        Bundle.main.executableURL.flatMap { try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate }
+    }
+
     func checkForUpdates() {
         guard let root = repoRoot else { return }
         Task.detached(priority: .utility) {
             let online = Self.git(["fetch", "--quiet"], in: root) != nil
-            // A stamped build counts every commit since it was built, on GitHub
-            // or only here (committed but not rebuilt); otherwise what GitHub has
-            // that this checkout does not. Offline, only the local ones.
-            let since = Self.builtCommit.map { ["^" + $0] } ?? ["^HEAD"]
-            let tips = (Self.builtCommit != nil ? ["HEAD"] : []) + (online ? ["@{u}"] : [])
-            guard !tips.isEmpty,
-                  let count = Self.git(["rev-list", "--count"] + tips + since, in: root).flatMap({ Int($0) }) else { return }
+            guard let args = UpdateCheck.revListArgs(builtCommit: Self.builtCommit, builtDate: Self.builtDate, online: online),
+                  let count = Self.git(["rev-list"] + args, in: root).flatMap({ Int($0) }) else { return }
             await MainActor.run { self.updatesBehind = count }
         }
     }
