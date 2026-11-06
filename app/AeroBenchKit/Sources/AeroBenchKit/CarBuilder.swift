@@ -308,6 +308,17 @@ public enum CarRules {
         return r
     }
 
+    /// The inverse of `wingBox`: where the wing sits on the car for it to sit
+    /// where it does in `box`. Moving the wing on the canvas moves it on the car.
+    public static func placement(for card: WingCard, in box: RulesBox, setup: CarSetup) -> Placement {
+        let b = self.box(card.position, setup: setup, span: card.wing.span)
+        let pts = card.wing.elements.flatMap { $0.placed() }
+        let minX = pts.map(\.x).min() ?? 0, minY = pts.map(\.y).min() ?? 0
+        let front = b.maxX + (box.minX - minX) * 1000  // car x of the leading edge
+        let bottom = b.minZ - (box.minY - minY) * 1000  // car z of the lowest point
+        return Placement(card: card.id, x: front - setup.axleX(card.position == .front ? "F" : "R"), height: bottom - setup.groundZ)
+    }
+
     /// T8.2.2 widths for the rear wing's zone, bottom to top (car mm): below the
     /// tyre tops inside the wheels; from the rear tyre tops to 700 mm, 150 mm
     /// inboard of the rear tyres; from 700 to 1100 mm, out to the rear wheels.

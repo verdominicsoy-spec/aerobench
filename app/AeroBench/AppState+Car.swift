@@ -87,6 +87,24 @@ extension AppState {
         let lab = wingLab
         guard let s = rulesSetup, !lab.wing.elements.isEmpty else { return }
         let d = carDraft ?? WingCard.make(wing: lab.wing, cl: 0, cd: 0, solver: "", id: "draft", name: "", revision: -1)
+        // On a car, an edit that isn't a pick either moved the wing on the canvas
+        // (it moves on the car; the box stays) or moved its placement elsewhere
+        // (Car view, ride height, span: the box moves). Only a pick re-clamps.
+        if !picked, car.setup != nil, let box = lab.wing.rulesBox, let stored = storedPlacement(of: d, setup: s) {
+            let implied = CarRules.placement(for: d, in: box, setup: s)
+            let last = lab.rulesAnchor, now = anchor(lab.wing)
+            lab.rulesAnchor = now
+            guard abs(implied.x - stored.x) > 0.01 || abs(implied.height - stored.height) > 0.01 else { return }
+            if let last, last != now {
+                lab.carX = implied.x
+                lab.live { $0.rideHeight = implied.height / 1000 }
+            } else {
+                let next = CarRules.wingBox(d, placement: stored, setup: s)
+                lab.live { $0.rulesBox = next }
+            }
+            return
+        }
+        defer { lab.rulesAnchor = anchor(lab.wing) }
         guard let at = rulesPlacement(of: d) else { return }
         // On a combination the wing is on the car, so over the ground at its place there.
         if picked, car.selectedCombo != nil, lab.wing.rideHeight == nil { lab.live { $0.rideHeight = at.height / 1000 } }
@@ -94,6 +112,22 @@ extension AppState {
         // Without a base car, a box someone typed stays; Wing Lab's old fixed one is replaced
         let typed = car.setup == nil && lab.wing.rulesBox.map { $0 != Wing.defaultRulesBox(lab.wing.rulesFor) } ?? false
         if (picked || lab.wing.rulesBox != nil), !typed, lab.wing.rulesBox != box { lab.live { $0.rulesBox = box } }
+    }
+
+    /// The wing's lowest and most upstream point: where it sits in its own frame
+    private func anchor(_ wing: Wing) -> SIMD2<Double> {
+        let pts = wing.elements.flatMap { $0.placed() }
+        return SIMD2(pts.map(\.x).min() ?? 0, pts.map(\.y).min() ?? 0)
+    }
+
+    /// Where the wing is on the car as stored (combination, carX, ride height), not clamped into its box
+    private func storedPlacement(of d: WingCard, setup s: CarSetup) -> Placement? {
+        let combo = car.selectedCombo ?? Combination(id: "", name: "")
+        var p = (d.position == .front ? combo.front : combo.rear) ?? Placement.start(card: d, setup: s)
+        p.card = d.id
+        if let x = wingLab.carX { p.x = x }
+        if let h = d.wing.rideHeight { p.height = h * 1000 }
+        return p
     }
 
     // MARK: Rules box without a base car

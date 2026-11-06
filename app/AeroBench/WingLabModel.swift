@@ -153,6 +153,9 @@ final class WingLabModel {
     var meshPath: CGPath?
     var meshOf: Wing?
     var meshInfo: String?
+
+    /// The wing's anchor when its car box was last placed, to tell a canvas move from a placement change
+    @ObservationIgnored var rulesAnchor: SIMD2<Double>?
     var su2Job: JobItem?
 
     // Live estimate: panel method and NeuralFoil, through the warm engine
@@ -742,6 +745,7 @@ final class WingLabModel {
         undoNames = []
         redoNames = []
         undoManager?.removeAllActions(withTarget: self)
+        rulesAnchor = nil
         self.wing = wing
         cardID = nil
         carX = nil

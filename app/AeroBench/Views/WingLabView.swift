@@ -378,6 +378,7 @@ struct WingCanvas: View {
     @State private var drag: DragKind?
     @State private var panStart = CGSize.zero
     @State private var gestureStart: WingElement?
+    @State private var fitDuringDrag: Wing?  // the view holds its fit while a drag lasts
     @State private var hover: SIMD2<Double>?  // the pointer, wing frame (metres)
 
     enum DragKind { case move(Int), rotate(Int), resize(Int), pan }
@@ -385,7 +386,7 @@ struct WingCanvas: View {
     var body: some View {
         let lab = app.wingLab
         GeometryReader { geo in
-            let m = WingMapping(wing: lab.wing, size: geo.size, zoom: zoom, pan: pan)
+            let m = WingMapping(wing: fitDuringDrag ?? lab.wing, size: geo.size, zoom: zoom, pan: pan)
             ZStack(alignment: .topLeading) {
                 Canvas { ctx, _ in draw(ctx, m, lab) }
                     .background(Color(nsColor: .textBackgroundColor))
@@ -712,6 +713,7 @@ struct WingCanvas: View {
         DragGesture(minimumDistance: 2)
             .onChanged { v in
                 if drag == nil {
+                    fitDuringDrag = lab.wing
                     drag = hit(v.startLocation, m, lab)
                     switch drag {
                     case .move(let i), .rotate(let i), .resize(let i):
@@ -754,6 +756,7 @@ struct WingCanvas: View {
             .onEnded { _ in
                 drag = nil
                 gestureStart = nil
+                fitDuringDrag = nil
             }
     }
 
