@@ -12,7 +12,7 @@ struct FlowSetupPanel: View {
         @Bindable var flow = app.flow
         let cal = flow.calibration
         ScrollView {
-            VStack(alignment: .leading, spacing: S37.Space.s6) {
+            VStack(alignment: .leading, spacing: S37.Space.s4) {
                 videoSection(flow)
                 if flow.sourceURL != nil {
                     legendSection(flow, cal)
@@ -27,7 +27,7 @@ struct FlowSetupPanel: View {
                     }
                 }
             }
-            .padding(S37.Space.s5)
+            .padding(S37.Space.s3)
         }
     }
 
@@ -46,7 +46,7 @@ struct FlowSetupPanel: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
             }
-            .padding(.vertical, S37.Space.s2)
+            .padding(.vertical, S37.Space.s1)
             if let error = flow.loadError {
                 Label(error, systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
             }
@@ -151,7 +151,7 @@ struct FlowSetupPanel: View {
                     }
                 }
             }
-            .padding(.vertical, S37.Space.s2)
+            .padding(.vertical, S37.Space.s1)
             NumberField(label: "Its real width", unit: "mm", value: Binding(
                 get: { (cal.measure?.width ?? 0) * 1000 }, set: { flow.setMeasure(width: $0 / 1000) }))
             NumberField(label: "Its middle is at \(right)", unit: "mm", value: Binding(
@@ -214,7 +214,7 @@ struct FlowSetupPanel: View {
                     .buttonStyle(S37ButtonStyle(kind: .prominent))
                     .disabled(!ready || isRunning(flow.reconstructJob))
             }
-            .padding(.vertical, S37.Space.s2)
+            .padding(.vertical, S37.Space.s1)
             if let job = flow.reconstructJob {
                 JobInlineStatus(job: job)
                 if job.status == .failed { FailureAdvice(message: job.message ?? "", detail: job.detail ?? "") }

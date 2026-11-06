@@ -137,7 +137,7 @@ struct JobDetailView: View {
 
             LogView(lines: job.log)
         }
-        .padding(S37.Space.s5)
+        .padding(S37.Space.s3)
     }
 
     /// Monospaced text in the pane's inset tint, scrolling past `maxHeight`

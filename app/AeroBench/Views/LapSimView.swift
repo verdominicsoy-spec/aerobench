@@ -64,7 +64,7 @@ struct LapSimSetupView: View {
         let usesPlaceholders = CarField.all.contains { field in setup.cars.contains { field.isPlaceholder($0) } }
 
         ScrollView {
-            VStack(alignment: .leading, spacing: S37.Space.s6) {
+            VStack(alignment: .leading, spacing: S37.Space.s4) {
                 S37Section("Track") {
                     S37Row("Track") {
                         Picker("Track", selection: edit(\.track.kind, "Change Track")) {
@@ -111,7 +111,7 @@ struct LapSimSetupView: View {
                         }
                         .buttonStyle(S37ButtonStyle(kind: .plain))
                     }
-                    .padding(.vertical, S37.Space.s2)
+                    .padding(.vertical, S37.Space.s1)
                 }
 
                 S37Section("Simulation") {
@@ -139,7 +139,7 @@ struct LapSimSetupView: View {
                     Text("How it's calculated").font(.system(size: 14, weight: .semibold)).foregroundStyle(S37.C.inkSecondary)
                 }
             }
-            .padding(S37.Space.s5)
+            .padding(S37.Space.s3)
         }
         .scrollIndicators(.automatic)
         .sheet(item: $editor, onDismiss: {
@@ -315,10 +315,10 @@ struct LapSimResultsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            LapSimRunBar().padding(S37.Space.s5)
+            LapSimRunBar().padding(S37.Space.s3)
             if let output = app.lapSimOutput {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: S37.Space.s6) {
+                    VStack(alignment: .leading, spacing: S37.Space.s4) {
                         header(output)
                         SummaryGrid(result: output.result)
                         if output.result.a.sensitivity != nil {

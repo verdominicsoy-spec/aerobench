@@ -253,7 +253,7 @@ extension View {
             .background(S37PaneFill(radius: radius))
             .overlay(S37PaneRim(radius: radius))
             .modifier(S37PaneRegistration(radius: radius))
-            .padding(6)
+            .padding(3)
     }
 }
 
@@ -400,12 +400,12 @@ struct S37FieldRow: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: S37.Space.s1) {
             HStack(spacing: S37.Space.s2) {
-                Text(label).font(.system(size: 14)).foregroundStyle(S37.C.ink).fixedSize(horizontal: false, vertical: true)
+                Text(label).font(.system(size: 13)).foregroundStyle(S37.C.ink).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: S37.Space.s2)
                 TextField(label, value: $value, format: .number, prompt: prompt.map { Text($0) })
                     .textFieldStyle(.plain).labelsHidden().multilineTextAlignment(.trailing)
-                    .font(.system(size: 14)).monospacedDigit()
-                    .padding(.horizontal, S37.Space.s2).frame(width: width, height: 28)
+                    .font(.system(size: 13)).monospacedDigit()
+                    .padding(.horizontal, S37.Space.s2).frame(width: width, height: 24)
                     .background(RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).fill(S37.C.recess))
                     .overlay {
                         if error != nil {
@@ -446,19 +446,20 @@ struct S37Section<Rows: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: S37.Space.s2) {
-            if let title { Text(title).font(.system(size: 16, weight: .semibold)) }
+        VStack(alignment: .leading, spacing: S37.Space.s1) {
+            if let title { Text(title).font(.system(size: 14, weight: .semibold)) }
             VStack(alignment: .leading, spacing: 0) {
                 Group(subviews: rows) { subviews in
                     ForEach(Array(subviews.enumerated()), id: \.offset) { i, row in
                         if i > 0 { Rectangle().fill(S37.C.separator).frame(height: 1).padding(.horizontal, S37.Space.s3) }
                         row
                             .padding(.horizontal, S37.Space.s3)
-                            .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+                            .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
                     }
                 }
             }
-            .font(.system(size: 14))
+            .font(.system(size: 13))
+            .controlSize(.small)  // dense rows: compact buttons, pickers and switches
             .labeledContentStyle(S37LabeledContentStyle())
             .toggleStyle(.switch)  // settings apply at once
             .background(RoundedRectangle(cornerRadius: S37.Radius.lgIn, style: .continuous).fill(S37.C.inset))

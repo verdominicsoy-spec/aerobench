@@ -421,7 +421,9 @@ struct WingCanvas: View {
                     Text("A: " + a.version).font(.caption).foregroundStyle(S37.C.chart6).lineLimit(1)
                 }
             }
+            .canvasPlate()
             .help("\"Edited\": changed since it was put there; Undo goes back")
+            HStack(alignment: .top, spacing: 6) {
             HStack(spacing: 6) {
                 Text("Live estimate").font(.system(size: 12, weight: .semibold)).foregroundStyle(S37.C.inkSecondary)
                 // NeuralFoil's viscous numbers once they are in; the panel method's lift until then.
@@ -438,10 +440,15 @@ struct WingCanvas: View {
                         .font(.caption.monospacedDigit())
                 }
                 fieldControls(lab)
+            }
+            .canvasPlate()
                 Spacer()
-                Button { zoom /= 1.25 } label: { Image(systemName: "minus.magnifyingglass") }
-                Button { zoom *= 1.25 } label: { Image(systemName: "plus.magnifyingglass") }
-                Button("Fit") { zoom = 1; pan = .zero }
+                HStack(spacing: 6) {
+                    Button { zoom /= 1.25 } label: { Image(systemName: "minus.magnifyingglass") }
+                    Button { zoom *= 1.25 } label: { Image(systemName: "plus.magnifyingglass") }
+                    Button("Fit") { zoom = 1; pan = .zero }
+                }
+                .canvasPlate()
             }
             .buttonStyle(.borderless)
             if let stage = lab.designStage {
@@ -450,6 +457,7 @@ struct WingCanvas: View {
                     Text(stage).font(.caption).lineLimit(1)
                     ProgressView().controlSize(.small)
                 }
+                .canvasPlate()
             }
             if let job = lab.optimiseJob, !job.status.isFinished {
                 HStack(spacing: 8) {
@@ -457,6 +465,7 @@ struct WingCanvas: View {
                     ProgressView(value: job.progress, total: 100).frame(width: 120)
                     Text(job.progressMessage).font(.caption.monospacedDigit()).foregroundStyle(S37.C.inkSecondary).lineLimit(1)
                 }
+                .canvasPlate()
             }
             if let t = lab.replayTrial, let i = lab.replayIndex {
                 HStack(spacing: 8) {
@@ -472,36 +481,46 @@ struct WingCanvas: View {
                     }
                     Text("dashed: the wing as drawn").font(.caption2).foregroundStyle(S37.C.inkSecondary)
                 }
+                .canvasPlate()
             }
             if lab.pinned != nil, lab.replayIndex == nil {
                 Text("Dashed slate: A, the pinned design. The wing you edit is B.").font(.caption2).foregroundStyle(S37.C.chart6)
+                    .canvasPlate()
             }
             if let error = lab.previewError {
                 Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(S37.C.clayInk)
+                    .canvasPlate()
             }
             ForEach(Array(lab.wing.issues.enumerated()), id: \.offset) { _, issue in
                 Label(issue.message, systemImage: "exclamationmark.octagon").font(.caption).foregroundStyle(S37.C.critical)
+                    .canvasPlate()
             }
             if let r = lab.ransResult, lab.ransField != nil, lab.fieldOnCanvas {
                 if !lab.fieldIsCurrent {
                     Text("Flow field hidden: the wing has changed since the last RANS run.")
                         .font(.caption2).foregroundStyle(S37.C.inkSecondary)
+                        .canvasPlate()
                 } else if !r.converged {
                     Text("This RANS run did not converge: the field is not a result.").font(.caption2).foregroundStyle(S37.C.clayInk)
+                        .canvasPlate()
                 }
             }
             Spacer()
             if let scalar = shownScalar(lab) {
-                if lab.showChange, let change = lab.changeImage(scalar.key) {
-                    ChangeColorbar(name: scalar.name, limit: change.limit)
-                } else {
-                    FieldColorbar(scalar: scalar)
+                Group {
+                    if lab.showChange, let change = lab.changeImage(scalar.key) {
+                        ChangeColorbar(name: scalar.name, limit: change.limit)
+                    } else {
+                        FieldColorbar(scalar: scalar)
+                    }
                 }
+                .canvasPlate()
             }
             Text("Drop an airfoil to add or swap an element. Drag to move; round handle turns, square resizes.")
                 .font(.caption2).foregroundStyle(S37.C.inkSecondary)
+                .canvasPlate()
         }
-        .padding(8)
+        .padding(6)
     }
 
     /// The scalar on the canvas, if the field is shown.
@@ -522,8 +541,6 @@ struct WingCanvas: View {
                 ForEach(f.scalars) { Text($0.name).tag($0.key) }
             }
             .pickerStyle(.menu).fixedSize().font(.caption)
-            .padding(.horizontal, 4)
-            .background(.regularMaterial, in: Capsule())  // readable over the field image
             .disabled(!lab.fieldIsCurrent)
             .help("The last RANS run's flow over the plane, behind the wing")
             if lab.canShowChange {
@@ -1077,7 +1094,7 @@ struct WingInspector: View {
         @Bindable var lab = app.wingLab
         let wing = lab.wing
         ScrollView {
-          VStack(alignment: .leading, spacing: S37.Space.s6) {
+          VStack(alignment: .leading, spacing: S37.Space.s4) {
             DesignCard()
             S37Section("Elements") {
                 ForEach(Array(wing.elements.enumerated()), id: \.element.id) { i, e in
@@ -1104,7 +1121,7 @@ struct WingInspector: View {
                 }
                 .toggleStyle(S37ToggleButtonStyle())
                 .controlSize(.small)
-                .padding(.vertical, S37.Space.s2)
+                .padding(.vertical, S37.Space.s1)
             }
 
             if let i = lab.selection, wing.elements.indices.contains(i) {
@@ -1147,7 +1164,7 @@ struct WingInspector: View {
                 }
                 .buttonStyle(S37ButtonStyle())
                 .controlSize(.small)
-                .padding(.vertical, S37.Space.s2)
+                .padding(.vertical, S37.Space.s1)
             }
 
             DisclosureGroup("How it's calculated") {
@@ -1163,7 +1180,7 @@ struct WingInspector: View {
             }
             .font(.system(size: 14, weight: .semibold))
           }
-          .padding(S37.Space.s5)
+          .padding(S37.Space.s3)
         }
     }
 
@@ -1188,7 +1205,7 @@ struct WingInspector: View {
             }
             .buttonStyle(S37ButtonStyle())
             .controlSize(.small)
-            .padding(.vertical, S37.Space.s2)
+            .padding(.vertical, S37.Space.s1)
         }
     }
 
@@ -2194,5 +2211,13 @@ struct FittingPicker<Value: Hashable, Content: View>: View {
             Picker(title, selection: $selection, content: content)
                 .pickerStyle(.menu)
         }
+    }
+}
+
+extension View {
+    /// Text over the canvas sits on a dark tinted plate, so it reads over any field image
+    func canvasPlate() -> some View {
+        padding(.horizontal, 6).padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).fill(S37.C.glassTinted))
     }
 }

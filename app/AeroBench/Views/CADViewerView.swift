@@ -93,7 +93,7 @@ struct CADToolbar: View {
         .toggleStyle(S37ToggleButtonStyle())
         .controlSize(.small)
         .padding(.horizontal, S37.Space.s2)
-        .padding(.vertical, S37.Space.s2)
+        .padding(.vertical, S37.Space.s1)
     }
 }
 
@@ -111,7 +111,7 @@ struct CADSidePanel: View {
     @ViewBuilder private var inspector: some View {
         @Bindable var cad = app.cad
         ScrollView {
-            VStack(alignment: .leading, spacing: S37.Space.s6) {
+            VStack(alignment: .leading, spacing: S37.Space.s4) {
                 S37Section("File") {
                     if let url = cad.fileURL {
                         LabeledContent("Name") { Text(url.lastPathComponent).lineLimit(1).truncationMode(.middle) }
@@ -140,7 +140,7 @@ struct CADSidePanel: View {
                     BodyRepairSection()
                     S37Section("Edit") {
                         Button("Edit part") { app.enterPartEdit() }.buttonStyle(S37ButtonStyle())
-                            .padding(.vertical, S37.Space.s2)
+                            .padding(.vertical, S37.Space.s1)
                     }
                 }
                 if let model = cad.model {
@@ -148,11 +148,11 @@ struct CADSidePanel: View {
                         if !cad.hidden.isEmpty {
                             Button("Show all") { cad.hidden = [] }.buttonStyle(S37ButtonStyle(kind: .plain))
                         }
-                        PartTree(model: model).padding(.vertical, S37.Space.s2)
+                        PartTree(model: model).padding(.vertical, S37.Space.s1)
                     }
                 }
             }
-            .padding(S37.Space.s5)
+            .padding(S37.Space.s3)
         }
     }
 }
@@ -219,7 +219,7 @@ struct GeometryCheckSection: View {
             Button(cad.report == nil ? "Check geometry" : "Check again") { app.checkGeometry() }
                 .buttonStyle(S37ButtonStyle())
                 .disabled(cad.checkJob.map { !$0.status.isFinished } ?? false)
-                .padding(.vertical, S37.Space.s2)
+                .padding(.vertical, S37.Space.s1)
             if let job = cad.checkJob, !job.status.isFinished {
                 HStack {
                     ProgressView(value: job.progress, total: 100)
@@ -245,7 +245,7 @@ struct GeometryCheckSection: View {
                 let passed = report.allIssues.filter { $0.count == 0 }.map(\.title)
                 if !passed.isEmpty {
                     Text("Passed: " + passed.joined(separator: ", ")).font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
-                        .fixedSize(horizontal: false, vertical: true).padding(.vertical, S37.Space.s2)
+                        .fixedSize(horizontal: false, vertical: true).padding(.vertical, S37.Space.s1)
                 }
                 if report.anyFixable {
                     HStack {
@@ -255,7 +255,7 @@ struct GeometryCheckSection: View {
                             .help("Merges duplicate vertices, drops degenerate and duplicate faces, fixes normals and closes small holes (STEP/IGES: shape fixing and sewing). Pierced faces and non-manifold edges stay.")
                         if let job = cad.repairJob, !job.status.isFinished { ProgressView().controlSize(.small) }
                     }
-                    .padding(.vertical, S37.Space.s2)
+                    .padding(.vertical, S37.Space.s1)
                 }
                 if let summary = cad.repairSummary {
                     Text(summary).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
@@ -284,7 +284,7 @@ struct BodyRepairSection: View {
                     Text(job.progressMessage).font(.system(size: 12)).lineLimit(1)
                 }
             }
-            .padding(.vertical, S37.Space.s2)
+            .padding(.vertical, S37.Space.s1)
             NumberField(label: "Fix gaps up to", unit: "mm", digits: 2,
                         value: Binding(get: { cad.bodyLimitMM }, set: { cad.bodyLimitMM = min(max($0, 0.01), 10) }))
                 .help("Gaps from this size to 10 mm are listed for you to accept or skip; wider ones are never closed")
@@ -312,7 +312,7 @@ struct BodyRepairSection: View {
                         Text("\(cad.pendingBodyItems) to decide").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
                         Button("Apply") { app.applyBodyRepair() }.buttonStyle(S37ButtonStyle()).disabled(running)
                     }
-                    .padding(.vertical, S37.Space.s2)
+                    .padding(.vertical, S37.Space.s1)
                 }
                 ForEach(reports) { item in
                     Label(item.kind == "wide_gap"

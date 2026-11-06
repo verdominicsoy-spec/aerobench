@@ -19,7 +19,7 @@ struct WelcomeView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: S37.Space.s6) {
+            VStack(alignment: .leading, spacing: S37.Space.s4) {
                 VStack(alignment: .leading, spacing: S37.Space.s3) {
                     Text("No project open").font(.system(size: 20, weight: .semibold))
                     Text("A project is a folder: project.json, one subfolder per tool, and jobs/ for every run.")
@@ -63,7 +63,7 @@ struct ProjectDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: S37.Space.s6) {
+            VStack(alignment: .leading, spacing: S37.Space.s4) {
                 S37Section("Project") {
                     S37Row("Name") {
                         TextField("Name", text: Binding(get: { project.manifest.name },

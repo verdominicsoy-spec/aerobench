@@ -35,7 +35,7 @@ struct PrismLayerView: View {
     }
 
     private func page(_ layer: PrismLayer?) -> some View {
-        VStack(alignment: .leading, spacing: S37.Space.s6) {
+        VStack(alignment: .leading, spacing: S37.Space.s4) {
             if let layer { results(layer) }  // otherwise the bad field says how to fix it
             inputPane
         }
@@ -78,7 +78,7 @@ struct PrismLayerView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .s37Pane(padding: S37.Space.s5)
+        .s37Pane(padding: S37.Space.s3)
     }
 
     private var hairline: some View { Rectangle().fill(S37.C.separator).frame(width: 1) }
@@ -152,7 +152,7 @@ struct PrismLayerView: View {
     }
 
     private var inputPane: some View {
-        VStack(alignment: .leading, spacing: S37.Space.s5) {
+        VStack(alignment: .leading, spacing: S37.Space.s3) {
             HStack(spacing: S37.Space.s4) {
                 Menu("Preset") {
                     Button("Wing / floor") { fill(yPlus: 1, layers: nil, stretching: 1.2) }
@@ -188,7 +188,7 @@ struct PrismLayerView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .s37Pane(padding: S37.Space.s5)
+        .s37Pane(padding: S37.Space.s3)
     }
 
     private var flowGroup: some View {

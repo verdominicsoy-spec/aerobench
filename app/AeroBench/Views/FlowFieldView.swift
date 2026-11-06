@@ -61,7 +61,7 @@ struct FlowAdvancedSettings: View {
     var body: some View {
         @Bindable var flow = app.flow
         let cal = flow.calibration
-        VStack(alignment: .leading, spacing: S37.Space.s6) {
+        VStack(alignment: .leading, spacing: S37.Space.s4) {
             S37Section("Source") {
                 if flow.isVideo { VideoTiming() }
                 DisclosureGroup("Capture guide") { CaptureGuide() }
@@ -72,7 +72,7 @@ struct FlowAdvancedSettings: View {
                     Button(cal.crop == nil ? "Draw crop" : "Redraw crop") { flow.tool = .crop }.buttonStyle(S37ButtonStyle())
                     Button("Add exclusion") { flow.tool = .exclude }.buttonStyle(S37ButtonStyle())
                 }
-                .padding(.vertical, S37.Space.s2)
+                .padding(.vertical, S37.Space.s1)
                 if let job = flow.detectJob, job.status == .failed {
                     JobInlineStatus(job: job)
                 }
@@ -125,7 +125,7 @@ struct FlowAdvancedSettings: View {
                 }
                 if cal.spatial.mode == "points" {
                     ForEach(0..<max(cal.spatial.frames.count, 1), id: \.self) { slot in
-                        CalFrameEditor(slot: slot, perspective: cal.spatial.frames.count == 2).padding(.vertical, S37.Space.s2)
+                        CalFrameEditor(slot: slot, perspective: cal.spatial.frames.count == 2).padding(.vertical, S37.Space.s1)
                     }
                     Toggle(cal.ground.track ? "Also calibrate a second frame (corrects sideways drift)" : "Perspective camera (calibrate a second frame)", isOn: Binding(
                         get: { cal.spatial.frames.count == 2 },
@@ -217,7 +217,7 @@ struct FlowAdvancedSettings: View {
                     Spacer()
                     Button("Pick from frame") { flow.tool = .maskColor }.buttonStyle(S37ButtonStyle())
                 }
-                .padding(.vertical, S37.Space.s2)
+                .padding(.vertical, S37.Space.s1)
                 NumberField(label: "Mask tolerance", unit: "ΔE", value: $flow.calibration.maskTolerance)
                 NumberField(label: "Reject colours further than", unit: "ΔE", value: $flow.calibration.threshold)
                 Stepper("Median filter \(cal.median <= 1 ? "off" : "\(cal.median) × \(cal.median)")", value: $flow.calibration.median, in: 1...7, step: 2)
@@ -238,7 +238,7 @@ struct FlowAdvancedSettings: View {
                     Button("Save calibration…") { app.saveFlowCalibrationAs() }.buttonStyle(S37ButtonStyle())
                     Button("Load…") { app.loadFlowCalibration() }.buttonStyle(S37ButtonStyle())
                 }
-                .padding(.vertical, S37.Space.s2)
+                .padding(.vertical, S37.Space.s1)
             }
         }
     }
@@ -282,7 +282,7 @@ struct NumberField: View {
             TextField(label, value: $value, format: .number.precision(.fractionLength(0...digits)))
                 .textFieldStyle(.plain).labelsHidden()
                 .multilineTextAlignment(.trailing).monospacedDigit()
-                .padding(.horizontal, S37.Space.s2).frame(width: 90, height: 28)
+                .padding(.horizontal, S37.Space.s2).frame(width: 90, height: 24)
                 .background(RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).fill(S37.C.recess))
             // At least 30 wide so short units line up, wider rather than wrapping (kg/m³).
             Text(unit).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkTertiary)
@@ -661,7 +661,7 @@ struct FlowExplorePanel: View {
     var body: some View {
         @Bindable var flow = app.flow
         ScrollView {
-          VStack(alignment: .leading, spacing: S37.Space.s6) {
+          VStack(alignment: .leading, spacing: S37.Space.s4) {
             if let v = flow.volume {
                 S37Section("Volume") {
                     LabeledContent("Grid", value: "\(v.nx) × \(v.ny) × \(v.nz)")
@@ -674,7 +674,7 @@ struct FlowExplorePanel: View {
 
                 S37Section("Slice") {
                     S37Segmented(options: FlowVolume.Cut.allCases.map { ($0, $0.rawValue) }, selection: $flow.sliceCut)
-                        .padding(.vertical, S37.Space.s2)
+                        .padding(.vertical, S37.Space.s1)
                     let n = v.sliceCount(flow.sliceCut), normal = v.axes(flow.sliceCut).normal
                     Slider(value: Binding(get: { Double(flow.sliceIndex) }, set: { flow.sliceIndex = Int($0.rounded()) }),
                            in: 0...Double(max(n - 1, 1)))
@@ -685,7 +685,7 @@ struct FlowExplorePanel: View {
 
                 S37Section("Isosurfaces", footer: "Releasing a slider recomputes. Empty space counts as the top of the range, so surfaces close around bodies.") {
                     ForEach($flow.isoLevels) { $iso in
-                        IsoRow(iso: $iso, volume: v).padding(.vertical, S37.Space.s2)
+                        IsoRow(iso: $iso, volume: v).padding(.vertical, S37.Space.s1)
                     }
                     Button("Add isosurface") { app.addIsosurface() }.buttonStyle(S37ButtonStyle())
                 }
@@ -766,7 +766,7 @@ struct FlowExplorePanel: View {
                 .buttonStyle(S37ButtonStyle())
             }
           }
-          .padding(S37.Space.s5)
+          .padding(S37.Space.s3)
         }
     }
 

@@ -16,7 +16,7 @@ struct PartEditView: View {
     var body: some View {
         @Bindable var edit = app.partEdit
         ScrollView {
-          VStack(alignment: .leading, spacing: S37.Space.s6) {
+          VStack(alignment: .leading, spacing: S37.Space.s4) {
             HStack {
                 Text("Editing part").font(.system(size: 16, weight: .semibold))
                 Spacer()
@@ -44,7 +44,7 @@ struct PartEditView: View {
                             .help(kind.title)  // icon-only: the tooltip is its name
                     }
                 }
-                .padding(.vertical, S37.Space.s2)
+                .padding(.vertical, S37.Space.s1)
                 if edit.tool != nil { ToolPanel() }
             }
             S37Section("Features") {
@@ -74,7 +74,7 @@ struct PartEditView: View {
                               || !(edit.reply?.features.allSatisfy { $0.status == "ok" } ?? false))
             }
           }
-          .padding(S37.Space.s5)
+          .padding(S37.Space.s3)
         }
     }
 }

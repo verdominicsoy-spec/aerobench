@@ -71,9 +71,9 @@ struct ContentView: View {
         S37Root(motif: app.tool.motif) {
             VStack(alignment: .leading, spacing: 0) {
                 ToolHeader(takeaway: takeaway)
-                    .padding(.horizontal, S37.Space.s6)
-                    .padding(.top, S37.Space.s2)
-                    .padding(.bottom, S37.Space.s1)
+                    .padding(.horizontal, S37.Space.s4)
+                    .padding(.top, S37.Space.s1)
+                    .padding(.bottom, 2)
                 if app.updatesBehind > 0, !app.updateDismissed {
                     UpdateBanner()
                         .padding(.horizontal, S37.Space.s4)
@@ -97,7 +97,7 @@ struct ContentView: View {
                         JobsView()
                     }
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 6)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onPreferenceChange(ToolTakeawayKey.self) { takeaway = $0 }
                 Dock(selection: Binding(get: { app.tool }, set: { app.tool = $0 }), tools: Tool.docked) { tool in

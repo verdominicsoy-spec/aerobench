@@ -40,7 +40,7 @@ struct ModelHelpView: View {
                 .font(.caption).foregroundStyle(S37.C.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(S37.Space.s5)
+        .padding(S37.Space.s3)
         .frame(width: 420, alignment: .leading)
     }
 }
