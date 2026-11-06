@@ -1,0 +1,197 @@
+' ImportAeroBenchWing.CATScript
+'
+' Brings AeroBench Wing Lab point CSVs (Export > Points as CSV..., file
+' "wing_points_mm.csv") into a new CATIA V5 Part.
+'
+' Run it:
+'   1. Copy this file somewhere the CATIA machine can see it (a Parallels
+'      shared folder such as \\Mac\Home\... works).
+'   2. In CATIA: Tools > Macro > Macros... > Macro libraries... >
+'      Library type "Directories" > Add existing library > pick the folder.
+'   3. Pick ImportAeroBenchWing.CATScript and press Run.
+'   4. Choose a CSV. The macro asks for another one until you press Cancel,
+'      so a front and a rear wing land in the same Part.
+'
+' What it builds, per CSV: a geometrical set named after the file, and in it
+' one geometrical set per element ("Main", "Flap 1", ...) holding the points
+' (hidden), a spline through them, a straight trailing-edge line, and the
+' closed curve "Main" (a Join of the two), ready to extrude along Y or loft.
+'
+' The CSV: header "element,index,x_mm,y_mm", one row per point, Selig order
+' (upper trailing edge, round the leading edge, lower trailing edge). Points
+' are in mm in the wing's own frame (x downstream, y up), with each
+' element's chord, angle, position and inversion already applied. The whole
+' wing's angle to the freestream and its place on the car are not in the
+' file: move the file's geometrical set into place in CATIA.
+'
+' Axes: wing x goes to CATIA X, wing y to CATIA Z, at Y = 0 (side view on
+' the XZ plane, the usual car axes with X rearward and Z up). Change
+' MakePoint to map them differently.
+'
+' Trailing edges: an open one (first and last points apart) is closed by the
+' line between them. A closed one (first and last points together) drops
+' the repeated last point, and the line spans the last short panel, so the
+' trailing edge stays a sharp corner rather than being rounded by a closed
+' spline.
+'
+' Written for CATIA V5 automation without access to CATIA: untested in CATIA.
+
+Option Explicit
+
+Const CLOSED_TE_MM = 0.01  ' first and last points closer than this: closed trailing edge
+
+Sub CATMain()
+    Dim partDoc As PartDocument
+    Set partDoc = CATIA.Documents.Add("Part")
+    Dim part1 As Part
+    Set part1 = partDoc.Part
+
+    Dim sep As String
+    sep = Mid(CStr(1.5), 2, 1)  ' this Windows locale's decimal separator; the CSV always uses "."
+
+    Dim hidden As Selection
+    Set hidden = partDoc.Selection
+    hidden.Clear
+
+    Dim path As String, count As Integer
+    count = 0
+    Do
+        path = CATIA.FileSelectionBox("AeroBench wing points CSV (Cancel when done)", "*.csv", 0)
+        If path = "" Then Exit Do
+        If ImportFile(part1, path, sep, hidden) Then count = count + 1
+    Loop
+
+    If hidden.Count > 0 Then hidden.VisProperties.SetShow 1  ' 1 = hide
+    hidden.Clear
+
+    On Error Resume Next
+    part1.Update
+    If Err.Number <> 0 Then
+        MsgBox "The Part did not update cleanly: " & Err.Description & vbCrLf & _
+               "Look for the feature with the red mark in the tree.", vbExclamation, "AeroBench import"
+    End If
+    On Error GoTo 0
+
+    If count = 0 Then MsgBox "No wing was imported.", vbInformation, "AeroBench import"
+End Sub
+
+' Reads one CSV and builds its geometry. Returns False (after saying why)
+' when the file is not an AeroBench wing points CSV.
+Function ImportFile(part1, path, sep, hidden)
+    ImportFile = False
+
+    Dim fso, stream, text
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set stream = fso.OpenTextFile(path, 1)  ' 1 = for reading
+    text = stream.ReadAll
+    stream.Close
+
+    ' AeroBench writes LF line ends; strip CR in case the file went through Windows.
+    Dim lines
+    lines = Split(Replace(text, vbCr, ""), vbLf)
+    If UBound(lines) < 1 Then
+        MsgBox path & " is empty.", vbExclamation, "AeroBench import"
+        Exit Function
+    End If
+    If LCase(Trim(lines(0))) <> "element,index,x_mm,y_mm" Then
+        MsgBox path & " is not an AeroBench wing points CSV." & vbCrLf & _
+               "Expected the header: element,index,x_mm,y_mm", vbExclamation, "AeroBench import"
+        Exit Function
+    End If
+
+    Dim fileSet As HybridBody
+    Set fileSet = part1.HybridBodies.Add()
+    fileSet.Name = BaseName(path)
+
+    ' Rows are grouped by element, in order: collect one element, build it, go on.
+    Dim elemName As String, xs(), ys(), n As Long, i As Long, f
+    elemName = ""
+    n = 0
+    For i = 1 To UBound(lines)
+        If Trim(lines(i)) <> "" Then
+            f = Split(lines(i), ",")
+            If UBound(f) < 3 Then
+                MsgBox path & ", line " & (i + 1) & ": expected 4 columns.", vbExclamation, "AeroBench import"
+                Exit Function
+            End If
+            If f(0) <> elemName Then
+                If n > 0 Then BuildElement part1, fileSet, elemName, xs, ys, n, hidden
+                elemName = f(0)
+                n = 0
+            End If
+            ReDim Preserve xs(n), ys(n)
+            xs(n) = CDbl(Replace(Trim(f(2)), ".", sep))
+            ys(n) = CDbl(Replace(Trim(f(3)), ".", sep))
+            n = n + 1
+        End If
+    Next
+    If n > 0 Then BuildElement part1, fileSet, elemName, xs, ys, n, hidden
+
+    ImportFile = True
+End Function
+
+' One element: points, a spline from the first to the last distinct point,
+' a trailing-edge line back to the first, and their Join as the outline.
+Sub BuildElement(part1, fileSet, elemName, xs, ys, n, hidden)
+    Dim hsf As HybridShapeFactory
+    Set hsf = part1.HybridShapeFactory
+
+    Dim last As Long
+    last = n - 1
+    If Sqr((xs(last) - xs(0)) ^ 2 + (ys(last) - ys(0)) ^ 2) < CLOSED_TE_MM Then last = n - 2
+    If last < 3 Then
+        MsgBox "Element " & elemName & " has too few points; skipped.", vbExclamation, "AeroBench import"
+        Exit Sub
+    End If
+
+    Dim elemSet As HybridBody
+    Set elemSet = fileSet.HybridBodies.Add()
+    elemSet.Name = elemName
+    Dim pointSet As HybridBody
+    Set pointSet = elemSet.HybridBodies.Add()
+    pointSet.Name = elemName & " points"
+
+    Dim spline As HybridShapeSpline
+    Set spline = hsf.AddNewSpline()
+    spline.SetSplineType 0  ' cubic
+    spline.SetClosing 0     ' open: the trailing-edge line closes it
+
+    Dim k As Long, pt, firstPt, lastPt
+    For k = 0 To last
+        Set pt = MakePoint(hsf, xs(k), ys(k))
+        pt.Name = elemName & " pt " & k
+        pointSet.AppendHybridShape pt
+        spline.AddPointWithConstraintExplicit part1.CreateReferenceFromObject(pt), Nothing, -1#, 1, Nothing, 0#
+        If k = 0 Then Set firstPt = pt
+        Set lastPt = pt
+    Next
+    spline.Name = elemName & " spline"
+    elemSet.AppendHybridShape spline
+
+    Dim teLine As HybridShapeLinePtPt
+    Set teLine = hsf.AddNewLinePtPt(part1.CreateReferenceFromObject(lastPt), part1.CreateReferenceFromObject(firstPt))
+    teLine.Name = elemName & " TE"
+    elemSet.AppendHybridShape teLine
+
+    Dim outline As HybridShapeAssemble
+    Set outline = hsf.AddNewJoin(part1.CreateReferenceFromObject(spline), part1.CreateReferenceFromObject(teLine))
+    outline.Name = elemName
+    elemSet.AppendHybridShape outline
+
+    hidden.Add pointSet
+    hidden.Add spline
+    hidden.Add teLine
+End Sub
+
+' Wing frame (x downstream, y up, mm) to CATIA (mm): x -> X, y -> Z, Y = 0.
+Function MakePoint(hsf, x, y)
+    Set MakePoint = hsf.AddNewPointCoord(x, 0#, y)
+End Function
+
+' "C:\...\wing_points_mm.csv" -> "wing_points_mm"
+Function BaseName(path)
+    Dim b
+    b = Mid(path, InStrRev(path, "\") + 1)
+    If LCase(Right(b, 4)) = ".csv" Then b = Left(b, Len(b) - 4)
+    BaseName = b
+End Function
