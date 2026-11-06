@@ -221,6 +221,7 @@ extension JobItem {
         case "flow-reconstruct": "Reconstruct flow"
         case "flow-iso": "Isosurface"
         case "flow-object": "Flow object"
+        case "flow-object-step": "Export body (STEP)"
         case "flow-export": "Export flow"
         case "ping": "Ping engine"
         case "dummy": "Dummy job"

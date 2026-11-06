@@ -553,3 +553,39 @@ def test_planes_are_spaced_like_the_cells(tmp_path):
     assert len(vol.x) == len(range(0, 121, summary["plane_step"]))
     spacing = (vol.x[-1] - vol.x[0]) / (len(vol.x) - 1)
     assert spacing <= summary["cell_mm"] / 1000 * 1.01
+
+
+def test_flow_object_step_writes_one_closed_solid_in_mm(engine, tmp_path):
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
+    from OCP.IFSelect import IFSelect_RetDone
+    from OCP.STEPControl import STEPControl_Reader
+    from OCP.TopAbs import TopAbs_SOLID
+    from OCP.TopExp import TopExp_Explorer
+
+    from aeroengine.cad.meshio import Mesh, Model, Node, vertex_normals, write_glb
+
+    # A 0.1 x 0.2 x 0.3 m box, outward triangles, shared corners.
+    pos = (np.array([[x, y, z] for x in (0, 1) for y in (0, 1) for z in (0, 1)]) * [0.1, 0.2, 0.3]).astype(np.float32)
+    quads = [(0, 1, 3, 2), (4, 6, 7, 5), (0, 4, 5, 1), (2, 3, 7, 6), (0, 2, 6, 4), (1, 5, 7, 3)]
+    idx = np.array([t for a, b, c, d in quads for t in ((a, b, c), (a, c, d))], np.uint32)
+    write_glb(Model([Mesh(pos, vertex_normals(pos, idx), idx, "Box")], [Node("Object", mesh=0)]), tmp_path / "object.glb")
+
+    code, events, err = engine.run("flow-object-step", {"params": {"object": str(tmp_path / "object.glb")}}, tmp_path / "job")
+    assert code == 0, (events, err)
+    data = json.loads((tmp_path / "job" / "result.json").read_text())["data"]
+    assert data["solids"] == 1 and data["units"] == "mm"
+
+    reader = STEPControl_Reader()
+    assert reader.ReadFile(str(tmp_path / "job" / "object.stp")) == IFSelect_RetDone
+    reader.TransferRoots()
+    shape = reader.OneShape()
+    explorer, solids = TopExp_Explorer(shape, TopAbs_SOLID), 0
+    while explorer.More():
+        solids += 1
+        explorer.Next()
+    assert solids == 1
+    box = Bnd_Box()
+    BRepBndLib.Add_s(shape, box)
+    lo, hi = box.CornerMin(), box.CornerMax()
+    assert np.allclose([hi.X() - lo.X(), hi.Y() - lo.Y(), hi.Z() - lo.Z()], [100, 200, 300], atol=0.5)

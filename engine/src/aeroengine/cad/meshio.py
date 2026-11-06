@@ -263,3 +263,60 @@ def read_obj(path: Path, scale: float = 1.0) -> Model:
         meshes.append(Mesh(pos, vertex_normals(pos, idx), idx, name))
         nodes.append(Node(name, mesh=len(meshes) - 1))
     return Model(meshes, [Node(Path(path).stem, children=nodes)])
+
+
+# --- STEP export (a triangle mesh as a B-rep, for CAD) -----------------------
+
+def write_step_mesh(model: Model, path: Path, scale: float = 1.0) -> dict:
+    """Write every triangle as a planar face, sewn into shells; each closed
+    shell becomes a solid. Returns counts of faces, shells and solids."""
+    from OCP.BRep import BRep_Builder, BRep_Tool
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakePolygon, BRepBuilderAPI_Sewing
+    from OCP.BRepCheck import BRepCheck_Analyzer
+    from OCP.gp import gp_Pnt
+    from OCP.IFSelect import IFSelect_RetDone
+    from OCP.ShapeFix import ShapeFix_Solid
+    from OCP.STEPControl import STEPControl_AsIs, STEPControl_Writer
+    from OCP.TopAbs import TopAbs_SHELL
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS, TopoDS_Compound
+
+    tris = [t for _, t in _world_triangles(model, scale)]
+    tris = np.concatenate(tris) if tris else np.zeros((0, 3, 3))
+    area = np.linalg.norm(np.cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0]), axis=1)
+    tris = tris[area > 1e-12 * max(1.0, float(np.abs(tris).max(initial=0.0))) ** 2]  # drop slivers MakeFace rejects
+    if not len(tris):
+        raise ValueError("the mesh has no triangles")
+    edge = float(np.median(np.linalg.norm(tris[:, 1] - tris[:, 0], axis=1)))
+    sew = BRepBuilderAPI_Sewing(1e-3 * edge)
+    for a, b, c in tris:
+        poly = BRepBuilderAPI_MakePolygon(gp_Pnt(*a), gp_Pnt(*b), gp_Pnt(*c), True)
+        face = BRepBuilderAPI_MakeFace(poly.Wire(), True)
+        if face.IsDone():
+            sew.Add(face.Face())
+    sew.Perform()
+    sewn = sew.SewedShape()
+
+    builder = BRep_Builder()
+    out = TopoDS_Compound()
+    builder.MakeCompound(out)
+    shells = solids = 0
+    explorer = TopExp_Explorer(sewn, TopAbs_SHELL)
+    while explorer.More():
+        shell = TopoDS.Shell(explorer.Current())
+        shells += 1
+        explorer.Next()
+        if BRep_Tool.IsClosed_s(shell):  # every edge shared by two faces
+            solid = ShapeFix_Solid().SolidFromShell(shell)  # also orients the shell outward
+            if BRepCheck_Analyzer(solid).IsValid():
+                builder.Add(out, solid)
+                solids += 1
+                continue
+        builder.Add(out, shell)
+
+    writer = STEPControl_Writer()
+    writer.Transfer(out, STEPControl_AsIs)
+    if writer.Write(str(path)) != IFSelect_RetDone:
+        raise ValueError(f"could not write {path}")
+    return {"faces": int(len(tris)), "shells": shells, "solids": solids}
+

@@ -109,6 +109,8 @@ final class FlowFieldModel {
     var cadHidden: Set<Int> = []
     var objectIgnoreBelowGround = true
     var objectModel: Model3D?
+    /// The `object.glb` behind `objectModel`, for exports.
+    var objectFile: URL?
     var objectComputing = false
     var objectError: String?
     var windowOn = false { didSet { updateWindow() } }
@@ -283,6 +285,7 @@ final class FlowFieldModel {
         isoLevels = []
         objectOn = false
         objectModel = nil
+        objectFile = nil
         objectError = nil
         windowLo = volume.vmin
         windowHi = (volume.vmin + volume.vmax) / 2
@@ -376,6 +379,7 @@ final class FlowFieldModel {
         isoLevels = []
         objectOn = false
         objectModel = nil
+        objectFile = nil
         previewImage = nil
         previewStats = [:]
         reconstructStats = [:]

@@ -190,7 +190,9 @@ extension AppState {
                 self.flow.objectOn = false
                 return
             }
-            self.flow.objectModel = try? ModelLoader.load(item.workdir.appendingPathComponent("object.glb"))
+            let file = item.workdir.appendingPathComponent("object.glb")
+            self.flow.objectModel = try? ModelLoader.load(file)
+            self.flow.objectFile = file
             if self.flow.objectModel?.triangleCount ?? 0 == 0 {
                 self.flow.objectError = "No geometry was found. Check the mask colours in the calibration."
             }
@@ -252,7 +254,7 @@ extension AppState {
 
     // MARK: Export
 
-    enum FlowExport { case isoGLB, isoOBJ, volumeNPZ, volumeVTI }
+    enum FlowExport { case isoGLB, isoOBJ, volumeNPZ, volumeVTI, objectSTEP }
 
     func exportFlow(_ kind: FlowExport) {
         guard let folder = flow.volumeFolder else { return }
@@ -264,6 +266,15 @@ extension AppState {
             _ = jobs.submit(command: "flow-export", params: ["volume": .string(volumePath)], in: jobsRoot) { [weak self] item in
                 guard item.status == .succeeded else { return }
                 self?.saveCopy(of: item.workdir.appendingPathComponent("volume.vti"), suggested: "cp0_volume.vti")
+            }
+        case .objectSTEP:
+            guard flow.objectModel != nil, let object = flow.objectFile else { return }
+            _ = jobs.submit(command: "flow-object-step", params: ["object": .string(object.path)], in: jobsRoot) { [weak self] item in
+                guard item.status == .succeeded else {
+                    self?.alert = AppAlert(title: "Could not export the body", message: item.message ?? "The STEP file could not be written.")
+                    return
+                }
+                self?.saveCopy(of: item.workdir.appendingPathComponent("object.stp"), suggested: "extrapolated_body_mm.stp")
             }
         case .isoGLB, .isoOBJ:
             let levels = flow.isoLevels.filter(\.visible).map { JSONValue.double($0.level) }

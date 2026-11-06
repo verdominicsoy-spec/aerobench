@@ -152,6 +152,18 @@ def flow_object(ctx: JobContext) -> dict:
             "volume": enclosed_volume(mesh) if mesh.triangle_count else 0.0}
 
 
+@command("flow-object-step")
+def flow_object_step(ctx: JobContext) -> dict:
+    from ..cad.meshio import read_glb, write_step_mesh
+
+    model = read_glb(_path(ctx, "object"))
+    if not model.triangle_count:
+        raise EngineError("the object has no geometry to export")
+    ctx.emit.progress(10, f"sewing {model.triangle_count} triangles")
+    info = write_step_mesh(model, ctx.workdir / "object.stp", scale=1000.0)  # mm, like the OBJ exports
+    return {"step": "object.stp", "units": "mm", **info}
+
+
 @command("flow-export")
 def flow_export(ctx: JobContext) -> dict:
     from ..flow.iso import write_vti

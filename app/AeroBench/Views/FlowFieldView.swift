@@ -758,6 +758,11 @@ struct FlowExplorePanel: View {
                         Button(".glb") { app.exportFlow(.isoGLB) }
                         Button(".obj (mm)") { app.exportFlow(.isoOBJ) }
                     }
+                    S37Row("Extrapolated Body") {
+                        Button(".stp (mm)") { app.exportFlow(.objectSTEP) }
+                            .disabled(flow.objectModel == nil)
+                            .help("The object built from the flow, as a solid for CAD")
+                    }
                     S37Row("Volume") {
                         Button(".npz") { app.exportFlow(.volumeNPZ) }
                         Button(".vti (ParaView)") { app.exportFlow(.volumeVTI) }
