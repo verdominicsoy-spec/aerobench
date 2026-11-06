@@ -1019,3 +1019,9 @@ final class WingLabModel {
         return w
     }
 }
+
+extension Wing {
+    /// Cl as shown: positive for the load the wing is built for, so downforce
+    /// reads positive on an inverted wing. The stored numbers keep their sign.
+    func shownCl(_ cl: Double) -> Double { (elements.first?.inverted ?? false) ? -cl : cl }
+}

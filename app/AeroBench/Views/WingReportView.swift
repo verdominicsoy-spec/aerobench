@@ -133,10 +133,10 @@ struct WingReportView: View {
             if let p = preview {
                 GridRow {
                     Text("Live estimate, inviscid part")
-                    Text(String(format: "%.3f", p.clTotal))
+                    Text(String(format: "%.3f", wing.shownCl(p.clTotal)))
                     Text("–")
                     Text("–")
-                    ForEach(0..<n, id: \.self) { i in Text(i < p.cl.count ? String(format: "%.3f", p.cl[i]) : "") }
+                    ForEach(0..<n, id: \.self) { i in Text(i < p.cl.count ? String(format: "%.3f", wing.shownCl(p.cl[i])) : "") }
                     Text("")
                     Text("no drag, lift runs high")
                 }
@@ -144,10 +144,10 @@ struct WingReportView: View {
             if let e = est {
                 GridRow {
                     Text("Live estimate")
-                    Text(String(format: "%.3f", e.cl))
+                    Text(String(format: "%.3f", wing.shownCl(e.cl)))
                     Text(String(format: "%.4f", e.cd))
                     Text(String(format: "%.1f", abs(e.cl) / max(e.cd, 1e-9)))
-                    ForEach(0..<n, id: \.self) { i in Text(i < e.elements.count ? String(format: "%.3f", e.elements[i].cl) : "") }
+                    ForEach(0..<n, id: \.self) { i in Text(i < e.elements.count ? String(format: "%.3f", wing.shownCl(e.elements[i].cl)) : "") }
                     Text(car(e.cl, e.cd))
                     Text(e.separating == true ? "separating" : (e.trusted ? "" : "NeuralFoil unsure"))
                 }
@@ -155,10 +155,10 @@ struct WingReportView: View {
             if let r = rans {
                 GridRow {
                     Text("RANS (\(r.meshLevel))")
-                    Text(String(format: "%.3f", r.cl))
+                    Text(String(format: "%.3f", wing.shownCl(r.cl)))
                     Text(String(format: "%.4f", r.cd))
                     Text(String(format: "%.1f", r.liftToDrag))
-                    ForEach(0..<n, id: \.self) { i in Text(i < r.elements.count ? r.elements[i].cl.map { String(format: "%.3f", $0) } ?? "" : "") }
+                    ForEach(0..<n, id: \.self) { i in Text(i < r.elements.count ? r.elements[i].cl.map { String(format: "%.3f", wing.shownCl($0)) } ?? "" : "") }
                     Text(r.converged ? car(r.cl, r.cd) : "")
                     Text(r.converged
                          ? String(format: "%@, %ld iterations, residual down %.1f orders", r.modelName, r.iterations, r.residualDrop)
@@ -221,13 +221,13 @@ struct WingReportView: View {
                 .font(.system(size: 8)).foregroundStyle(.secondary)
             Chart {
                 ForEach(rows) { r in
-                    LineMark(x: .value("α", r.alpha), y: .value("Cl", r.cl))
-                    PointMark(x: .value("α", r.alpha), y: .value("Cl", r.cl))
+                    LineMark(x: .value("α", r.alpha), y: .value("Cl", wing.shownCl(r.cl)))
+                    PointMark(x: .value("α", r.alpha), y: .value("Cl", wing.shownCl(r.cl)))
                         .symbolSize(10)
                         .foregroundStyle(r.separating == true ? Color.orange : Color.blue)
                 }
                 if let r = rans {
-                    PointMark(x: .value("α", r.alpha ?? wing.alpha), y: .value("Cl", r.cl))
+                    PointMark(x: .value("α", r.alpha ?? wing.alpha), y: .value("Cl", wing.shownCl(r.cl)))
                         .symbol(.square).symbolSize(30)
                         .foregroundStyle(r.converged ? Color.green : Color.red)
                 }

@@ -430,7 +430,7 @@ struct WingCanvas: View {
                 Text("Live estimate").font(.system(size: 12, weight: .semibold)).foregroundStyle(S37.C.inkSecondary)
                 // NeuralFoil's viscous numbers once they are in; the panel method's lift until then.
                 if let e = lab.estimate?.row(nearest: lab.wing.alpha), lab.liveStatus == nil {
-                    Text(String(format: "Cl %.3f   Cd %.4f   L/D %.1f   α %.1f°", e.cl, e.cd, abs(e.cl) / max(e.cd, 1e-9), lab.wing.alpha))
+                    Text(String(format: "Cl %.3f   Cd %.4f   L/D %.1f   α %.1f°", lab.wing.shownCl(e.cl), e.cd, abs(e.cl) / max(e.cd, 1e-9), lab.wing.alpha))
                         .font(.caption.monospacedDigit())
                     if e.separating == true {
                         // Past separation the estimate's drag is far too low (a stalled wing: Cd 0.09 here, 0.36 in RANS).
@@ -438,7 +438,7 @@ struct WingCanvas: View {
                             .help(e.why ?? "An element separates here.")
                     }
                 } else if let r = lab.preview {
-                    Text(String(format: "Cl %.3f (inviscid)   Cm %.3f   α %.1f°", r.clTotal, r.cmTotal, lab.wing.alpha))
+                    Text(String(format: "Cl %.3f (inviscid)   Cm %.3f   α %.1f°", lab.wing.shownCl(r.clTotal), r.cmTotal, lab.wing.alpha))
                         .font(.caption.monospacedDigit())
                 }
                 fieldControls(lab)
@@ -901,7 +901,7 @@ struct CFDResults: View {
                 }
             }
             .frame(width: 260, alignment: .leading)
-            PolarCharts(points: points, mark: lab.ransResult?.alpha)
+            PolarCharts(points: points.map { var p = $0; p.cl = lab.wing.shownCl(p.cl); return p }, mark: lab.ransResult?.alpha)
         }
         .padding(8)
         .frame(height: 170)
@@ -931,13 +931,13 @@ struct CFDResults: View {
                         ForEach(Array(r.elements.enumerated()), id: \.offset) { i, e in
                             GridRow {
                                 Text(WingIssue.label(i))
-                                Text(e.cl.map { String(format: "%.3f", $0) } ?? "–")
+                                Text(e.cl.map { String(format: "%.3f", lab.wing.shownCl($0)) } ?? "–")
                                 Text(e.cd.map { String(format: "%.4f", $0) } ?? "–")
                             }
                         }
                         GridRow {
                             Text("Total").bold()
-                            Text(String(format: "%.3f", r.cl)).bold()
+                            Text(String(format: "%.3f", lab.wing.shownCl(r.cl))).bold()
                             Text(String(format: "%.4f", r.cd)).bold()
                         }
                     }
@@ -1202,7 +1202,7 @@ struct WingInspector: View {
                 NumberField(label: "Overlap", unit: "mm", value: mm({ lab.wing.overlap(of: i) ?? 0 }, { v in lab.edit("Change Overlap") { $0.setOverlap(v, of: i) } }))
             }
             if let r = lab.preview, r.cl.indices.contains(i) {
-                LabeledContent("Cl (inviscid)", value: String(format: "%.3f", r.cl[i]))
+                LabeledContent("Cl (inviscid)", value: String(format: "%.3f", lab.wing.shownCl(r.cl[i])))
             }
             HStack(spacing: S37.Space.s3) {
                 Button("Duplicate \(WingIssue.label(i))") { lab.duplicate(i) }
@@ -1538,9 +1538,9 @@ struct WingInspector: View {
         if let r = lab.preview {
             Text("Panel method (inviscid): how the load splits").font(.caption).bold()
             ForEach(Array(r.cl.enumerated()), id: \.offset) { i, cl in
-                LabeledContent(WingIssue.label(i), value: String(format: "Cl %.3f", cl))
+                LabeledContent(WingIssue.label(i), value: String(format: "Cl %.3f", lab.wing.shownCl(cl)))
             }
-            LabeledContent("Total, inviscid", value: String(format: "Cl %.3f   Cm %.3f", r.clTotal, r.cmTotal))
+            LabeledContent("Total, inviscid", value: String(format: "Cl %.3f   Cm %.3f", lab.wing.shownCl(r.clTotal), r.cmTotal))
             Text(String(format: "On the total chord, %.0f mm. Solved in %.0f ms.", lab.wing.refChord * 1000, lab.previewMilliseconds))
                 .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
         } else {
@@ -1598,7 +1598,7 @@ struct WingInspector: View {
                 NumberField(label: "2D to 3D factor", value: Binding(get: { wing.factor3D }, set: { v in lab.edit("Change 2D to 3D Factor") { $0.factor3D = max(v, 0) } }))
             }
             if let from {
-                LabeledContent("From the \(from.name)", value: String(format: "Cl %.3f   Cd %.4f", from.cl, from.cd))
+                LabeledContent("From the \(from.name)", value: String(format: "Cl %.3f   Cd %.4f", wing.shownCl(from.cl), from.cd))
             } else {
                 NumberField(label: "Cd (typed in: no estimate or CFD yet)", value: Binding(get: { lab.cdEstimate }, set: { lab.cdEstimate = $0 }))
             }
@@ -1866,7 +1866,7 @@ struct StudyResults: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text((lab.selectedTrial.map { "Trial \($0)" } ?? "The wing on the canvas") + ", live estimate over the wing angle")
                     .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
-                PolarCharts(points: est.rows.map { .init(alpha: $0.alpha, cl: $0.cl, cd: $0.cd, good: $0.trusted) }, mark: here.alpha)
+                PolarCharts(points: est.rows.map { .init(alpha: $0.alpha, cl: lab.wing.shownCl($0.cl), cd: $0.cd, good: $0.trusted) }, mark: here.alpha)
             }
         } else {
             Text("Pick a trial in the table: its polars come from the live estimate.").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
@@ -2000,7 +2000,7 @@ struct SweepStrip: View {
                 }
             }
             .frame(width: 260, alignment: .leading)
-            PolarCharts(points: rows.map { .init(alpha: $0.element.alpha ?? 0, cl: $0.element.cl, cd: $0.element.cd,
+            PolarCharts(points: rows.map { .init(alpha: $0.element.alpha ?? 0, cl: lab.wing.shownCl($0.element.cl), cd: $0.element.cd,
                                                  good: $0.element.converged) },
                         mark: lab.sweepRow.flatMap { sweep.rows.indices.contains($0) ? sweep.rows[$0].alpha : nil })
         }
@@ -2020,7 +2020,7 @@ struct EstimateResults: View {
         if let est = lab.estimate, let here = est.row(nearest: lab.wing.alpha) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(String(format: "At %g°: Cl %.3f, Cd %.4f, L/D %.1f", here.alpha, here.cl, here.cd, abs(here.cl) / max(here.cd, 1e-9)))
+                    Text(String(format: "At %g°: Cl %.3f, Cd %.4f, L/D %.1f", here.alpha, lab.wing.shownCl(here.cl), here.cd, abs(here.cl) / max(here.cd, 1e-9)))
                         .font(.callout.monospacedDigit()).bold()
                     Grid(alignment: .trailing, horizontalSpacing: 10, verticalSpacing: 2) {
                         GridRow {
@@ -2032,7 +2032,7 @@ struct EstimateResults: View {
                         ForEach(Array(here.elements.enumerated()), id: \.offset) { i, e in
                             GridRow {
                                 Text(WingIssue.label(i))
-                                Text(String(format: "%.3f", e.cl))
+                                Text(String(format: "%.3f", lab.wing.shownCl(e.cl)))
                                 Text(String(format: "%.4f", e.cd))
                                 Text(String(format: "%.1f°%@", e.effectiveAngle, e.heldBelowStall ? " (held)" : ""))
                                     .help("The element's own angle of attack in place; its neighbours turn the flow by \(String(format: "%+.1f", e.upwash))°. Held: it has an element behind it, so it is kept below its stall onset, as the slot does on the real wing.")
@@ -2054,9 +2054,9 @@ struct EstimateResults: View {
                 }
                 .frame(width: 290, alignment: .leading)
                 .scrollableColumn()
-                PolarCharts(points: est.rows.map { .init(alpha: $0.alpha, cl: $0.cl, cd: $0.cd, good: $0.trusted) },
+                PolarCharts(points: est.rows.map { .init(alpha: $0.alpha, cl: lab.wing.shownCl($0.cl), cd: $0.cd, good: $0.trusted) },
                             mark: here.alpha,
-                            pinned: lab.pinned?.estimate?.rows.map { .init(alpha: $0.alpha, cl: $0.cl, cd: $0.cd, good: true) })
+                            pinned: lab.pinned.flatMap { a in a.estimate?.rows.map { .init(alpha: $0.alpha, cl: a.wing.shownCl($0.cl), cd: $0.cd, good: true) } })
             }
             .padding(8)
         } else {
@@ -2132,12 +2132,12 @@ struct ResultsSummary: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 0) {
                 card("Live estimate", tab: .estimate,
-                     lines: estimate.map { [String(format: "Cl %.3f  Cd %.4f", $0.cl, $0.cd),
+                     lines: estimate.map { [String(format: "Cl %.3f  Cd %.4f", wing.shownCl($0.cl), $0.cd),
                                             String(format: "L/D %.1f", abs($0.cl) / max($0.cd, 1e-9)) + ($0.separating == true ? "  separating" : "")] }
-                        ?? lab.preview.map { [String(format: "Cl %.3f inviscid", $0.clTotal), lab.liveStatus ?? "no drag yet"] } ?? ["—"],
+                        ?? lab.preview.map { [String(format: "Cl %.3f inviscid", wing.shownCl($0.clTotal)), lab.liveStatus ?? "no drag yet"] } ?? ["—"],
                      warn: estimate.map { !$0.trusted || $0.separating == true } ?? false, lab: lab)
                 card("RANS CFD", tab: .cfd,
-                     lines: rans.map { [String(format: "Cl %.3f  Cd %.4f", $0.cl, $0.cd),
+                     lines: rans.map { [String(format: "Cl %.3f  Cd %.4f", wing.shownCl($0.cl), $0.cd),
                                         ($0.converged ? String(format: "L/D %.1f", abs($0.cl) / max($0.cd, 1e-9)) : "not converged") + ", \($0.meshLevel)"] }
                         ?? ["not run"], warn: rans.map { !$0.converged } ?? false, lab: lab)
                 if let c = forCar {
@@ -2166,14 +2166,15 @@ struct ResultsSummary: View {
              String(format: "this wing: ΔCl %+.3f (%+.1f%%)  ΔCd %+.4f", b.0 - a.0, (b.0 - a.0) / max(abs(a.0), 1e-9) * 100, b.1 - a.1)]
         }
         if let ar = a.rans, ar.converged, let br = lab.ransResult, br.converged {
-            return diff("CFD", (ar.cl, ar.cd), (br.cl, br.cd))
+            return diff("CFD", (a.wing.shownCl(ar.cl), ar.cd), (lab.wing.shownCl(br.cl), br.cd))
         }
         if let ae = a.estimate?.row(nearest: a.wing.alpha), let be = estimate {
-            return diff("estimate", (ae.cl, ae.cd), (be.cl, be.cd))
+            return diff("estimate", (a.wing.shownCl(ae.cl), ae.cd), (lab.wing.shownCl(be.cl), be.cd))
         }
         if let ap = a.preview, let bp = lab.preview {
-            return [String(format: "Cl %.3f (preview)", ap.clTotal),
-                    String(format: "this wing: ΔCl %+.3f (%+.1f%%)", bp.clTotal - ap.clTotal, (bp.clTotal - ap.clTotal) / max(abs(ap.clTotal), 1e-9) * 100)]
+            let (ac, bc) = (a.wing.shownCl(ap.clTotal), lab.wing.shownCl(bp.clTotal))
+            return [String(format: "Cl %.3f (preview)", ac),
+                    String(format: "this wing: ΔCl %+.3f (%+.1f%%)", bc - ac, (bc - ac) / max(abs(ac), 1e-9) * 100)]
         }
         return ["no results to compare"]
     }
