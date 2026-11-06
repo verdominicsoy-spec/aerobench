@@ -170,7 +170,6 @@ struct LogView: View {
                             ForEach(lines) { line in
                                 Text(line.level == "saved" ? line.text : "[\(line.level)] \(line.text)")
                                     .foregroundStyle(color(for: line))
-                                    .modifier(GOGlow(kind: line.level == "warning" ? .clay : .body))
                                     .textSelection(.enabled)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .id(line.id)

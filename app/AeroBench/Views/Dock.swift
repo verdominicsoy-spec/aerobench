@@ -1,10 +1,10 @@
 import SwiftUI
 
 /// The frosted dock along the bottom that switches tools, in glassout's
-/// dress (mono caps labels, the current tool in inverse-video sage) with
+/// dress (the current tool in inverse-video sage) with
 /// sage37's lens. Tap to
 /// switch, or press, hold and slide: the thumb lifts into a lens that
-/// magnifies the labels it passes and springs onto the nearest tool on
+/// magnifies the labels it passes and settles onto the nearest tool on
 /// release.
 struct Dock: View {
     @Binding var selection: Tool
@@ -94,14 +94,14 @@ struct Dock: View {
                 shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.6), .white.opacity(0.2)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
                 shape.strokeBorder(Color(232, 224, 206, 0.4), lineWidth: 0.5)
             } else {
-                // glassout's lit block: sage with its 1 point ring and glow
+                // the current tool in inverse-video sage, no glow
                 shape.fill(GO.C.sage)
                 shape.strokeBorder(Color(214, 235, 196, 0.25), lineWidth: 1)
             }
         }
         .frame(width: max(0, w), height: 52)
         .scaleEffect(lens && !reduceMotion ? 1.26 : 1)
-        .shadow(color: lens ? .black.opacity(0.7) : Color(150, 183, 127, 0.35), radius: lens ? 14 : 9, y: lens ? 12 : 0)
+        .shadow(color: .black.opacity(lens ? 0.7 : 0.4), radius: lens ? 14 : 4, y: lens ? 12 : 2)
         .offset(x: x)
         .opacity(w > 0 ? 1 : 0)
         .animation(drag?.moved == true || reduceMotion ? nil : S37.Motion.thumb, value: x)

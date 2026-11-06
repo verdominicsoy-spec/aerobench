@@ -2,15 +2,15 @@ import AppKit
 import CoreText
 import SwiftUI
 
-// sage37, Dominic's design system (tokens v5, October 2026), as the
+// sage37, Dominic's design system (tokens v6, November 2026), as the
 // sage37-swift skill translates it. The values are the design system's; if
 // it changes, regenerate them from it rather than editing here. AeroBench
-// ships dark only, so each token is its dark value. The window is a quiet
-// line drawing per tool (S37Motifs.swift) bent under clear glass panes, one
-// per working region; the dock at the bottom switches tools. Machine output
-// sits in glassout consoles (Glassout.swift). It leans a little toward
-// glassout to set it apart from Pit Wall: the meta line in mono caps, and
-// glassout's dock (inverse-video sage, mono caps labels).
+// ships dark only, so each token is its dark value. Content sits on solid
+// panes with a hairline; glass is kept for controls and the dock. Behind the
+// panes runs a quiet space-filling curve per tool (S37Motifs.swift), bent
+// under each pane: Dominic keeps the curves although the November skill
+// drops backdrops (docs/DECISIONS.md). The job log is the one glassout
+// console (Glassout.swift).
 
 extension Color {
     /// 0xRRGGBB with optional opacity, sRGB
@@ -34,8 +34,6 @@ enum S37 {
         static let recess = Color(9, 8, 6, 0.62)
         static let glass = Color(30, 27, 23, 0.62)
         static let glassTinted = Color(19, 17, 14, 0.78)
-        static let glassPane = Color(24, 22, 19, 0.34)
-        static let glassPaneSolid = Color(25, 23, 20, 0.86)
         static let glassSage = Color(150, 183, 127, 0.26)
         static let edgeHighlight = Color(255, 255, 255, 0.24)
         static let edgeShade = Color(0, 0, 0, 0.55)
@@ -81,12 +79,12 @@ enum S37 {
     static func concentric(_ outer: CGFloat, _ padding: CGFloat) -> CGFloat { max(Radius.sm, outer - padding) }
 
     enum Motion {
-        /// buttons: 240ms, slight overshoot
-        static let press = Animation.timingCurve(0.3, 1.5, 0.5, 1, duration: 0.24)
-        static let thumb = Animation.timingCurve(0.3, 1.35, 0.5, 1, duration: 0.42)
-        static let lens = Animation.timingCurve(0.3, 1.35, 0.5, 1, duration: 0.38)
+        /// Every curve eases out with no overshoot
+        static let press = Animation.timingCurve(0.2, 0, 0, 1, duration: 0.24)
+        static let toggle = Animation.timingCurve(0.2, 0, 0, 1, duration: 0.28)
+        static let thumb = Animation.timingCurve(0.2, 0, 0, 1, duration: 0.36)
+        static let lens = Animation.timingCurve(0.2, 0, 0, 1, duration: 0.32)
         static let colour = Animation.easeInOut(duration: 0.2)
-        static let viewRise = 0.34
         static let motifCrossfade = 0.36  // the web's bloom crossfade
         static let lensHold = 0.18
         static let lensDrag: CGFloat = 6
@@ -115,7 +113,7 @@ extension View {
         shadow(color: .black.opacity(0.5), radius: 0.5, y: 1).shadow(color: .black.opacity(0.7), radius: 10, y: 8)
     }
 
-    /// The soft dark text shadow that keeps headers readable over the petals
+    /// The soft dark text shadow that keeps the header readable over the curve
     func s37HeaderShadow() -> some View { shadow(color: Color(16, 14, 11, 0.9), radius: 9, y: 1) }
 }
 
@@ -170,7 +168,7 @@ struct S37PaneKey: PreferenceKey {
     static func reduce(value: inout [S37PaneFrame], nextValue: () -> [S37PaneFrame]) { value += nextValue() }
 }
 
-/// Root of the window: the tool's curve, bent under every glass pane, content on top
+/// Root of the window: the tool's curve, bent under every pane, content on top
 struct S37Root<Content: View>: View {
     var motif: S37Motif = .hilbert
     @ViewBuilder var content: Content
@@ -218,49 +216,36 @@ struct S37PaneRegistration: ViewModifier {
     }
 }
 
-/// The glass under a pane: its tint and a faint top sheen (the web's .vg-pane)
+/// A pane's ground: solid surface
 struct S37PaneFill: View {
     var radius: CGFloat
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        ZStack {
-            shape.fill(reduceTransparency ? S37.C.glassPaneSolid : S37.C.glassPane)
-            shape.fill(EllipticalGradient(stops: [.init(color: .white.opacity(0.06), location: 0), .init(color: .clear, location: 0.55)],
-                                          center: UnitPoint(x: 0.3, y: 0), endRadiusFraction: 1))
-        }
+        RoundedRectangle(cornerRadius: radius, style: .continuous).fill(S37.C.surface)
     }
 }
 
-/// A pane's lit gradient rim
+/// A pane's 1 point hairline, controlBorder under Increase Contrast
 struct S37PaneRim: View {
     var radius: CGFloat
     @Environment(\.colorSchemeContrast) private var contrast
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        let g = UnitPoint.css(135)
-        ZStack {
-            shape.strokeBorder(LinearGradient(stops: [
-                .init(color: .white.opacity(0.34), location: 0), .init(color: .white.opacity(0.05), location: 0.30),
-                .init(color: .white.opacity(0), location: 0.50), .init(color: .white.opacity(0.04), location: 0.70),
-                .init(color: .white.opacity(0.22), location: 1)], startPoint: g.start, endPoint: g.end), lineWidth: 1)
-            if contrast == .increased { shape.strokeBorder(S37.C.controlBorder, lineWidth: 1) }
-        }
-        .allowsHitTesting(false)
+        RoundedRectangle(cornerRadius: radius, style: .continuous)
+            .strokeBorder(contrast == .increased ? S37.C.controlBorder : S37.C.separator, lineWidth: 1)
+            .allowsHitTesting(false)
     }
 }
 
 extension View {
-    /// A clear glass pane with padding inside, bending the bloom behind it
+    /// A solid content pane with padding inside
     func s37Pane(radius: CGFloat = S37.Radius.xlContent, padding: CGFloat = S37.Space.s6) -> some View {
         self.padding(padding)
             .background { ZStack { S37PaneFill(radius: radius); S37PaneRim(radius: radius) } }
             .modifier(S37PaneRegistration(radius: radius))
     }
 
-    /// A working region (a form, a canvas, a 3D view) as a glass pane: drawn
-    /// edge to edge and clipped, the rim on top, the form's own ground cleared
-    /// so the glass shows.
+    /// A working region (a form, a canvas, a 3D view) as a solid pane: drawn
+    /// edge to edge and clipped, the hairline on top, the form's own ground
+    /// cleared so the pane shows.
     func s37Region(radius: CGFloat = S37.Radius.xlContent) -> some View {
         self.frame(maxWidth: .infinity, maxHeight: .infinity)
             .scrollContentBackground(.hidden)
@@ -377,32 +362,5 @@ struct S37Segmented<T: Hashable>: View {
         .accessibilityRepresentation {
             Picker("Pages", selection: $selection) { ForEach(options, id: \.0) { Text($0.1).tag($0.0) } }
         }
-    }
-}
-
-/// The page's one loud thing: a bone tile with the hero figure in Fraunces
-struct S37Spotlight: View {
-    var label: String
-    var figure: String
-    var unit: String
-    var note: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: S37.Space.s2) {
-            Text(label).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.onSpotlightSecondary)
-            HStack(alignment: .firstTextBaseline, spacing: S37.Space.s2) {
-                Text(figure).font(.fraunces(64)).tracking(-1.28).monospacedDigit()
-                    .lineLimit(1).minimumScaleFactor(0.5)
-                Text(unit).font(.system(size: 20, weight: .semibold))
-            }
-            .foregroundStyle(S37.C.onSpotlight)
-            Text(note).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.onSpotlightSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(S37.Space.s5)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: S37.Radius.xlContent, style: .continuous).fill(S37.C.spotlight))
-        .s37ShadowControl()
-        .textSelection(.enabled)
     }
 }

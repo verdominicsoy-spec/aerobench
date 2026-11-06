@@ -26,9 +26,7 @@ struct PrismLayerView: View {
             page(layer)
             ScrollView { page(layer) }.scrollIndicators(.never)
         }
-        .preference(key: ToolTakeawayKey.self, value: layer.map {
-            "\($0.layers) layers, \(millimetres($0.total)) mm total, \(millimetres($0.firstCell)) mm near wall."
-        } ?? "Every value must be a number above zero, and stretching above 1.")
+        .preference(key: ToolTakeawayKey.self, value: layer == nil ? "Every value must be a number above zero, and stretching above 1." : nil)
     }
 
     private func page(_ layer: PrismLayer?) -> some View {

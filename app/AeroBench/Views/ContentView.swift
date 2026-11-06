@@ -42,19 +42,6 @@ enum Tool: String, CaseIterable, Identifiable {
         }
     }
 
-    /// What the tool is for, in one plain line beside its title
-    var note: String {
-        switch self {
-        case .project: "Open a project or start a new one."
-        case .wingLab: "Draw the wing element by element, score it with the panel solver, RANS or the optimiser, and see it on the car."
-        case .lapSim: "Lap time against ClA and CdA on the event tracks."
-        case .cadViewer: "Open the car's CAD and check it is watertight and clean before it meshes."
-        case .flowField: "Turn STAR's plane-sweep videos into a 3D flow field you can slice."
-        case .prismLayer: "Prism layer settings for STAR's mesher."
-        case .jobs: "Every engine run, with its progress, log and result."
-        }
-    }
-
     /// The space-filling curve behind the tool
     var motif: S37Motif {
         switch self {
@@ -161,14 +148,14 @@ struct ContentView: View {
 }
 
 
-/// A tool's live takeaway for the header, in place of its note
+/// A tool's live takeaway for the header, only when it says what the screen doesn't
 struct ToolTakeawayKey: PreferenceKey {
     static let defaultValue: String? = nil
     static func reduce(value: inout String?, nextValue: () -> String?) { value = nextValue() ?? value }
 }
 
-/// The Fraunces title on the left, the tool's takeaway (or a one-line note
-/// about it) beside it, and on the right the project, which opens its screen.
+/// The Fraunces title on the left, the tool's takeaway (if any) beside it,
+/// and on the right the project, which opens its screen.
 struct ToolHeader: View {
     @Environment(AppState.self) private var app
     @Binding var selection: Tool
@@ -176,10 +163,12 @@ struct ToolHeader: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: S37.Space.s6) {
-            Text(selection.title).font(.fraunces(32)).tracking(-0.32).foregroundStyle(S37.C.ink)
+            Text(selection.title).font(.fraunces(24)).foregroundStyle(S37.C.ink)
                 .lineLimit(1).fixedSize()
-            Text(takeaway ?? selection.note).font(.system(size: 14, weight: .medium)).foregroundStyle(S37.C.inkSecondary)
-                .lineLimit(2).frame(maxWidth: 520, alignment: .leading)
+            if let takeaway {
+                Text(takeaway).font(.system(size: 14, weight: .medium)).foregroundStyle(S37.C.inkSecondary)
+                    .lineLimit(2).frame(maxWidth: 520, alignment: .leading)
+            }
             Spacer(minLength: S37.Space.s3)
             if app.jobs.runningCount > 0 {
                 Text(app.jobs.runningCount == 1 ? "1 job running" : "\(app.jobs.runningCount) jobs running")
