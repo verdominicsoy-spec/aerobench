@@ -177,7 +177,7 @@ struct AirfoilLibraryPanel: View {
                         Toggle("Show \(lab.hidden.count) hidden", isOn: $lab.showHidden).toggleStyle(.checkbox).font(.caption)
                     }
                     Spacer()
-                    Button("Import .dat…") { app.importAirfoilsPanel() }
+                    Button("Import .dat or .csv…") { app.importAirfoilsPanel() }
                 }
                 .padding(8)
             }

@@ -36,13 +36,38 @@ extension AppState {
     func importAirfoilsPanel() {
         let panel = NSOpenPanel()
         panel.title = "Import Airfoils"
-        panel.message = "Selig or Lednicer .dat files. They go into My Airfoils."
+        panel.message = "Selig or Lednicer .dat files, or x,y .csv files. They go into My Airfoils."
         panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = [UTType(filenameExtension: "dat") ?? .data, .plainText, .text]
+        panel.allowedContentTypes = [UTType(filenameExtension: "dat") ?? .data, .commaSeparatedText, .tabSeparatedText,
+                                     .plainText, .text]
         panel.allowsOtherFileTypes = true
         guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
-        let files = JSONValue.array(panel.urls.map { .string($0.path) })
+        // CSV files become Selig .dat files in a temporary folder, so the engine imports them like any other.
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("AeroBench-csv-\(UUID().uuidString)")
+        var paths: [String] = [], failed: [String] = []
+        for url in panel.urls {
+            guard ["csv", "tsv"].contains(url.pathExtension.lowercased()) else { paths.append(url.path); continue }
+            do {
+                let name = url.deletingPathExtension().lastPathComponent
+                let dat = AirfoilCSV.dat(name: name, points: try AirfoilCSV.parse(String(contentsOf: url, encoding: .utf8)))
+                try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+                let out = temp.appendingPathComponent(name + ".dat")
+                try dat.write(to: out, atomically: true, encoding: .utf8)
+                paths.append(out.path)
+            } catch {
+                failed.append("\(url.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+        if !failed.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = failed.count == 1 ? "A CSV file could not be imported" : "\(failed.count) CSV files could not be imported"
+            alert.informativeText = failed.joined(separator: "\n")
+            alert.runModal()
+        }
+        guard !paths.isEmpty else { return }
+        let files = JSONValue.array(paths.map { .string($0) })
         wingLab.libraryJob = jobs.submit(command: "airfoil-import", params: ["files": files], in: jobsRoot) { [weak self] item in
+            try? FileManager.default.removeItem(at: temp)
             guard let self, item.status == .succeeded else { return }
             self.wingLab.loadLibrary(engineDirectory: self.settings.engineDirectory)
             self.wingLab.filter.source = "mine"
