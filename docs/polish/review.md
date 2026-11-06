@@ -22,6 +22,7 @@ Per tool, every visible element, with the principle it answers to (numbers from 
 | Velocity, density, viscosity, reference length typed by hand | change | Start from Wing Lab's speed, air and main chord; a typed value stays typed per project; "Use project values" goes back (5, context over input). |
 | Every input | change | Undoable, named in Edit ▸ Undo (3). |
 | How it's calculated | keep | The tool's one background disclosure (1). |
+| Prism menu | new | The three presets and Use Project Values (4). |
 
 ## Jobs
 
@@ -156,3 +157,10 @@ CAD after shot with the empty state: `2-after-cad.jpg`.
 | Optimiser, sweep, laminar-zone and SU2 notes | change | Each cut to one short sentence (1). |
 | Run polar empty-state button | change | sage37 glass (2). |
 | Wing menu | new | Design, Quick Estimate, Element Polar, Run CFD ⌘R, Start and Stop Study, Duplicate Element ⌘D, Remove Element, Pin / Swap / Clear A, Show Library ⌥⌘L, Show Inspector ⌥⌘I, the three exports (4). |
+
+## Measured
+
+- Explanatory strings over 60 characters in Views/ (six or more words): 179 before, 152 after; 22,800 characters before, 18,300 after. Of what's left, the longest blocks (Prism, Lap Sim and Wing Lab derivations, Flow's capture guide) sit behind a closed How it's calculated disclosure, and the Solver Accuracy window keeps its long-form notes, so the text visible at rest dropped further than these totals show. Not measured on screen.
+- Tooltips: 54 before, 55 after (Wing Lab gained shortcut hints on the panel buttons); none repeats its label.
+- System segmented pickers 10 to 0, grouped Forms inside panes 9 to 0, ContentUnavailableView 7 to 0.
+- Header notes: 7 to 0.

@@ -1,4 +1,5 @@
 import AeroBench3D
+import AppKit
 import SwiftUI
 
 @main
@@ -35,6 +36,16 @@ struct AeroBenchApp: App {
 }
 
 struct AeroBenchCommands: Commands {
+    /// Prism Layer's presets, as its Preset menu sets them
+    private func preset(yPlus: Double, layers: Int?, stretching: Double, _ undo: UndoManager?) {
+        var next = app.prism.inputs
+        next.yPlus = yPlus
+        next.stretching = stretching
+        if let layers { next.layers = layers }
+        app.tool = .prismLayer
+        app.prism.set(\.self, next, "Preset", undo: undo)
+    }
+
     let app: AppState
     @Environment(\.openWindow) private var openWindow
     @AppStorage("dummy.duration") private var dummyDuration = 10
@@ -109,6 +120,15 @@ struct AeroBenchCommands: Commands {
             Button("Export Elements as .dat…") { app.exportWingDat() }
             Button("Export Points as CSV…") { app.exportWingCSV() }
             Button("Export Report as PDF…") { app.exportWingReport() }
+        }
+        CommandMenu("Prism") {
+            let undo = { NSApp.keyWindow?.undoManager }
+            Button("Wing / Floor Preset") { preset(yPlus: 1, layers: nil, stretching: 1.2, undo()) }
+            Button("Body / Wheels Preset") { preset(yPlus: 40, layers: 4, stretching: 1.25, undo()) }
+            Button("Suspension Preset") { preset(yPlus: 40, layers: 3, stretching: 1.3, undo()) }
+            Divider()
+            Button("Use Project Values") { app.prism.set(\.self, PrismInputs(), "Use Project Values", undo: undo()) }
+                .disabled(app.prism.inputs == PrismInputs())
         }
         CommandMenu("Lap Sim") {
             Button("Run Lap Sim") { app.tool = .lapSim; app.runLapSim() }

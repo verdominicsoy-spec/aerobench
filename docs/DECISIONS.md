@@ -1226,6 +1226,57 @@ attack, a ground, and sections other than NACA 6212; a study's RANS
 calibration of the starting wing and its closing RANS checks cover a
 design, as before.
 
+## November 2026: design-system polish
+
+**Content is solid, glass is for controls.** Panes are `surface` with a 1 pt
+separator hairline (controlBorder under Increase Contrast); the sheen, gradient
+rim and pane material are gone. Apple's Materials guidance keeps Liquid Glass in
+the functional layer, and glass on content was the most cited machine-made tell.
+The dock, buttons and segmented controls keep their glass.
+
+**The space-filling curves stay, refracted.** The November sage37 skill drops
+backdrops, but Dominic chose to keep each tool's curve and its refraction
+shader. With solid panes the bend only shows in the gaps between them; making
+panes translucent again would bring it back if wanted.
+
+**Motion eases out with no overshoot.** press, toggle, thumb and lens are
+`timingCurve(0.2, 0, 0, 1)` at 0.24, 0.28, 0.36 and 0.32 s. Bouncy easing read
+as decoration.
+
+**Glassout is plain machine output.** The Jobs log is the only console: a solid
+tube with a hairline, monospaced lines, no scanlines, glow, bezel, sheen,
+uppercase or brackets. S37Spotlight and the unused GOPlainButton are deleted.
+
+**Fewer words, one place for background.** Header notes that restated the
+screen are gone; the title is Fraunces 24. Each tool keeps one How it's
+calculated disclosure for derivations, the Solver Accuracy window keeps the
+long-form trust notes, and errors sit at the field with a critical outline and
+the fix (Prism Layer, Flow's legend range). Terms follow docs/polish/glossary.md.
+
+**One control language.** docs/polish/controls.md maps each job to one control:
+S37ButtonStyle (one prominent per tool), S37Segmented for views of one thing,
+S37FieldRow / S37Section / S37Row for dense rows, S37EmptyState for anything
+missing. The nine grouped Forms and ten system segmented pickers are gone.
+S37ButtonStyle gained a compact size under `.controlSize(.small)` for toolbars,
+and S37ToggleButtonStyle draws a mode that stays on. Button sizes stay at
+AeroBench's dense 32 pt rather than the skill's 44 pt: this is a desktop tool
+for one expert, and density was the brief.
+
+**Undo through the window.** Prism inputs, Lap Sim setup and car values, the
+track editor, Flow calibration and Wing Lab register with the window's undo
+manager, so Edit > Undo names the step. Wing Lab keeps its own snapshot stacks
+and mirrors each entry into the manager. Opening a project, video or demo
+isn't an edit and clears the tool's history.
+
+**Every command in the menu bar.** A View menu switches the seven tools on
+Cmd-1 to Cmd-7. Wing, Lap Sim, CAD, Flow and Jobs menus carry each tool's
+actions; Cmd-R runs the current tool's main job (enabled only in that tool).
+Flow's Open Video moved to Opt-Cmd-O, off Open Project's Cmd-O.
+
+**Context over input.** Prism Layer starts from Wing Lab's speed, air and main
+chord and remembers typed values per project (user defaults, keyed by project
+path); Use project values goes back.
+
 ## Ideas for later
 
 Not built yet; noted so they are not lost.

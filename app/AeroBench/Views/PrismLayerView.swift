@@ -255,7 +255,8 @@ struct PrismLayerView: View {
 
     /// A value that follows the project until it's typed
     private func project(_ key: WritableKeyPath<PrismInputs, Double?>, _ shown: Double, _ name: String) -> Binding<Double> {
-        Binding(get: { shown }, set: { set(key, $0, name) })
+        // Leaving the field commits what it shows: that isn't typing a value
+        Binding(get: { shown }, set: { if inputs[keyPath: key] != nil || $0 != shown { set(key, $0, name) } })
     }
 
     private func copy(_ text: String, _ key: String) {
