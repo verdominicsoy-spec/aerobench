@@ -154,14 +154,21 @@ def flow_object(ctx: JobContext) -> dict:
 
 @command("flow-object-step")
 def flow_object_step(ctx: JobContext) -> dict:
-    from ..cad.meshio import read_glb, write_step_mesh
+    from ..cad.meshio import read_glb, simplify, write_step_mesh
 
     model = read_glb(_path(ctx, "object"))
-    if not model.triangle_count:
+    source = model.triangle_count
+    if not source:
         raise EngineError("the object has no geometry to export")
-    ctx.emit.progress(10, f"sewing {model.triangle_count} triangles")
+    # Every triangle becomes a STEP face (~2.5 kB), so a million-triangle
+    # object would be gigabytes; CAD wants far fewer faces anyway.
+    budget = int(ctx.params.get("max_triangles", 50_000))
+    if source > budget:
+        ctx.emit.progress(5, f"simplifying {source} triangles to {budget}")
+        model = simplify(model, budget)
+    ctx.emit.progress(20, f"writing {model.triangle_count} faces")
     info = write_step_mesh(model, ctx.workdir / "object.stp", scale=1000.0)  # mm, like the OBJ exports
-    return {"step": "object.stp", "units": "mm", **info}
+    return {"step": "object.stp", "units": "mm", "source_triangles": source, **info}
 
 
 @command("flow-export")

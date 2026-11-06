@@ -267,48 +267,169 @@ def read_obj(path: Path, scale: float = 1.0) -> Model:
 
 # --- STEP export (a triangle mesh as a B-rep, for CAD) -----------------------
 
+def simplify(model: Model, max_triangles: int) -> Model:
+    """The model in world coordinates with at most about `max_triangles`
+    triangles, shared between its meshes; closed surfaces stay closed."""
+    import vtk
+    from vtk.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray, vtk_to_numpy
+
+    total = model.triangle_count
+    meshes = []
+    for _, world, mesh in model.instances():
+        p = mesh.positions.astype(np.float64) @ world[:3, :3].T + world[:3, 3]
+        if total > max_triangles:
+            poly = vtk.vtkPolyData()
+            points = vtk.vtkPoints()
+            points.SetData(numpy_to_vtk(p, deep=True))
+            poly.SetPoints(points)
+            cells = np.hstack([np.full((len(mesh.indices), 1), 3), mesh.indices]).astype(np.int64).ravel()
+            polys = vtk.vtkCellArray()
+            polys.ImportLegacyFormat(numpy_to_vtkIdTypeArray(cells, deep=True))
+            poly.SetPolys(polys)
+            clean = vtk.vtkCleanPolyData()  # weld, so the decimator sees one surface
+            clean.SetInputData(poly)
+            # Not vtkQuadricDecimation: it tears closed surfaces (free and
+            # non-manifold edges), so the body could no longer be a solid.
+            decimate = vtk.vtkDecimatePro()
+            decimate.SetInputConnection(clean.GetOutputPort())
+            decimate.SetTargetReduction(1 - max_triangles / total)
+            decimate.PreserveTopologyOn()
+            decimate.SplittingOff()
+            decimate.BoundaryVertexDeletionOff()
+            decimate.SetFeatureAngle(45)  # the default 15 stalls far above the target
+            decimate.Update()
+            out = decimate.GetOutput()
+            p = vtk_to_numpy(out.GetPoints().GetData()).astype(np.float64)
+            idx = vtk_to_numpy(out.GetPolys().GetConnectivityArray()).reshape(-1, 3)
+        else:
+            idx = mesh.indices
+        pos, idx = p.astype(np.float32), idx.astype(np.uint32)
+        meshes.append(Mesh(pos, vertex_normals(pos, idx), idx, mesh.name))
+    return Model(meshes, [Node(m.name, mesh=i) for i, m in enumerate(meshes)])
+
+
+def _edge_pairs(idx: np.ndarray):
+    """Start and end vertex of every triangle side (side 3f+k is face f's k-th),
+    its undirected edge id, and how many sides use each edge."""
+    a, b = idx.ravel().astype(np.int64), idx[:, [1, 2, 0]].ravel().astype(np.int64)
+    _, edge, uses = np.unique(np.minimum(a, b) * (int(idx.max()) + 1) + np.maximum(a, b),
+                              return_inverse=True, return_counts=True)
+    return a, b, edge.ravel(), uses
+
+
+def _split_pinches(pos: np.ndarray, idx: np.ndarray):
+    """Give each fan of triangles round a vertex its own copy of it, so where
+    two sheets touch (an edge with four faces, as decimation leaves) each
+    sheet keeps its own edge and stays a closed, consistently wound surface."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+
+    a, b, edge, uses = _edge_pairs(idx)
+    side = np.flatnonzero(uses[edge] == 2)
+    side = side[np.argsort(edge[side], kind="stable")].reshape(-1, 2)  # the two sides of each edge
+    h, g = side[:, 0], side[:, 1]
+    corner = lambda s, k: 3 * (s // 3) + (s % 3 + k) % 3  # noqa: E731 (corner k along side s)
+    same = a[h] == a[g]
+    join = np.concatenate([[corner(h, 0), np.where(same, corner(g, 0), corner(g, 1))],
+                           [corner(h, 1), np.where(same, corner(g, 1), corner(g, 0))]], axis=1)
+    n = idx.size
+    graph = coo_matrix((np.ones(join.shape[1]), (join[0], join[1])), shape=(n, n))
+    _, label = connected_components(graph, directed=False)
+    _, first, new = np.unique(label, return_index=True, return_inverse=True)
+    return pos[idx.ravel()[first]], new.reshape(-1, 3)
+
+
 def write_step_mesh(model: Model, path: Path, scale: float = 1.0) -> dict:
-    """Write every triangle as a planar face, sewn into shells; each closed
-    shell becomes a solid. Returns counts of faces, shells and solids."""
+    """Write every triangle as a planar face. Faces share the mesh's own
+    vertices and edges (no sewing tolerance to pair the wrong sheets); each
+    connected surface is a shell, and a closed one becomes a solid. Returns
+    counts of faces, shells and solids."""
     from OCP.BRep import BRep_Builder, BRep_Tool
-    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakePolygon, BRepBuilderAPI_Sewing
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakeVertex
     from OCP.BRepCheck import BRepCheck_Analyzer
-    from OCP.gp import gp_Pnt
+    from OCP.BRepGProp import BRepGProp
+    from OCP.gp import gp_Dir, gp_Pln, gp_Pnt
+    from OCP.GProp import GProp_GProps
     from OCP.IFSelect import IFSelect_RetDone
     from OCP.ShapeFix import ShapeFix_Solid
     from OCP.STEPControl import STEPControl_AsIs, STEPControl_Writer
-    from OCP.TopAbs import TopAbs_SHELL
-    from OCP.TopExp import TopExp_Explorer
-    from OCP.TopoDS import TopoDS, TopoDS_Compound
+    from OCP.TopoDS import TopoDS_Compound, TopoDS_Shell, TopoDS_Wire
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+    from scipy.spatial import cKDTree
 
-    tris = [t for _, t in _world_triangles(model, scale)]
-    tris = np.concatenate(tris) if tris else np.zeros((0, 3, 3))
-    area = np.linalg.norm(np.cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0]), axis=1)
-    tris = tris[area > 1e-12 * max(1.0, float(np.abs(tris).max(initial=0.0))) ** 2]  # drop slivers MakeFace rejects
-    if not len(tris):
+    parts = []
+    for _, world, mesh in model.instances():
+        p = (mesh.positions.astype(np.float64) @ world[:3, :3].T + world[:3, 3]) * scale
+        parts.append((p, mesh.indices.astype(np.int64)))
+    if not sum(len(i) for _, i in parts):
         raise ValueError("the mesh has no triangles")
-    edge = float(np.median(np.linalg.norm(tris[:, 1] - tris[:, 0], axis=1)))
-    sew = BRepBuilderAPI_Sewing(1e-3 * edge)
-    for a, b, c in tris:
-        poly = BRepBuilderAPI_MakePolygon(gp_Pnt(*a), gp_Pnt(*b), gp_Pnt(*c), True)
-        face = BRepBuilderAPI_MakeFace(poly.Wire(), True)
-        if face.IsDone():
-            sew.Add(face.Face())
-    sew.Perform()
-    sewn = sew.SewedShape()
+    offsets = np.cumsum([0] + [len(p) for p, _ in parts])
+    pos = np.concatenate([p for p, _ in parts])
+    idx = np.concatenate([i + o for (_, i), o in zip(parts, offsets)])
+    # Weld corners closer than float32 noise (a glb stores float32), else
+    # they make edges too short for OpenCascade and sliver faces.
+    tol = 1e-6 * max(float(np.ptp(pos, axis=0).max()), 1e-12)
+    pairs = cKDTree(pos).query_pairs(tol, output_type="ndarray")
+    _, weld = connected_components(coo_matrix((np.ones(len(pairs)), (pairs[:, 0], pairs[:, 1])),
+                                              shape=(len(pos), len(pos))), directed=False)
+    _, first, weld = np.unique(weld, return_index=True, return_inverse=True)
+    pos, idx = pos[first], weld.ravel()[idx]
+    idx = idx[(idx[:, 0] != idx[:, 1]) & (idx[:, 1] != idx[:, 2]) & (idx[:, 2] != idx[:, 0])]
+    # A triangle folded onto a reversed twin (decimation, or the weld) goes with it.
+    _, inv, n = np.unique(np.sort(idx, axis=1), axis=0, return_inverse=True, return_counts=True)
+    idx = idx[n[inv.ravel()] == 1]
+    pos, idx = _split_pinches(pos, idx)
+    normal = np.cross(pos[idx[:, 1]] - pos[idx[:, 0]], pos[idx[:, 2]] - pos[idx[:, 0]])
+    flat = np.linalg.norm(normal, axis=1) < 1e-12 * max(1.0, float(np.abs(pos).max())) ** 2
+    if flat.any():
+        # Marching cubes and decimation leave zero-area slivers; dropping one
+        # would open a hole, so it gets any plane through its line instead.
+        side = pos[idx[flat, 1]] - pos[idx[flat, 0]]
+        side = np.where(np.linalg.norm(side, axis=1, keepdims=True) > 0, side, pos[idx[flat, 2]] - pos[idx[flat, 0]])
+        normal[flat] = np.cross(side, np.eye(3)[np.argmin(np.abs(side), axis=1)])
+    normal /= np.linalg.norm(normal, axis=1, keepdims=True)
+
+    a, b, edge, uses = _edge_pairs(idx)
+    nf = len(idx)
+    side = np.flatnonzero(uses[edge] == 2)
+    side = side[np.argsort(edge[side], kind="stable")].reshape(-1, 2) // 3
+    _, surface = connected_components(coo_matrix((np.ones(len(side)), (side[:, 0], side[:, 1])), shape=(nf, nf)),
+                                      directed=False)
 
     builder = BRep_Builder()
+    vertex = [BRepBuilderAPI_MakeVertex(gp_Pnt(*q)).Vertex() for q in pos]
+    edges = {}
+    shells: dict[int, TopoDS_Shell] = {}
+    for f in range(nf):
+        wire = TopoDS_Wire()
+        builder.MakeWire(wire)
+        for k in range(3):
+            u, v = int(a[3 * f + k]), int(b[3 * f + k])
+            e = int(edge[3 * f + k])
+            if e not in edges:
+                lo, hi = min(u, v), max(u, v)
+                edges[e] = BRepBuilderAPI_MakeEdge(vertex[lo], vertex[hi]).Edge()
+            builder.Add(wire, edges[e] if u < v else edges[e].Reversed())
+        wire.Closed(True)
+        plane = gp_Pln(gp_Pnt(*pos[idx[f, 0]]), gp_Dir(*normal[f]))
+        shell = shells.get(surface[f])
+        if shell is None:
+            shell = shells[surface[f]] = TopoDS_Shell()
+            builder.MakeShell(shell)
+        builder.Add(shell, BRepBuilderAPI_MakeFace(plane, wire, True).Face())
+
     out = TopoDS_Compound()
     builder.MakeCompound(out)
-    shells = solids = 0
-    explorer = TopExp_Explorer(sewn, TopAbs_SHELL)
-    while explorer.More():
-        shell = TopoDS.Shell(explorer.Current())
-        shells += 1
-        explorer.Next()
-        if BRep_Tool.IsClosed_s(shell):  # every edge shared by two faces
+    solids = 0
+    for shell in shells.values():
+        closed = BRep_Tool.IsClosed_s(shell)  # every edge shared by two faces
+        shell.Closed(closed)
+        if closed:
             solid = ShapeFix_Solid().SolidFromShell(shell)  # also orients the shell outward
-            if BRepCheck_Analyzer(solid).IsValid():
+            props = GProp_GProps()
+            BRepGProp.VolumeProperties_s(solid, props)
+            if BRepCheck_Analyzer(solid).IsValid() and props.Mass() > 0:
                 builder.Add(out, solid)
                 solids += 1
                 continue
@@ -318,5 +439,4 @@ def write_step_mesh(model: Model, path: Path, scale: float = 1.0) -> dict:
     writer.Transfer(out, STEPControl_AsIs)
     if writer.Write(str(path)) != IFSelect_RetDone:
         raise ValueError(f"could not write {path}")
-    return {"faces": int(len(tris)), "shells": shells, "solids": solids}
-
+    return {"faces": int(nf), "shells": len(shells), "solids": solids}

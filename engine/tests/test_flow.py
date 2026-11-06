@@ -589,3 +589,25 @@ def test_flow_object_step_writes_one_closed_solid_in_mm(engine, tmp_path):
     BRepBndLib.Add_s(shape, box)
     lo, hi = box.CornerMin(), box.CornerMax()
     assert np.allclose([hi.X() - lo.X(), hi.Y() - lo.Y(), hi.Z() - lo.Z()], [100, 200, 300], atol=0.5)
+
+
+def test_flow_object_step_simplifies_a_dense_body_to_its_budget(engine, tmp_path):
+    # Real objects run to millions of triangles; one STEP face each never finishes.
+    from skimage.measure import marching_cubes
+
+    from aeroengine.cad.meshio import Mesh, Model, Node, vertex_normals, write_glb
+
+    g = np.linspace(-1, 1, 61)
+    x, y, z = np.meshgrid(g, g, g, indexing="ij")
+    verts, faces, _, _ = marching_cubes(x**2 + y**2 + z**2, 0.8**2, spacing=(g[1] - g[0],) * 3)
+    pos = ((verts - 1) * 0.1).astype(np.float32)  # a sphere of radius 80 mm
+    idx = faces[:, ::-1].astype(np.uint32)  # outward
+    assert len(idx) > 10_000
+    write_glb(Model([Mesh(pos, vertex_normals(pos, idx), idx, "Ball")], [Node("Object", mesh=0)]), tmp_path / "object.glb")
+
+    code, events, err = engine.run("flow-object-step", {"params": {"object": str(tmp_path / "object.glb"),
+                                                                   "max_triangles": 2000}}, tmp_path / "job")
+    assert code == 0, (events, err)
+    data = json.loads((tmp_path / "job" / "result.json").read_text())["data"]
+    assert data["faces"] <= 2000 and data["solids"] == 1
+    assert data["source_triangles"] == len(idx)
