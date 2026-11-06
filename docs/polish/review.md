@@ -39,3 +39,17 @@ Per tool, every visible element, with the principle it answers to (numbers from 
 | Log console | change | Plain monospaced lines on a solid tube, no glow or uppercase (Part 1). |
 | Right-click on a row | new | Reveal in Finder, Copy Log, Run Again, Cancel Job (4). |
 | Jobs menu | new | The same four, ⌘. cancels, ⇧⌘R reveals, enabled on the Jobs screen (4). |
+
+## Project
+
+| Element | Verdict | Why |
+| --- | --- | --- |
+| Header note "Open a project or start a new one." | cut | The buttons say it (1). |
+| Two system grouped Forms inside the pane | change | One pane, titled groups of rows on the inset tint with hairlines (2, 5). |
+| "AeroBench" section header over New/Open | change | Left-aligned "No project open" headline, one line on what a project is, New project as the one prominent button (9). |
+| Footer about project.json | keep | Shortened; it says which folder to pick when opening (1). |
+| Recent projects | keep | Name and parent folder; right-click adds Open and Reveal in Finder (4). |
+| Name, Folder, Created, Saved, Notes | keep | Plain rows; Notes gets an example prompt in place of an empty box (1). |
+| Engine checks rows | keep | sage37 buttons; the dummy job's duration and Keep mesh remembered (2, 5). |
+| Toolbar Show in Finder | change | Reveal in Finder, also File ▸ Reveal Project in Finder (4). |
+| Ping Engine, Run Dummy Job | change | Also in the Jobs menu (4). |

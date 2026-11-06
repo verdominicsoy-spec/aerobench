@@ -104,6 +104,11 @@ final class AppState {
 
     /// Creates a project. Keeping the work moves what is on screen into it
     /// (for Save with no project), instead of starting from defaults.
+    func revealProject() {
+        guard let project else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([project.url])
+    }
+
     func newProjectPanel(keepingWork: Bool = false) {
         let panel = NSSavePanel()
         panel.title = "New Project"

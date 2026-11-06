@@ -36,6 +36,8 @@ struct AeroBenchApp: App {
 struct AeroBenchCommands: Commands {
     let app: AppState
     @Environment(\.openWindow) private var openWindow
+    @AppStorage("dummy.duration") private var dummyDuration = 10
+    @AppStorage("dummy.keepMesh") private var dummyKeepMesh = false
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
@@ -51,6 +53,8 @@ struct AeroBenchCommands: Commands {
                 Button("Clear Menu") { app.clearRecentProjects() }
             }
             Divider()
+            Button("Reveal Project in Finder") { app.revealProject() }
+                .disabled(app.project == nil)
             Button("Close Project") { app.closeProject() }
                 .disabled(app.project == nil)
         }
@@ -78,6 +82,9 @@ struct AeroBenchCommands: Commands {
                 .disabled(job == nil)
             Button("Copy Log") { job.map(app.jobs.copyLog) }
                 .disabled(job == nil)
+            Divider()
+            Button("Ping Engine") { app.runPing() }
+            Button("Run Dummy Job") { app.runDummy(duration: dummyDuration, keepMesh: dummyKeepMesh) }
         }
         CommandMenu("Part") {
             Button(app.partEdit.on ? "Stop Editing Part" : "Edit Part") {
