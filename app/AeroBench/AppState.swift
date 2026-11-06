@@ -25,6 +25,10 @@ final class AppState {
     let flow: FlowFieldModel
     let wingLab: WingLabModel
     let prism = PrismModel()
+    /// The tool on screen, kept between launches
+    var tool = Tool(rawValue: UserDefaults.standard.string(forKey: "tool") ?? "") ?? .project {
+        didSet { UserDefaults.standard.set(tool.rawValue, forKey: "tool") }
+    }
     var project: OpenProject?
     /// A packaged app setting up its engine; nil otherwise.
     var engineSetup: EngineSetup?

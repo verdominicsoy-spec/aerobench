@@ -42,7 +42,7 @@ struct Dock: View {
         .accessibilityLabel("Tools")
     }
 
-    /// The items; the live copy takes the clicks and the ⌘ shortcuts, the
+    /// The items; the live copy takes the clicks, the
     /// copy inside the lens only shows.
     func labels(highlight: Tool, live: Bool) -> some View {
         HStack(spacing: 0) {
@@ -50,8 +50,6 @@ struct Dock: View {
                 if live {
                     Button { selection = t } label: { item(t, highlight: highlight) }
                         .buttonStyle(.plain)
-                        .keyboardShortcut(t.key, modifiers: .command)
-                        .help("\(t.title) (⌘\(String(t.key.character)))")
                         .background(GeometryReader { g in
                             Color.clear.preference(key: DockFrameKey.self, value: [t: g.frame(in: .named("dock"))])
                         })

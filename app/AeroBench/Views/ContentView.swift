@@ -58,19 +58,18 @@ enum Tool: String, CaseIterable, Identifiable {
     /// The dock's tools; the project sits in the header.
     static let docked: [Tool] = [.wingLab, .lapSim, .cadViewer, .flowField, .prismLayer, .jobs]
 
-    /// ⌘1 to ⌘7: the project, then the dock in order.
+    /// ⌘1 to ⌘7 in the View menu: the project, then the dock in order.
     var key: KeyEquivalent { KeyEquivalent(Character(String((Tool.allCases.firstIndex(of: self) ?? 0) + 1))) }
 }
 
 struct ContentView: View {
     @Environment(AppState.self) private var app
-    @SceneStorage("tool") private var selection: Tool = .project
     @State private var takeaway: String?
 
     var body: some View {
-        S37Root(motif: selection.motif) {
+        S37Root(motif: app.tool.motif) {
             VStack(alignment: .leading, spacing: 0) {
-                ToolHeader(selection: $selection, takeaway: takeaway)
+                ToolHeader(takeaway: takeaway)
                     .padding(.horizontal, S37.Space.s6)
                     .padding(.top, S37.Space.s2)
                     .padding(.bottom, S37.Space.s1)
@@ -80,7 +79,7 @@ struct ContentView: View {
                         .padding(.bottom, S37.Space.s2)
                 }
                 Group {
-                    switch selection {
+                    switch app.tool {
                     case .project:
                         ProjectView()
                     case .wingLab:
@@ -100,7 +99,7 @@ struct ContentView: View {
                 .padding(.horizontal, 10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onPreferenceChange(ToolTakeawayKey.self) { takeaway = $0 }
-                Dock(selection: $selection, tools: Tool.docked) { tool in
+                Dock(selection: Binding(get: { app.tool }, set: { app.tool = $0 }), tools: Tool.docked) { tool in
                     tool == .jobs && app.jobs.runningCount > 0 ? "Jobs · \(app.jobs.runningCount)" : tool.dockTitle
                 }
                 .frame(maxWidth: .infinity)
@@ -119,12 +118,12 @@ struct ContentView: View {
             guard let url = urls.first else { return false }
             let ext = url.pathExtension.lowercased()
             if CADViewerModel.openableExtensions.contains(ext) {
-                selection = .cadViewer
+                app.tool = .cadViewer
                 app.openCAD(url)
                 return true
             }
             if ["mp4", "mov", "m4v"].contains(ext) {
-                selection = .flowField
+                app.tool = .flowField
                 app.openFlowVideo(url)
                 return true
             }
@@ -158,12 +157,11 @@ struct ToolTakeawayKey: PreferenceKey {
 /// and on the right the project, which opens its screen.
 struct ToolHeader: View {
     @Environment(AppState.self) private var app
-    @Binding var selection: Tool
     var takeaway: String?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: S37.Space.s6) {
-            Text(selection.title).font(.fraunces(24)).foregroundStyle(S37.C.ink)
+            Text(app.tool.title).font(.fraunces(24)).foregroundStyle(S37.C.ink)
                 .lineLimit(1).fixedSize()
             if let takeaway {
                 Text(takeaway).font(.system(size: 14, weight: .medium)).foregroundStyle(S37.C.inkSecondary)
@@ -174,16 +172,13 @@ struct ToolHeader: View {
                 Text(app.jobs.runningCount == 1 ? "1 job running" : "\(app.jobs.runningCount) jobs running")
                     .font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.sageInk).lineLimit(1)
             }
-            Button { selection = .project } label: {
+            Button { app.tool = .project } label: {
                 Label(projectLabel, systemImage: Tool.project.symbol).lineLimit(1)
             }
             .buttonStyle(S37ButtonStyle())
-            .keyboardShortcut(Tool.project.key, modifiers: .command)
-            .help("Project (⌘1)")
             .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
             SettingsLink { Label("Settings", systemImage: "gearshape").labelStyle(.iconOnly) }
                 .buttonStyle(S37ButtonStyle())
-                .help("Settings (⌘,): cores per job, the engine and SU2, units")
                 .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
         }
         .s37HeaderShadow()

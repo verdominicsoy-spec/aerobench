@@ -58,6 +58,13 @@ struct AeroBenchCommands: Commands {
             Button("Save Project") { app.save() }
                 .keyboardShortcut("s")
         }
+        CommandGroup(before: .toolbar) {
+            ForEach(Tool.allCases) { t in
+                Toggle(t.title, isOn: Binding(get: { app.tool == t }, set: { if $0 { app.tool = t } }))
+                    .keyboardShortcut(t.key, modifiers: .command)
+            }
+            Divider()
+        }
         CommandMenu("Part") {
             Button(app.partEdit.on ? "Stop Editing Part" : "Edit Part") {
                 app.partEdit.on ? app.exitPartEdit() : app.enterPartEdit()
