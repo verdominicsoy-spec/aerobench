@@ -92,6 +92,8 @@ struct AeroBenchCommands: Commands {
                 .disabled(!inWing || lab.wing.elements.isEmpty)
             Button("Element Polar") { app.runWingPolar() }
                 .disabled(!inWing || selected == nil || busy(lab.polarJob))
+            Button("Mesh Wing") { lab.canvasMode = .mesh; app.runWingMesh() }
+                .disabled(!inWing || lab.wing.elements.isEmpty || busy(lab.meshJob))
             Button("Run CFD") { app.runCFD() }
                 .keyboardShortcut("r")
                 .disabled(!inWing || app.settings.su2Executable == nil || lab.wing.elements.isEmpty

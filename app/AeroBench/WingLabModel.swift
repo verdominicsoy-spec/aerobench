@@ -146,6 +146,13 @@ final class WingLabModel {
     /// The CFD tab's polar from earlier RANS runs, kept until the wing, its model or the runs change.
     @ObservationIgnored var ransPolarCache: (key: String, wing: [WingElement], points: [PolarCharts.Point])?
     var ransFolder: URL?
+
+    // The RANS mesh to look at (wing-mesh), and the wing it was made for
+    var meshJob: JobItem?
+    var mesh: SU2Mesh?
+    var meshPath: CGPath?
+    var meshOf: Wing?
+    var meshInfo: String?
     var su2Job: JobItem?
 
     // Live estimate: panel method and NeuralFoil, through the warm engine
@@ -394,7 +401,7 @@ final class WingLabModel {
     var libraryTab = LibraryTab.airfoils
 
     enum CanvasMode: String, CaseIterable, Identifiable {
-        case wing = "Wing", car = "Car"
+        case wing = "Wing", car = "Car", mesh = "Mesh"
         var id: String { rawValue }
     }
     var canvasMode = CanvasMode(rawValue: UserDefaults.standard.string(forKey: "wingCanvasMode") ?? "") ?? .wing {

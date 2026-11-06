@@ -101,6 +101,9 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
         mesh = build(placed, settings, mesh_file, inverted)
         log(f"mesh: {mesh['cells']} cells ({mesh['quads']} quads, {mesh['triangles']} triangles), "
             f"{mesh['layers']} wall layers")
+    if p.get("mesh_only"):  # wing-mesh: the mesh to look at, no SU2
+        return {"mesh": mesh, "mesh_level": level, "transition": zones, "mesh_file": mesh_file.name,
+                "frame_turn": -alpha if ground is not None else 0.0}
     ref_point = p.get("ref_point")
     if ref_point is None:
         main = placed[0]

@@ -172,6 +172,37 @@ extension AppState {
         }
     }
 
+    /// The mesh a RANS run would use, for the Mesh canvas: same settings, no SU2.
+    func runWingMesh() {
+        let lab = wingLab
+        let wing = lab.wing
+        guard !wing.elements.isEmpty else { return }
+        var params = ransParams()
+        params["elements"] = elementsParam()
+        let level = lab.meshLevel
+        lab.meshJob = jobs.submit(command: "wing-mesh", params: params, in: jobsRoot) { item in
+            guard item.status == .succeeded else { return }
+            let url = item.workdir.appendingPathComponent("wing.su2")
+            let stats = item.resultData?["mesh"] as? [String: Any]
+            Task.detached {
+                guard let text = try? String(contentsOf: url, encoding: .utf8), let mesh = try? SU2Mesh.parse(text) else { return }
+                let path = CGMutablePath()
+                for cell in mesh.cells where cell.allSatisfy(mesh.points.indices.contains) {
+                    path.addLines(between: cell.map { CGPoint(x: mesh.points[$0].x, y: mesh.points[$0].y) })
+                    path.closeSubpath()
+                }
+                let shape = path.copy()
+                await MainActor.run {
+                    lab.mesh = mesh
+                    lab.meshPath = shape
+                    lab.meshOf = wing
+                    let n = { (k: String) in (stats?[k] as? Int).map { $0.formatted() } ?? "?" }
+                    lab.meshInfo = "\(level.capitalized) mesh: \(n("cells")) cells (\(n("quads")) quads, \(n("triangles")) triangles), \(n("layers")) wall layers"
+                }
+            }
+        }
+    }
+
     /// Flow and solver settings shared by a RANS run and every optimiser trial
     /// (the canvas wing's, or another's: A when comparing).
     func ransParams(_ other: Wing? = nil) -> [String: JSONValue] {

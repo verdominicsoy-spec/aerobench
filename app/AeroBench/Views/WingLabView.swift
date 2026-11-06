@@ -97,6 +97,8 @@ struct CanvasHost: View {
                 }
                 .scrollIndicators(.never)
                 .onAppear { app.putDraftOnCar() }
+            case .mesh:
+                MeshCanvas()
             }
         }
     }
@@ -2261,5 +2263,73 @@ extension View {
     func canvasPlate() -> some View {
         padding(.horizontal, 6).padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).fill(S37.C.glassTinted))
+    }
+}
+
+/// The RANS mesh of this wing (wing-mesh), framed on the elements; drag to
+/// pan, the buttons to zoom.
+struct MeshCanvas: View {
+    @Environment(AppState.self) private var app
+    @State private var zoom = 1.0
+    @State private var pan = CGSize.zero
+    @State private var panStart = CGSize.zero
+
+    var body: some View {
+        let lab = app.wingLab
+        let running = lab.meshJob.map { !$0.status.isFinished } ?? false
+        ZStack(alignment: .topLeading) {
+            if let mesh = lab.mesh, let path = lab.meshPath, let b = mesh.wallBounds {
+                Canvas { ctx, size in
+                    let span = (b.max - b.min) * 1.3
+                    let scale = min(size.width / max(span.x, 1e-6), size.height / max(span.y, 1e-6)) * zoom
+                    let centre = (b.min + b.max) / 2
+                    let t = CGAffineTransform(translationX: size.width / 2 + pan.width, y: size.height / 2 + pan.height)
+                        .scaledBy(x: scale, y: -scale).translatedBy(x: -centre.x, y: -centre.y)
+                    ctx.concatenate(t)
+                    ctx.stroke(Path(path), with: .color(S37.C.inkSecondary), lineWidth: 0.6 / scale)
+                }
+                .contentShape(Rectangle())
+                .gesture(DragGesture()
+                    .onChanged { pan = CGSize(width: panStart.width + $0.translation.width, height: panStart.height + $0.translation.height) }
+                    .onEnded { _ in panStart = pan })
+            } else if !running {
+                S37EmptyState(title: "No mesh yet", line: "Mesh this wing with the RANS settings under Solvers: a few seconds, no SU2 needed.") {
+                    Button("Mesh this wing") { app.runWingMesh() }
+                        .buttonStyle(S37ButtonStyle(kind: .prominent))
+                        .disabled(lab.wing.elements.isEmpty)
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .top, spacing: 6) {
+                    if let job = lab.meshJob, !job.status.isFinished || job.status == .failed {
+                        JobInlineStatus(job: job).frame(maxWidth: 360).canvasPlate()
+                    } else if lab.mesh != nil {
+                        HStack(spacing: 8) {
+                            Text(lab.meshInfo ?? "").font(.caption.monospacedDigit())
+                            if lab.meshOf != lab.wing {
+                                Text("the wing has changed since").font(.caption).foregroundStyle(S37.C.clayInk)
+                            }
+                            Button(lab.meshOf != lab.wing ? "Mesh again" : "Remesh") { app.runWingMesh() }
+                                .buttonStyle(S37ButtonStyle()).controlSize(.small)
+                        }
+                        .canvasPlate()
+                    }
+                    Spacer()
+                    if lab.mesh != nil {
+                        HStack(spacing: 6) {
+                            Button { zoom /= 1.5 } label: { Image(systemName: "minus.magnifyingglass") }
+                                .accessibilityLabel("Zoom out")
+                            Button { zoom *= 1.5 } label: { Image(systemName: "plus.magnifyingglass") }
+                                .accessibilityLabel("Zoom in")
+                            Button("Fit") { zoom = 1; pan = .zero; panStart = .zero }
+                        }
+                        .buttonStyle(.borderless)
+                        .canvasPlate()
+                    }
+                }
+            }
+            .padding(6)
+        }
+        .background(S37.C.surface)
     }
 }

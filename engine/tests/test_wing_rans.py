@@ -472,3 +472,22 @@ def test_a_drifting_or_short_or_unconverging_run_does_not_settle():
     assert settled(_oscillating(drift=1e-4)) is None  # the mean creeps about 2% per 300 iterations
     assert settled(_oscillating(n=500)) is None  # too short to judge two windows
     assert settled(_oscillating(res_drop=1.0)) is None  # residuals never fell
+
+
+def test_wing_mesh_writes_the_rans_mesh_and_runs_no_su2(tmp_path):
+    """wing-mesh: the mesh wing-rans would use, kept in the job folder, without SU2."""
+    els = _two()
+    unit = naca4("4412").tolist()
+    job = {"command": "wing-mesh", "options": {"cores": 2}, "params": {
+        "elements": [{"coords": e.tolist(), "unit": unit, "angle": a, "inverted": False, "chord": c}
+                     for e, a, c in zip(els, (0, 20), (1.0, 0.35))],
+        "speed": 15.0, "alpha": 2.0, "model": "sa", "mesh": "quick", "transition": [[0.0, 0.0], [0.0, 0.0]]}}
+    (tmp_path / "job.json").write_text(json.dumps(job))
+    proc = subprocess.run(["aeroengine", "wing-mesh", "--input", str(tmp_path / "job.json"), "--workdir", str(tmp_path / "w")],
+                          capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout[-2000:] + proc.stderr[-2000:]
+    data = json.loads((tmp_path / "w" / "result.json").read_text())["data"]
+    assert data["mesh_file"] == "wing.su2" and data["mesh"]["cells"] > 0
+    cells, _ = _su2_cells(tmp_path / "w" / "wing.su2")
+    assert len(cells) == data["mesh"]["cells"]
+    assert not (tmp_path / "w" / "su2.cfg").exists()  # meshed only

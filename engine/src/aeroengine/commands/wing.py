@@ -154,6 +154,16 @@ def wing_rans(ctx: JobContext) -> dict:
                       ctx.options.cores, ctx.thread_env(), ctx.emit.progress, ctx.emit.log)
 
 
+@command("wing-mesh")
+def wing_mesh(ctx: JobContext) -> dict:
+    """The mesh wing-rans would run on, written to the job folder as wing.su2
+    for the app to draw. Same parameters as wing-rans; SU2 is not needed."""
+    from ..wing import rans
+
+    return rans.solve({**ctx.params, "mesh_only": True}, ctx.workdir, ctx.workdir / "wing.su2", None,
+                      ctx.options.cores, ctx.thread_env(), ctx.emit.progress, ctx.emit.log)
+
+
 @command("wing-estimate")
 def wing_estimate(ctx: JobContext) -> dict:
     """Multi-element lift and drag in about a second: the panel method for
