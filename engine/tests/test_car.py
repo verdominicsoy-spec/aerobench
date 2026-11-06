@@ -418,3 +418,9 @@ def test_a_flap_just_proud_of_the_nose_meshes(tmp_path, dip):
     st = car_mesh.build({"y": 0.0, "loops": [body], "open": []}, [wing], {"ground_z": 0.0, "speed": 20.0},
                         "medium", tmp_path / "m.su2")
     assert "wing_front" in st["markers"] and st["cells"] > 1000
+
+
+def test_config_has_the_limited_fallback():
+    text = car_case.config(["body", "road"], SETUP, flow(), "m.su2", scheme="fds_limited")
+    assert "MUSCL_FLOW= YES" in text and "SLOPE_LIMITER_FLOW= VENKATAKRISHNAN" in text
+    assert "SLOPE_LIMITER_FLOW= NONE" in car_case.config(["body", "road"], SETUP, flow(), "m.su2")

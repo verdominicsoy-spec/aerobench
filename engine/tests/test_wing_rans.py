@@ -7,6 +7,7 @@ import time
 import json
 import os
 import shutil
+from dataclasses import replace
 from pathlib import Path
 import subprocess
 
@@ -515,3 +516,25 @@ def test_a_residual_that_climbs_is_divergence(tmp_path):
     with pytest.raises(m.Diverged) as caught:
         m._run_once(case, work / "m.su2", work, fake, 1, None, None)
     assert 150 <= caught.value.iteration <= 160  # -4 + 3 = -1, reached at iteration 150
+
+
+def test_an_upwind_run_that_diverges_tries_the_limiter_before_a_lower_cfl(monkeypatch, tmp_path):
+    """Car 2's strip at y 82 mm diverged unlimited at CFL 10 and 4, and settled at CFL 10 with
+    the Venkatakrishnan limiter; on clean strips the limiter stalled convergence and moved the
+    lift, so it is the fallback, not the start."""
+    from aeroengine.wing import su2 as m
+
+    tried = []
+
+    def fake(case, *a, **k):
+        tried.append((case.scheme, case.cfl))
+        if case.scheme == "fds":
+            raise m.Diverged(42)
+        return {"converged": True}
+
+    monkeypatch.setattr(m, "_run_once", fake)
+    case = Case(speed=20, rho=1.2, mu=1.8e-5, alpha_deg=0, ref_chord=1.0, ref_point=(0, 0), walls=["body"],
+                scheme="fds", cfl=10.0)
+    out = m.run(case, tmp_path / "m.su2", tmp_path, tmp_path / "SU2_CFD")
+    assert tried == [("fds", 10.0), ("fds_limited", 10.0)] and out["scheme"] == "fds_limited"
+    assert "SLOPE_LIMITER_FLOW= VENKATAKRISHNAN" in config(replace(case, scheme="fds_limited"), "m.su2")

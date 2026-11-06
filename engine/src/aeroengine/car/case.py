@@ -74,6 +74,7 @@ def config(markers: list[str], setup: dict, flow: dict, mesh_file: str, iteratio
     flow_scheme = {
         "jst": f"CONV_NUM_METHOD_FLOW= JST\nMUSCL_FLOW= NO\nJST_SENSOR_COEFF= ( {su2.JST_DISSIPATION[0]}, {su2.JST_DISSIPATION[1]} )",
         "fds": "CONV_NUM_METHOD_FLOW= FDS\nMUSCL_FLOW= YES\nSLOPE_LIMITER_FLOW= NONE",
+        "fds_limited": su2.FDS_LIMITED,
     }[scheme]
     return f"""% AeroBench Car: 2D incompressible RANS of a car section
 SOLVER= INC_RANS
@@ -175,7 +176,8 @@ def solve_section(section: dict, wings: list[dict], setup: dict, flow: dict, pre
                 wing_x[pos] = -1000.0 * row["cmz"] / row["cl"]
     return {"y": float(section["y"]), "lift": float(lift), "drag": float(drag), "x_cp": x_cp, "wing_x_cp": wing_x,
             "converged": bool(out["converged"]), "reason": out.get("reason"), "iterations": out["iterations"],
-            "wing_lift": wing_lift, "wing_drag": wing_drag, "cells": stats["cells"], "field_view": view}
+            "wing_lift": wing_lift, "wing_drag": wing_drag, "cells": stats["cells"], "field_view": view,
+            "scheme": out.get("scheme"), "cfl": out.get("cfl")}
 
 
 def _field(section: dict, wings: list[dict], setup: dict, workdir: Path, progress) -> str | None:

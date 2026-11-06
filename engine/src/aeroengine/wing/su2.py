@@ -32,7 +32,11 @@ DEFAULT_MODEL = "sst"
 # default: SU2's incompressible upwind FDS doubled NACA 0012's pressure drag
 # at 10 degrees on meshes of a few tens of thousands of cells (and on NASA's
 # own 225 x 65 grid). FDS stays as the fallback when JST will not run.
-SCHEMES = {"jst": "JST central", "fds": "FDS upwind (more dissipative: drag reads high)"}
+SCHEMES = {"jst": "JST central", "fds": "FDS upwind (more dissipative: drag reads high)",
+           "fds_limited": "FDS upwind with a slope limiter (steadier, a little more dissipative)"}
+# MUSCL with Venkatakrishnan's limiter: the fallback when unlimited FDS diverges (see run).
+FDS_LIMITED = ("CONV_NUM_METHOD_FLOW= FDS\nMUSCL_FLOW= YES\nSLOPE_LIMITER_FLOW= VENKATAKRISHNAN\n"
+               "VENKAT_LIMITER_COEFF= 0.05")
 JST_DISSIPATION = (0.5, 0.005)  # second and fourth order coefficients
 
 
@@ -104,6 +108,7 @@ def config(case: Case, mesh: str) -> str:
     flow_scheme = {
         "jst": f"CONV_NUM_METHOD_FLOW= JST\nMUSCL_FLOW= NO\nJST_SENSOR_COEFF= ( {JST_DISSIPATION[0]}, {JST_DISSIPATION[1]} )",
         "fds": "CONV_NUM_METHOD_FLOW= FDS\nMUSCL_FLOW= YES\nSLOPE_LIMITER_FLOW= NONE",
+        "fds_limited": FDS_LIMITED,
     }[case.scheme]
     return f"""% AeroBench Wing Lab: 2D incompressible RANS
 SOLVER= INC_RANS
@@ -269,11 +274,18 @@ def run(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int = 1,
     """Runs SU2 at the case's CFL, and if it diverges, again at each lower
     CFL in CFL_STEPS, then once with the upwind scheme: what an engineer
     would do by hand. Every attempt is judged the same way; the result says
-    which CFL and scheme it took."""
+    which CFL and scheme it took. An unlimited FDS run that diverges goes on
+    with the slope limiter, at its CFL and then the lower ones."""
     from dataclasses import replace
 
     attempts = []
-    plan = [(case.scheme, c) for c in [case.cfl] + [c for c in CFL_STEPS if c < case.cfl]]
+    cfls = [case.cfl] + [c for c in CFL_STEPS if c < case.cfl]
+    plan = [(case.scheme, c) for c in cfls]
+    if case.scheme == "fds":
+        # Car 2's strip at y 82 mm diverged unlimited at CFL 10 and 4 and settled limited at 10; on
+        # clean strips the limiter stalled convergence and moved the bare car's lift by 25 N/m (14 to
+        # 39 at y 82 mm), so it only takes over from a run that diverged.
+        plan = [("fds", case.cfl)] + [("fds_limited", c) for c in cfls]
     if case.scheme != FALLBACK[0]:
         plan.append(FALLBACK)
     for scheme, cfl in plan:
