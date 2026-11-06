@@ -66,8 +66,8 @@ public struct WingDesignResult: Decodable, Sendable {
 extension CarRules {
     /// The card's box in the design frame (m): x from the box's front (0) back
     /// to its length, y up from the ground.
-    public static func designBox(_ position: WingPosition, setup: CarSetup) -> RulesBox {
-        let b = box(position, setup: setup)
+    public static func designBox(_ position: WingPosition, setup: CarSetup, span: Double? = nil) -> RulesBox {
+        let b = box(position, setup: setup, span: span)
         return RulesBox(minX: 0, minY: (b.minZ - setup.groundZ) / 1000,
                         maxX: (b.maxX - b.minX) / 1000, maxY: (b.maxZ - setup.groundZ) / 1000)
     }
@@ -77,7 +77,7 @@ extension Placement {
     /// Where a design sits on the car: its most upstream point `x` m behind the
     /// box's front, its lowest point at its ride height (the clearance without one).
     public static func fromDesign(card: WingCard, x: Double, setup: CarSetup) -> Placement {
-        let b = CarRules.box(card.position, setup: setup)
+        let b = CarRules.box(card.position, setup: setup, span: card.wing.span)
         let axle = setup.axleX(card.position == .front ? "F" : "R")
         return Placement(card: card.id, x: b.maxX - x * 1000 - axle,
                          height: card.wing.rideHeight.map { $0 * 1000 } ?? CarRules.groundClearance)

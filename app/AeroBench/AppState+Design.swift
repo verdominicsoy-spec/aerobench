@@ -20,13 +20,13 @@ extension AppState {
         let lo = SIMD2(pts.map(\.x).min() ?? 0, pts.map(\.y).min() ?? 0)
         if let s = car.setup {
             let end = wing.rulesFor
-            let b = CarRules.box(end, setup: s)
+            let b = CarRules.box(end, setup: s, span: wing.span)  // the rear starts at the lowest band its span fits
             var offset: SIMD2<Double>?
             if let at = carDraftAt, !pts.isEmpty {
                 let front = (b.maxX - (s.axleX(end == .front ? "F" : "R") + at.x)) / 1000
                 offset = SIMD2(front, at.height / 1000) - lo
             }
-            return DesignFrame(box: CarRules.designBox(end, setup: s), freeAir: false, offset: offset, onCar: true)
+            return DesignFrame(box: CarRules.designBox(end, setup: s, span: wing.span), freeAir: false, offset: offset, onCar: true)
         }
         let box = wing.rulesBox ?? rulesBox(for: wing.rulesFor)  // the last base car's, if this project has none
         if let h = wing.rideHeight, !pts.isEmpty {

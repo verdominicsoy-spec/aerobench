@@ -51,6 +51,10 @@
     "700_to_1100_max": {
       "value": "not outboard of the rear wheel/tyre's outermost point",
       "rule": "FS T8.2.2"
+    },
+    "applied": {
+      "value": "Rear zone split into three bands by height (inside the wheels below the rear tyre tops; 150 mm inboard of the rear tyres up to 700 mm; out to the rear wheels from 700 to 1100 mm). A rear wing's box starts at the lowest band its span fits all the way up (CarRules.widthBands).",
+      "rule": "FS T8.2.2"
     }
   },
   "keep_out_mm": {

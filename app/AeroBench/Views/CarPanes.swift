@@ -207,6 +207,17 @@ struct SideViewPane: View {
             let r = CGRect(origin: f.point(b.maxX, b.maxZ), size: .zero).union(CGRect(origin: f.point(b.minX, b.minZ), size: .zero))
             ctx.stroke(Path(r), with: .color(S37.C.chart6), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
         }
+        // The rear zone's T8.2.2 width bands: where each one starts, and how wide a wing may be in it
+        let rear = CarRules.box(.rear, setup: s)
+        for band in CarRules.widthBands(s) {
+            let a = f.point(rear.minX, band.minZ), b = f.point(rear.maxX, band.minZ)
+            var line = Path()
+            line.move(to: a)
+            line.addLine(to: b)
+            ctx.stroke(line, with: .color(S37.C.chart6.opacity(0.6)), style: StrokeStyle(lineWidth: 0.8, dash: [2, 3]))
+            let mid = f.point((rear.minX + rear.maxX) / 2, (band.minZ + band.maxZ) / 2)
+            ctx.draw(Text("≤ \(Int(band.maxSpan.rounded())) mm wide").font(.system(size: 10, weight: .medium)).foregroundStyle(S37.C.chart6), at: mid)
+        }
         guard let combo = app.shownCombo else { return }
         for (pos, p) in [(WingPosition.front, combo.front), (.rear, combo.rear)] {
             guard let p, let c = card(p.card) else { continue }

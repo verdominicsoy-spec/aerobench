@@ -67,6 +67,7 @@ struct WingLabView: View {
             app.syncCarRulesBox()
         }
         .onChange(of: lab.wing.rulesFor) { app.syncCarRulesBox() }
+        .onChange(of: lab.wing.span) { app.syncCarRulesBox() }  // the rear box starts at the lowest band the span fits
     }
 }
 
@@ -340,7 +341,10 @@ struct WingMapping {
 
     init(wing: Wing, size: CGSize, zoom: Double, pan: CGSize) {
         var pts = wing.elements.flatMap { $0.placed() }
-        if let b = wing.rulesBox { pts += [SIMD2(b.minX, b.minY), SIMD2(b.maxX, b.maxY)] }
+        if let b = wing.rulesBox {
+            pts += [SIMD2(b.minX, b.minY), SIMD2(b.maxX, b.maxY)]
+            if let low = b.bands?.first { pts.append(SIMD2(b.minX, low.minY)) }  // the bands below the box too
+        }
         if let g = wing.groundLine { pts.append(g.point) }  // keep the ground in view
         if pts.isEmpty { pts = [SIMD2(-0.05, -0.1), SIMD2(0.45, 0.1)] }
         let lo = pts.reduce(SIMD2(Double.infinity, .infinity)) { simd_min($0, $1) }
@@ -581,6 +585,20 @@ struct WingCanvas: View {
         if let b = wing.rulesBox {
             let a = m.view(SIMD2(b.minX, b.maxY)), c = m.view(SIMD2(b.maxX, b.minY))
             let rect = CGRect(x: a.x, y: a.y, width: c.x - a.x, height: c.y - a.y)
+            // Rear on a car: the T8.2.2 width bands, the ones too narrow for this span shaded
+            for band in b.bands ?? [] {
+                let p = m.view(SIMD2(b.minX, band.maxY)), q = m.view(SIMD2(b.maxX, band.minY))
+                let r = CGRect(x: p.x, y: p.y, width: q.x - p.x, height: q.y - p.y)
+                let narrow = wing.span > band.maxSpan + 1e-6
+                if narrow { ctx.fill(Path(r), with: .color(S37.C.clayWash)) }
+                var edge = Path()
+                edge.move(to: CGPoint(x: r.minX, y: r.maxY))
+                edge.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
+                ctx.stroke(edge, with: .color(S37.C.chart6.opacity(0.6)), style: StrokeStyle(lineWidth: 0.8, dash: [2, 3]))
+                ctx.draw(Text("≤ \(Int((band.maxSpan * 1000).rounded())) mm span").font(.caption2)
+                            .foregroundStyle(narrow ? S37.C.clayInk : S37.C.chart6),
+                         at: CGPoint(x: r.maxX - 60, y: r.midY))
+            }
             ctx.stroke(Path(rect), with: .color(S37.C.chart6), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
             ctx.draw(Text("Rules box").font(.caption2).foregroundStyle(S37.C.chart6), at: CGPoint(x: rect.minX + 30, y: rect.minY - 8))
         }

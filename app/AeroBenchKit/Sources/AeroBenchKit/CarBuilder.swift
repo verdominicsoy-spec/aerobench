@@ -51,6 +51,22 @@ public struct CarSetup: Codable, Equatable, Sendable {
 
     public var wheelbase: Double { axleX("F") - axleX("R") }
 
+    /// Half the width to the outermost point of the axle's wheels (mm, from the centreline)
+    public func outerHalfWidth(_ axle: Character) -> Double {
+        wheels.filter { $0.name.first == axle && $0.centre.count > 1 }.map { abs($0.centre[1]) + $0.width / 2 }.max() ?? 0
+    }
+
+    /// Half the width to the most inboard point of the axle's tyres (mm, from the centreline)
+    public func innerHalfWidth(_ axle: Character) -> Double {
+        wheels.filter { $0.name.first == axle && $0.centre.count > 1 }.map { abs($0.centre[1]) - $0.width / 2 }.min() ?? 0
+    }
+
+    /// Height of the axle's tyre tops (car z, mm)
+    public func tyreTop(_ axle: Character) -> Double {
+        let tops = wheels.filter { $0.name.first == axle && $0.centre.count > 2 }.map { $0.centre[2] + $0.radius }
+        return tops.isEmpty ? groundZ : tops.reduce(0, +) / Double(tops.count)
+    }
+
     public static func decode(resultFile data: Data) throws -> CarSetup {
         struct Envelope: Decodable { var data: CarSetup }
         return try JSONDecoder().decode(Envelope.self, from: data).data
@@ -232,7 +248,7 @@ public struct Placement: Codable, Equatable, Sendable {
 
     /// Where a card first goes on the car: 10 mm inside the front of its box, at its own ride height or just above the clearance.
     public static func start(card: WingCard, setup: CarSetup) -> Placement {
-        let box = CarRules.box(card.position, setup: setup)
+        let box = CarRules.box(card.position, setup: setup, span: card.wing.span)
         let axle = setup.axleX(card.position == .front ? "F" : "R")
         let p = Placement(card: card.id, x: box.maxX - axle - 10,
                           height: max(card.rideHeight.map { $0 * 1000 } ?? 0, box.minZ - setup.groundZ) + 10)
@@ -241,7 +257,7 @@ public struct Placement: Codable, Equatable, Sendable {
 
     /// Moved the least distance that keeps the whole wing inside its rules box.
     public func clamped(card: WingCard, setup: CarSetup) -> (Placement, clamped: Bool) {
-        let box = CarRules.box(card.position, setup: setup)
+        let box = CarRules.box(card.position, setup: setup, span: card.wing.span)
         let pts = placedElements(card: card, setup: setup).flatMap { $0 }
         guard let lo = pts.map(\.x).min(), let hi = pts.map(\.x).max(),
               let bottom = pts.map(\.y).min(), let top = pts.map(\.y).max() else { return (self, false) }
@@ -262,10 +278,12 @@ public enum CarRules {
     public static let frontLength = 700.0, frontHeight = 350.0
     /// T8.2.3: at most 250 behind the rear tyres; T8.2.1: below 1100 rearward of the head restraint support's front face
     public static let rearLength = 250.0, rearHeight = 1100.0
+    /// T8.2.2: from the rear tyre tops to 700 mm, 150 mm inboard of the rear tyres
+    public static let midTop = 700.0, midInboard = 150.0
 
     /// Whether the card's wing can fit its box at all (no placement keeps a bigger one inside).
     public static func fits(_ card: WingCard, setup: CarSetup) -> Bool {
-        let b = box(card.position, setup: setup)
+        let b = box(card.position, setup: setup, span: card.wing.span)
         let pts = card.outline().flatMap { $0 }
         guard let lo = pts.map(\.x).min(), let hi = pts.map(\.x).max(),
               let bottom = pts.map(\.y).min(), let top = pts.map(\.y).max() else { return true }
@@ -276,16 +294,35 @@ public enum CarRules {
     /// elements unturned, m), with the wing at `placement`: its leading edge and
     /// lowest point are the anchor. Exact at a wing angle of 0.
     public static func wingBox(_ card: WingCard, placement: Placement, setup: CarSetup) -> RulesBox {
-        let b = box(card.position, setup: setup)
+        let b = box(card.position, setup: setup, span: card.wing.span)
         let pts = card.wing.elements.flatMap { $0.placed() }
         let minX = pts.map(\.x).min() ?? 0, minY = pts.map(\.y).min() ?? 0
         let front = setup.axleX(card.position == .front ? "F" : "R") + placement.x  // car x of the leading edge
         let bottom = setup.groundZ + placement.height  // car z of the lowest point
-        return RulesBox(minX: minX + (front - b.maxX) / 1000, minY: minY + (b.minZ - bottom) / 1000,
-                        maxX: minX + (front - b.minX) / 1000, maxY: minY + (b.maxZ - bottom) / 1000)
+        let y = { (z: Double) in minY + (z - bottom) / 1000 }
+        var r = RulesBox(minX: minX + (front - b.maxX) / 1000, minY: y(b.minZ),
+                         maxX: minX + (front - b.minX) / 1000, maxY: y(b.maxZ))
+        if card.position == .rear {
+            r.bands = widthBands(setup).map { RulesBox.Band(minY: y($0.minZ), maxY: y($0.maxZ), maxSpan: $0.maxSpan / 1000, rule: $0.rule) }
+        }
+        return r
     }
 
-    public static func box(_ position: WingPosition, setup: CarSetup) -> (minX: Double, maxX: Double, minZ: Double, maxZ: Double) {
+    /// T8.2.2 widths for the rear wing's zone, bottom to top (car mm): below the
+    /// tyre tops inside the wheels; from the rear tyre tops to 700 mm, 150 mm
+    /// inboard of the rear tyres; from 700 to 1100 mm, out to the rear wheels.
+    public static func widthBands(_ setup: CarSetup) -> [(minZ: Double, maxZ: Double, maxSpan: Double, rule: String)] {
+        let g = setup.groundZ, top = setup.tyreTop("R")
+        let envelope = 2 * max(setup.outerHalfWidth("F"), setup.outerHalfWidth("R"))
+        return [(g + groundClearance, top, envelope, "T8.2.2: inside the wheels"),
+                (top, g + midTop, 2 * max(setup.innerHalfWidth("R") - midInboard, 0), "T8.2.2: 150 mm inboard of the rear tyres"),
+                (g + midTop, g + rearHeight, 2 * setup.outerHalfWidth("R"), "T8.2.2: out to the rear wheels")]
+            .filter { $0.1 > $0.0 }
+    }
+
+    /// The side-view box for one end. With a span, the rear box starts at the
+    /// lowest width band (T8.2.2) that span still fits in all the way up.
+    public static func box(_ position: WingPosition, setup: CarSetup, span: Double? = nil) -> (minX: Double, maxX: Double, minZ: Double, maxZ: Double) {
         let g = setup.groundZ
         switch position {
         case .front:
@@ -294,7 +331,15 @@ public enum CarRules {
         case .rear:
             let tyre = setup.axleX("R") - setup.radius("R")
             let forward = setup.headRestraint?.first ?? setup.axleX("R")
-            return (tyre - rearLength, forward, g + groundClearance, g + rearHeight)
+            var minZ = g + groundClearance
+            if let span {
+                // from the top down, while the bands still take this span
+                for band in widthBands(setup).reversed() {
+                    guard span * 1000 <= band.maxSpan + 1e-6 else { minZ = band.maxZ; break }
+                    minZ = band.minZ
+                }
+            }
+            return (tyre - rearLength, forward, minZ, g + rearHeight)
         }
     }
 }

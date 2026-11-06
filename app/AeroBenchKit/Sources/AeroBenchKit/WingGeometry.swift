@@ -86,6 +86,24 @@ public struct RulesBox: Codable, Equatable, Sendable {
     public var minY: Double
     public var maxX: Double
     public var maxY: Double
+    /// Rear wing on a car: the T8.2.2 width bands, bottom to top, in this
+    /// frame (m). The box above already starts at the lowest band the wing's
+    /// span fits; these are for showing why.
+    public var bands: [Band]?
+
+    public struct Band: Codable, Equatable, Sendable {
+        public var minY: Double
+        public var maxY: Double
+        public var maxSpan: Double  // m
+        public var rule: String
+
+        public init(minY: Double, maxY: Double, maxSpan: Double, rule: String) {
+            self.minY = minY
+            self.maxY = maxY
+            self.maxSpan = maxSpan
+            self.rule = rule
+        }
+    }
 
     public init(minX: Double, minY: Double, maxX: Double, maxY: Double) {
         self.minX = minX
