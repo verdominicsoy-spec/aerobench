@@ -73,19 +73,20 @@ public struct CarSetup: Codable, Equatable, Sendable {
     }
 }
 
-/// The engine's car-strips result: the car's ClA, CdA and rear axle share.
+/// The engine's car result (command car-strips): the car's ClA, CdA and rear axle share.
+/// Runs since the strips were dropped hold one section, the centreline, in strips.
 public struct CarResult: Codable, Equatable, Sendable {
     public struct Strip: Codable, Equatable, Sendable {
         public var y: Double
         public var width: Double
         public var lift: Double  // N/m, up +
         public var drag: Double
-        public var xCp: Double?  // mm, car x; nil when the strip carries no lift
+        public var xCp: Double?  // mm, car x; nil when the section carries no lift
         public var converged: Bool
         public var reason: String?
         public var wingLift: [String: Double]
         public var wingDrag: [String: Double]
-        public var folder: String?  // its run in the job folder, e.g. strip_3
+        public var folder: String?  // its run in the job folder: section (strip_3 in older runs)
         public var fieldView: String?  // field.json in that folder, when the flow was sampled
 
         enum CodingKeys: String, CodingKey {
@@ -126,13 +127,13 @@ public struct CarResult: Codable, Equatable, Sendable {
         public var reason: String
     }
 
-    public var n: Int?  // strips across half the car
-    public var failed: [Failure]?  // strips that would not solve: the totals leave them out
-    public var openGaps: Int?  // places the CAD's cut did not close, over all strips
+    public var n: Int?  // sections across half the car: 1 now, more in older strips runs
+    public var failed: [Failure]?  // older strips runs: strips that would not solve, left out of the totals
+    public var openGaps: Int?  // places the CAD's cut did not close, over all sections
     public var flow: JSONValue?  // the speed, ground and wheel options it was run with
-    public var folder: String?  // the job's folder in the project's jobs, where each strip's flow is
+    public var folder: String?  // the job's folder in the project's jobs, where the section's flow is
 
-    /// Run with these settings: same strip count, and the same speeds and options, numbers
+    /// Run with these settings: same section count, and the same speeds and options, numbers
     /// compared as numbers (the engine's 15.0 can come back as the integer 15).
     public func ranWith(_ other: JSONValue, n: Int) -> Bool {
         func same(_ a: JSONValue?, _ b: JSONValue?) -> Bool {

@@ -25,10 +25,10 @@ def car_setup(ctx: JobContext) -> dict:
 
 @command("car-strips")
 def car_strips(ctx: JobContext) -> dict:
-    """The car (and any placed wings) as strips across it, solved in SU2."""
+    """The car (and any placed wings) as its centreline section, solved in SU2."""
     import json
 
-    from ..car.strips import run
+    from ..car.totals import run
 
     setup = ctx.params.get("setup")
     if not isinstance(setup, dict) or not setup.get("wheels"):
@@ -36,6 +36,6 @@ def car_strips(ctx: JobContext) -> dict:
     flow = ctx.params.get("flow") or {"speed": setup.get("speed", 15.0)}
     result = run(setup, list(ctx.params.get("wings") or []), flow, ctx.params.get("preset", "medium"), ctx.workdir,
                  ctx.params.get("su2") or ctx.options.su2_path, ctx.options.cores, ctx.emit.progress,
-                 ctx.params.get("planes"), int(ctx.params.get("iterations", 6000)), int(ctx.params.get("n", 7)))
+                 int(ctx.params.get("iterations", 6000)))
     (ctx.workdir / "car_result.json").write_text(json.dumps(result, indent=1))
     return result

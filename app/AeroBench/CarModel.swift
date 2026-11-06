@@ -21,7 +21,7 @@ struct CarSection: Decodable, Sendable {
     }
 }
 
-/// Wing Lab's car: the base car, its 2D strip results, the wing cards and the
+/// Wing Lab's car: the base car, its 2D section results, the wing cards and the
 /// combinations of base car, front card and rear card.
 @MainActor @Observable
 final class CarModel {
@@ -32,7 +32,6 @@ final class CarModel {
     var combos: [Combination] = []
     var selected: String?
     var mesh = "medium"
-    var strips = 7
     var groundMoving = true
     var groundSpeed = 15.0
     var wheelsRotating = true
@@ -53,15 +52,14 @@ final class CarModel {
 
     static let meshes = ["coarse", "medium", "maxed"]
 
-    // The flow view: a strip of a run, one scalar of its field.
+    // The flow view: a run's section, one scalar of its field.
     var flowBare = false  // the bare car's run even when the selected combination has a full one
-    var flowStrip = 0
     var flowScalar = "cp"
     var flowStreamlines = true
     @ObservationIgnored private var flowCache: (folder: URL, field: WingField?)?
     @ObservationIgnored private var flowImages: [String: CGImage] = [:]
 
-    /// A strip's field (field.json and field.bin in its folder), read once and kept.
+    /// A section's field (field.json and field.bin in its folder), read once and kept.
     func flowField(_ folder: URL) -> WingField? {
         if let c = flowCache, c.folder == folder { return c.field }
         let f = try? WingField.load(from: folder)
@@ -81,19 +79,19 @@ final class CarModel {
 
     var selectedCombo: Combination? { combos.first { $0.id == selected } }
 
-    /// The bare car at the current settings: same mesh, strips, speed and ground and wheel options.
+    /// The bare car at the current settings: one section, same mesh, speed and ground and wheel options.
     var base: CarResult? {
         guard let b = bases[mesh] else { return nil }
-        return b.ranWith(flow, n: strips) ? b : nil
+        return b.ranWith(flow, n: 1) ? b : nil  // n 1: the centreline alone, not the old strips
     }
 
     /// A bare-car result exists at this mesh but with other settings.
     var baseMismatch: Bool { bases[mesh] != nil && base == nil }
 
     var state: CarStore.State {
-        get { CarStore.State(baseRevision: baseRevision, mesh: mesh, strips: strips, groundMoving: groundMoving, groundSpeed: groundSpeed,
+        get { CarStore.State(baseRevision: baseRevision, mesh: mesh, groundMoving: groundMoving, groundSpeed: groundSpeed,
                              wheelsRotating: wheelsRotating, wheelsSpeed: wheelsSpeed) }
-        set { baseRevision = newValue.baseRevision; mesh = newValue.mesh; strips = newValue.strips; groundMoving = newValue.groundMoving
+        set { baseRevision = newValue.baseRevision; mesh = newValue.mesh; groundMoving = newValue.groundMoving
               groundSpeed = newValue.groundSpeed; wheelsRotating = newValue.wheelsRotating; wheelsSpeed = newValue.wheelsSpeed }
     }
 
@@ -131,7 +129,7 @@ final class CarModel {
         }
     }
 
-    /// The placed wings as the engine's car-strips takes them (car mm).
+    /// The placed wings as the engine's car run takes them (car mm).
     func placedWings(_ combo: Combination) -> [JSONValue] {
         guard let setup else { return [] }
         return [combo.front, combo.rear].compactMap { p -> JSONValue? in

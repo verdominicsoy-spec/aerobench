@@ -1,9 +1,9 @@
 import AeroBenchKit
 import SwiftUI
 
-/// Wing Lab's car: the base car from its STEP, its 2D strip runs, and front
-/// and rear wing cards placed on it, compared quickly (sums) or fully (the
-/// strips again with the wings in them), then sent to Lap Sim.
+/// Wing Lab's car: the base car from its STEP, its 2D centreline section run,
+/// and front and rear wing cards placed on it, compared quickly (sums) or
+/// fully (the section again with the wings in it), then sent to Lap Sim.
 // MARK: Base car
 
 struct BaseCarPane: View {
@@ -51,7 +51,6 @@ struct BaseCarPane: View {
                     if car.wheelsRotating { NumberField(label: "at", unit: "m/s", digits: 1, value: $car.wheelsSpeed) }
                 }
                 S37Segmented(options: CarModel.meshes.map { ($0, $0.capitalized) }, selection: $car.mesh)
-                Stepper("Strips across half the car: \(car.strips)", value: $car.strips, in: 3...15)
                 HStack {
                     Button("Run Bare Car") { app.runBareCar() }
                         .buttonStyle(S37ButtonStyle(kind: .prominent))
@@ -65,7 +64,7 @@ struct BaseCarPane: View {
                     Label(j.message ?? "The run failed", systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
                 }
                 if car.baseMismatch {
-                    Text("The bare car was run with other settings (strips, speed, ground or wheels): run it again for these.")
+                    Text("The bare car was run with other settings (speed, ground or wheels, or as strips): run it again for these.")
                         .font(.caption).foregroundStyle(S37.C.inkSecondary)
                 }
                 if let b = car.base {
@@ -74,13 +73,7 @@ struct BaseCarPane: View {
                     Text("Lift from 2D sections is not yet mesh-independent: compare drag and differences between cars, not this ClA alone.")
                         .font(.caption).foregroundStyle(S37.C.inkSecondary)
                     if !b.converged {
-                        Text("\(b.strips.filter { !$0.converged }.count) of \(b.strips.count) strips did not converge")
-                            .font(.caption).foregroundStyle(S37.C.clayInk)
-                    }
-                    if let f = b.failed, !f.isEmpty {
-                        Text("\(f.count) strip\(f.count == 1 ? "" : "s") would not solve and \(f.count == 1 ? "is" : "are") left out of the totals: "
-                             + f.map { String(format: "y %.0f mm", $0.y) }.joined(separator: ", "))
-                            .font(.caption).foregroundStyle(S37.C.clayInk)
+                        Text("The section did not converge").font(.caption).foregroundStyle(S37.C.clayInk)
                     }
                     if let g = b.openGaps, g > 0 {
                         Text("The CAD's cut did not close in \(g) place\(g == 1 ? "" : "s"): those outlines were left out.")
@@ -332,9 +325,9 @@ struct SideViewPane: View {
 
 // MARK: Flow
 
-/// The flow round the car: one strip of the bare car's run or of the selected
-/// combination's full run, a scalar of its field with the strip's solids and
-/// streamlines over it, as Wing Lab shows a RANS run's field.
+/// The flow round the car: the centreline section of the bare car's run or of
+/// the selected combination's full run, a scalar of its field with the
+/// section's solids and streamlines over it, as Wing Lab shows a RANS run's field.
 struct CarFlowPane: View {
     @Environment(AppState.self) private var app
     @State private var hover: SIMD2<Double>?  // in the field's frame
@@ -363,15 +356,9 @@ struct CarFlowPane: View {
                 }
             }
             if let run {
-                let strips = run.result.strips
-                let k = min(car.flowStrip, max(strips.count - 1, 0))
+                let sec = run.result.strips.first
                 HStack {
-                    Picker("Strip", selection: Binding(get: { k }, set: { car.flowStrip = $0 })) {
-                        ForEach(strips.indices, id: \.self) { i in Text(String(format: "y %.0f mm", strips[i].y)).tag(i) }
-                    }
-                    .pickerStyle(.menu).fixedSize().font(.caption)
-                    .help("Which plane across the car: the strips run from the centreline out")
-                    if let f = field(run.result, k) {
+                    if let f = field(run.result) {
                         Picker("Field", selection: $car.flowScalar) {
                             ForEach(f.scalars) { Text($0.name).tag($0.key) }
                         }
@@ -380,12 +367,10 @@ struct CarFlowPane: View {
                     }
                     Spacer()
                 }
-                if strips.isEmpty {
-                    note("No strip of \(run.name) solved.")
-                } else if let f = field(run.result, k), let scalar = f.scalars.first(where: { $0.key == car.flowScalar }) ?? f.scalars.first {
+                if let f = field(run.result), let scalar = f.scalars.first(where: { $0.key == car.flowScalar }) ?? f.scalars.first {
                     GeometryReader { geo in
                         let m = FlowMapping(field: f, size: geo.size)
-                        Canvas { ctx, _ in draw(ctx, m, f, scalar, converged: strips[k].converged) }
+                        Canvas { ctx, _ in draw(ctx, m, f, scalar, converged: sec?.converged ?? false) }
                             .onContinuousHover { phase in
                                 if case .active(let p) = phase { hover = m.field(p) } else { hover = nil }
                             }
@@ -400,9 +385,9 @@ struct CarFlowPane: View {
                                 .font(.caption.monospacedDigit())
                         }
                     }
-                    if !strips[k].converged { note("This strip did not converge: the field is not a result.") }
+                    if sec?.converged == false { note("The section did not converge: the field is not a result.") }
                 } else {
-                    note("\(run.name) has no flow field saved for this strip: run it again to see one.")
+                    note("\(run.name) has no flow field saved: run it again to see one.")
                 }
             } else {
                 note("Run the bare car, or a combination's full run, to see the flow round it.")
@@ -415,9 +400,10 @@ struct CarFlowPane: View {
         Text(text).font(.caption).foregroundStyle(S37.C.inkSecondary)
     }
 
-    private func field(_ r: CarResult, _ k: Int) -> WingField? {
-        guard let job = r.folder, r.strips.indices.contains(k), let strip = r.strips[k].folder, r.strips[k].fieldView != nil else { return nil }
-        return app.car.flowField(app.jobsRoot.appendingPathComponent(job).appendingPathComponent(strip))
+    private func field(_ r: CarResult) -> WingField? {
+        // One section only: an older strips run's first strip is off the centreline.
+        guard let job = r.folder, r.strips.count == 1, let sec = r.strips[0].folder, r.strips[0].fieldView != nil else { return nil }
+        return app.car.flowField(app.jobsRoot.appendingPathComponent(job).appendingPathComponent(sec))
     }
 
     private func draw(_ ctx: GraphicsContext, _ m: FlowMapping, _ f: WingField, _ scalar: WingField.Scalar, converged: Bool) {
@@ -658,7 +644,7 @@ struct CombinationsPane: View {
             HStack {
                 Button("Run Full") { app.runFull(combo.id) }
                     .disabled(car.base == nil || (car.fullJob.map { !$0.status.isFinished } ?? false))
-                    .help(car.base == nil ? "Run the bare car at this mesh setting first" : "The strips again with these wings in them")
+                    .help(car.base == nil ? "Run the bare car at this mesh setting first" : "The section again with these wings in them")
                 Menu("Send to Lap Sim") {
                     ForEach(app.lapSim.cars.indices, id: \.self) { i in
                         Button("Car \(LapSimSetup.labels[i]) (quick)") { send(combo, full: false, i) }
@@ -752,10 +738,6 @@ struct CarResults: View {
                 Text("Out of date: the wings have changed since it ran.").font(.caption.weight(.semibold)).foregroundStyle(S37.C.clayInk)
             }
             if !f.converged { Text("Not converged.").font(.caption).foregroundStyle(S37.C.clayInk) }
-            if let fl = f.failed, !fl.isEmpty {
-                Text("\(fl.count) strip\(fl.count == 1 ? "" : "s") would not solve and \(fl.count == 1 ? "is" : "are") left out of the totals.")
-                    .font(.caption).foregroundStyle(S37.C.clayInk)
-            }
             if let g = f.openGaps, g > 0 {
                 Text("The CAD's cut did not close in \(g) place\(g == 1 ? "" : "s").").font(.caption).foregroundStyle(S37.C.ochre)
             }
@@ -763,8 +745,8 @@ struct CarResults: View {
         HStack {
             Button("Run Full") { app.runFull(combo.id) }
                 .disabled(car.fullJob.map { !$0.status.isFinished } ?? false)
-                .help(app.carDraftUnsaved ? "Saves this wing to its card, then runs the strips with the wings in them"
-                                          : "The strips again with these wings in them")
+                .help(app.carDraftUnsaved ? "Saves this wing to its card, then runs the section with the wings in them"
+                                          : "The section again with these wings in them")
             if let j = car.fullJob, !j.status.isFinished {
                 ProgressView(value: j.progress, total: 100).frame(maxWidth: 120)
                 Text(j.progressMessage).font(.caption).lineLimit(1)

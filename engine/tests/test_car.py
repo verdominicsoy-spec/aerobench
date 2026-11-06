@@ -1,4 +1,4 @@
-"""The car builder's engine: setup, sections, mesh, SU2 case, strips."""
+"""The car builder's engine: setup, sections, mesh, SU2 case, the car result."""
 
 from __future__ import annotations
 
@@ -203,9 +203,9 @@ def test_a_section_solves(car_step, tmp_path):
     assert isinstance(r["converged"], bool) and np.isfinite(r["x_cp"])
 
 
-# Strips and the car result ---------------------------------------------------------
+# The car result -----------------------------------------------------------------
 
-from aeroengine.car import strips  # noqa: E402
+from aeroengine.car import totals  # noqa: E402
 
 AXLES = {"ground_z": 0.0, "wheels": [{"name": n, "centre": [x, y, 230], "radius": 230, "width": 200}
                                        for n, x, y in (("FL", -400, 400), ("FR", -400, -400), ("RL", -1950, 400), ("RR", -1950, -400))]}
@@ -217,34 +217,27 @@ def strip(y, w, lift, x_cp, drag=10.0, converged=True, wing=None):
             "wing_lift": wing or {}, "wing_drag": {k: 1.0 for k in (wing or {})}}
 
 
-def test_strips_cover_half_the_car_finer_outside():
-    p = strips.plan(700, 7)
-    assert sum(w for _, w in p) == pytest.approx(700)
-    ys = [y for y, _ in p]
-    assert ys == sorted(ys) and ys[-1] >= 600 and p[-1][1] < p[0][1]
-
-
 def test_combine_sums_both_halves():
-    r = strips.combine([strip(100, 400, -100, -1175), strip(500, 300, -50, -1175)], AXLES, 15, 1.225, [], "coarse")
+    r = totals.combine([strip(100, 400, -100, -1175), strip(500, 300, -50, -1175)], AXLES, 15, 1.225, [], "coarse")
     assert r["cla"] == pytest.approx(2 * 55 / Q, rel=1e-6) and r["cla"] == pytest.approx(0.79819, rel=1e-4)
     assert r["cda"] == pytest.approx(2 * (10 * 0.4 + 10 * 0.3) / Q, rel=1e-6)
     assert r["converged"] and r["mesh"] == "coarse"
 
 
 def test_rear_share_follows_where_the_downforce_acts():
-    at = lambda x: strips.combine([strip(100, 400, -100, x)], AXLES, 15, 1.225, [], "coarse")["rear_share"]  # noqa: E731
+    at = lambda x: totals.combine([strip(100, 400, -100, x)], AXLES, 15, 1.225, [], "coarse")["rear_share"]  # noqa: E731
     assert at(-400) == pytest.approx(0) and at(-1950) == pytest.approx(1) and at(-1175) == pytest.approx(0.5)
 
 
 def test_one_strip_not_converged_marks_the_car():
-    r = strips.combine([strip(100, 400, -100, -1175), strip(500, 300, -50, -1175, converged=False)], AXLES, 15, 1.225, [], "coarse")
+    r = totals.combine([strip(100, 400, -100, -1175), strip(500, 300, -50, -1175, converged=False)], AXLES, 15, 1.225, [], "coarse")
     assert r["converged"] is False
 
 
 def test_wing_shares_are_corrected_to_3d():
     wing = {"position": "front", "elements": [[[150, 95], [-150, 95], [0, 110]]], "span": 1.0, "factor3d": 0.8, "endplate": None}
     s = [strip(100, 400, -150, -300, wing={"front": -60}), strip(600, 300, -50, -1175)]  # the wing reaches y 500: one strip
-    r = strips.combine(s, AXLES, 15, 1.225, [wing], "coarse")
+    r = totals.combine(s, AXLES, 15, 1.225, [wing], "coarse")
     two_d = 2 * 60 * 0.4 / Q
     assert r["cla_2d_wings"] == pytest.approx(2 * (150 * 0.4 + 50 * 0.3) / Q, rel=1e-6)
     cl = -60 * 0.4 / (Q * 0.3 * 0.4)  # the wing's 2D coefficient over the strips it covers, on its 300 mm chord
@@ -255,15 +248,16 @@ def test_wing_shares_are_corrected_to_3d():
 
 
 @pytest.mark.skipif(_su2() is None, reason="SU2 is not installed")
-def test_car_strips_through_the_engine(engine, car_step, tmp_path):
+def test_the_car_section_through_the_engine(engine, car_step, tmp_path):
     import json
     s = car_setup.setup(car_step)
-    job = {"params": {"setup": s, "preset": "coarse", "planes": [[0, 300], [400, 200]], "iterations": 300,
+    job = {"params": {"setup": s, "preset": "coarse", "iterations": 300,
                       "flow": flow()}, "options": {"cores": 2}}
     code, events, err = engine.run("car-strips", job, tmp_path / "w", timeout=300)
     assert code == 0, (events[-3:], err[-2000:])
     r = json.loads((tmp_path / "w" / "result.json").read_text())["data"]
-    assert len(r["strips"]) == 2 and r["strips"][1]["width"] == 200 and np.isfinite(r["cda"])
+    half = max(abs(w["centre"][1]) + w["width"] / 2 for w in s["wheels"])
+    assert len(r["strips"]) == 1 and r["strips"][0]["y"] == 0 and r["strips"][0]["width"] == half and np.isfinite(r["cda"])
     assert (tmp_path / "w" / "car_result.json").exists()
 
 
@@ -290,8 +284,7 @@ def su2_markers_on_cells(path: Path) -> dict:
 def test_the_base_car_mesh_has_clean_markers(tmp_path):
     s = car_setup.setup(BASE)
     shape = car_setup.load_part(BASE, None)[0]
-    half = max(abs(w["centre"][1]) + w["width"] / 2 for w in s["wheels"])
-    for y in [0.0, 450.0] + [y for y, _ in strips.plan(half, 3)] + [y for y, _ in strips.plan(half, 7)]:
+    for y in [0.0, 450.0]:
         car_mesh.build(section.cut(shape, y, s), [], s, "coarse", tmp_path / f"m{y}.su2")
         for tag, (n, zero, loose) in su2_markers_on_cells(tmp_path / f"m{y}.su2").items():
             assert n > 0 and zero == 0 and loose == 0, (y, tag, n, zero, loose)
@@ -342,21 +335,21 @@ def test_rear_share_counts_the_3d_correction_where_the_wing_acts():
     wing = {"position": "front", "elements": [[[150, 95], [-150, 95], [0, 110]]], "span": 1.0, "factor3d": 0.5, "endplate": None}
     # Strip total (body and wing) -100 N/m acting midway between the axles; the wing's own -50 N/m at the front axle.
     s = [{**strip(100, 400, -100, -1175, wing={"front": -50}), "wing_x_cp": {"front": -400.0}}]
-    r = strips.combine(s, AXLES, 15, 1.225, [wing], "coarse")
+    r = totals.combine(s, AXLES, 15, 1.225, [wing], "coarse")
     # Half car: total -40 N, rear -20 N. The wing's 2D -20 N becomes -12.5 N in 3D (factor 0.5 over its whole
     # 1 m span from 0.4 m of strips): +7.5 N at the front axle, so the rear keeps -20 N of -32.5 N.
     assert r["rear_share"] == pytest.approx(20 / 32.5, rel=1e-6)
 
 
 def test_no_lift_gives_no_centre_of_pressure_not_nan():
-    r = strips.combine([strip(100, 400, 0.0, None)], AXLES, 15, 1.225, [], "coarse")
+    r = totals.combine([strip(100, 400, 0.0, None)], AXLES, 15, 1.225, [], "coarse")
     assert r["rear_share"] is None
     import json
     json.loads(json.dumps(r, allow_nan=False))
 
 
 def test_the_result_says_how_it_was_run():
-    r = strips.combine([strip(100, 400, -100, -1175)], AXLES, 15, 1.225, [], "coarse",
+    r = totals.combine([strip(100, 400, -100, -1175)], AXLES, 15, 1.225, [], "coarse",
                        flow={"speed": 15, "ground": {"moving": False}}, n=7)
     assert r["flow"]["ground"]["moving"] is False and r["n"] == 7
 
@@ -364,31 +357,13 @@ def test_the_result_says_how_it_was_run():
 # Deferred minors -----------------------------------------------------------------
 
 
-def test_a_failed_strip_does_not_lose_the_others(car_step, tmp_path, monkeypatch):
-    from aeroengine.job import EngineError
-    s = car_setup.setup(car_step)
-    calls = []
-
-    def fake(section_, wings, setup, flow_, preset, workdir, su2_hint, cores, progress, iterations=6000):
-        calls.append(section_["y"])
-        if len(calls) == 2:
-            raise EngineError("SU2 diverged at every CFL tried")
-        return {"y": section_["y"], "lift": -10.0, "drag": 5.0, "x_cp": -1175.0, "converged": True, "wing_lift": {}, "wing_drag": {}}
-
-    monkeypatch.setattr("aeroengine.car.case.solve_section", fake)
-    r = strips.run(s, [], {"speed": 15}, "coarse", tmp_path, None, 1, lambda p, m: None, planes=[[0, 300], [200, 200], [400, 200]])
-    assert len(calls) == 3 and r["converged"] is False
-    assert [f["y"] for f in r["failed"]] == [200.0] and "diverged" in r["failed"][0]["reason"]
-    assert len(r["strips"]) == 2
-
-
 def test_gaps_in_the_cad_are_counted_in_the_result(car_step, tmp_path, monkeypatch):
     s = car_setup.setup(car_step)
     monkeypatch.setattr("aeroengine.car.case.solve_section", lambda sec, *a, **k: {
         "y": sec["y"], "lift": -1.0, "drag": 1.0, "x_cp": -1175.0, "converged": True, "wing_lift": {}, "wing_drag": {}})
-    monkeypatch.setattr("aeroengine.car.section.cut", lambda shape, y, setup: {"y": y, "loops": [], "open": [[0, 0], [1, 1]] * (2 if y else 0)})
-    r = strips.run(s, [], {"speed": 15}, "coarse", tmp_path, None, 1, lambda p, m: None, planes=[[0, 300], [200, 200]])
-    assert [st["open_gaps"] for st in r["strips"]] == [0, 2] and r["open_gaps"] == 2
+    monkeypatch.setattr("aeroengine.car.section.cut", lambda shape, y, setup: {"y": y, "loops": [], "open": [[0, 0], [1, 1]] * 2})
+    r = totals.run(s, [], {"speed": 15}, "coarse", tmp_path, None, 1, lambda p, m: None)
+    assert [st["open_gaps"] for st in r["strips"]] == [2] and r["open_gaps"] == 2 and r["strips"][0]["folder"] == "section"
 
 
 def test_a_wing_s_own_chord_is_used_when_given():
@@ -397,7 +372,7 @@ def test_a_wing_s_own_chord_is_used_when_given():
     wing = {"position": "front", "elements": [[[150, 95], [-150, 95], [0, 110]]], "span": 1.0, "factor3d": 1.0,
             "endplate": 0.2, "chord": 0.25}
     s = [strip(100, 400, -150, -300, wing={"front": -60})]
-    r = strips.combine(s, AXLES, 15, 1.225, [wing], "coarse")
+    r = totals.combine(s, AXLES, 15, 1.225, [wing], "coarse")
     cl, cd = -60 * 0.4 / (Q * 0.25 * 0.4), 1.0 * 0.4 / (Q * 0.25 * 0.4)
     assert r["wings"][0]["cla"] == pytest.approx(car_contribution(cl, cd, 1.0, 0.25, 0.2)[0], rel=1e-6)
 

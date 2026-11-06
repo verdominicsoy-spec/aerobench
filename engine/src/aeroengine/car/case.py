@@ -150,7 +150,7 @@ class CarCase(su2.Case):
 
 def solve_section(section: dict, wings: list[dict], setup: dict, flow: dict, preset: str, workdir: Path,
                   su2_hint: str | None, cores: int, progress, iterations: int = 6000) -> dict:
-    """One strip: mesh, solve, and the forces per metre of width (lift up +,
+    """One section: mesh, solve, and the forces per metre of width (lift up +,
     drag along the flow), where the lift acts (car x, mm) and each wing's share."""
     workdir.mkdir(parents=True, exist_ok=True)
     mesh_file = workdir / "car.su2"
@@ -181,7 +181,7 @@ def solve_section(section: dict, wings: list[dict], setup: dict, flow: dict, pre
 
 
 def _field(section: dict, wings: list[dict], setup: dict, workdir: Path, progress) -> str | None:
-    """The strip's flow for the app's field view, in the mesh's frame (m, flow
+    """The section's flow for the app's field view, in the mesh's frame (m, flow
     along +x, the ground at y 0): the car from a quarter of its length ahead
     to 0.6 of it behind, up to a quarter of its length above its top."""
     from ..wing.field import extract
@@ -199,5 +199,5 @@ def _field(section: dict, wings: list[dict], setup: dict, workdir: Path, progres
         extract(workdir / "flow.vtu", solids + foils, workdir, nx=1024, trailing=foils,
                 window=(lo[0] - 0.25 * length, 0.0, hi[0] + 0.6 * length, hi[1] + 0.25 * length))
         return "field.json"
-    except Exception:  # noqa: BLE001 - the strip's forces stand without the picture
+    except Exception:  # noqa: BLE001 - the section's forces stand without the picture
         return None

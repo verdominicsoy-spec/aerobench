@@ -1,26 +1,20 @@
-"""Sections across half the car, added up as strips into the whole car's
-ClA, CdA and the share of downforce on the rear axle.
+"""The car's centreline section, solved once and taken across the car's
+width, into the whole car's ClA, CdA and the share of downforce on the
+rear axle.
 
-Each strip stands for the width around its plane; the car is symmetric,
-so half is run and doubled. A wing's share of a strip is its own markers'
-force: over the strips its span covers it gives the wing's 2D coefficient,
-which is turned into a finite wing as Wing Lab does (its 3D factor, or the
-endplate estimate), so full runs and quick sums can be compared.
+The section stands for half the car out to the wheels' outer faces; the car
+is symmetric, so it is doubled. A wing's share is its own markers' force:
+its 2D coefficient is turned into a finite wing as Wing Lab does (its 3D
+factor, or the endplate estimate), so full runs and quick sums can be
+compared. combine still takes a list of sections, as the result keeps them
+under "strips" for the app's saved results.
 """
 
 from __future__ import annotations
 
-import math
 from pathlib import Path
 
 from ..wing.finite import car_contribution
-
-
-def plan(half_width_mm: float, n: int = 7) -> list[tuple[float, float]]:
-    """(y, width) in mm: strips narrower towards the outside, where the
-    wheels and sidepods change the section quickly."""
-    edges = [half_width_mm * math.sin(math.pi / 2 * k / n) for k in range(n + 1)]
-    return [((a + b) / 2, b - a) for a, b in zip(edges, edges[1:])]
 
 
 def _axles(setup: dict) -> tuple[float, float]:
@@ -78,34 +72,19 @@ def combine(strips: list[dict], setup: dict, speed: float, rho: float, wings: li
 
 
 def run(setup: dict, wings: list[dict], flow: dict, preset: str, workdir: Path, su2_hint: str | None, cores: int,
-        progress, planes: list | None = None, iterations: int = 6000, n: int = 7) -> dict:
-    """Every strip's section solved in turn; the car result."""
+        progress, iterations: int = 6000) -> dict:
+    """The centreline section solved; the car result."""
     from ..cad.edit.refs import load_part
-    from ..job import EngineError
     from . import case as car_case
     from . import section as car_section
 
     shape, _, _ = load_part(Path(setup["step"]), None)
     half = max(abs(w["centre"][1]) + w["width"] / 2 for w in setup["wheels"])
-    planes = [tuple(p) for p in planes] if planes else plan(half, n)
-    results, failed = [], []
-    for k, (y, width) in enumerate(planes):
-        here = [w for w in wings if y <= w["span"] * 500.0]
-        report = lambda p, m, k=k: progress(100 * (k + p / 100) / len(planes), f"strip {k + 1} of {len(planes)}: {m}")  # noqa: E731
-        sec = car_section.cut(shape, y, setup)
-        try:
-            r = car_case.solve_section(sec, here, setup, flow, preset, workdir / f"strip_{k + 1}", su2_hint, cores,
-                                       report, iterations)
-        except EngineError as e:  # one strip that will not solve must not throw away the others
-            failed.append({"y": float(y), "width": float(width), "reason": e.msg + (f": {e.detail}" if e.detail else "")})
-            continue
-        r["width"] = width
-        r["folder"] = f"strip_{k + 1}"  # its run, and field.json when it has one, in the job folder
-        r["open_gaps"] = len(sec.get("open", [])) // 2
-        results.append(r)
-    out = combine(results, setup, float(flow.get("speed", setup.get("speed", 15.0))), car_case.RHO, wings, preset, flow,
-                  len(planes))
-    out["failed"] = failed
-    out["converged"] = out["converged"] and not failed
-    out["open_gaps"] = sum(r["open_gaps"] for r in results)
+    sec = car_section.cut(shape, 0.0, setup)
+    r = car_case.solve_section(sec, wings, setup, flow, preset, workdir / "section", su2_hint, cores, progress, iterations)
+    r["width"] = half
+    r["folder"] = "section"  # its run, and field.json when it has one, in the job folder
+    r["open_gaps"] = len(sec.get("open", [])) // 2
+    out = combine([r], setup, float(flow.get("speed", setup.get("speed", 15.0))), car_case.RHO, wings, preset, flow)
+    out["open_gaps"] = r["open_gaps"]
     return out

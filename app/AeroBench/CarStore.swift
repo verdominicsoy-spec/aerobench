@@ -2,7 +2,7 @@ import AeroBenchKit
 import Foundation
 
 /// The car's files in the project's car/ folder: the base car's setup,
-/// its strip results per mesh setting, the wing cards and the combinations.
+/// its section results per mesh setting, the wing cards and the combinations.
 enum CarStore {
     static func folder(_ project: URL) -> URL { ProjectStore.toolURL(for: project, tool: "car") }
     static func cardsFolder(_ project: URL) -> URL { folder(project).appendingPathComponent("cards") }
@@ -53,7 +53,6 @@ enum CarStore {
     struct State: Codable {
         var baseRevision = 0
         var mesh = "medium"
-        var strips = 7
         var groundMoving = true  // as CarModel: the moving ground is verified since bfca043
         var groundSpeed = 15.0
         var wheelsRotating = true

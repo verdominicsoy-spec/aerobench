@@ -329,15 +329,15 @@ extension AppState {
         }
     }
 
-    private func stripsParams(wings: [JSONValue]) -> [String: JSONValue]? {
+    private func runParams(wings: [JSONValue]) -> [String: JSONValue]? {
         guard let s = car.setup, let setup = try? JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(s)) else { return nil }
-        var p: [String: JSONValue] = ["setup": setup, "flow": car.flow, "preset": .string(car.mesh), "n": .int(car.strips), "wings": .array(wings)]
+        var p: [String: JSONValue] = ["setup": setup, "flow": car.flow, "preset": .string(car.mesh), "wings": .array(wings)]
         if let su2 = settings.su2Path.nilIfEmpty { p["su2"] = .string(su2) }
         return p
     }
 
     func runBareCar() {
-        guard let params = stripsParams(wings: []) else { return }
+        guard let params = runParams(wings: []) else { return }
         car.baseJob = jobs.submit(command: "car-strips", params: params, in: jobsRoot) { [weak self] item in
             guard let self, item.status == .succeeded, let text = item.resultText else { return }
             do {
@@ -353,12 +353,12 @@ extension AppState {
         }
     }
 
-    /// Full: the strips again with the placed wings, at the baseline's mesh.
+    /// Full: the section again with the placed wings, at the baseline's mesh.
     func runFull(_ id: String) {
         // The wing being edited is saved to its card first, so the full result belongs to saved cards.
         if id == car.selected, carDraft != nil, carDraftUnsaved || shownCombo != car.selectedCombo { saveWingCard(asNew: false) }
         guard let combo = car.combos.first(where: { $0.id == id }), car.base != nil,
-              let params = stripsParams(wings: car.placedWings(combo)) else { return }
+              let params = runParams(wings: car.placedWings(combo)) else { return }
         // Recorded against what ran: anything changed while it runs leaves it out of date.
         let ranCards = car.cards, ranBase = car.baseRevision
         car.fullJob = jobs.submit(command: "car-strips", params: params, in: jobsRoot) { [weak self] item in
