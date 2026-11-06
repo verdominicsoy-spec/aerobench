@@ -17,7 +17,8 @@
 ' (hidden), a spline through them, a straight trailing-edge line, and the
 ' closed curve "Main" (a Join of the two), ready to extrude along Y or loft.
 '
-' The CSV: header "element,index,x_mm,y_mm", one row per point, Selig order
+' The CSV: Wing Lab's export as it is, header "element,index,x_mm,y_mm" (a copy
+' cut down to rows of "index,x,y" also works), one row per point, Selig order
 ' (upper trailing edge, round the leading edge, lower trailing edge). Points
 ' are in mm in the wing's own frame (x downstream, y up), with each
 ' element's chord, angle, position and inversion already applied. The whole
@@ -93,10 +94,22 @@ Function ImportFile(part1, path, sep, hidden)
         MsgBox path & " is empty.", vbExclamation, "AeroBench import"
         Exit Function
     End If
-    If LCase(Trim(lines(0))) <> "element,index,x_mm,y_mm" Then
-        MsgBox path & " is not an AeroBench wing points CSV." & vbCrLf & _
-               "Expected the header: element,index,x_mm,y_mm", vbExclamation, "AeroBench import"
-        Exit Function
+    ' Wing Lab writes "element,index,x_mm,y_mm". A copy with the header and the element
+    ' column taken out ("index,x,y") also works: an element starts where the index is 0.
+    Dim hasHeader As Boolean, first As Long, nCols As Long
+    hasHeader = (LCase(Trim(lines(0))) = "element,index,x_mm,y_mm")
+    If hasHeader Then
+        first = 1
+        nCols = 4
+    Else
+        first = 0
+        nCols = 3
+        If UBound(Split(lines(0), ",")) <> 2 Then
+            MsgBox path & " is not an AeroBench wing points CSV." & vbCrLf & _
+                   "Expected the header element,index,x_mm,y_mm (Wing Lab > Export > Points as CSV)," & vbCrLf & _
+                   "or rows of index,x,y.", vbExclamation, "AeroBench import"
+            Exit Function
+        End If
     End If
 
     Dim fileSet As HybridBody
@@ -104,24 +117,31 @@ Function ImportFile(part1, path, sep, hidden)
     fileSet.Name = BaseName(path)
 
     ' Rows are grouped by element, in order: collect one element, build it, go on.
-    Dim elemName As String, xs(), ys(), n As Long, i As Long, f
+    Dim elemName As String, rowName As String, xs(), ys(), n As Long, i As Long, f, count As Long
     elemName = ""
     n = 0
-    For i = 1 To UBound(lines)
+    count = 0
+    For i = first To UBound(lines)
         If Trim(lines(i)) <> "" Then
             f = Split(lines(i), ",")
-            If UBound(f) < 3 Then
-                MsgBox path & ", line " & (i + 1) & ": expected 4 columns.", vbExclamation, "AeroBench import"
+            If UBound(f) < nCols - 1 Then
+                MsgBox path & ", line " & (i + 1) & ": expected " & nCols & " columns.", vbExclamation, "AeroBench import"
                 Exit Function
             End If
-            If f(0) <> elemName Then
+            If hasHeader Then
+                rowName = Trim(f(0))
+            Else
+                If Trim(f(0)) = "0" Then count = count + 1
+                rowName = ElementLabel(count - 1)
+            End If
+            If rowName <> elemName Then
                 If n > 0 Then BuildElement part1, fileSet, elemName, xs, ys, n, hidden
-                elemName = f(0)
+                elemName = rowName
                 n = 0
             End If
             ReDim Preserve xs(n), ys(n)
-            xs(n) = CDbl(Replace(Trim(f(2)), ".", sep))
-            ys(n) = CDbl(Replace(Trim(f(3)), ".", sep))
+            xs(n) = CDbl(Replace(Trim(f(nCols - 2)), ".", sep))
+            ys(n) = CDbl(Replace(Trim(f(nCols - 1)), ".", sep))
             n = n + 1
         End If
     Next
@@ -161,7 +181,7 @@ Sub BuildElement(part1, fileSet, elemName, xs, ys, n, hidden)
         Set pt = MakePoint(hsf, xs(k), ys(k))
         pt.Name = elemName & " pt " & k
         pointSet.AppendHybridShape pt
-        spline.AddPointWithConstraintExplicit part1.CreateReferenceFromObject(pt), Nothing, -1#, 1, Nothing, 0#
+        spline.AddPoint part1.CreateReferenceFromObject(pt)
         If k = 0 Then Set firstPt = pt
         Set lastPt = pt
     Next
@@ -185,7 +205,16 @@ End Sub
 
 ' Wing frame (x downstream, y up, mm) to CATIA (mm): x -> X, y -> Z, Y = 0.
 Function MakePoint(hsf, x, y)
-    Set MakePoint = hsf.AddNewPointCoord(x, 0#, y)
+    Set MakePoint = hsf.AddNewPointCoord(x, 0.0, y)
+End Function
+
+' Wing Lab's names: element 0 is "Main", then "Flap 1", "Flap 2"...
+Function ElementLabel(i)
+    If i <= 0 Then
+        ElementLabel = "Main"
+    Else
+        ElementLabel = "Flap " & i
+    End If
 End Function
 
 ' "C:\...\wing_points_mm.csv" -> "wing_points_mm"
