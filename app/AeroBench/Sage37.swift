@@ -7,9 +7,9 @@ import SwiftUI
 // it changes, regenerate them from it rather than editing here. AeroBench
 // ships dark only, so each token is its dark value. Content sits on solid
 // panes with a hairline; glass is kept for controls and the dock. Behind the
-// panes runs a quiet space-filling curve per tool (S37Motifs.swift), bent
-// under each pane: Dominic keeps the curves although the November skill
-// drops backdrops (docs/DECISIONS.md). The job log is the one glassout
+// panes runs a quiet space-filling curve per tool (S37Motifs.swift), drawn
+// flat: Dominic keeps the curves although the November skill drops
+// backdrops (docs/DECISIONS.md). The job log is the one glassout
 // console (Glassout.swift).
 
 extension Color {
@@ -160,59 +160,24 @@ struct S37Backdrop: View, Equatable {
     }
 }
 
-// MARK: refraction
+// MARK: root
 
-struct S37PaneFrame: Equatable { var rect: CGRect; var radius: CGFloat }
-struct S37PaneKey: PreferenceKey {
-    static let defaultValue: [S37PaneFrame] = []
-    static func reduce(value: inout [S37PaneFrame], nextValue: () -> [S37PaneFrame]) { value += nextValue() }
-}
-
-/// Root of the window: the tool's curve, bent under every pane, content on top
+/// Root of the window: plain bg, the tool's curve drawn flat behind the panes, content on top
 struct S37Root<Content: View>: View {
     var motif: S37Motif = .hilbert
     @ViewBuilder var content: Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
-    @State private var panes: [S37PaneFrame] = []
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .topLeading) {
-                if contrast == .increased {
-                    S37.C.bg
-                } else {
-                    let screen = CGRect(origin: .zero, size: geo.size)
-                    let visible = Array(panes.filter { $0.rect.intersects(screen) && $0.rect.width >= 1 }.prefix(16))
-                    ZStack {
-                        S37Backdrop(motif: motif).equatable().id(motif).transition(.opacity)
-                    }
+        ZStack(alignment: .topLeading) {
+            if contrast != .increased {
+                S37Backdrop(motif: motif).equatable().id(motif).transition(.opacity)
                     .animation(reduceMotion ? nil : .easeInOut(duration: S37.Motion.motifCrossfade), value: motif)
-                        .layerEffect(ShaderLibrary.sage37Refract(
-                            .float2(geo.size),
-                            .floatArray(visible.flatMap { [Float($0.rect.minX), Float($0.rect.minY), Float($0.rect.width), Float($0.rect.height)] }),
-                            .floatArray(visible.map { Float(min($0.radius, $0.rect.height / 2, $0.rect.width / 2)) }),
-                            .float(Float(visible.count))),
-                            maxSampleOffset: CGSize(width: 48, height: 48),
-                            isEnabled: !reduceTransparency && !visible.isEmpty)
-                }
-                content
             }
-            .coordinateSpace(name: "s37.root")
-            .onPreferenceChange(S37PaneKey.self) { panes = $0 }
+            content
         }
         .background(S37.C.bg)
-    }
-}
-
-/// Registers a glass pane's frame so the backdrop bends under it
-struct S37PaneRegistration: ViewModifier {
-    var radius: CGFloat
-    func body(content: Content) -> some View {
-        content.background(GeometryReader { g in
-            Color.clear.preference(key: S37PaneKey.self, value: [S37PaneFrame(rect: g.frame(in: .named("s37.root")), radius: radius)])
-        })
     }
 }
 
@@ -240,7 +205,6 @@ extension View {
     func s37Pane(radius: CGFloat = S37.Radius.xlContent, padding: CGFloat = S37.Space.s6) -> some View {
         self.padding(padding)
             .background { ZStack { S37PaneFill(radius: radius); S37PaneRim(radius: radius) } }
-            .modifier(S37PaneRegistration(radius: radius))
     }
 
     /// A working region (a form, a canvas, a 3D view) as a solid pane: drawn
@@ -252,7 +216,6 @@ extension View {
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .background(S37PaneFill(radius: radius))
             .overlay(S37PaneRim(radius: radius))
-            .modifier(S37PaneRegistration(radius: radius))
             .padding(3)
     }
 }

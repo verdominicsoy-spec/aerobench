@@ -1234,10 +1234,10 @@ rim and pane material are gone. Apple's Materials guidance keeps Liquid Glass in
 the functional layer, and glass on content was the most cited machine-made tell.
 The dock, buttons and segmented controls keep their glass.
 
-**The space-filling curves stay, refracted.** The November sage37 skill drops
-backdrops, but Dominic chose to keep each tool's curve and its refraction
-shader. With solid panes the bend only shows in the gaps between them; making
-panes translucent again would bring it back if wanted.
+**The space-filling curves stay, drawn flat.** The November sage37 skill drops
+backdrops, but Dominic chose to keep each tool's curve. Its refraction shader
+went later: with solid panes it only showed in the gaps between them, as
+warped fragments that read as glass artifacts.
 
 **Motion eases out with no overshoot.** press, toggle, thumb and lens are
 `timingCurve(0.2, 0, 0, 1)` at 0.24, 0.28, 0.36 and 0.32 s. Bouncy easing read

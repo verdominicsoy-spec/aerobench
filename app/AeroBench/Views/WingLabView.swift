@@ -76,11 +76,9 @@ struct CanvasHost: View {
     @Environment(AppState.self) private var app
 
     var body: some View {
-        @Bindable var lab = app.wingLab
-        VStack(spacing: 0) {
-            S37Segmented(options: WingLabModel.CanvasMode.allCases.map { ($0, $0.rawValue) }, selection: $lab.canvasMode)
-                .fixedSize()
-                .padding([.top, .horizontal], 8)
+        let lab = app.wingLab
+        // The view fills the pane; the picker floats over it (the Wing canvas puts it in its own top row)
+        ZStack(alignment: .topTrailing) {
             switch lab.canvasMode {
             case .wing:
                 WingCanvas()
@@ -100,7 +98,18 @@ struct CanvasHost: View {
             case .mesh:
                 MeshCanvas()
             }
+            if lab.canvasMode != .wing { CanvasModePicker().padding(6) }
         }
+    }
+}
+
+/// Wing, Car or Mesh: the views of the canvas
+struct CanvasModePicker: View {
+    @Environment(AppState.self) private var app
+    var body: some View {
+        @Bindable var lab = app.wingLab
+        S37Segmented(options: WingLabModel.CanvasMode.allCases.map { ($0, $0.rawValue) }, selection: $lab.canvasMode)
+            .fixedSize()
     }
 }
 
@@ -431,6 +440,8 @@ struct WingCanvas: View {
             }
             .canvasPlate()
             .help("\"Edited\": changed since it was put there; Undo goes back")
+            .frame(maxWidth: .infinity, minHeight: 36, alignment: .topLeading)  // the picker's height, so the row below clears it
+            .overlay(alignment: .topTrailing) { CanvasModePicker() }
             HStack(alignment: .top, spacing: 6) {
             HStack(spacing: 6) {
                 Text("Live estimate").font(.system(size: 12, weight: .semibold)).foregroundStyle(S37.C.inkSecondary)
@@ -2315,7 +2326,11 @@ struct MeshCanvas: View {
                         .canvasPlate()
                     }
                     Spacer()
-                    if lab.mesh != nil {
+                }
+                .frame(minHeight: 36, alignment: .top)  // clear of the floating picker
+                if lab.mesh != nil {
+                    HStack(spacing: 6) {
+                        Spacer()
                         HStack(spacing: 6) {
                             Button { zoom /= 1.5 } label: { Image(systemName: "minus.magnifyingglass") }
                                 .accessibilityLabel("Zoom out")
