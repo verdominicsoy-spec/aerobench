@@ -252,11 +252,15 @@ public struct Placement: Codable, Equatable, Sendable {
     }
 }
 
-/// FS T8.2 limits as boxes in car coordinates (mm), from the wheels, the
-/// ground and the head restraint (values as data/rules/fs2027_aero.json).
+/// FS Rules 2027 v1.0 T8.2 limits as boxes in car coordinates (mm), from the
+/// wheels, the ground and the head restraint. FSUK 2027 v1.0 takes T8.2 and
+/// T2.2 unchanged, so both events share them (data/rules/fs2027_aero.json).
 public enum CarRules {
+    /// T2.2.1: static, driver seated, any part but the tyres
     public static let groundClearance = 30.0
+    /// T8.2.3: at most 700 forward of the front tyres; T8.2.1: below 350 forward of their leading edge
     public static let frontLength = 700.0, frontHeight = 350.0
+    /// T8.2.3: at most 250 behind the rear tyres; T8.2.1: below 1100 rearward of the head restraint support's front face
     public static let rearLength = 250.0, rearHeight = 1100.0
 
     /// Whether the card's wing can fit its box at all (no placement keeps a bigger one inside).
