@@ -1,3 +1,4 @@
+import AeroBench3D
 import SwiftUI
 
 @main
@@ -121,12 +122,38 @@ struct AeroBenchCommands: Commands {
             Button("Ping Engine") { app.runPing() }
             Button("Run Dummy Job") { app.runDummy(duration: dummyDuration, keepMesh: dummyKeepMesh) }
         }
-        CommandMenu("Part") {
+        CommandMenu("CAD") {
+            let cad = app.cad
+            let hasModel = cad.model != nil
+            Button("Open CAD File…") { app.tool = .cadViewer; app.openCADPanel() }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+            Divider()
+            ForEach(StandardView.allCases) { view in
+                Button("\(view.title) View") { cad.viewer.look(from: view) }
+            }
+            .disabled(!hasModel || app.tool != .cadViewer)
+            Button("Fit") { cad.viewer.fitAll() }
+                .keyboardShortcut("0")
+                .disabled(!hasModel || app.tool != .cadViewer)
+            Toggle("Orthographic", isOn: Binding(get: { cad.projection == .orthographic },
+                                                 set: { cad.projection = $0 ? .orthographic : .perspective }))
+                .disabled(!hasModel)
+            Toggle("Measure", isOn: Binding(get: { cad.measuring }, set: { cad.measuring = $0 })).disabled(!hasModel)
+            Toggle("Section", isOn: Binding(get: { cad.sectionOn }, set: { cad.sectionOn = $0 })).disabled(!hasModel)
+            Toggle("Show Frame Rate", isOn: Binding(get: { cad.showStatistics }, set: { cad.showStatistics = $0 }))
+            Divider()
+            Button("Check Geometry") { app.checkGeometry() }
+                .disabled(cad.fileURL == nil || !(cad.checkJob?.status.isFinished ?? true))
+            Button("Repair Geometry…") { app.repairGeometry() }
+                .disabled(!(cad.report?.anyFixable ?? false) || !(cad.repairJob?.status.isFinished ?? true))
+            Button("Repair to One Body…") { app.planBodyRepair() }
+                .disabled(!cad.isStep || !hasModel || !(cad.bodyJob?.status.isFinished ?? true))
+            Divider()
             Button(app.partEdit.on ? "Stop Editing Part" : "Edit Part") {
                 app.partEdit.on ? app.exitPartEdit() : app.enterPartEdit()
             }
             .keyboardShortcut("e")
-            .disabled(!app.cad.isStep || app.cad.model == nil)
+            .disabled(!cad.isStep || !hasModel)
             Button("Save Part…") { app.savePartEdit() }
                 .disabled(!app.partEdit.on || app.partEdit.reply == nil)
         }

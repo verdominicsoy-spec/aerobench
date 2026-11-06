@@ -33,34 +33,26 @@ struct CADViewerView: View {
     @ViewBuilder private var overlay: some View {
         switch app.cad.status {
         case .empty:
-            ContentUnavailableView {
-                Label("No Model", systemImage: "cube")
-            } description: {
-                Text("Drop a STEP, IGES, STL or OBJ file on the window, or press Open.")
-            } actions: {
-                Button("Open…") { app.openCADPanel() }
+            S37EmptyState(title: "No model", line: "Open a STEP, IGES, STL or OBJ file, or drop one on the window.") {
+                Button("Open…") { app.openCADPanel() }.buttonStyle(S37ButtonStyle(kind: .prominent))
             }
             .background(S37.C.surface)
         case .loading(let message):
             VStack(spacing: 8) {
                 if let job = app.cad.job, !job.status.isFinished {
                     ProgressView(value: job.progress, total: 100).frame(width: 220)
-                    Text(job.progressMessage.isEmpty ? message : job.progressMessage).font(.caption)
-                    Button("Cancel") { app.jobs.cancel(job) }
+                    Text(job.progressMessage.isEmpty ? message : job.progressMessage).font(.system(size: 12))
+                    Button("Cancel") { app.jobs.cancel(job) }.buttonStyle(S37ButtonStyle(kind: .plain))
                 } else {
                     ProgressView()
-                    Text(message).font(.caption)
+                    Text(message).font(.system(size: 12))
                 }
             }
             .padding()
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
         case .failed(let message, let detail):
-            ContentUnavailableView {
-                Label(message, systemImage: "xmark.octagon")
-            } description: {
-                Text(detail ?? "").font(.caption.monospaced())
-            } actions: {
-                Button("Open…") { app.openCADPanel() }
+            S37EmptyState(title: message, line: detail ?? "Try another file.") {
+                Button("Open…") { app.openCADPanel() }.buttonStyle(S37ButtonStyle(kind: .prominent))
             }
             .background(S37.C.surface)
         case .ready:
@@ -74,44 +66,34 @@ struct CADToolbar: View {
 
     var body: some View {
         @Bindable var cad = app.cad
-        HStack(spacing: 10) {
-            Button("Open…") { app.openCADPanel() }
-            Divider().frame(height: 18)
+        HStack(spacing: S37.Space.s2) {
+            if cad.model != nil {
+                Button("Open…") { app.openCADPanel() }
+                Divider().frame(height: 18)
+            }
             // The view, measuring and section tools need a model to act on.
             Group {
                 ForEach(StandardView.allCases) { view in
                     Button(view.title) { cad.viewer.look(from: view) }
                 }
                 Button("Fit") { cad.viewer.fitAll() }
-                Picker("Projection", selection: $cad.projection) {
-                    Text("Persp").tag(Projection.perspective)
-                    Text("Ortho").tag(Projection.orthographic)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 120)
+                S37Segmented(options: [(Projection.perspective, "Persp"), (.orthographic, "Ortho")], selection: $cad.projection)
+                    .fixedSize()
                 Divider().frame(height: 18)
-                Toggle("Measure", isOn: $cad.measuring).toggleStyle(.button)
-                Toggle("Section", isOn: $cad.sectionOn).toggleStyle(.button)
-                    .help("Cut the visible parts with a plane and see them in section")
+                Toggle("Measure", isOn: $cad.measuring)
+                if cad.measuring {
+                    Toggle("Snap", isOn: $cad.snap).help("Snap measuring points to the nearest vertex")
+                }
+                Toggle("Section", isOn: $cad.sectionOn)
             }
             .disabled(cad.model == nil)
-            Toggle("Edit Part", isOn: Binding(get: { app.partEdit.on },
-                                              set: { $0 ? app.enterPartEdit() : app.exitPartEdit() }))
-                .toggleStyle(.button)
-                .disabled(!cad.isStep || cad.model == nil)
-            Button("Check Geometry") { app.checkGeometry() }
-                .disabled(cad.fileURL == nil || (cad.checkJob.map { !$0.status.isFinished } ?? false))
-            Toggle("Snap", isOn: $cad.snap)
-                .fixedSize()
-                .disabled(cad.model == nil)
-                .help("Snap measuring points to the nearest vertex")
             Spacer()
-            Toggle("FPS", isOn: $cad.showStatistics)
         }
+        .buttonStyle(S37ButtonStyle())
+        .toggleStyle(S37ToggleButtonStyle())
         .controlSize(.small)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, S37.Space.s2)
+        .padding(.vertical, S37.Space.s2)
     }
 }
 
@@ -128,52 +110,50 @@ struct CADSidePanel: View {
 
     @ViewBuilder private var inspector: some View {
         @Bindable var cad = app.cad
-        Form {
-            Section("File") {
-                if let url = cad.fileURL {
-                    LabeledContent("Name") { Text(url.lastPathComponent).lineLimit(1).truncationMode(.middle) }
-                        .help(url.path)
-                } else {
-                    Text("No file open").foregroundStyle(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: S37.Space.s6) {
+                S37Section("File") {
+                    if let url = cad.fileURL {
+                        LabeledContent("Name") { Text(url.lastPathComponent).lineLimit(1).truncationMode(.middle) }
+                            .help(url.path)
+                    }
+                    Picker("Tessellation", selection: $cad.preset) {
+                        ForEach(TessellationPreset.allCases) { Text($0.rawValue.capitalized).tag($0) }
+                    }
+                    .onChange(of: cad.preset) { if cad.isTessellatedFormat { app.reloadCAD() } }
+                    Picker("STL/OBJ units", selection: $cad.meshUnits) {
+                        ForEach(LengthUnit.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .onChange(of: cad.meshUnits) { if cad.fileURL != nil && !cad.isTessellatedFormat { app.reloadCAD() } }
+                    Picker("Up axis", selection: $cad.upAxis) {
+                        Text("Z up (CAD)").tag(UpAxis.z)
+                        Text("Y up").tag(UpAxis.y)
+                    }
+                    if cad.model != nil {
+                        LabeledContent("Triangles", value: cad.triangleCount.formatted() + (cad.fromCache ? ", from cache" : ""))
+                    }
                 }
-                Picker("Tessellation", selection: $cad.preset) {
-                    ForEach(TessellationPreset.allCases) { Text($0.rawValue.capitalized).tag($0) }
+                if cad.fileURL != nil {
+                    GeometryCheckSection()
                 }
-                .onChange(of: cad.preset) { if cad.isTessellatedFormat { app.reloadCAD() } }
-                Picker("STL/OBJ units", selection: $cad.meshUnits) {
-                    ForEach(LengthUnit.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                if cad.isStep && cad.model != nil {
+                    BodyRepairSection()
+                    S37Section("Edit") {
+                        Button("Edit part") { app.enterPartEdit() }.buttonStyle(S37ButtonStyle())
+                            .padding(.vertical, S37.Space.s2)
+                    }
                 }
-                .onChange(of: cad.meshUnits) { if cad.fileURL != nil && !cad.isTessellatedFormat { app.reloadCAD() } }
-                Picker("Up axis", selection: $cad.upAxis) {
-                    Text("Z up (CAD)").tag(UpAxis.z)
-                    Text("Y up").tag(UpAxis.y)
-                }
-                if cad.model != nil {
-                    LabeledContent("Triangles", value: cad.triangleCount.formatted())
-                    if cad.fromCache { Text("Loaded from the tessellation cache").font(.caption).foregroundStyle(.secondary) }
-                }
-            }
-            if cad.checkJob != nil || cad.report != nil {
-                GeometryCheckSection()
-            }
-            if cad.isStep && cad.model != nil {
-                BodyRepairSection()
-            }
-            if let model = cad.model {
-                Section {
-                    PartTree(model: model)
-                } header: {
-                    HStack {
-                        Text("Parts")
-                        Spacer()
-                        Button("Show All") { cad.hidden = [] }
-                            .buttonStyle(.link)
-                            .disabled(cad.hidden.isEmpty)
+                if let model = cad.model {
+                    S37Section("Parts") {
+                        if !cad.hidden.isEmpty {
+                            Button("Show all") { cad.hidden = [] }.buttonStyle(S37ButtonStyle(kind: .plain))
+                        }
+                        PartTree(model: model).padding(.vertical, S37.Space.s2)
                     }
                 }
             }
+            .padding(S37.Space.s5)
         }
-        .formStyle(.grouped)
     }
 }
 
@@ -188,7 +168,7 @@ struct PartTree: View {
                     Text(node.name).lineLimit(1)
                     Spacer()
                     if let m = node.mesh {
-                        Text(model.meshes[m].triangleCount.formatted()).font(.caption).foregroundStyle(.secondary)
+                        Text(model.meshes[m].triangleCount.formatted()).font(.system(size: 12)).monospacedDigit().foregroundStyle(S37.C.inkTertiary)
                     }
                 }
             }
@@ -213,18 +193,18 @@ struct CADStatusBar: View {
                     let a = cad.points[0], b = cad.points[1]
                     let d = (b - a) * 1000
                     Text("Distance \(mm(Measure.distance(a, b) * 1000)) mm   Δx \(mm(d.x))  Δy \(mm(d.y))  Δz \(mm(d.z))")
-                        .bold()
+                        .fontWeight(.semibold)
                         .textSelection(.enabled)
-                    Button("Clear") { cad.clearMeasurement() }.buttonStyle(.link)
+                    Button("Clear") { cad.clearMeasurement() }.buttonStyle(S37ButtonStyle(kind: .plain)).controlSize(.small)
                 } else {
                     Text(cad.points.isEmpty ? "Click the first point" : "Click the second point")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(S37.C.inkSecondary)
                 }
             }
         }
-        .font(.callout.monospacedDigit())
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
+        .font(.system(size: 13).monospacedDigit())
+        .padding(.horizontal, S37.Space.s3)
+        .padding(.vertical, S37.Space.s1)
     }
 
     private func mm(_ x: Double) -> String { x.formatted(.number.precision(.fractionLength(2))) }
@@ -235,11 +215,15 @@ struct GeometryCheckSection: View {
 
     var body: some View {
         let cad = app.cad
-        Section {
+        S37Section("Geometry check") {
+            Button(cad.report == nil ? "Check geometry" : "Check again") { app.checkGeometry() }
+                .buttonStyle(S37ButtonStyle())
+                .disabled(cad.checkJob.map { !$0.status.isFinished } ?? false)
+                .padding(.vertical, S37.Space.s2)
             if let job = cad.checkJob, !job.status.isFinished {
                 HStack {
                     ProgressView(value: job.progress, total: 100)
-                    Text(job.progressMessage).font(.caption).lineLimit(1)
+                    Text(job.progressMessage).font(.system(size: 12)).lineLimit(1)
                 }
             } else if let job = cad.checkJob, job.status == .failed {
                 Label(job.message ?? "The check failed", systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
@@ -253,33 +237,33 @@ struct GeometryCheckSection: View {
                 LabeledContent("Bodies", value: "\(report.mesh.bodies)")
                 LabeledContent("Closed", value: report.mesh.closed ? "yes, watertight" : "no")
                 if report.mesh.intersectionsComplete == false {
-                    Text("The pierced-face check stopped early on this model.").font(.caption).foregroundStyle(S37.C.clayInk)
+                    Text("The pierced-face check stopped early on this model.").font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.clayInk)
                 }
                 ForEach(report.allIssues.filter { $0.count > 0 }) { issue in
-                    IssueRow(issue: issue)
+                    IssueRow(issue: issue).padding(.vertical, S37.Space.s1)
                 }
                 let passed = report.allIssues.filter { $0.count == 0 }.map(\.title)
                 if !passed.isEmpty {
-                    Text("Passed: " + passed.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary)
+                    Text("Passed: " + passed.joined(separator: ", ")).font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
+                        .fixedSize(horizontal: false, vertical: true).padding(.vertical, S37.Space.s2)
                 }
                 if report.anyFixable {
                     HStack {
                         Button("Repair…") { app.repairGeometry() }
+                            .buttonStyle(S37ButtonStyle())
                             .disabled(cad.repairJob.map { !$0.status.isFinished } ?? false)
+                            .help("Merges duplicate vertices, drops degenerate and duplicate faces, fixes normals and closes small holes (STEP/IGES: shape fixing and sewing). Pierced faces and non-manifold edges stay.")
                         if let job = cad.repairJob, !job.status.isFinished { ProgressView().controlSize(.small) }
                     }
-                    Text("Merges duplicate vertices, removes degenerate and duplicate faces, makes normals consistent and outward, closes small holes (STEP/IGES: shape fixing and sewing). Pierced faces and non-manifold edges are left for you.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    .padding(.vertical, S37.Space.s2)
                 }
                 if let summary = cad.repairSummary {
-                    Text(summary).font(.caption)
+                    Text(summary).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
                 }
                 if let job = cad.repairJob, job.status == .failed {
                     Label(job.message ?? "Repair failed", systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
                 }
             }
-        } header: {
-            Text("Geometry check")
         }
     }
 }
@@ -292,24 +276,18 @@ struct BodyRepairSection: View {
     var body: some View {
         @Bindable var cad = app.cad
         let running = cad.bodyJob.map { !$0.status.isFinished } ?? false
-        Section {
+        S37Section("Repair to one body") {
             HStack {
-                Button("Repair to One Body…") { app.planBodyRepair() }.disabled(running)
+                Button("Repair to one body…") { app.planBodyRepair() }.buttonStyle(S37ButtonStyle()).disabled(running)
                 if running, let job = cad.bodyJob {
                     ProgressView(value: job.progress, total: 100).frame(maxWidth: 120)
-                    Text(job.progressMessage).font(.caption).lineLimit(1)
+                    Text(job.progressMessage).font(.system(size: 12)).lineLimit(1)
                 }
             }
-            LabeledContent("Fix gaps up to") {
-                HStack(spacing: 4) {
-                    TextField("Fix gaps up to", value: Binding(get: { cad.bodyLimitMM },
-                                                              set: { cad.bodyLimitMM = min(max($0, 0.01), 10) }),
-                              format: .number.precision(.fractionLength(0...2)))
-                        .labelsHidden().multilineTextAlignment(.trailing).frame(width: 60)
-                    Text("mm").foregroundStyle(.secondary)
-                }
-            }
-            .help("Gaps from this size to 10 mm are listed for you to accept or skip; wider ones are never closed")
+            .padding(.vertical, S37.Space.s2)
+            NumberField(label: "Fix gaps up to", unit: "mm", digits: 2,
+                        value: Binding(get: { cad.bodyLimitMM }, set: { cad.bodyLimitMM = min(max($0, 0.01), 10) }))
+                .help("Gaps from this size to 10 mm are listed for you to accept or skip; wider ones are never closed")
             if let job = cad.bodyJob, job.status == .failed {
                 Label(job.message ?? "The repair failed", systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
             }
@@ -317,7 +295,7 @@ struct BodyRepairSection: View {
                 let review = plan.items.filter(\.reviewable)
                 let reports = plan.items.filter { !$0.reviewable }
                 if let summary = cad.bodySummary {
-                    Text(summary).font(.caption)
+                    Text(summary).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
                 }
                 if !review.isEmpty {
                     List(selection: $cad.selectedBodyItem) {
@@ -325,28 +303,29 @@ struct BodyRepairSection: View {
                             BodyRepairRow(item: item).tag(item.id)
                         }
                     }
+                    .scrollContentBackground(.hidden)
                     .frame(minHeight: 120, maxHeight: 240)
                     HStack {
-                        Button("Accept All") { for item in review where item.fix != "open_shell" && item.fix != "failed" { cad.bodyDecisions[item.id] = true } }
+                        Button("Accept all") { for item in review where item.fix != "open_shell" && item.fix != "failed" { cad.bodyDecisions[item.id] = true } }
+                            .buttonStyle(S37ButtonStyle(kind: .plain))
                         Spacer()
-                        Text("\(cad.pendingBodyItems) to decide").font(.caption).foregroundStyle(.secondary)
-                        Button("Apply") { app.applyBodyRepair() }.disabled(running)
+                        Text("\(cad.pendingBodyItems) to decide").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
+                        Button("Apply") { app.applyBodyRepair() }.buttonStyle(S37ButtonStyle()).disabled(running)
                     }
+                    .padding(.vertical, S37.Space.s2)
                 }
                 ForEach(reports) { item in
                     Label(item.kind == "wide_gap"
                           ? String(format: "%@: %.2f mm gap, too wide to close", item.part, item.sizeMM ?? 0)
                           : "\(item.part): edge shared by 3+ faces",
                           systemImage: "exclamationmark.triangle")
-                        .font(.caption).foregroundStyle(S37.C.clayInk)
+                        .font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.clayInk)
                         .onTapGesture { cad.selectedBodyItem = item.id }
                 }
                 if review.isEmpty && reports.isEmpty && cad.bodySummary == nil {
-                    Text("Nothing to review.").font(.caption)
+                    Text("Nothing to review.")
                 }
             }
-        } header: {
-            Text("Repair to one body")
         }
     }
 }
@@ -360,20 +339,15 @@ struct BodyRepairRow: View {
         HStack {
             Text(item.fix == "failed" ? "Gap, bridge failed"
                  : item.kind == "gap" ? "Gap" : item.fix == "fill" ? "Hole" : "Hole, can\u{2019}t patch")
-            Text(item.part).foregroundStyle(.secondary).lineLimit(1)
+            Text(item.part).foregroundStyle(S37.C.inkSecondary).lineLimit(1)
             Spacer()
             if let size = item.sizeMM {
                 Text(String(format: "%.2f mm", size)).monospacedDigit()
             }
-            Picker("Decision", selection: Binding(
-                get: { cad.bodyDecisions[item.id] },
-                set: { cad.bodyDecisions[item.id] = $0 })) {
-                Text("–").tag(Bool?.none)
-                Text("Accept").tag(Bool?.some(true))
-                Text("Skip").tag(Bool?.some(false))
-            }
-            .labelsHidden().pickerStyle(.segmented).frame(width: 150)
-            .disabled(item.fix == "open_shell" || item.fix == "failed")
+            S37Segmented(options: [(Bool?.none, "–"), (Bool?.some(true), "Accept"), (Bool?.some(false), "Skip")],
+                         selection: Binding(get: { cad.bodyDecisions[item.id] }, set: { cad.bodyDecisions[item.id] = $0 }))
+                .fixedSize()
+                .disabled(item.fix == "open_shell" || item.fix == "failed")
         }
     }
 }
@@ -394,12 +368,12 @@ struct IssueRow: View {
                     Text(issue.title)
                     Spacer()
                     Text("\(issue.count)").monospacedDigit()
-                        .foregroundStyle(issue.severity == "error" ? S37.C.critical : issue.severity == "warning" ? S37.C.clayInk : .secondary)
+                        .foregroundStyle(issue.severity == "error" ? S37.C.critical : issue.severity == "warning" ? S37.C.clayInk : S37.C.inkSecondary)
                 }
             }
             .toggleStyle(.checkbox)
             .disabled(issue.points.isEmpty)
-            Text(issue.detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(issue.detail).font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -417,19 +391,17 @@ struct CADSectionView: View {
         let names = ["x", "y", "z"]
         VStack(spacing: 4) {
             HStack(spacing: 10) {
-                Picker("Across", selection: $cad.sectionAxis) {
-                    ForEach(0..<3, id: \.self) { Text(names[$0]).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 150)
+                S37Segmented(options: (0..<3).map { ($0, names[$0]) }, selection: $cad.sectionAxis).fixedSize()
                 Slider(value: $cad.sectionPosition, in: cad.sectionRange)
                 TextField("mm", value: Binding(get: { cad.sectionPosition * 1000 }, set: { cad.sectionPosition = $0 / 1000 }),
                           format: .number.precision(.fractionLength(0...1)))
-                    .frame(width: 70)
-                Text("mm").foregroundStyle(.secondary)
+                    .textFieldStyle(.plain).multilineTextAlignment(.trailing).monospacedDigit()
+                    .padding(.horizontal, S37.Space.s2).frame(width: 70, height: 24)
+                    .background(RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).fill(S37.C.recess))
+                Text("mm").foregroundStyle(S37.C.inkTertiary)
                 if let h = hover {
                     Text(String(format: "%@ %.1f, %@ %.1f mm", names[u], h.x * 1000, names[v], h.y * 1000))
-                        .font(.caption.monospacedDigit())
+                        .font(.system(size: 12).monospacedDigit())
                         .frame(width: 170, alignment: .trailing)
                 }
             }

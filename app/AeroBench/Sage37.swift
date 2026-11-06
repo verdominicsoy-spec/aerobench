@@ -268,13 +268,16 @@ struct S37ButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.controlSize) private var controlSize
 
     func makeBody(configuration: Configuration) -> some View {
         let pressed = configuration.isPressed
+        let small = controlSize == .small || controlSize == .mini  // dense toolbars
         configuration.label
-            .font(.system(size: 14, weight: .semibold))
-            .padding(.horizontal, kind == .plain ? S37.Space.s3 : 16)
-            .frame(minHeight: 32)
+            .font(.system(size: small ? 13 : 14, weight: .semibold))
+            .lineLimit(1)
+            .padding(.horizontal, kind == .plain ? S37.Space.s2 : (small ? S37.Space.s3 : 16))
+            .frame(minHeight: small ? 28 : 32)
             .foregroundStyle(kind == .prominent ? S37.C.onSage : (kind == .plain ? S37.C.sageInk : S37.C.ink))
             .background { background(pressed: pressed) }
             .contentShape(Capsule())
@@ -316,6 +319,23 @@ struct S37ButtonStyle: ButtonStyle {
         case .plain:
             if contrast == .increased { Capsule().strokeBorder(S37.C.controlBorder, lineWidth: 1) }
         }
+    }
+}
+
+/// A mode you switch on and leave on (Measure, Section): a glass button that
+/// stays sage-tinted while it's on
+struct S37ToggleButtonStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button { configuration.isOn.toggle() } label: { configuration.label }
+            .buttonStyle(S37ButtonStyle())
+            .overlay {
+                if configuration.isOn {
+                    Capsule().fill(S37.C.sageWash)
+                        .overlay(Capsule().strokeBorder(S37.C.sage.opacity(0.7), lineWidth: 1))
+                        .allowsHitTesting(false)
+                }
+            }
+            .accessibilityAddTraits(configuration.isOn ? .isSelected : [])
     }
 }
 

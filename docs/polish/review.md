@@ -107,3 +107,28 @@ Per tool, every visible element, with the principle it answers to (numbers from 
 | Frame preview note on ΔE | keep | Shortened; it says what to do when the number is high (1). |
 
 Not checked with a built volume: the Explore panel's filled state was converted but not seen on screen.
+
+## CAD Viewer
+
+| Element | Verdict | Why |
+| --- | --- | --- |
+| Header note "Open the car's CAD and check it is watertight…" | cut | Restates the screen (1). |
+| Toolbar: small system buttons and toggles | change | Compact sage37 glass buttons; Measure and Section are toggle buttons that stay sage-tinted while on (2). |
+| Toolbar Open… while nothing is open | change | Shown once a model is open; before that the empty state's Open… is the one path (2). |
+| Persp / Ortho system segmented control | change | `S37Segmented` (2). |
+| Snap checkbox, always shown | change | Shown only while measuring (5). |
+| FPS checkbox | change | CAD ▸ Show Frame Rate: a diagnostic, not a working control (7). |
+| Edit Part toggle in the toolbar | change | Edit part in the side panel and CAD ▸ Edit Part ⌘E; Stop editing at the top of the Part Edit panel (4). |
+| Check Geometry in the toolbar, results in the side panel | change | The button sits in the Geometry check section with its results (5). |
+| Side panel grouped Form | change | Flat sections (2). |
+| "No file open" row | cut | The empty state says it (1). |
+| "Loaded from the tessellation cache" line | change | ", from cache" after the triangle count (1). |
+| Repair description paragraph | change | The Repair… button's tooltip: it says what the button does, not its label (1). |
+| Body repair Accept / Skip system segmented control | change | `S37Segmented` (2). |
+| Parts header Show All link | change | A plain button in the Parts group, only when something is hidden (5). |
+| Centred "No Model" and failure states | change | Left-aligned, Open… as the prominent button (9). |
+| Section view axis picker and position field | change | `S37Segmented`, recessed field (2). |
+| Part Edit grouped Form | change | Flat sections; Save part… the prominent button; Stop editing at the top (2, 4). |
+| CAD menu | new | Open CAD File… ⇧⌘O, the standard views, Fit ⌘0, Orthographic, Measure, Section, Show Frame Rate, Check Geometry, Repair Geometry…, Repair to One Body…, Edit Part ⌘E, Save Part… (the old Part menu folds in) (4). |
+
+Shot: `2-after-cad-partial.jpg` shows the toolbar and side panel behind the open panel; the background screen tools can't reach a file chooser to load a model.

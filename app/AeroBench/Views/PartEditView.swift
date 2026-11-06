@@ -15,7 +15,13 @@ struct PartEditView: View {
 
     var body: some View {
         @Bindable var edit = app.partEdit
-        Form {
+        ScrollView {
+          VStack(alignment: .leading, spacing: S37.Space.s6) {
+            HStack {
+                Text("Editing part").font(.system(size: 16, weight: .semibold))
+                Spacer()
+                Button("Stop editing") { app.exitPartEdit() }.buttonStyle(S37ButtonStyle(kind: .plain))
+            }
             if let reply = edit.reply, reply.parts.count > 1 {
                 Picker("Part", selection: Binding(get: { edit.file.part ?? "" }, set: { edit.choosePart($0) })) {
                     if edit.file.part == nil { Text("Pick a part").tag("") }
@@ -25,24 +31,25 @@ struct PartEditView: View {
             if let reply = edit.reply, !reply.partValid {
                 HStack {
                     Label("This part is not a valid solid", systemImage: "exclamationmark.triangle").foregroundStyle(S37.C.clayInk)
-                    Button("Repair First") { app.repairBeforeEditing() }
+                    Button("Repair first") { app.repairBeforeEditing() }.buttonStyle(S37ButtonStyle())
                 }
             }
-            Section("Tools") {
+            S37Section("Tools") {
                 HStack(spacing: 4) {
                     ForEach(Self.tools, id: \.0) { kind, icon in
                         Button { edit.tool = edit.tool == kind ? nil : kind } label: { Image(systemName: icon) }
                             .buttonStyle(.borderless)
                             .foregroundStyle(edit.tool == kind ? S37.C.sageInk : S37.C.inkSecondary)
                             .accessibilityLabel(kind.title)
-                            .help(kind.title)
+                            .help(kind.title)  // icon-only: the tooltip is its name
                     }
                 }
+                .padding(.vertical, S37.Space.s2)
                 if edit.tool != nil { ToolPanel() }
             }
-            Section("Features") {
+            S37Section("Features") {
                 if edit.file.features.isEmpty {
-                    Text("No edits yet").foregroundStyle(.secondary)
+                    Text("No edits yet").foregroundStyle(S37.C.inkSecondary)
                 }
                 List(selection: Binding(get: { edit.selectedFeature }, set: { if let id = $0 { edit.edit(id) } })) {
                     ForEach(edit.file.features) { f in
@@ -54,20 +61,21 @@ struct PartEditView: View {
                             }
                     }
                 }
+                .scrollContentBackground(.hidden)
                 .frame(minHeight: 120, maxHeight: 280)
             }
-            Section {
-                if let status = edit.status { Text(status).font(.caption).foregroundStyle(S37.C.clayInk) }
-                HStack {
-                    if edit.busy || edit.saving { ProgressView().controlSize(.small) }
-                    Spacer()
-                    Button("Save Part…") { app.savePartEdit() }
-                        .disabled(edit.reply == nil || edit.busy || edit.saving
-                                  || !(edit.reply?.features.allSatisfy { $0.status == "ok" } ?? false))
-                }
+            if let status = edit.status { Text(status).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.clayInk) }
+            HStack {
+                if edit.busy || edit.saving { ProgressView().controlSize(.small) }
+                Spacer()
+                Button("Save part…") { app.savePartEdit() }
+                    .buttonStyle(S37ButtonStyle(kind: .prominent))
+                    .disabled(edit.reply == nil || edit.busy || edit.saving
+                              || !(edit.reply?.features.allSatisfy { $0.status == "ok" } ?? false))
             }
+          }
+          .padding(S37.Space.s5)
         }
-        .formStyle(.grouped)
     }
 }
 
@@ -81,9 +89,9 @@ private struct FeatureRow: View {
             Spacer()
             if let s = status, s.status != "ok" {
                 Text(s.status == "lost" ? "Reference lost" : s.status.capitalized)
-                    .font(.caption.weight(.semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .padding(.horizontal, 8).padding(.vertical, 2)
-                    .background(Capsule().fill(s.status == "skipped" ? Color.gray.opacity(0.2) : S37.C.clayWash))
+                    .background(Capsule().fill(s.status == "skipped" ? S37.C.inset : S37.C.clayWash))
                     .foregroundStyle(s.status == "skipped" ? S37.C.inkSecondary : S37.C.clayInk)
                     .help(s.message ?? "")
             }
@@ -99,15 +107,15 @@ private struct ToolPanel: View {
     var body: some View {
         let edit = app.partEdit
         if let draft = edit.draft {
-            Text(need(draft)).font(.caption).foregroundStyle(.secondary)
+            Text(need(draft)).font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
             switch draft.kind {
             case .plane, .extrude:
                 HStack {
                     ForEach(["XY", "YZ", "ZX"], id: \.self) { name in
-                        Button(name) { edit.usePlane(EditRef(src: "std", kind: "plane", name: name)) }
+                        Button(name) { edit.usePlane(EditRef(src: "std", kind: "plane", name: name)) }.buttonStyle(S37ButtonStyle()).controlSize(.small)
                     }
                     ForEach(edit.reply?.planes ?? [], id: \.id) { p in
-                        if draft.kind == .extrude { Button(p.id) { edit.usePlane(EditRef(src: p.id, kind: "plane")) } }
+                        if draft.kind == .extrude { Button(p.id) { edit.usePlane(EditRef(src: p.id, kind: "plane")) }.buttonStyle(S37ButtonStyle()).controlSize(.small) }
                     }
                 }
                 if draft.kind == .extrude {
@@ -120,9 +128,10 @@ private struct ToolPanel: View {
             default: EmptyView()
             }
             HStack {
-                Button("Cancel") { edit.cancel() }
+                Button("Cancel") { edit.cancel() }.buttonStyle(S37ButtonStyle(kind: .plain))
                 Spacer()
                 Button("Apply") { edit.apply(undo: undo) }
+                    .buttonStyle(S37ButtonStyle())
                     .keyboardShortcut(.return)
                     .disabled(!edit.ready(draft))
             }
@@ -131,14 +140,8 @@ private struct ToolPanel: View {
 
     private func value(_ label: String, _ key: String, default d: Double) -> some View {
         let edit = app.partEdit
-        return LabeledContent(label) {
-            HStack(spacing: 4) {
-                TextField(label, value: Binding(get: { edit.draft?.values[key] ?? d }, set: { edit.draft?.values[key] = $0 }),
-                          format: .number.precision(.fractionLength(0...3)))
-                    .labelsHidden().multilineTextAlignment(.trailing).frame(width: 70)
-                Text("mm").foregroundStyle(.secondary)
-            }
-        }
+        return NumberField(label: label, unit: "mm", digits: 3,
+                           value: Binding(get: { edit.draft?.values[key] ?? d }, set: { edit.draft?.values[key] = $0 }))
         .onAppear { if edit.draft?.values[key] == nil { edit.draft?.values[key] = d } }
     }
 
