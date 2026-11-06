@@ -11,6 +11,10 @@ public struct PanelSolution: Sendable {
     public let cl: [Double]
     public let cd: [Double]
     public let cm: [Double]
+    /// The elements (the solver's frame) and the ground the strengths belong to,
+    /// so the velocity can be had anywhere; empty for a solution made by hand.
+    public var elements: [[SIMD2<Double>]] = []
+    public var ground: Double? = nil
 
     public var clTotal: Double { cl.reduce(0, +) }
     public var cmTotal: Double { cm.reduce(0, +) }
@@ -186,7 +190,7 @@ public final class PanelSolver: @unchecked Sendable {
             cds.append(simd_dot(force, wind))
             cms.append(-moment / (refChord * refChord))  // nose up positive
         }
-        return PanelSolution(alphaDeg: alphaDeg, speed: speed, cp: cps, cl: cls, cd: cds, cm: cms)
+        return PanelSolution(alphaDeg: alphaDeg, speed: speed, cp: cps, cl: cls, cd: cds, cm: cms, elements: elements, ground: ground)
     }
 }
 
@@ -208,6 +212,6 @@ extension PanelSolution {
         let s = GroundEffect.share(gain: clTotal / free.clTotal - 1)
         return PanelSolution(alphaDeg: alphaDeg, speed: speed, cp: cp,
                              cl: zip(cl, free.cl).map { $1 + s * ($0 - $1) }, cd: cd,
-                             cm: zip(cm, free.cm).map { $1 + s * ($0 - $1) })
+                             cm: zip(cm, free.cm).map { $1 + s * ($0 - $1) }, elements: elements, ground: ground)
     }
 }

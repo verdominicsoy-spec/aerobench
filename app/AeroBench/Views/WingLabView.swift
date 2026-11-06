@@ -450,6 +450,11 @@ struct WingCanvas: View {
                         .font(.caption.monospacedDigit())
                 }
                 fieldControls(lab)
+                if shownScalar(lab) == nil, lab.preview != nil {
+                    Toggle("Streamlines (inviscid, rough)", isOn: Binding(get: { lab.showStreamlines }, set: { lab.showStreamlines = $0 }))
+                        .toggleStyle(.checkbox).font(.caption)
+                        .help("The panel method's flow, traced on every edit: no boundary layer, wake or separation. Run RANS CFD for the real flow.")
+                }
             }
             .canvasPlate()
                 Spacer()
@@ -576,6 +581,15 @@ struct WingCanvas: View {
         }
         let onField = shownScalar(lab) != nil
         if onField, let r = lab.ransResult, let f = lab.ransField { drawField(ctx, m, lab, r, f) }
+        if !onField, lab.showStreamlines, !lab.roughStreamlines.isEmpty {
+            // The live preview's inviscid flow: lighter and dashed, as it is only rough.
+            var path = Path()
+            for line in lab.roughStreamlines where line.count > 1 {
+                path.move(to: m.view(line[0]))
+                for p in line.dropFirst() { path.addLine(to: m.view(p)) }
+            }
+            ctx.stroke(path, with: .color(S37.C.inkTertiary.opacity(0.55)), style: StrokeStyle(lineWidth: 0.6, dash: [3, 2]))
+        }
         if let a = lab.pinned {
             for e in a.wing.elements {
                 let path = Self.outline(e, m)

@@ -647,6 +647,10 @@ final class WingLabModel {
     private(set) var preview: PanelSolution?
     private(set) var previewMilliseconds: Double = 0
     private(set) var previewError: String?
+    /// Rough streamlines of the preview's inviscid flow in the wing's frame,
+    /// traced off the main thread after each edit (the last set until then).
+    private(set) var roughStreamlines: [[SIMD2<Double>]] = []
+    @ObservationIgnored private var streamlineTask: Task<Void, Never>?
 
     var families: [String] { Array(Set(library.map(\.family))).sorted() }
 
@@ -909,8 +913,10 @@ final class WingLabModel {
         guard !wing.elements.isEmpty else {
             preview = nil
             previewError = nil
+            traceStreamlines(turn: 0)
             return
         }
+        defer { traceStreamlines(turn: wing.inGroundEffect == nil ? 0 : wing.alpha) }
         let start = Date()
         if let g = wing.inGroundEffect,
            let solver = PanelSolver(elements: g.elements, refChord: wing.refChord, ground: g.ground) {
@@ -927,6 +933,25 @@ final class WingLabModel {
             previewError = "Elements overlap, so there is no preview."
         }
         previewMilliseconds = Date().timeIntervalSince(start) * 1000
+    }
+
+    /// Traces the preview's streamlines in the background, turned back by
+    /// `turn` degrees (over a ground the preview's frame runs along the flow).
+    private func traceStreamlines(turn: Double) {
+        streamlineTask?.cancel()
+        guard let p = preview else {
+            roughStreamlines = []
+            return
+        }
+        streamlineTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let lines = p.streamlines { Task.isCancelled }
+            let a = turn * Double.pi / 180, c = cos(a), s = sin(a)
+            let wingFrame = lines.map { $0.map { SIMD2(c * $0.x - s * $0.y, s * $0.x + c * $0.y) } }
+            await MainActor.run {
+                guard !Task.isCancelled else { return }
+                self?.roughStreamlines = wingFrame
+            }
+        }
     }
 
     // MARK: Saving
