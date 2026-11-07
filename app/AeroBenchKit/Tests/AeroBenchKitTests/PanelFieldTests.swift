@@ -49,10 +49,14 @@ final class PanelFieldTests: XCTestCase {
         let r = try XCTUnwrap(PanelSolver(elements: [pts])).solve(alphaDeg: 0)
         let box = (x0: -0.3, y0: -0.4, x1: 1.8, y1: 0.4)
         let wake = try XCTUnwrap(Wake(body: pts, cd: 0.012, panels: VortexPanels(r), box: box))
-        let off = 0.004  // above the trailing edge's centreline
-        let ahead = wake.deficit(at: SIMD2(0.995, off)), behind = wake.deficit(at: SIMD2(1.005, off))
-        XCTAssertGreaterThan(ahead, 0.1)
-        XCTAssertEqual(ahead, behind, accuracy: 0.2 * behind)  // the surface layer is off the wall, the wake off its centreline
+        // Across the trailing edge in 1 mm steps, at and off its centreline: no jump.
+        for off in [0.0, 0.002, 0.004] {
+            let xs = stride(from: 0.97, through: 1.03, by: 0.001).map { SIMD2($0, off) }
+            let line = xs.map { Wing.inside($0, pts) ? Double.nan : wake.deficit(at: $0) }  // no flow inside
+            let jump = zip(line, line.dropFirst()).compactMap { $0.isNaN || $1.isNaN ? nil : abs($1 - $0) }.max() ?? 0
+            XCTAssertLessThan(jump, 0.08, "at \(off): \(line.map { String(format: "%.2f", $0) })")
+            XCTAssertGreaterThan(line.filter { !$0.isNaN }.max() ?? 0, 0.1)
+        }
         // Thin near the nose, thicker towards the trailing edge, at the same height off the surface.
         func above(_ x: Double) -> Double {
             let t = 0.6 * (0.2969 * x.squareRoot() - 0.126 * x - 0.3516 * x * x + 0.2843 * x * x * x - 0.1015 * x * x * x * x)
@@ -65,6 +69,19 @@ final class PanelFieldTests: XCTestCase {
 
     /// The suction side (the faster one) carries the thicker layer: an upright
     /// cambered section's upper side, an inverted one's lower side.
+    /// A boundary layer's loss hugs the wall: stopped there, nearly gone one θ out
+    /// (RANS of a two-element wing: 2 mm to half loss at 60% chord, where it drew 12).
+    func testTheSurfaceLayerHugsTheWall() throws {
+        let pts = naca("0012")
+        let r = try XCTUnwrap(PanelSolver(elements: [pts])).solve(alphaDeg: 0)
+        let box = (x0: -0.3, y0: -0.4, x1: 1.8, y1: 0.4)
+        let theta = 0.006
+        let wake = try XCTUnwrap(Wake(body: pts, cd: 2 * theta, panels: VortexPanels(r), box: box))
+        let top = try XCTUnwrap(pts.filter { $0.x > 0.55 && $0.x < 0.65 }.max { $0.y < $1.y })
+        XCTAssertGreaterThan(wake.deficit(at: top + SIMD2(0, 0.0002)), 0.8)
+        XCTAssertLessThan(wake.deficit(at: top + SIMD2(0, theta)), 0.05)
+    }
+
     func testTheSuctionSideHasTheThickerLayer() throws {
         let box = (x0: -0.3, y0: -0.4, x1: 1.8, y1: 0.4)
         for inverted in [false, true] {

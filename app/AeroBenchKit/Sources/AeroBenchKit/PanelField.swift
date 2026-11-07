@@ -130,7 +130,9 @@ enum Colormap {
 /// streamline off its trailing edge, its momentum deficit θ = Cd c / 2 (the
 /// element's drag), its width growing as the plane turbulent wake's,
 /// half-width 0.3 √(θ s) (Wygnanski, Champagne & Marasli 1986), from a
-/// virtual origin that starts it about θ wide with a deficit about 0.5.
+/// virtual origin that starts it half θ wide and stopped at its centre, as the
+/// boundary layers leave the trailing edge (one RANS boundary layer reached half
+/// its loss 2 mm off the wall at 60% chord; a 22 θ origin drew 12 mm).
 /// Ahead of the trailing edge the loss lies along both surfaces, its width
 /// growing from nothing at the nose as a turbulent boundary layer's (x^0.8),
 /// thicker on the suction side, and it blends into the wake across the
@@ -220,9 +222,9 @@ struct Wake {
     /// Where the traced wake ends.
     var end: SIMD2<Double> { line[line.count - 1] }
 
-    /// σ of the Gaussian: half-width 0.3 √(θ (s + s0)) over √(2 ln 2), with s0 = 22 θ.
+    /// σ of the Gaussian: half-width 0.3 √(θ (s + s0)) over √(2 ln 2), with s0 = 4 θ.
     private static func sigma(_ theta: Double, _ s: Double) -> Double {
-        0.255 * (theta * (s + 22 * theta)).squareRoot()
+        0.255 * (theta * (s + 4 * theta)).squareRoot()
     }
 
     /// The velocity deficit (0 none, 1 stopped) at a point: the surfaces' ahead of the
@@ -263,14 +265,15 @@ struct Wake {
         // The strongest over every segment, each at its own width: the nearest point alone
         // jumps along a concave surface, and its width with it, which drew a step.
         var score = Double.infinity  // -ln(deficit / amplitude), least wins
-        for k in 1..<body.count {
-            let a = body[k - 1], d = body[k] - a
+        for k in 1...body.count {  // the last closes a blunt trailing edge, lower corner to upper
+            let (i, n) = k < body.count ? (k - 1, k) : (body.count - 1, 0)
+            let a = body[i], d = body[n] - a
             let l2 = simd_length_squared(d)
             guard l2 > 0 else { continue }
             // Only from its own side, or a thick layer at one trailing edge corner wraps round the other.
             guard outside * (d.x * (p.y - a.y) - d.y * (p.x - a.x)) >= 0 else { continue }
             let c = min(max(simd_dot(p - a, d) / l2, 0), 1)
-            let sg = widths[k - 1] + c * (widths[k] - widths[k - 1])
+            let sg = widths[i] + c * (widths[n] - widths[i])
             guard sg > 1e-12 else { continue }
             let w = max(sg, minSigma)
             let here = simd_distance_squared(p, a + c * d) / (2 * w * w) - (sg < w ? log(sg / w) : 0)
