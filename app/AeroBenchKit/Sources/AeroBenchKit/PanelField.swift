@@ -8,12 +8,11 @@ import simd
 /// the wakes are all there is to Cp0: no boundary layer on the surface, no
 /// separation, no slot effects.
 extension PanelSolution {
-    /// The field over a window round the elements (as the RANS field's, in
-    /// the solver's frame), `nx` cells across; below the ground and inside
+    /// The field over a window round the elements (in the solver's frame), `nx` cells across; below the ground and inside
     /// the elements there is no flow. `wakeCd` is each element's drag on its
     /// own chord (the live estimate's); without it there is no Cp0. Nil if
     /// there are no elements or `isCancelled` turned true.
-    public func field(nx: Int = 320, wakeCd: [Double]? = nil, isCancelled: @escaping () -> Bool = { false }) -> WingField? {
+    public func field(nx: Int = 400, wakeCd: [Double]? = nil, isCancelled: @escaping () -> Bool = { false }) -> WingField? {
         let panels = VortexPanels(self)
         let bodies = zip(elements, speed).filter { $0.count == $1.count && $0.count > 2 }.map(\.0)
         guard !bodies.isEmpty, nx > 1 else { return nil }
@@ -21,8 +20,9 @@ extension PanelSolution {
         let lo = all.reduce(SIMD2(Double.infinity, .infinity)) { simd_min($0, $1) }
         let hi = all.reduce(SIMD2(-Double.infinity, -.infinity)) { simd_max($0, $1) }
         let span = max(hi.x - lo.x, hi.y - lo.y, 1e-6)
-        let x0 = lo.x - 0.3 * span, x1 = hi.x + 0.8 * span, y1 = hi.y + 0.4 * span
-        let y0 = max(lo.y - 0.4 * span, ground ?? -.infinity)
+        // Wider than the RANS field's window, so a zoomed-out canvas stays covered.
+        let x0 = lo.x - 1.0 * span, x1 = hi.x + 2.0 * span, y1 = hi.y + 0.8 * span
+        let y0 = max(lo.y - 0.8 * span, ground ?? -.infinity)
         let ny = max(Int((Double(nx) * (y1 - y0) / (x1 - x0)).rounded()), 8)
         let dx = (x1 - x0) / Double(nx), dy = (y1 - y0) / Double(ny)
         let box = (x0: x0, y0: y0, x1: x1, y1: y1)
@@ -42,12 +42,15 @@ extension PanelSolution {
                             let p = SIMD2(x0 + (Double(i) + 0.5) * dx, y)
                             if panels.inside(p) { continue }
                             let v2 = simd_length_squared(panels.velocity(at: p))
-                            // The wakes slow the flow at the static pressure the outer flow sets.
+                            // Each wake's loss is set where it formed and carried down its
+                            // streamline unchanged; the static pressure is the outer flow's,
+                            // so the speed follows from Bernoulli on the lower total pressure.
                             let f = wakes.reduce(1.0) { $0 * (1 - $1.deficit(at: p)) }
+                            let loss = f * f - 1
                             let k = j * nx + i
                             cpOut[k] = Float(1 - v2)
-                            spOut[k] = Float(v2.squareRoot() * f)
-                            cp0Out[k] = Float(v2 * (f * f - 1))
+                            spOut[k] = Float(max(v2 + loss, 0).squareRoot())
+                            cp0Out[k] = Float(loss)
                         }
                     }
                 }
@@ -55,8 +58,13 @@ extension PanelSolution {
         }
         if isCancelled() { return nil }
 
+        // Colour ranges from the flow near the elements (the RANS field's window), not the far field's calm.
+        let iLo = max(Int((lo.x - 0.3 * span - x0) / dx), 0), iHi = min(Int((hi.x + 0.8 * span - x0) / dx), nx - 1)
+        let jLo = max(Int((lo.y - 0.4 * span - y0) / dy), 0), jHi = min(Int((hi.y + 0.4 * span - y0) / dy), ny - 1)
         func scalar(_ key: String, _ name: String, _ values: [Float], _ kind: Colormap) -> WingField.Scalar {
-            let finite = values.filter(\.isFinite).map(Double.init).sorted()
+            var near: [Double] = []
+            for j in jLo...jHi { for i in iLo...iHi where values[j * nx + i].isFinite { near.append(Double(values[j * nx + i])) } }
+            let finite = near.sorted()
             let p1 = finite.isEmpty ? 0 : finite[Int(Double(finite.count - 1) * 0.01)]
             let p99 = finite.isEmpty ? 1 : finite[Int(Double(finite.count - 1) * 0.99)]
             var range = [p1, p99]
@@ -69,6 +77,26 @@ extension PanelSolution {
         if !wakes.isEmpty {
             scalars.append(scalar("cp0", "Total pressure Cp0", cp0, .sequential))
             values.append(cp0)
+        }
+        // Carry the flow two cells into the elements, under their solid fill, so
+        // the cells cut by a surface do not show as notches along it.
+        let blank = cp.map { !$0.isFinite }
+        for _ in 0..<2 {
+            let edge = (0..<n).filter { k in
+                guard blank[k], !values[0][k].isFinite else { return false }
+                let i = k % nx
+                return (i > 0 && values[0][k - 1].isFinite) || (i < nx - 1 && values[0][k + 1].isFinite)
+                    || (k >= nx && values[0][k - nx].isFinite) || (k + nx < n && values[0][k + nx].isFinite)
+            }
+            for b in values.indices {
+                let old = values[b]
+                for k in edge {
+                    let i = k % nx
+                    let around = [i > 0 ? k - 1 : -1, i < nx - 1 ? k + 1 : -1, k - nx, k + nx]
+                        .filter { $0 >= 0 && $0 < n && old[$0].isFinite }.map { old[$0] }
+                    values[b][k] = around.reduce(0, +) / Float(around.count)
+                }
+            }
         }
         return WingField(nx: nx, ny: ny, window: box, scalars: scalars, values: values)
     }
@@ -116,16 +144,24 @@ struct Wake {
         let chord = simd_distance(le, te)
         guard chord > 0 else { return nil }
         theta = 0.5 * cd * chord
-        // Off the trailing edge along the chord, then down the inviscid flow.
+        // Off the trailing edge along the chord, then down the inviscid flow,
+        // in shorter steps past another element so it slides by, not into it.
         var p = te + 0.01 * chord * (te - le) / chord
         var pts = [te, p]
-        let h = 0.02 * chord
-        for _ in 0..<2000 {
-            guard let d1 = panels.direction(p), let d2 = panels.direction(p + 0.5 * h * d1) else { break }
-            let q = p + h * d2
-            if q.x < box.x0 || q.x > box.x1 || q.y < box.y0 || q.y > box.y1 || panels.inside(q) { break }
-            pts.append(q)
-            p = q
+        march: for _ in 0..<2000 {
+            var h = min(max(0.3 * panels.distance(p), 0.002 * chord), 0.02 * chord)
+            for _ in 0..<3 {
+                guard let d1 = panels.direction(p), let d2 = panels.direction(p + 0.5 * h * d1) else { break march }
+                let q = p + h * d2
+                if q.x < box.x0 || q.x > box.x1 || q.y < box.y0 || q.y > box.y1 { break march }
+                if !panels.inside(q) {
+                    pts.append(q)
+                    p = q
+                    continue march
+                }
+                h /= 4
+            }
+            break
         }
         line = pts
         var s = [0.0]
@@ -134,6 +170,9 @@ struct Wake {
         reach = 5 * Self.sigma(theta, s.last ?? 0)
     }
 
+    /// Where the traced wake ends.
+    var end: SIMD2<Double> { line[line.count - 1] }
+
     /// σ of the Gaussian: half-width 0.3 √(θ (s + s0)) over √(2 ln 2), with s0 = 22 θ.
     private static func sigma(_ theta: Double, _ s: Double) -> Double {
         0.255 * (theta * (s + 22 * theta)).squareRoot()
@@ -141,18 +180,22 @@ struct Wake {
 
     /// The velocity deficit (0 none, 1 stopped) at a point, 0 off the wake or upstream of the trailing edge.
     func deficit(at p: SIMD2<Double>) -> Double {
-        var best = Double.infinity, s = 0.0
+        var best = Double.infinity, s = 0.0, beyond = false
         for k in 1..<line.count {
             let a = line[k - 1], d = line[k] - a
             let l2 = simd_length_squared(d)
             guard l2 > 0 else { continue }
             let t = simd_dot(p - a, d) / l2
-            if k == 1, t < 0 { continue }  // ahead of the trailing edge
             let c = min(max(t, 0), 1)
             let gap = simd_distance(p, a + c * d)
-            if gap < best { best = gap; s = along[k - 1] + c * l2.squareRoot() }
+            if gap < best {
+                best = gap
+                s = along[k - 1] + c * l2.squareRoot()
+                // Nearest to its start from ahead of the trailing edge, or to its end from past it.
+                beyond = (k == 1 && t < 0) || (k == line.count - 1 && t > 1)
+            }
         }
-        guard best < reach else { return 0 }
+        guard !beyond, best < reach else { return 0 }
         let sg = Self.sigma(theta, s)
         // Momentum deficit ∫ u (1 - u) dn = θ with u = 1 - A exp(-n²/2σ²): A σ √(2π) - A² σ √π = θ.
         let b = sg * (2 * Double.pi).squareRoot(), a2 = sg * Double.pi.squareRoot()

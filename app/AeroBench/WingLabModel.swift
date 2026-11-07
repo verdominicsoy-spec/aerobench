@@ -672,7 +672,7 @@ final class WingLabModel {
     @ObservationIgnored private var streamlineTask: Task<Void, Never>?
     /// The preview's flow as a colour field (Cp, speed and, once the live
     /// estimate has each element's drag, Cp0 from their wakes) in the
-    /// preview's frame, made off the main thread after each edit (about 10 ms).
+    /// preview's frame, made off the main thread after each edit (about 20 ms).
     private(set) var liveField: WingField? {
         didSet { liveImages = [:] }
     }
