@@ -11,11 +11,14 @@ as a result.
 
 from __future__ import annotations
 
+import atexit
 import csv
 import os
 import shutil
 import signal
 import subprocess
+import threading
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
@@ -343,10 +346,39 @@ class Diverged(Exception):
         self.iteration = iteration
 
 
+_live: set[subprocess.Popen] = set()  # the SU2 runs in flight, from any thread
+_live_lock = threading.Lock()
+
+
+def kill_all_su2() -> None:
+    """Ends every live SU2 run's process group: SIGTERM, at most 0.5 s in all
+    for them to go, then SIGKILL. Safe from a signal handler and at exit."""
+    with _live_lock:
+        procs = list(_live)
+    for proc in procs:
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+    deadline = time.monotonic() + 0.5
+    while time.monotonic() < deadline and any(p.poll() is None for p in procs):
+        time.sleep(0.02)
+    for proc in procs:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+    with _live_lock:
+        _live.difference_update(procs)
+
+
+atexit.register(kill_all_su2)
+
+
 def _stop(proc: subprocess.Popen) -> None:
     """End mpirun and every SU2 rank under it: the whole process group (the
-    run has its own session), SIGTERM first, SIGKILL after 5 s. Never blocks for good."""
-    for sig, wait in ((signal.SIGTERM, 5), (signal.SIGKILL, 5)):
+    run has its own session), SIGTERM first, SIGKILL after 0.5 s. Never blocks for good."""
+    for sig, wait in ((signal.SIGTERM, 0.5), (signal.SIGKILL, 5)):
         try:
             os.killpg(proc.pid, sig)
         except (ProcessLookupError, PermissionError):
@@ -392,6 +424,8 @@ def _run_once(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
     log = open(workdir / "su2.log", "w")
     proc = subprocess.Popen(cmd, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                             env=env, errors="replace", start_new_session=True)
+    with _live_lock:
+        _live.add(proc)
     tail: list[str] = []
     screen: dict[str, list[float]] = {"rms[P]": [], "CL": [], "CD": []}
     strict = replace(case, tolerance=case.tolerance / 2)
@@ -425,7 +459,11 @@ def _run_once(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
         proc.wait(timeout=30)  # stdout closed: SU2 is ending; the finally kills the group if not
     finally:
         log.close()
-        _stop(proc)
+        try:
+            _stop(proc)
+        finally:
+            with _live_lock:
+                _live.discard(proc)
     if climbed is not None:
         raise Diverged(climbed)
     history_file = workdir / "history.csv"

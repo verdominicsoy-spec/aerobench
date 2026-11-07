@@ -600,3 +600,15 @@ def test_typed_transition_checks_the_reynolds_number_before_meshing(monkeypatch)
     with pytest.raises(EngineError, match="Reynolds number .* is outside 1e3 to 1e8"):
         rans.solve(p, Path("/nonexistent"), Path("/nonexistent/wing.su2"), None, 1, None, lambda *a: None,
                    lambda *a, **k: None)
+
+
+def test_kill_all_su2_ends_every_live_group_and_empties_the_registry():
+    from aeroengine.wing import su2 as su2mod
+
+    proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
+    with su2mod._live_lock:
+        su2mod._live.add(proc)
+    t0 = time.monotonic()
+    su2mod.kill_all_su2()
+    assert proc.wait(timeout=2) != 0 and time.monotonic() - t0 < 1.5
+    assert not su2mod._live

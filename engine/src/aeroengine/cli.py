@@ -45,6 +45,11 @@ def _on_sigterm(signum: int, frame: object) -> None:
     # SIGKILL if we take too long.
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     signal.signal(signal.SIGINT, signal.SIG_IGN)
+    # SU2 runs live in their own sessions, out of the app's group kill, and
+    # the ones started from worker threads never see this exception.
+    su2 = sys.modules.get("aeroengine.wing.su2")
+    if su2 is not None:
+        su2.kill_all_su2()
     raise JobCancelled()
 
 
