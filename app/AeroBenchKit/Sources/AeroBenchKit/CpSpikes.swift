@@ -25,7 +25,9 @@ public enum CpSpikes {
                 out.append(run)
             }
         }
-        return out
+        // A run of one point draws no line but would still set the chart's scale: drop it.
+        let sizes = Dictionary(out.compactMap { $0.map { ($0, 1) } }, uniquingKeysWith: +)
+        return out.map { $0.flatMap { sizes[$0] == 1 ? nil : $0 } }
     }
 }
 
