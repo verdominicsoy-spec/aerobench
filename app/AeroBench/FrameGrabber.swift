@@ -50,7 +50,12 @@ final class FrameGrabber: @unchecked Sendable {
             detectedDuration = duration.seconds.isFinite ? duration.seconds : nil
             fps = (typedFps ?? 0) > 0 ? typedFps! : (rate > 0 ? rate : 30)
             let length = (typedDuration ?? 0) > 0 ? typedDuration! : duration.seconds
-            frameCount = max(Int((length * fps).rounded()), 1)
+            let frames = (length * fps).rounded()
+            // A file that reports no length (NaN) would trap in Int(): say so instead.
+            guard frames.isFinite, frames < 10_000_000 else {
+                throw FlowError.source("\(url.lastPathComponent) does not report its length. Type its length under Video timing.")
+            }
+            frameCount = max(Int(frames), 1)
             size = natural
             let g = AVAssetImageGenerator(asset: asset)
             g.requestedTimeToleranceBefore = .zero

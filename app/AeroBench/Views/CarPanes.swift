@@ -94,7 +94,6 @@ struct SideViewPane: View {
     @State private var clampNote: String?
 
     var body: some View {
-        let car = app.car
         VStack(alignment: .leading, spacing: S37.Space.s3) {
             Text("Side view").font(.system(size: 20, weight: .semibold))
             GeometryReader { geo in

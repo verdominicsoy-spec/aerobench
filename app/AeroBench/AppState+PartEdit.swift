@@ -11,7 +11,7 @@ extension AppState {
             alert = AppAlert(title: "The engine is not set up", message: "Set the engine folder in Settings.")
             return
         }
-        if partEdit.engine == nil { partEdit.engine = WarmEngine(executableURL: executable) }
+        partEdit.engine = warm(partEdit.engine, executable)
         guard let engine = partEdit.engine else { return }
         partEdit.viewer = cad.viewer
         partEdit.showModel = { [weak self] model in self?.cad.showEdited(model) }

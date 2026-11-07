@@ -184,11 +184,12 @@ public struct FlowCalibration: Codable, Equatable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = FlowCalibration()
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? d.version
-        sourceSize = try c.decodeIfPresent([Int].self, forKey: .sourceSize)
-        crop = try c.decodeIfPresent([Double].self, forKey: .crop)
-        exclude = try c.decodeIfPresent([[Double]].self, forKey: .exclude) ?? []
+        // Rectangles and pairs of the wrong length (a hand-edited file) are dropped, not indexed past.
+        sourceSize = try c.decodeIfPresent([Int].self, forKey: .sourceSize).flatMap { $0.count == 2 ? $0 : nil }
+        crop = try c.decodeIfPresent([Double].self, forKey: .crop).flatMap { $0.count == 4 ? $0 : nil }
+        exclude = (try c.decodeIfPresent([[Double]].self, forKey: .exclude) ?? []).filter { $0.count == 4 }
         colormap = try c.decodeIfPresent(Colormap.self, forKey: .colormap) ?? d.colormap
-        valueRange = try c.decodeIfPresent([Double].self, forKey: .valueRange) ?? d.valueRange
+        valueRange = try c.decodeIfPresent([Double].self, forKey: .valueRange).flatMap { $0.count == 2 ? $0 : nil } ?? d.valueRange
         spatial = try c.decodeIfPresent(Spatial.self, forKey: .spatial) ?? d.spatial
         planes = try c.decodeIfPresent(Planes.self, forKey: .planes) ?? d.planes
         maskColors = try c.decodeIfPresent([[Double]].self, forKey: .maskColors) ?? d.maskColors

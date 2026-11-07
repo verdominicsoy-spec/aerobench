@@ -948,6 +948,12 @@ struct CFDResults: View {
 
     @ViewBuilder private func run(_ lab: WingLabModel) -> some View {
         if let r = lab.ransResult {
+            if !lab.ransIsCurrent {
+                Label("The wing has changed since this run: these numbers are for the wing as it was. Run CFD again for this one.",
+                      systemImage: "exclamationmark.triangle")
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.clayInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     if r.converged && r.averaged == true {
@@ -1275,15 +1281,23 @@ struct WingInspector: View {
     }
 
     /// What every solver shares: the wing's angle to the flow and the air.
+    /// Viscosity typed in the field's 10⁻⁵ Pa s, or straight in Pa s (anything under 0.001).
+    static func viscosity(typed v: Double) -> Double { v < 1e-3 ? v : v * 1e-5 }
+
     @ViewBuilder private func flowSection(_ lab: WingLabModel) -> some View {
         let wing = lab.wing
         S37Section("Flow", footer: "Ncrit 9 is a clean tunnel; 4 to 6 for the air behind a car.") {
             NumberField(label: "Wing angle to the flow", unit: "°", value: Binding(
                 get: { wing.alpha }, set: { v in lab.edit { $0.alpha = v } }))
-            NumberField(label: "Speed", unit: "m/s", value: Binding(get: { wing.speed }, set: { v in lab.edit("Change Speed") { $0.speed = max(v, 0.1) } }))
-            NumberField(label: "Air density", unit: "kg/m³", value: Binding(get: { wing.rho }, set: { v in lab.edit("Change Air Density") { $0.rho = max(v, 0.01) } }))
-            NumberField(label: "Viscosity (×10⁻⁵)", unit: "Pa s", value: Binding(
-                get: { wing.mu * 1e5 }, set: { v in lab.edit { $0.mu = max(v, 0.01) * 1e-5 } }))
+            NumberField(label: "Speed", unit: "m/s", value: Binding(get: { wing.speed }, set: { v in lab.edit("Change Speed") { $0.speed = v } }),
+                        check: S37NumberInput.within(1...150, "m/s"))
+            NumberField(label: "Air density", unit: "kg/m³", value: Binding(get: { wing.rho }, set: { v in lab.edit("Change Air Density") { $0.rho = v } }),
+                        check: S37NumberInput.within(0.3...2, "kg/m³"))
+            // Shown in 10⁻⁵ Pa s (air is about 1.8); a value typed in Pa s (1.81e-5) is taken as it is.
+            NumberField(label: "Viscosity", unit: "×10⁻⁵ Pa s", value: Binding(
+                get: { wing.mu * 1e5 }, set: { v in lab.edit("Change Viscosity") { $0.mu = Self.viscosity(typed: v) } }),
+                        check: { v in (0.5...10).contains(Self.viscosity(typed: v) * 1e5) ? nil
+                            : "Expected about 1.8 (×10⁻⁵ Pa s) for air" })
             ForEach(Array(wing.elements.enumerated()), id: \.element.id) { i, e in
                 LabeledContent("Reynolds number, \(WingIssue.label(i))",
                                value: wing.reynolds(chord: e.chord).formatted(.number.precision(.fractionLength(0))))
@@ -1476,10 +1490,8 @@ struct WingInspector: View {
         HStack {
             let trials = Binding(get: { lab.optimise.trials }, set: { lab.optimise.trials = min(max($0, 2), 2000) })
             Text("Trials:")
-            TextField("Trials", value: trials, format: .number)
-                .labelsHidden()
-                .multilineTextAlignment(.trailing)
-                .frame(width: 60)
+            S37NumberInput(label: "Trials", value: Binding(get: { Double(trials.wrappedValue) }, set: { trials.wrappedValue = Int($0.rounded()) }),
+                           digits: 0, width: 60)
             Stepper("Trials", value: trials, in: 2...2000, step: 10).labelsHidden()
             if lab.optimise.trials != lab.optimise.suggestedTrials {
                 Button("Use \(lab.optimise.suggestedTrials)") { lab.optimise.trials = lab.optimise.suggestedTrials }
@@ -1503,13 +1515,11 @@ struct WingInspector: View {
             ForEach(lab.optimise.variables.filter { $0.kind != .airfoil }) { v in
                 HStack {
                     Text("\(WingIssue.label(v.element)) \(v.kind.title.lowercased())").font(.caption).frame(width: 96, alignment: .leading)
-                    TextField("from", value: Binding(get: { v.low }, set: { lab.setBounds(of: v.id, low: $0) }),
-                              format: .number.precision(.fractionLength(0...2)))
-                        .multilineTextAlignment(.trailing)
+                    S37NumberInput(label: "from", value: Binding(get: { v.low }, set: { lab.setBounds(of: v.id, low: $0) }),
+                                   digits: 2, width: 70)
                     Text("to").foregroundStyle(S37.C.inkSecondary)
-                    TextField("to", value: Binding(get: { v.high }, set: { lab.setBounds(of: v.id, high: $0) }),
-                              format: .number.precision(.fractionLength(0...2)))
-                        .multilineTextAlignment(.trailing)
+                    S37NumberInput(label: "to", value: Binding(get: { v.high }, set: { lab.setBounds(of: v.id, high: $0) }),
+                                   digits: 2, width: 70)
                     Text(v.unit).foregroundStyle(S37.C.inkSecondary).font(.caption).frame(width: 64, alignment: .leading)
                 }
                 .disabled(running)

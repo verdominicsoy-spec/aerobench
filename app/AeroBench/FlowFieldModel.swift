@@ -152,9 +152,14 @@ final class FlowFieldModel {
 
     func open(_ url: URL) async {
         loadError = nil
+        let token = UUID()
+        openToken = token
         do {
             let typed = calibration.video
             let g = try await FrameGrabber(url: url, fps: typed?.typedFps, duration: typed?.typedDuration)
+            guard openToken == token else { return }  // another open started meanwhile: it wins
+            // Another source: the old one's results are not of this one.
+            if url != sourceURL { clearResults() }
             grabber = g
             sourceURL = url
             frameCount = g.frameCount
@@ -175,9 +180,11 @@ final class FlowFieldModel {
             frameIndex = min(frameIndex, g.frameCount - 1)
             await showFrame(frameIndex)
         } catch {
+            guard openToken == token else { return }
             loadError = error.localizedDescription
         }
     }
+    @ObservationIgnored private var openToken: UUID?
 
     /// Overrides the video's frame rate and length (nil: as the video says)
     /// and reopens it, so frame numbers follow the typed timing.
@@ -374,6 +381,11 @@ final class FlowFieldModel {
         grabber = nil
         frameImage = nil
         frameCount = 0
+        clearResults()
+    }
+
+    /// What was made from the source: the 3D volume, its views, the preview and the detection.
+    private func clearResults() {
         volume = nil
         volumeFolder = nil
         isoLevels = []

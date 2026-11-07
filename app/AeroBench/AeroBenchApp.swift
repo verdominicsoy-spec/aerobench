@@ -192,7 +192,7 @@ struct AeroBenchCommands: Commands {
         Button("Cancel Job") { job.map(app.jobs.cancel) }
             .keyboardShortcut(".")
             .disabled(job.map { $0.status.isFinished || $0.cancelRequested } ?? true)
-        Button("Run Again") { job.map { app.jobs.runAgain($0) } }
+        Button("Run Again") { if let job { _ = app.jobs.runAgain(job) } }
             .disabled(job == nil)
         Divider()
         Button("Reveal in Finder") { job.map(app.jobs.revealInFinder) }

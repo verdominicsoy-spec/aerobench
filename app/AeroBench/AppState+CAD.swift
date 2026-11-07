@@ -22,6 +22,8 @@ extension AppState {
                              message: "The CAD Viewer opens STEP, IGES, STL, OBJ and glb files.")
             return
         }
+        // Edit Part works on the open STEP: leave it before another file takes its place.
+        if partEdit.on { exitPartEdit(reload: false) }
         cad.setFile(url)
         if CADViewerModel.tessellatedExtensions.contains(ext) {
             tessellate(url)

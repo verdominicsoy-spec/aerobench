@@ -78,12 +78,14 @@ extension AppState {
         }
         guard !paths.isEmpty else { return }
         let files = JSONValue.array(paths.map { .string($0) })
+        let folder = workFolder
         wingLab.libraryJob = jobs.submit(command: "airfoil-import", params: ["files": files], in: jobsRoot) { [weak self] item in
             try? FileManager.default.removeItem(at: temp)
             guard let self, item.status == .succeeded else { return }
             self.wingLab.loadLibrary(engineDirectory: self.settings.engineDirectory)
             self.wingLab.filter.source = "mine"
-            if let wingFile { self.placeImportedWing(wingFile.name, wingFile.elements) }
+            // The sections are everyone's; the wing belongs to the project it was imported into.
+            if let wingFile, self.workFolder == folder { self.placeImportedWing(wingFile.name, wingFile.elements) }
         }
     }
 
@@ -396,7 +398,7 @@ extension AppState {
             lab.liveStatus = "Set the engine folder in Settings"
             return
         }
-        if lab.warmEngine == nil { lab.warmEngine = WarmEngine(executableURL: executable) }
+        lab.warmEngine = warm(lab.warmEngine, executable)
         guard let engine = lab.warmEngine else { return }
         lab.liveBusy = true
         if lab.estimate == nil { lab.liveStatus = "Loading the engine (a few seconds, once)" }
@@ -557,7 +559,7 @@ extension AppState {
     private func estimate(for wing: Wing, then done: @escaping (WingEstimate) -> Void) {
         let lab = wingLab
         guard let executable = settings.engineExecutable else { return }
-        if lab.warmEngine == nil { lab.warmEngine = WarmEngine(executableURL: executable) }
+        lab.warmEngine = warm(lab.warmEngine, executable)
         guard let engine = lab.warmEngine else { return }
         let params = JSONValue.object(estimateParams(wing))
         Task { @MainActor in

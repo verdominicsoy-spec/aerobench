@@ -136,6 +136,13 @@ final class CADViewerModel {
     var triangleCount: Int { model?.triangleCount ?? 0 }
 
     func setFile(_ url: URL) {
+        // Another file: the last one's model, check and repair plan are not of this one.
+        if url != fileURL {
+            model = nil
+            setReport(nil)
+            setBodyPlan(nil)
+            hidden = []
+        }
         fileURL = url
         points = []
     }

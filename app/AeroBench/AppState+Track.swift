@@ -21,7 +21,7 @@ extension AppState {
             throw WarmEngine.Failure(message: "Set the engine folder in Settings", detail: nil)
         }
         // Shared with Wing Lab's live estimate: one warm engine for the app.
-        if wingLab.warmEngine == nil { wingLab.warmEngine = WarmEngine(executableURL: executable) }
+        wingLab.warmEngine = warm(wingLab.warmEngine, executable)
         guard let engine = wingLab.warmEngine else { throw WarmEngine.Failure(message: "Could not start the engine", detail: nil) }
         var track = lapSim.track
         track.kind = kind

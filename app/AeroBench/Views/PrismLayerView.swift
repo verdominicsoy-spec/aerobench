@@ -194,9 +194,9 @@ struct PrismLayerView: View {
     private var flowGroup: some View {
         group("Flow") {
             S37FieldRow(label: "Velocity", unit: "m/s", value: project(\.velocity, velocity, "Velocity"),
-                        error: positive(velocity, "a speed", "m/s"))
+                        error: positive(velocity, "a speed", "m/s"), check: S37NumberInput.within(0.1...150, "m/s"))
             S37FieldRow(label: "Density", unit: "kg/m³", value: project(\.density, density, "Density"),
-                        error: positive(density, "a density", "kg/m³"))
+                        error: positive(density, "a density", "kg/m³"), check: S37NumberInput.within(0.3...2, "kg/m³"))
             S37FieldRow(label: "Target y+", value: binding(\.yPlus, "Target y+"), error: positive(yPlus, "a y+", ""))
         }
     }

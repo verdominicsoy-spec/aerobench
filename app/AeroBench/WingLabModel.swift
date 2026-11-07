@@ -213,6 +213,11 @@ final class WingLabModel {
         guard let r = ransResult, ransField != nil else { return false }
         return r.matches(wing.elements.map { $0.placed() })
     }
+    /// Whether the last RANS run is of the wing as it is now: the same outlines and wing angle.
+    var ransIsCurrent: Bool {
+        guard let r = ransResult else { return false }
+        return r.matches(wing.elements.map { $0.placed() }) && abs((r.alpha ?? wing.alpha) - wing.alpha) < 0.05
+    }
     @ObservationIgnored private var fieldImages: [String: CGImage] = [:]
 
     /// The scalar as an image, made once per scalar and kept.
@@ -799,7 +804,7 @@ final class WingLabModel {
     }
 
     private var current: Pinned {
-        Pinned(wing: wing, preview: preview, estimate: estimate, rans: ransResult, version: shownVersion,
+        Pinned(wing: wing, preview: preview, estimate: estimate, rans: ransIsCurrent ? ransResult : nil, version: shownVersion,
                field: fieldIsCurrent ? ransField : nil)
     }
 
@@ -928,7 +933,11 @@ final class WingLabModel {
             previewError = nil
         } else {
             preview = nil
-            previewError = "Elements overlap, so there is no preview."
+            previewError = switch wing.rideHeight {
+            case nil: "Elements overlap, so there is no preview."
+            case let h? where h <= 0: "No preview: the ride height must be above 0."
+            default: "No preview: the elements overlap, or the wing is too close to the ground for the quick solver."
+            }
         }
         previewMilliseconds = Date().timeIntervalSince(start) * 1000
     }
@@ -988,11 +997,13 @@ final class WingLabModel {
     // What the project files hold, so undoing back to it is not an unsaved change.
     private var savedWing: Wing?
     private var savedOptimise: OptimiseSetup?
+    private var savedDesign: DesignSetup?
     func markSaved() {
         savedWing = wing
         savedOptimise = optimise
+        savedDesign = design
     }
-    var hasUnsavedChanges: Bool { wing != savedWing || optimise != savedOptimise }
+    var hasUnsavedChanges: Bool { wing != savedWing || optimise != savedOptimise || design != savedDesign }
 
     /// The Design card's chips and the study a Design run resumes, kept with the project.
     struct SavedDesign: Codable {
@@ -1044,6 +1055,7 @@ final class WingLabModel {
         let url = ProjectStore.toolURL(for: project, tool: "wing").appendingPathComponent("design.json")
         let saved = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode(SavedDesign.self, from: $0) }
         design = saved?.setup ?? DesignSetup()
+        savedDesign = design
         designName = saved?.name
         designKey = saved?.key
         designShown = nil

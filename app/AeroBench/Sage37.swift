@@ -1,3 +1,4 @@
+import AeroBenchKit
 import AppKit
 import CoreText
 import SwiftUI
@@ -359,42 +360,148 @@ struct S37FieldRow: View {
     var prompt: String? = nil
     var error: String? = nil
     var width: CGFloat = 112
+    var check: ((Double) -> String?)? = nil
+    private var optional = true
+    @State private var typed: String?
+
+    /// A field that may be cleared: empty is nil (the prompt shows).
+    init(label: String, unit: String = "", value: Binding<Double?>, prompt: String? = nil, error: String? = nil,
+         width: CGFloat = 112, check: ((Double) -> String?)? = nil) {
+        self.label = label
+        self.unit = unit
+        self._value = value
+        self.prompt = prompt
+        self.error = error
+        self.width = width
+        self.check = check
+    }
 
     var body: some View {
         VStack(alignment: .trailing, spacing: S37.Space.s1) {
             HStack(spacing: S37.Space.s2) {
                 Text(label).font(.system(size: 13)).foregroundStyle(S37.C.ink).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: S37.Space.s2)
-                TextField(label, value: $value, format: .number, prompt: prompt.map { Text($0) })
-                    .textFieldStyle(.plain).labelsHidden().multilineTextAlignment(.trailing)
-                    .font(.system(size: 13)).monospacedDigit()
-                    .padding(.horizontal, S37.Space.s2).frame(width: width, height: 24)
-                    .background(RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).fill(S37.C.recess))
-                    .overlay {
-                        if error != nil {
-                            RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).strokeBorder(S37.C.critical, lineWidth: 2)
-                        }
-                    }
+                S37NumberInput(label: label, value: $value, digits: 6, prompt: prompt, check: check, problem: $typed,
+                               outlined: error != nil, width: width, optional: optional)
+                    .font(.system(size: 13))
                 Text(unit).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkTertiary)
                     .frame(width: 40, alignment: .leading)
             }
-            if let error {
-                Text(error).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.critical)
+            if let message = typed ?? error {
+                Text(message).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.critical)
                     .padding(.trailing, 48)
             }
         }
-        .padding(.vertical, error == nil ? 0 : S37.Space.s1)
+        .padding(.vertical, (typed ?? error) == nil ? 0 : S37.Space.s1)
     }
 }
 
 extension S37FieldRow {
     /// A field that always holds a number: clearing it keeps the last one
-    init(label: String, unit: String = "", value: Binding<Double>, error: String? = nil, width: CGFloat = 112) {
+    init(label: String, unit: String = "", value: Binding<Double>, error: String? = nil, width: CGFloat = 112,
+         check: ((Double) -> String?)? = nil) {
         self.init(label: label, unit: unit,
                   value: Binding<Double?>(get: { value.wrappedValue }, set: { if let v = $0 { value.wrappedValue = v } }),
-                  error: error, width: width)
+                  error: error, width: width, check: check)
+        optional = false
     }
 }
+
+// MARK: number input
+
+/// A number box that edits its own text and sets the value on Return or on leaving the box,
+/// never while typing: a value the app limits or converts would otherwise be rewritten under
+/// the caret (clear 15 to type 20 and a clamp puts a number back). Points for decimals in every
+/// locale and no thousands separators, so "1,184" is refused instead of read as 1184. A cleared
+/// box keeps the last number unless the value may be empty.
+struct S37NumberInput: View {
+    var label: String
+    @Binding var value: Double?
+    var digits = 4
+    var prompt: String? = nil
+    /// Why a typed number cannot be used, or nil; the value is not set while it says so.
+    var check: ((Double) -> String?)? = nil
+    var problem: Binding<String?>? = nil
+    var outlined = false
+    var width: CGFloat = 90
+    var optional = false
+    /// After a typed number is set (Return or leaving the box).
+    var onCommit: (() -> Void)? = nil
+
+    @State private var text = ""
+    @State private var local: String?
+    @FocusState private var focused: Bool
+
+    init(label: String, value: Binding<Double?>, digits: Int = 4, prompt: String? = nil, check: ((Double) -> String?)? = nil,
+         problem: Binding<String?>? = nil, outlined: Bool = false, width: CGFloat = 90, optional: Bool = false,
+         onCommit: (() -> Void)? = nil) {
+        self.onCommit = onCommit
+        self.label = label
+        self._value = value
+        self.digits = digits
+        self.prompt = prompt
+        self.check = check
+        self.problem = problem
+        self.outlined = outlined
+        self.width = width
+        self.optional = optional
+    }
+
+    static func format(_ v: Double, digits: Int) -> String { NumberText.format(v, digits: digits) }
+    static func within(_ range: ClosedRange<Double>, _ unit: String = "") -> (Double) -> String? { NumberText.within(range, unit) }
+
+    var body: some View {
+        TextField(label, text: $text, prompt: prompt.map { Text($0) })
+            .textFieldStyle(.plain).labelsHidden()
+            .multilineTextAlignment(.trailing).monospacedDigit()
+            .padding(.horizontal, S37.Space.s2).frame(width: width, height: 24)
+            .background(RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).fill(S37.C.recess))
+            .overlay {
+                if outlined || local != nil {
+                    RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).strokeBorder(S37.C.critical, lineWidth: 2)
+                }
+            }
+            .help(local ?? "")
+            .focused($focused)
+            .onSubmit(commit)
+            .onChange(of: focused) { _, now in if !now { commit() } }
+            .onExitCommand { show(value); say(nil) }
+            .onAppear { show(value) }
+            .onChange(of: value) { _, v in if !focused { show(v) } }
+    }
+
+    private func show(_ v: Double?) { text = v.map { Self.format($0, digits: digits) } ?? "" }
+
+    private func say(_ message: String?) {
+        local = message
+        problem?.wrappedValue = message
+    }
+
+    private func commit() {
+        switch NumberText.parse(text) {
+        case .failure(let p):
+            say(p.message)
+        case .success(nil):
+            say(nil)
+            if optional { value = nil } else { show(value) }  // cleared: keep the last number
+        case .success(let v?):
+            if let message = check?(v) { say(message); return }
+            say(nil)
+            if v != value { value = v; onCommit?() }
+            if !focused { show(value) }  // as the app keeps it (limited or rounded)
+        }
+    }
+}
+
+extension S37NumberInput {
+    /// For a value that always holds a number.
+    init(label: String, value: Binding<Double>, digits: Int = 4, check: ((Double) -> String?)? = nil,
+         problem: Binding<String?>? = nil, outlined: Bool = false, width: CGFloat = 90, onCommit: (() -> Void)? = nil) {
+        self.init(label: label, value: Binding<Double?>(get: { value.wrappedValue }, set: { if let v = $0 { value.wrappedValue = v } }),
+                  digits: digits, check: check, problem: problem, outlined: outlined, width: width, onCommit: onCommit)
+    }
+}
+
 
 // MARK: sections and rows
 

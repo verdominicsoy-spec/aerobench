@@ -19,6 +19,14 @@ extension AppState {
     /// A synthetic sweep with a known answer and a matching calibration, to
     /// try the tool without real data: view is front, rear or side.
     func runFlowDemo(view: String = "front") {
+        if flow.calibration != FlowCalibration() {
+            let alert = NSAlert()
+            alert.messageText = "Replace this setup with the demo's?"
+            alert.informativeText = "The demo brings its own crop, legend, scale and planes. Edit ▸ Undo brings yours back."
+            alert.addButton(withTitle: "Try the Demo")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
         flow.loadError = nil
         let params: [String: JSONValue] = ["frames": .int(121), "perspective": .bool(true), "view": .string(view)]
         _ = jobs.submit(command: "flow-demo", params: params, in: jobsRoot, onFinish: forThisProject { [weak self] item in
@@ -29,7 +37,7 @@ extension AppState {
             }
             do {
                 let demo = try FlowCalibration.load(item.workdir.appendingPathComponent("demo_calibration.json"))
-                self.flow.withoutUndo { self.flow.calibration = demo }
+                self.flow.calibration = demo  // undoable: the setup it replaced comes back with Undo
             } catch {
                 self.flow.loadError = error.localizedDescription
             }

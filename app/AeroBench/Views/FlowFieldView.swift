@@ -274,19 +274,32 @@ struct NumberField: View {
     var unit: String = ""
     var digits = 4
     @Binding var value: Double
+    /// Why a typed number cannot be used (see S37NumberInput.within), or nil.
+    var check: ((Double) -> String?)? = nil
+    @State private var problem: String?
+
+    init(label: String, unit: String = "", digits: Int = 4, value: Binding<Double>, check: ((Double) -> String?)? = nil) {
+        self.label = label
+        self.unit = unit
+        self.digits = digits
+        self._value = value
+        self.check = check
+    }
 
     var body: some View {
-        HStack(spacing: S37.Space.s2) {
-            Text(label).foregroundStyle(S37.C.ink)
-            Spacer(minLength: S37.Space.s2)
-            TextField(label, value: $value, format: .number.precision(.fractionLength(0...digits)))
-                .textFieldStyle(.plain).labelsHidden()
-                .multilineTextAlignment(.trailing).monospacedDigit()
-                .padding(.horizontal, S37.Space.s2).frame(width: 90, height: 24)
-                .background(RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).fill(S37.C.recess))
-            // At least 30 wide so short units line up, wider rather than wrapping (kg/m³).
-            Text(unit).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkTertiary)
-                .lineLimit(1).fixedSize().frame(minWidth: 30, alignment: .leading)
+        VStack(alignment: .trailing, spacing: S37.Space.s1) {
+            HStack(spacing: S37.Space.s2) {
+                Text(label).foregroundStyle(S37.C.ink)
+                Spacer(minLength: S37.Space.s2)
+                S37NumberInput(label: label, value: $value, digits: digits, check: check, problem: $problem)
+                // At least 30 wide so short units line up, wider rather than wrapping (kg/m³).
+                Text(unit).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.inkTertiary)
+                    .lineLimit(1).fixedSize().frame(minWidth: 30, alignment: .leading)
+            }
+            if let problem {
+                Text(problem).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.critical)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }
@@ -338,10 +351,8 @@ struct CalFrameEditor: View {
                         .buttonStyle(S37ButtonStyle())
                     Text(point.flatMap { $0.px.count == 2 ? "\(Int($0.px[0])), \(Int($0.px[1])) px" : nil } ?? "–")
                         .font(.system(size: 12).monospacedDigit()).frame(width: 90, alignment: .leading)
-                    TextField(flow.calibration.axes.rightLetter, value: worldBinding(index, 0), format: .number.precision(.fractionLength(0...2)))
-                        .frame(width: 64)
-                    TextField(flow.calibration.axes.upLetter, value: worldBinding(index, 1), format: .number.precision(.fractionLength(0...2)))
-                        .frame(width: 64)
+                    S37NumberInput(label: flow.calibration.axes.rightLetter, value: worldBinding(index, 0), digits: 2, width: 64)
+                    S37NumberInput(label: flow.calibration.axes.upLetter, value: worldBinding(index, 1), digits: 2, width: 64)
                     Text("mm").foregroundStyle(S37.C.inkTertiary)
                 }
             }
@@ -733,13 +744,10 @@ struct FlowExplorePanel: View {
                         HStack {
                             Text("Offset (mm)")
                             ForEach(0..<3, id: \.self) { axis in
-                                TextField(["x", "y", "z"][axis], value: Binding(get: { flow.cadOffset[axis] }, set: {
+                                S37NumberInput(label: ["x", "y", "z"][axis], value: Binding(get: { flow.cadOffset[axis] }, set: {
                                     flow.cadOffset[axis] = $0
                                     flow.updateIsosurfaces()
-                                }), format: .number.precision(.fractionLength(0...1)))
-                                .textFieldStyle(.plain).multilineTextAlignment(.trailing).monospacedDigit()
-                                .padding(.horizontal, S37.Space.s2).frame(width: 60, height: 28)
-                                .background(RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).fill(S37.C.recess))
+                                }), digits: 1, width: 60)
                             }
                         }
                         Button("Take again from the CAD Viewer") { app.setFlowCAD(true) }
@@ -793,9 +801,8 @@ struct IsoRow: View {
                     .fill(Color(red: Double(c.x), green: Double(c.y), blue: Double(c.z)))
                     .frame(width: 16, height: 16)
                 Text("Cp0 =")
-                TextField("level", value: $iso.level, format: .number.precision(.fractionLength(0...3)))
-                    .frame(width: 70)
-                    .onSubmit { app.computeIsosurface(iso.id) }
+                S37NumberInput(label: "level", value: $iso.level, digits: 3, width: 70,
+                               onCommit: { app.computeIsosurface(iso.id) })
                 if iso.computing { ProgressView().controlSize(.small) }
                 Spacer()
                 Toggle("Visible", isOn: $iso.visible)
@@ -928,13 +935,13 @@ struct VideoTiming: View {
                             flow.calibration.video?.fps ?? 0, flow.frameCount))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 LabeledContent("Frame rate") {
-                    TextField("as reported", value: $fps, format: .number.precision(.fractionLength(0...3)))
-                        .multilineTextAlignment(.trailing).frame(width: 90)
+                    S37NumberInput(label: "Frame rate", value: $fps, digits: 3, prompt: "as reported",
+                                   check: S37NumberInput.within(1...10_000, "fps"), optional: true)
                     Text("fps").foregroundStyle(.secondary)
                 }
                 LabeledContent("Length") {
-                    TextField("as reported", value: $duration, format: .number.precision(.fractionLength(0...3)))
-                        .multilineTextAlignment(.trailing).frame(width: 90)
+                    S37NumberInput(label: "Length", value: $duration, digits: 3, prompt: "as reported",
+                                   check: S37NumberInput.within(0.001...86_400, "s"), optional: true)
                     Text("s").foregroundStyle(.secondary)
                 }
                 HStack {

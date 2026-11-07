@@ -25,6 +25,8 @@ struct CarField: Identifiable {
     let unit: String
     let scale: Double  // display = stored * scale
     let keyPath: WritableKeyPath<CarParameters, Double>
+    /// Why a typed (display) value cannot be used, or nil.
+    var check: ((Double) -> String?)? = nil
 
     static let all: [CarField] = [
         CarField(id: "mass", label: "Mass with driver", unit: "kg", scale: 1, keyPath: \.mass),
@@ -36,7 +38,8 @@ struct CarField: Identifiable {
         CarField(id: "driven", label: "Driven axle load share", unit: "0–1", scale: 1, keyPath: \.drivenAxleFraction),
         CarField(id: "balance", label: "Downforce on driven axle", unit: "0–1", scale: 1, keyPath: \.aeroBalanceDriven),
         CarField(id: "crr", label: "Rolling resistance", unit: "Crr", scale: 1, keyPath: \.crr),
-        CarField(id: "rho", label: "Air density", unit: "kg/m³", scale: 1, keyPath: \.rho),
+        CarField(id: "rho", label: "Air density", unit: "kg/m³", scale: 1, keyPath: \.rho,
+                 check: S37NumberInput.within(0.3...2, "kg/m³")),
         CarField(id: "vmax", label: "Top speed", unit: "km/h", scale: 3.6, keyPath: \.vMax),
         // Load transfer: 0 for all four is the plain point mass.
         CarField(id: "cog", label: "CoG height", unit: "mm", scale: 1000, keyPath: \.cogHeight),
@@ -297,11 +300,7 @@ struct CarGrid: View {
         let binding = Binding<Double>(get: { value.wrappedValue * field.scale }, set: { value.wrappedValue = $0 / field.scale })
         return HStack(spacing: 4) {
             if field.isPlaceholder(app.lapSim.cars[car]) { PlaceholderTag(compact: app.lapSim.cars.count > 2) }
-            TextField(field.label, value: binding, format: .number)
-                .textFieldStyle(.plain).labelsHidden()
-                .multilineTextAlignment(.trailing).monospacedDigit()
-                .padding(.horizontal, S37.Space.s2).frame(width: width, height: 24)
-                .background(RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).fill(S37.C.recess))
+            S37NumberInput(label: field.label, value: binding, digits: 6, check: field.check, width: width)
         }
     }
 }

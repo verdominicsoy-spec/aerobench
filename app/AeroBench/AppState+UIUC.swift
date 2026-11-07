@@ -9,7 +9,7 @@ extension AppState {
             uiucNote = "Set the engine folder in Settings"
             return
         }
-        if wingLab.warmEngine == nil { wingLab.warmEngine = WarmEngine(executableURL: executable) }
+        wingLab.warmEngine = warm(wingLab.warmEngine, executable)
         guard let engine = wingLab.warmEngine else { return }
         if uiuc == nil { uiucNote = "Loading (the first time downloads the UIUC data, 1.4 MB)" }
         do {

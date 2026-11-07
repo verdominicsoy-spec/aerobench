@@ -393,11 +393,8 @@ struct CADSectionView: View {
             HStack(spacing: 10) {
                 S37Segmented(options: (0..<3).map { ($0, names[$0]) }, selection: $cad.sectionAxis).fixedSize()
                 Slider(value: $cad.sectionPosition, in: cad.sectionRange)
-                TextField("mm", value: Binding(get: { cad.sectionPosition * 1000 }, set: { cad.sectionPosition = $0 / 1000 }),
-                          format: .number.precision(.fractionLength(0...1)))
-                    .textFieldStyle(.plain).multilineTextAlignment(.trailing).monospacedDigit()
-                    .padding(.horizontal, S37.Space.s2).frame(width: 70, height: 24)
-                    .background(RoundedRectangle(cornerRadius: S37.Radius.sm, style: .continuous).fill(S37.C.recess))
+                S37NumberInput(label: "mm", value: Binding(get: { cad.sectionPosition * 1000 }, set: { cad.sectionPosition = $0 / 1000 }),
+                               digits: 1, width: 70)
                 Text("mm").foregroundStyle(S37.C.inkTertiary)
                 if let h = hover {
                     Text(String(format: "%@ %.1f, %@ %.1f mm", names[u], h.x * 1000, names[v], h.y * 1000))

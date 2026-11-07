@@ -24,6 +24,15 @@ final class FlowCalibrationTests: XCTestCase {
         XCTAssertTrue(cal.problems.isEmpty, "\(cal.problems)")
     }
 
+    func testAHandEditedFileWithShortRectanglesLoadsWithoutThem() throws {
+        let json = #"{"crop": [1, 2], "exclude": [[0, 0, 5, 5], [1]], "value_range": [], "source_size": [640]}"#
+        let cal = try FlowCalibration.decoder().decode(FlowCalibration.self, from: Data(json.utf8))
+        XCTAssertNil(cal.crop)
+        XCTAssertEqual(cal.exclude, [[0, 0, 5, 5]])
+        XCTAssertEqual(cal.valueRange, FlowCalibration().valueRange)
+        XCTAssertNil(cal.sourceSize)
+    }
+
     func testProblemsListWhatIsMissing() {
         var cal = FlowCalibration()
         XCTAssertTrue(cal.problems.contains { $0.contains("crop") })

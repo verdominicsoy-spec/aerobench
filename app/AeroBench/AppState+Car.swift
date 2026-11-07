@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 extension AppState {
     private func carEngine() -> WarmEngine? {
-        if car.engine == nil, let exe = settings.engineExecutable { car.engine = WarmEngine(executableURL: exe) }
+        if let exe = settings.engineExecutable { car.engine = warm(car.engine, exe) }
         if car.sectionRunner == nil, let engine = car.engine {
             car.sectionRunner = LatestOnly { params in try CarSection.decode(try await engine.request("car-section", params: params)) }
         }

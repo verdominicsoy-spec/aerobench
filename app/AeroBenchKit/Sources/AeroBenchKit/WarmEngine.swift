@@ -16,7 +16,7 @@ public final class WarmEngine: @unchecked Sendable {
         }
     }
 
-    private let executableURL: URL
+    public let executableURL: URL
     private let environment: [String: String]
     private let lock = NSLock()
     private var process: Process?

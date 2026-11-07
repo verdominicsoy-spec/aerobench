@@ -167,7 +167,7 @@ final class AppState {
 
     /// Save from the menu: with no project open, ask for one first.
     func save() {
-        guard project == nil else { return saveProject() }
+        guard project == nil else { saveProject(); return }
         let ask = NSAlert()
         ask.messageText = "Saving needs a project"
         ask.informativeText = "Create a project to keep this work in it. Opening a project loads that project's own work in place of this."
@@ -183,8 +183,9 @@ final class AppState {
 
     /// Writes the open project; does nothing without one (runs and quitting
     /// call it too, and must not stop to ask).
-    func saveProject() {
-        guard let project else { return }
+    @discardableResult
+    func saveProject() -> Bool {
+        guard let project else { return true }
         do {
             try lapSim.save(toProject: project.url)
             try saveFlowState(toProject: project.url)
@@ -192,13 +193,16 @@ final class AppState {
             let saved = try ProjectStore.save(project.manifest, at: project.url)
             self.project?.manifest = saved
             self.project?.isDirty = false
+            return true
         } catch {
             show("Could not save project", error)
+            return false
         }
     }
 
     func closeProject() {
-        if hasUnsavedChanges { saveProject() }
+        // A failed save keeps the project open, so its edits are not dropped with it.
+        if hasUnsavedChanges, !saveProject() { return }
         project = nil
         pingJob = nil
         wingLab.clearResults()
@@ -228,12 +232,16 @@ final class AppState {
     }
 
     private func setProject(url: URL, manifest: ProjectManifest) {
-        if hasUnsavedChanges { saveProject() }
+        // A failed save keeps this project open, so its edits are not dropped with it.
+        if hasUnsavedChanges, !saveProject() { return }
         project = OpenProject(url: url, manifest: manifest)
         pingJob = nil
-        lapSim = LapSimSetup.load(fromProject: url) ?? LapSimSetup()
+        lapSim = LapSimSetup.load(fromProject: url)
+            ?? keepUnreadable(ProjectStore.toolURL(for: url, tool: "lapsim").appendingPathComponent(LapSimSetup.fileName),
+                              "the Lap Sim setup", LapSimSetup())
         wingLab.clearResults()
-        wingLab.reset(to: WingLabModel.load(fromProject: url) ?? Wing())
+        wingLab.reset(to: WingLabModel.load(fromProject: url)
+            ?? keepUnreadable(ProjectStore.toolURL(for: url, tool: "wing").appendingPathComponent("wing.json"), "the wing", Wing()))
         wingLab.restoreVersion(fromProject: url)
         wingLab.optimise = WingLabModel.loadOptimise(fromProject: url) ?? .init()
         wingLab.restoreDesign(fromProject: url)
@@ -358,6 +366,26 @@ final class AppState {
         lapSimJob = jobs.jobs.first { $0.command == "lapsim" && $0.status == .succeeded }
         lapSimOutput = nil
         if let job = lapSimJob { loadLapSimResult(from: job) }
+    }
+
+    /// The warm engine for `executable`: `engine` while it is that one, else a new one (the
+    /// engine folder changed in Settings) after stopping the old.
+    func warm(_ engine: WarmEngine?, _ executable: URL) -> WarmEngine {
+        if let engine, engine.executableURL == executable { return engine }
+        engine?.stop()
+        return WarmEngine(executableURL: executable)
+    }
+
+    /// `fallback` for a project file that is missing, or there but unreadable: then it is
+    /// copied aside first (the next save writes over it) and the user is told where.
+    func keepUnreadable<T>(_ file: URL, _ what: String, _ fallback: T) -> T {
+        guard FileManager.default.fileExists(atPath: file.path) else { return fallback }
+        let aside = file.deletingPathExtension().appendingPathExtension("unreadable.json")
+        try? FileManager.default.removeItem(at: aside)
+        try? FileManager.default.copyItem(at: file, to: aside)
+        alert = AppAlert(title: "Could not read \(what)",
+                         message: "\(file.lastPathComponent) could not be read, so the defaults are shown. The file is kept as \(aside.lastPathComponent) in \(file.deletingLastPathComponent().lastPathComponent).")
+        return fallback
     }
 
     func show(_ title: String, _ error: Error) {
