@@ -1753,22 +1753,28 @@ struct StudyResults: View {
     var body: some View {
         let lab = app.wingLab
         if let study = lab.study {
-            VStack(alignment: .leading, spacing: 6) {
-                header(study, lab)
-                ViewThatFits(in: .horizontal) {
+            ViewThatFits(in: .horizontal) {
+                VStack(alignment: .leading, spacing: 6) {
+                    header(study, lab)
                     HSplitView {
                         // Wide enough for every column without a sideways scroller over the last row.
                         table(study, lab).frame(minWidth: 580)
                         charts(study, lab).frame(minWidth: 260)
                     }
                     .frame(minWidth: 860)
-                    VSplitView {
-                        table(study, lab).frame(minHeight: 140)
-                        charts(study, lab).frame(minHeight: 160)
+                }
+                .padding(8)
+                // Narrow, the pane is too short for header, table and chart: they
+                // scroll (a split view here drew its table up over the tabs).
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 6) {
+                        header(study, lab)
+                        table(study, lab).frame(height: 180)
+                        charts(study, lab).frame(height: 220)
                     }
+                    .padding(8)
                 }
             }
-            .padding(8)
         } else if let job = lab.optimiseJob, !job.status.isFinished {
             VStack {
                 ProgressView(value: job.progress, total: 100)
