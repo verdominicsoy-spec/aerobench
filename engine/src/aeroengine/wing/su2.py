@@ -14,6 +14,7 @@ from __future__ import annotations
 import csv
 import os
 import shutil
+import signal
 import subprocess
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -342,6 +343,26 @@ class Diverged(Exception):
         self.iteration = iteration
 
 
+def _stop(proc: subprocess.Popen) -> None:
+    """End mpirun and every SU2 rank under it: the whole process group (the
+    run has its own session), SIGTERM first, SIGKILL after 5 s. Never blocks for good."""
+    for sig, wait in ((signal.SIGTERM, 5), (signal.SIGKILL, 5)):
+        try:
+            os.killpg(proc.pid, sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            proc.wait(wait)
+            break
+        except subprocess.TimeoutExpired:
+            continue
+    # mpirun gone, a rank may remain: the group id outlives its leader.
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
 def _run_once(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
               progress: Callable[[float, str], None] | None, env: dict | None) -> dict:
     report = progress or (lambda pct, msg: None)
@@ -370,7 +391,7 @@ def _run_once(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
         env.setdefault("OMPI_MCA_btl", "^uct,ofi,usnic")
     log = open(workdir / "su2.log", "w")
     proc = subprocess.Popen(cmd, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                            env=env, errors="replace")
+                            env=env, errors="replace", start_new_session=True)
     tail: list[str] = []
     screen: dict[str, list[float]] = {"rms[P]": [], "CL": [], "CD": []}
     strict = replace(case, tolerance=case.tolerance / 2)
@@ -393,19 +414,18 @@ def _run_once(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
                 res = screen["rms[P]"]
                 if len(res) > 5 and res[-1] > max(res[:5]) + CLIMB_ORDERS:
                     climbed = it
-                    proc.terminate()
+                    _stop(proc)
                     break
                 if it % WRITE_EVERY == STOP_AFTER_WRITE and len(screen["CL"]) > case.window:
                     if judge({k: np.array(v) for k, v in screen.items()}, strict)["converged"]:
                         stopped = True
                         report(95, f"converged at iteration {it}")
-                        proc.terminate()
+                        _stop(proc)
                         break
-        proc.wait()
+        proc.wait(timeout=30)  # stdout closed: SU2 is ending; the finally kills the group if not
     finally:
         log.close()
-        if proc.poll() is None:
-            proc.kill()
+        _stop(proc)
     if climbed is not None:
         raise Diverged(climbed)
     history_file = workdir / "history.csv"

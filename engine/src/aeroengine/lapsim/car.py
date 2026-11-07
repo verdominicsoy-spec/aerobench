@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 from typing import Any
 
-from ..job import EngineError
+from ..job import EngineError, check_air
 
 
 @dataclass(frozen=True)
@@ -60,6 +60,7 @@ class Car:
         for n in positive:
             if not getattr(self, n) > 0:
                 raise EngineError(f"{label}.{n} must be greater than 0")
+        check_air(self.rho)
         for n in non_negative:
             if getattr(self, n) < 0:
                 raise EngineError(f"{label}.{n} must not be negative")

@@ -289,3 +289,9 @@ def test_lapsim_command_reports_bad_input(engine, tmp_path: Path):
     code, events, _ = engine.run("lapsim", {"params": {"car": {"mass": 280}, "track": {"builtin": "skidpad"}}}, tmp_path / "job")
     assert code == 1
     assert events[-1]["type"] == "error" and "missing" in events[-1]["msg"]
+
+
+def test_a_density_that_is_not_air_is_refused():
+    """"1,184" typed for kg/m^3 reached the solver as 1184: every corner then ran flat out, with no error."""
+    with pytest.raises(EngineError, match=r"Air density 1184 kg/m³ is not air: expected 0\.3 to 2 kg/m³"):
+        replace(CAR, rho=1184.0).validate()

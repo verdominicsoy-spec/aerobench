@@ -27,6 +27,15 @@ class EngineError(Exception):
         self.detail = detail
 
 
+def check_air(rho: float, mu: float | None = None) -> None:
+    """Reject a density or viscosity that is not air (a typed "1,184" kg/m^3)."""
+    for name, v, lo, hi, unit, typical in (("density", rho, 0.3, 2.0, "kg/m³", "1.2"),
+                                           ("viscosity", mu, 5e-6, 1e-4, "Pa s", "1.8e-5")):
+        if v is not None and not lo <= v <= hi:
+            raise EngineError(f"Air {name} {v:g} {unit} is not air: expected {lo:g} to {hi:g} {unit} "
+                              f"(sea level is about {typical})")
+
+
 class JobCancelled(Exception):
     """Raised inside the job when the app asks it to stop (SIGTERM)."""
 

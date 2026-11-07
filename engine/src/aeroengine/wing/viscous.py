@@ -23,6 +23,11 @@ def reynolds(speed: float, chord: float, rho: float = 1.225, mu: float = 1.81e-5
     return rho * speed * chord / mu
 
 
+def check_re(re: float) -> None:
+    if not 1e3 <= re <= 1e8:
+        raise EngineError(f"Reynolds number {re:.3g} is outside 1e3 to 1e8")
+
+
 def polar(coords: np.ndarray, alphas, re: float, n_crit: float = 9.0, inverted: bool = False,
           model_size: str = "large", xtr: float = 1.0) -> dict:
     """Coefficients over angles of attack for one unit-chord section in
@@ -37,8 +42,7 @@ def polar(coords: np.ndarray, alphas, re: float, n_crit: float = 9.0, inverted: 
     coords = np.asarray(coords, float)
     if coords.ndim != 2 or coords.shape[1] != 2 or len(coords) < 10:
         raise EngineError("the section needs at least ten [x, y] points")
-    if not 1e3 <= re <= 1e8:
-        raise EngineError(f"Reynolds number {re:.3g} is outside 1e3 to 1e8")
+    check_re(re)
     a = np.atleast_1d(np.asarray(alphas, float))
     r = nf.get_aero_from_coordinates(coordinates=coords, alpha=a, Re=re, n_crit=n_crit, xtr_upper=xtr, xtr_lower=xtr,
                                      model_size=model_size)

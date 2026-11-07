@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..job import EngineError, JobContext
+from ..job import EngineError, JobContext, check_air
 from . import command
 
 
@@ -130,6 +130,7 @@ def wing_polar(ctx: JobContext) -> dict:
     if "re" in p:
         re = float(p["re"])
     else:
+        check_air(float(p.get("rho", 1.225)), float(p.get("mu", 1.81e-5)))
         re = reynolds(float(p.get("speed", 0)), float(p.get("chord", 0)), float(p.get("rho", 1.225)),
                       float(p.get("mu", 1.81e-5)))
     if "alphas" in p:
@@ -179,6 +180,7 @@ def estimate_from_params(p: dict) -> dict:
     raw = p.get("elements")
     if not isinstance(raw, list) or not raw:
         raise EngineError("params.elements must list the elements: coords (placed, m), unit, chord, angle, inverted")
+    check_air(float(p.get("rho", 1.225)), float(p.get("mu", 1.81e-5)))
     alphas = [float(a) for a in p.get("alphas", [p.get("alpha", 0.0)])]
     height = p.get("ride_height")
     return estimate(raw, alphas, float(p.get("speed", 15)), float(p.get("rho", 1.225)), float(p.get("mu", 1.81e-5)),
@@ -209,6 +211,7 @@ def wing_starter(ctx: JobContext) -> dict:
 
     p = ctx.params
     box = p.get("rules_box")
+    check_air(float(p.get("rho", 1.225)), float(p.get("mu", 1.81e-5)))
     return starter((_root(ctx) or data_dir()) / "airfoils", elements=int(p.get("elements", 2)),
                    chord_total=float(p.get("chord_total", 0.44)), inverted=bool(p.get("inverted", True)),
                    rules_box=tuple(float(v) for v in box) if box else None, speed=float(p.get("speed", 15)),
@@ -229,6 +232,7 @@ def wing_shortlist(ctx: JobContext) -> dict:
     chords = [float(c) for c in p.get("chords") or []]
     if not chords:
         raise EngineError("params.chords must give each element's chord")
+    check_air(float(p.get("rho", 1.225)), float(p.get("mu", 1.81e-5)))
     lists = shortlist((_root(ctx) or data_dir()) / "airfoils", chords, [k or None for k in p.get("current") or []],
                       float(p.get("speed", 15)), float(p.get("rho", 1.225)), float(p.get("mu", 1.81e-5)),
                       float(p.get("n_crit", 9.0)), float(p.get("min_thickness", 0.08)), int(p.get("size", 0)),
@@ -328,6 +332,7 @@ def _study(ctx: JobContext, p: dict, base, variables, sections, car=None, span=(
     su2_hint = p.get("su2") or ctx.options.su2_path
     if spec.solver == "rans" or checks:
         rans.su2.find_su2(su2_hint)  # fail now, not in every trial
+    check_air(float(p.get("rho", 1.225)), float(p.get("mu", 1.81e-5)))
     flow = {k: p[k] for k in ("speed", "rho", "mu", "alpha", "model", "mesh", "transition", "n_crit",
                               "turbulence_intensity", "iterations", "ref_chord") if k in p}
 
@@ -446,6 +451,7 @@ def wing_design(ctx: JobContext) -> dict:
         raise EngineError("the balance goal needs a base car", "set up the base car in Wing Lab's Car section")
     inverted = bool(p.get("inverted", True))
     flow = {k: float(p.get(k, d)) for k, d in (("speed", 15.0), ("rho", 1.225), ("mu", 1.81e-5), ("n_crit", 9.0))}
+    check_air(flow["rho"], flow["mu"])
     root = (_root(ctx) or data_dir()) / "airfoils"
     saved = storage.with_suffix(".design.json")
     ctx.emit.progress(1, "laying out the wing")

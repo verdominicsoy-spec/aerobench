@@ -9,10 +9,10 @@ from typing import Callable
 
 import numpy as np
 
-from ..job import EngineError
+from ..job import EngineError, check_air
 from . import su2
 from .mesh import Settings, build
-from .viscous import polar, reynolds
+from .viscous import check_re, polar, reynolds
 
 MESH_LEVELS = {  # surface and wake spacing scale, wall layer growth
     "quick": (1.6, 1.2),
@@ -44,6 +44,7 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     inverted = [bool(e.get("inverted", False)) for e in raw]
     chords = [float(e["chord"]) for e in raw]
     speed, rho, mu = float(p.get("speed", 15)), float(p.get("rho", 1.225)), float(p.get("mu", 1.81e-5))
+    check_air(rho, mu)
     alpha = float(p.get("alpha", 0.0))
     # A ground must lie along the flow: the wing is turned by its angle instead
     # (as in the estimate) and the flow runs along x over a slip wall that far
@@ -82,6 +83,8 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
                         float(p.get("n_crit", 9.0)), bool(e.get("inverted", False)))["rows"][0]
             zones.append((row["transition_suction"], row["transition_pressure"]))
     elif isinstance(transition, list) and len(transition) == len(raw):
+        for c in chords:  # before any meshing, as polar() does for "auto"
+            check_re(reynolds(speed, c, rho, mu))
         zones = [(float(t[0]), float(t[1])) for t in transition]
     else:
         raise EngineError("params.transition must be \"auto\" or one [suction, pressure] pair per element")

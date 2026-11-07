@@ -572,3 +572,31 @@ def test_wall_y_plus_is_read_from_the_walls_only(monkeypatch, tmp_path):
     assert out["max"] == 4.0 and out["mean"] == pytest.approx(1.75) and 1.5 < out["p95"] < 4.0
     monkeypatch.setattr(field, "_read_vtu", lambda path: (None, None, {}))
     assert rans.y_plus(tmp_path / "flow.vtu") is None
+
+
+def test_a_wing_command_refuses_a_density_that_is_not_air():
+    from aeroengine.commands.wing import estimate_from_params
+
+    unit = naca4("4412").tolist()
+    p = {"elements": [{"coords": _two()[0].tolist(), "unit": unit, "angle": 0, "inverted": False, "chord": 1.0}],
+         "speed": 15.0, "rho": 1184.0}
+    with pytest.raises(EngineError, match=r"Air density 1184 kg/m³ is not air"):
+        estimate_from_params(p)
+    with pytest.raises(EngineError, match=r"Air viscosity 0\.5 Pa s is not air"):
+        estimate_from_params({**p, "rho": 1.2, "mu": 0.5})
+
+
+def test_typed_transition_checks_the_reynolds_number_before_meshing(monkeypatch):
+    from aeroengine.wing import rans
+
+    def no_mesh(*a, **k):
+        raise AssertionError("meshed a wing whose Reynolds number is out of range")
+
+    monkeypatch.setattr(rans, "build", no_mesh)
+    unit = naca4("4412").tolist()
+    p = {"elements": [{"coords": e.tolist(), "unit": unit, "angle": a, "inverted": False, "chord": c}
+                      for e, a, c in zip(_two(), (0, 20), (1.0, 0.35))],
+         "speed": 1e6, "alpha": 2.0, "model": "sa", "mesh": "quick", "transition": [[0.1, 0.2], [0.1, 0.2]]}
+    with pytest.raises(EngineError, match="Reynolds number .* is outside 1e3 to 1e8"):
+        rans.solve(p, Path("/nonexistent"), Path("/nonexistent/wing.su2"), None, 1, None, lambda *a: None,
+                   lambda *a, **k: None)
