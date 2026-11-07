@@ -1,0 +1,137 @@
+diff --git a/app/AeroBenchKit/Sources/AeroBenchKit/PanelField.swift b/app/AeroBenchKit/Sources/AeroBenchKit/PanelField.swift
+index 70cab2f..e17180b 100644
+--- a/app/AeroBenchKit/Sources/AeroBenchKit/PanelField.swift
++++ b/app/AeroBenchKit/Sources/AeroBenchKit/PanelField.swift
+@@ -204,6 +204,17 @@ struct Wake {
+                 let q = p + h * d2
+                 if q.x < box.x0 || q.x > box.x1 || q.y < box.y0 || q.y > box.y1 { break march }
+                 if !panels.inside(q) {
++                    var q = q
++                    if Self.clear > 0 {  // scratch: the wake's thickness holds its centre off other elements
++                        let sNow = pts.count > 1 ? zip(pts, pts.dropFirst()).reduce(0) { $0 + simd_distance($1.0, $1.1) } : 0
++                        let need = Self.clear * Self.sigma(0.5 * cd * chord, sNow)
++                        for other in panels.allBodies where other.first != body.first {
++                            if let n = other.min(by: { simd_distance($0, q) < simd_distance($1, q) }) {
++                                let d = simd_distance(n, q)
++                                if d < need, d > 0 { q = n + (q - n) / d * need }
++                            }
++                        }
++                    }
+                     pts.append(q)
+                     p = q
+                     continue march
+@@ -219,12 +230,15 @@ struct Wake {
+         reach = 5 * Self.sigma(theta, s.last ?? 0)
+     }
+ 
++    static let clear = Double(ProcessInfo.processInfo.environment["CLEAR"] ?? "0")!  // scratch
++    static let growK = Double(ProcessInfo.processInfo.environment["GROWK"] ?? "1")!  // scratch
+     /// Where the traced wake ends.
+     var end: SIMD2<Double> { line[line.count - 1] }
++    var traced: [SIMD2<Double>] { line }  // scratch
+ 
+     /// σ of the Gaussian: half-width 0.3 √(θ (s + s0)) over √(2 ln 2), with s0 = 4 θ.
+     private static func sigma(_ theta: Double, _ s: Double) -> Double {
+-        0.255 * (theta * (s + 4 * theta)).squareRoot()
++        0.255 * (theta * (growK * s + 4 * theta)).squareRoot()
+     }
+ 
+     /// The velocity deficit (0 none, 1 stopped) at a point: the surfaces' ahead of the
+diff --git a/app/AeroBenchKit/Sources/AeroBenchKit/PanelFlow.swift b/app/AeroBenchKit/Sources/AeroBenchKit/PanelFlow.swift
+index 0bbbe41..815e221 100644
+--- a/app/AeroBenchKit/Sources/AeroBenchKit/PanelFlow.swift
++++ b/app/AeroBenchKit/Sources/AeroBenchKit/PanelFlow.swift
+@@ -108,6 +108,8 @@ struct VortexPanels {
+         return n > 1e-3 ? v / n : nil
+     }
+ 
++    var allBodies: [[SIMD2<Double>]] { bodies }  // scratch
++
+     /// Distance to the nearest surface node.
+     func distance(_ p: SIMD2<Double>) -> Double {
+         nodes.reduce(Double.infinity) { min($0, simd_length_squared($1 - p)) }.squareRoot()
+diff --git a/app/AeroBenchKit/Sources/AeroBenchKit/PanelSolver.swift b/app/AeroBenchKit/Sources/AeroBenchKit/PanelSolver.swift
+index 11f373b..b830acb 100644
+--- a/app/AeroBenchKit/Sources/AeroBenchKit/PanelSolver.swift
++++ b/app/AeroBenchKit/Sources/AeroBenchKit/PanelSolver.swift
+@@ -39,6 +39,7 @@ public final class PanelSolver: @unchecked Sendable {
+     private let order: Int
+     private var factors: [Double]
+     private var pivots: [__CLPK_integer]
++    private var matrix: [Double] = []  // scratch: unfactorised, for prescribed circulation
+ 
+     /// A trailing edge gap below this fraction of chord counts as closed.
+     static let sharpFraction = 1e-4
+@@ -97,6 +98,7 @@ public final class PanelSolver: @unchecked Sendable {
+         }
+         sharp = sharpFlags
+ 
++        matrix = a
+         var rows = __CLPK_integer(n), cols = __CLPK_integer(n), lda = __CLPK_integer(n), info = __CLPK_integer(0)
+         var piv = [__CLPK_integer](repeating: 0, count: n)
+         dgetrf_(&rows, &cols, &a, &lda, &piv, &info)
+@@ -152,6 +154,51 @@ public final class PanelSolver: @unchecked Sendable {
+         }
+     }
+ 
++    /// Scratch: each element's circulation scaled until its lift is `targetCl` (Kutta rows replaced).
++    public func solve(alphaDeg: Double, targetCl: [Double], passes: Int = 3) -> PanelSolution {
++        let base = solve(alphaDeg: alphaDeg)
++        guard targetCl.count == elements.count else { return base }
++        let m = nodes.count
++        func circulation(_ g: [Double], _ e: Int) -> Double {
++            let st = starts[e], sz = sizes[e], pts = elements[e]
++            var c = 0.0
++            for j in 0..<(sz - 1) { c += 0.5 * (g[st + j] + g[st + j + 1]) * simd_length(pts[j + 1] - pts[j]) }
++            return c
++        }
++        var gammas = base.speed.flatMap { $0 } + [Double](repeating: 0, count: elements.count)
++        var target = (0..<elements.count).map { circulation(gammas, $0) }
++        var sol = base
++        for _ in 0..<passes {
++            for e in 0..<elements.count {
++                let r = abs(sol.cl[e]) > 0.02 ? targetCl[e] / sol.cl[e] : 1
++                target[e] *= min(max(r, 0.3), 1.5)
++            }
++            let n = order
++            var a = matrix
++            for e in 0..<elements.count {
++                let row = m + e, st = starts[e], sz = sizes[e], pts = elements[e]
++                for c in 0..<n { a[row + c * n] = 0 }
++                for j in 0..<(sz - 1) {
++                    let l = 0.5 * simd_length(pts[j + 1] - pts[j])
++                    a[row + (st + j) * n] += l
++                    a[row + (st + j + 1) * n] += l
++                }
++            }
++            let al = alphaDeg * Double.pi / 180
++            var rhs = [Double](repeating: 0, count: n)
++            for i in 0..<m { rhs[i] = -(cos(al) * nodes[i].y - sin(al) * nodes[i].x) }
++            for (e, isSharp) in sharp.enumerated() where isSharp { rhs[starts[e] + sizes[e] - 1] = 0 }
++            for e in 0..<elements.count { rhs[m + e] = target[e] }
++            var nn = __CLPK_integer(n), one = __CLPK_integer(1), lda = __CLPK_integer(n), ldb = __CLPK_integer(n), info = __CLPK_integer(0)
++            var piv = [__CLPK_integer](repeating: 0, count: n)
++            dgesv_(&nn, &one, &a, &lda, &piv, &rhs, &ldb, &info)
++            guard info == 0 else { return sol }
++            gammas = rhs
++            sol = forces(gammas, alphaDeg: alphaDeg)
++        }
++        return sol
++    }
++
+     public func solve(alphaDeg: Double) -> PanelSolution {
+         let al = alphaDeg * Double.pi / 180
+         let ca = cos(al), sa = sin(al)
+@@ -165,7 +212,12 @@ public final class PanelSolver: @unchecked Sendable {
+         var lu = factors
+         var piv = pivots
+         dgetrs_(&trans, &nn, &one, &lu, &lda, &piv, &rhs, &ldb, &info)
++        return forces(rhs, alphaDeg: alphaDeg)
++    }
+ 
++    private func forces(_ rhs: [Double], alphaDeg: Double) -> PanelSolution {
++        let al = alphaDeg * Double.pi / 180
++        let ca = cos(al), sa = sin(al)
+         let wind = SIMD2(ca, sa), liftDir = SIMD2(-sa, ca)
+         var speed: [[Double]] = [], cps: [[Double]] = [], cls: [Double] = [], cds: [Double] = [], cms: [Double] = []
+         for e in 0..<elements.count {

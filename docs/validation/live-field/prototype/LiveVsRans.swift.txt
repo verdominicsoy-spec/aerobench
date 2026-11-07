@@ -1,0 +1,225 @@
+import XCTest
+import simd
+@testable import AeroBenchKit
+
+/// Scratch: the live field (as Wing Lab builds it) against every saved RANS field.
+/// CMP_CASES = engine_numbers.py's JSON, CMP_OUT = where the metrics go, NX = live grid.
+final class ZZLiveVsRansTests: XCTestCase {
+    struct Job: Decodable {
+        struct E: Decodable { let coords: [[Double]] }
+        struct P: Decodable { let elements: [E]; let alpha: Double?; let ride_height: Double?; let ref_chord: Double }
+        let params: P
+    }
+    struct Surface: Decodable { let x: [Double]; let y: [Double]; let cp: [Double] }
+    struct Result: Decodable { struct D: Decodable { let surface: [Surface]? }; let data: D }
+    struct Case: Decodable { let est: Est; struct Est: Decodable { let cd_own: [Double]?; let el_cl: [Double]? } }
+
+    func testLiveAgainstRans() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let casesPath = env["CMP_CASES"], let outPath = env["CMP_OUT"] else { throw XCTSkip("set CMP_CASES and CMP_OUT") }
+        let nx = Int(env["NX"] ?? "400")!
+        let cases = try JSONDecoder().decode([String: Case].self, from: Data(contentsOf: URL(fileURLWithPath: casesPath)))
+        let root = NSHomeDirectory() + "/Library/Application Support/AeroBench/Scratch/jobs/"
+        var out: [String: Any] = [:]
+        for (name, c) in cases.sorted(by: { $0.key < $1.key }) {
+            let folder = URL(fileURLWithPath: root + name)
+            let rans = try WingField.load(from: folder)
+            let job = try JSONDecoder().decode(Job.self, from: Data(contentsOf: folder.appendingPathComponent("job.json"))).params
+            let res = try JSONDecoder().decode(Result.self, from: Data(contentsOf: folder.appendingPathComponent("result.json"))).data
+            let els = job.elements.map { $0.coords.map { SIMD2($0[0], $0[1]) } }
+            // As WingLabModel.recompute: alpha is 0 in every case, so the turned frame is the wing's.
+            let alpha = job.alpha ?? 0
+            let sol: PanelSolution
+            let targets = env["TARGET"] != nil ? c.est.el_cl : nil
+            if let h = job.ride_height, let t = targets {
+                let ground = els.flatMap { $0 }.map(\.y).min()! - h
+                sol = try XCTUnwrap(PanelSolver(elements: els, refChord: job.ref_chord, ground: ground)).solve(alphaDeg: 0, targetCl: t)
+            } else if let t = targets {
+                sol = try XCTUnwrap(PanelSolver(elements: els, refChord: job.ref_chord)).solve(alphaDeg: alpha, targetCl: t)
+            } else if let h = job.ride_height {
+                let ground = els.flatMap { $0 }.map(\.y).min()! - h
+                let image = try XCTUnwrap(PanelSolver(elements: els, refChord: job.ref_chord, ground: ground)).solve(alphaDeg: 0)
+                let free = PanelSolver(elements: els, refChord: job.ref_chord)?.solve(alphaDeg: alpha)
+                sol = free.map { image.groundCorrected(free: $0) } ?? image
+            } else {
+                sol = try XCTUnwrap(PanelSolver(elements: els, refChord: job.ref_chord)).solve(alphaDeg: alpha)
+            }
+            let t0 = Date()
+            let live = try XCTUnwrap(sol.field(nx: nx, wakeCd: c.est.cd_own))
+            var m: [String: Any] = ["panel_cl": sol.clTotal, "panel_el_cl": sol.cl, "field_ms": Date().timeIntervalSince(t0) * 1000,
+                                    "live_cell": (live.window.x1 - live.window.x0) / Double(live.nx),
+                                    "rans_cell": (rans.window.x1 - rans.window.x0) / Double(rans.nx)]
+            let ref = job.ref_chord
+            let panels = VortexPanels(sol)
+
+            // 1. Surface Cp: panel nodes against the nearest RANS surface point of the same element.
+            if let surf = res.surface, surf.count == els.count {
+                var d: [Double] = [], dOff: [Double] = [], dMid: [Double] = [], peaks: [[Double]] = []
+                for (i, e) in els.enumerated() where i < sol.cp.count {
+                    let s = surf[i]
+                    let pts = zip(s.x, s.y).map { SIMD2($0, $1) }
+                    let te = 0.5 * (e[0] + e[e.count - 1])
+                    let chord = e.map { simd_distance($0, te) }.max()!
+                    for (k, p) in e.enumerated() where k < sol.cp[i].count {
+                        guard let j = pts.indices.min(by: { simd_distance(pts[$0], p) < simd_distance(pts[$1], p) }) else { continue }
+                        d.append(sol.cp[i][k] - s.cp[j])
+                        if simd_distance(p, te) > 0.05 * chord { dOff.append(sol.cp[i][k] - s.cp[j]) }
+                        if simd_distance(p, te) > 0.05 * chord, simd_distance(p, te) < 0.95 * chord { dMid.append(sol.cp[i][k] - s.cp[j]) }
+                    }
+                    peaks.append([sol.cp[i].min() ?? 0, s.cp.min() ?? 0])
+                }
+                m["surface_cp"] = stats(d)
+                m["surface_cp_off_te"] = stats(dOff)
+                m["surface_cp_mid"] = stats(dMid)
+                m["suction_peak_live_rans"] = peaks
+            }
+
+            // 2. Field Cp, speed and Cp0 on the RANS grid, by region.
+            let near = { (p: SIMD2<Double>) in els.contains { $0.contains { simd_distance($0, p) < 0.25 * ref } } }
+            var reg: [String: [String: [Double]]] = [:]
+            var lossLive = 0.0, lossRans = 0.0
+            let dxr = (rans.window.x1 - rans.window.x0) / Double(rans.nx), dyr = (rans.window.y1 - rans.window.y0) / Double(rans.ny)
+            let lastTE = els.map { 0.5 * ($0[0] + $0[$0.count - 1]) }.max { $0.x < $1.x }!
+            for j in 0..<rans.ny {
+                for i in 0..<rans.nx {
+                    let p = SIMD2(rans.window.x0 + (Double(i) + 0.5) * dxr, rans.window.y0 + (Double(j) + 0.5) * dyr)
+                    guard let rc = rans.value("cp", at: p), let lc = live.value("cp", at: p), rc.isFinite, lc.isFinite,
+                          let rs = rans.value("speed", at: p), let ls = live.value("speed", at: p),
+                          let r0 = rans.value("cp0", at: p) else { continue }
+                    let l0 = live.value("cp0", at: p) ?? 0
+                    let region = r0 < -0.02 ? "wake" : near(p) ? "near" : "outer"
+                    reg[region, default: [:]]["cp", default: []].append(lc - rc)
+                    reg[region, default: [:]]["speed", default: []].append(ls - rs)
+                    if p.x > lastTE.x + 0.1 * ref { lossRans += -min(r0, 0) * dxr * dyr; lossLive += -min(l0, 0) * dxr * dyr }
+                }
+            }
+            m["field"] = reg.mapValues { $0.mapValues(stats) }
+            // Near each trailing edge (within 2% and 5% of the reference chord): the live field's extremes, and RANS's.
+            var teX: [String: Double] = [:]
+            for (key, f) in [("live", live), ("rans", rans)] {
+                for r in [0.02, 0.05] {
+                    var lo = 0.0, hi = 0.0
+                    for e in els {
+                        let te = 0.5 * (e[0] + e[e.count - 1])
+                        for a in stride(from: -r, through: r, by: r / 10) { for b in stride(from: -r, through: r, by: r / 10) {
+                            if let c = f.value("cp", at: te + SIMD2(a, b) * ref), c.isFinite { lo = min(lo, c); hi = max(hi, c) }
+                        } }
+                    }
+                    teX["\(key)_cp_min_\(r)"] = lo; teX["\(key)_cp_max_\(r)"] = hi
+                }
+            }
+            m["te_extremes"] = teX
+            m["loss_area_behind_last_te"] = ["rans": lossRans, "live": lossLive]
+
+            // 3. Wake stations behind the last trailing edge: centre, depth, half-loss width, loss and momentum.
+            var stations: [[String: Any]] = []
+            for s in [0.05, 0.25, 0.5, 1.0] {
+                let x = lastTE.x + s * ref
+                guard x < rans.window.x1 else { continue }
+                var row: [String: Any] = ["s_over_ref": s]
+                for (key, f) in [("rans", rans), ("live", live)] { row[key] = profile(f, x: x, y0: rans.window.y0, y1: rans.window.y1) }
+                stations.append(row)
+            }
+            m["wake"] = stations
+
+            // 4. Surface layers: half-loss thickness off each surface at 50% and 90% chord, along the outward normal.
+            var layers: [[String: Any]] = []
+            for (i, e) in els.enumerated() {
+                let te = 0.5 * (e[0] + e[e.count - 1])
+                guard let nose = e.indices.max(by: { simd_distance(e[$0], te) < simd_distance(e[$1], te) }) else { continue }
+                for frac in [0.5, 0.9] {
+                    for (side, run) in [("upper", Array(e[...nose])), ("lower", Array(e[nose...]))] {
+                        let target = e[nose] + frac * (te - e[nose])
+                        guard let k = run.indices.min(by: { simd_distance(run[$0], target) < simd_distance(run[$1], target) }),
+                              k > 0, k < run.count - 1 else { continue }
+                        let t = simd_normalize(run[k + 1] - run[k - 1])
+                        var n = SIMD2(t.y, -t.x)  // Selig order is counter-clockwise: outward is to the right
+                        if Wing.inside(run[k] + 0.002 * n, e) { n = -n }
+                        var row: [String: Any] = ["element": i, "chord_frac": frac, "side": side]
+                        for (key, f) in [("rans", rans), ("live", live)] {
+                            row[key] = layer(f, from: run[k], normal: n, maxD: 0.1 * ref)
+                            row[key + "_raw"] = stride(from: 0.0, through: 0.04, by: 0.001).map { f.value("cp0", at: run[k] + $0 * n).map { $0.isFinite ? $0 : 9 } ?? 9 }
+                        }
+                        layers.append(row)
+                    }
+                }
+            }
+            m["layers"] = layers
+            // Where the main's traced wake passes the next element: its distance off that surface at 25/50/75% chord.
+            if els.count > 1, let w = Wake(body: els[0], cd: 0.02, panels: panels, box: (live.window.x0, live.window.y0, live.window.x1, live.window.y1)) {
+                let flap = els[1]
+                let te1 = 0.5 * (flap[0] + flap[flap.count - 1])
+                let nose1 = flap.indices.max { simd_distance(flap[$0], te1) < simd_distance(flap[$1], te1) }!
+                var gaps: [Double] = []
+                for frac in [0.25, 0.5, 0.75] {
+                    let target = flap[nose1] + frac * (te1 - flap[nose1])
+                    let side = Array(flap[nose1...])
+                    let q = side.min { simd_distance($0, target) < simd_distance($1, target) }!
+                    gaps.append(w.traced.map { simd_distance($0, q) }.min()!)
+                }
+                m["main_wake_gap_off_flap_lower"] = gaps
+            }
+
+            // 5. Flow paths: trace the panel flow from each RANS streamline's start for its length.
+            var dev: [Double] = [], devNear: [Double] = []
+            for line in rans.streamlines where line.count > 2 {
+                let length = zip(line, line.dropFirst()).reduce(0) { $0 + simd_distance($1.0, $1.1) }
+                var p = line[0], gone = 0.0, ok = true
+                let h = 0.002 * ref
+                while gone < length {
+                    guard let d1 = panels.direction(p), let d2 = panels.direction(p + 0.5 * h * d1) else { ok = false; break }
+                    p += h * d2; gone += h
+                    if panels.inside(p) { ok = false; break }
+                }
+                guard ok else { continue }
+                let e = simd_distance(p, line[line.count - 1]) / ref
+                dev.append(e)
+                if line.contains(where: { q in els.contains { $0.contains { simd_distance($0, q) < 0.3 * ref } } }) { devNear.append(e) }
+            }
+            m["streamline_end_error_over_ref"] = ["all": stats(dev), "near": stats(devNear)]
+            out[name] = m
+        }
+        try JSONSerialization.data(withJSONObject: out, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: outPath))
+    }
+
+    private func stats(_ v: [Double]) -> [String: Double] {
+        guard !v.isEmpty else { return ["n": 0] }
+        let mean = v.reduce(0, +) / Double(v.count)
+        let rms = (v.reduce(0) { $0 + $1 * $1 } / Double(v.count)).squareRoot()
+        let s = v.map(abs).sorted()
+        return ["n": Double(v.count), "bias": mean, "rms": rms, "p50": s[s.count / 2], "p95": s[Int(Double(s.count - 1) * 0.95)]]
+    }
+
+    /// Across the flow at x: deepest Cp0, where, half-loss width of that layer, ∫ -Cp0 dy and ∫ v (1 - v) dy over the loss.
+    private func profile(_ f: WingField, x: Double, y0: Double, y1: Double) -> [String: Double] {
+        let dy = 0.0005
+        var ys: [(y: Double, c: Double, v: Double)] = []
+        for y in stride(from: y0, through: y1, by: dy) {
+            if let c = f.value("cp0", at: SIMD2(x, y)), let v = f.value("speed", at: SIMD2(x, y)), c.isFinite, v.isFinite { ys.append((y, c, v)) }
+        }
+        guard let mi = ys.indices.min(by: { ys[$0].c < ys[$1].c }), ys[mi].c < -0.005 else { return [:] }
+        var lo = mi, hi = mi
+        while lo > 0, ys[lo - 1].c < ys[mi].c / 2 { lo -= 1 }
+        while hi < ys.count - 1, ys[hi + 1].c < ys[mi].c / 2 { hi += 1 }
+        let loss = ys.filter { $0.c < -0.005 }
+        let w = loss.reduce(0) { $0 - $1.c }
+        let yc = loss.reduce(0) { $0 - $1.c * $1.y } / w
+        let sd = (loss.reduce(0) { $0 - $1.c * ($1.y - yc) * ($1.y - yc) } / w).squareRoot()
+        return ["min": ys[mi].c, "y": ys[mi].y, "width": ys[hi].y - ys[lo].y, "yc": yc, "sd": sd,
+                "loss": loss.reduce(0) { $0 - $1.c * dy }, "theta": loss.reduce(0) { $0 + $1.v * (1 - $1.v) * dy }]
+    }
+
+    /// Off a wall along its normal: Cp0 at the first cell with flow, and how far until half of that loss is gone.
+    private func layer(_ f: WingField, from p: SIMD2<Double>, normal n: SIMD2<Double>, maxD: Double) -> [String: Double] {
+        let step = 0.0002
+        var first: Double?, d = 0.0
+        while d < maxD {
+            if let c = f.value("cp0", at: p + d * n), c.isFinite {
+                if first == nil { first = min(c, 0); d += step; continue }
+                if c > first! / 2 { return ["wall": first!, "half": d] }
+            }
+            d += step
+        }
+        return first.map { ["wall": $0] } ?? [:]  // no half-loss point within reach
+    }
+}
