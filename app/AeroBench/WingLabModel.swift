@@ -863,6 +863,7 @@ final class WingLabModel {
                 let lift: Double = inverted ? 1 : -1
                 let start = point ?? te + SIMD2(-0.05 * last.chord, lift * 0.03 * last.chord)
                 w.elements.append(WingElement(airfoil: airfoil, chord: chord, angle: last.angle + 15, leadingEdge: start, inverted: inverted))
+                if point == nil { w.clearMinGap(of: w.elements.count - 1) }  // a dropped one stays where it was dropped
             } else {
                 w.elements.append(WingElement(airfoil: airfoil, chord: 0.3, angle: 3, leadingEdge: point ?? .zero, inverted: inverted))
             }

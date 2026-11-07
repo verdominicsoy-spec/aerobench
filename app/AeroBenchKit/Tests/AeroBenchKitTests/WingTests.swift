@@ -108,6 +108,26 @@ final class WingGeometryTests: XCTestCase {
         XCTAssertNil(w.gap(of: 0))
     }
 
+    /// A flap added at Wing Lab's default spot sat 1.8 mm off the main, inside
+    /// the 5 mm minimum: moved away from the main's pressure side, it clears it.
+    func testANewFlapIsMovedClearOfTheMinimumGap() throws {
+        let main = WingElement(airfoil: Airfoil.naca4("6412")!, chord: 0.3, angle: 3)
+        let te = main.trailingEdge
+        let start = te + SIMD2(-0.05 * 0.3, 0.03 * 0.3)  // WingLabModel.add's spot, inverted
+        var w = Wing(elements: [main, WingElement(airfoil: Airfoil.naca4("4412")!, chord: 0.135, angle: 18, leadingEdge: start)])
+        XCTAssertLessThan(Wing.distance(w.elements[0].placed(), w.elements[1].placed()), w.minGap)  // the bug's start
+        w.clearMinGap(of: 1)
+        let d = Wing.distance(w.elements[0].placed(), w.elements[1].placed())
+        XCTAssertGreaterThanOrEqual(d, w.minGap)
+        XCTAssertLessThan(d, w.minGap + 0.001)  // just clear, not far off
+        XCTAssertEqual(w.elements[1].leadingEdge.x, start.x)  // straight up, away from the main
+        XCTAssertGreaterThan(w.elements[1].leadingEdge.y, start.y)
+        XCTAssertTrue(w.issues.isEmpty, "\(w.issues)")
+        let before = w
+        w.clearMinGap(of: 1)
+        XCTAssertEqual(w, before)  // already clear: left alone
+    }
+
     func testIssues() {
         var w = wing()
         w.setGap(0.012, of: 1)

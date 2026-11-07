@@ -256,6 +256,23 @@ public struct Wing: Codable, Equatable, Sendable {
         move(from: index, by: (current - target) * elements[0].chordDirection)
     }
 
+    /// Moves element `index` (and the ones behind it) away from the pressure
+    /// side in 0.2 mm steps until it is at least `minGap` from every element
+    /// ahead of it. Already clear, it stays put.
+    public mutating func clearMinGap(of index: Int) {
+        guard index > 0, index < elements.count else { return }
+        let away = SIMD2<Double>(0, elements[index].inverted ? 1 : -1)
+        for _ in 0..<500 {  // 100 mm at most
+            let mine = elements[index].placed()
+            let close = elements[..<index].contains {
+                let other = $0.placed()
+                return Self.intersect(other, mine) || Self.distance(other, mine) < minGap
+            }
+            guard close else { return }
+            move(from: index, by: 0.0002 * away)
+        }
+    }
+
     /// Shifts element `index` and every element after it, keeping their
     /// gaps to each other.
     public mutating func move(from index: Int, by shift: SIMD2<Double>) {
