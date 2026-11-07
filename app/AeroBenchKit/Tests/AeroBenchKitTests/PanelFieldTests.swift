@@ -33,7 +33,6 @@ final class PanelFieldTests: XCTestCase {
         }
         XCTAssertEqual(integral, theta, accuracy: 0.03 * theta)
         XCTAssertEqual(wake.deficit(at: SIMD2(-0.2, 0)), 0)  // nothing ahead of the wing
-        XCTAssertEqual(wake.deficit(at: SIMD2(0.97, 0.005)), 0)  // nor just ahead of its trailing edge
         XCTAssertEqual(wake.deficit(at: SIMD2(1.5, 0.2)), 0, accuracy: 1e-6)
 
         let f = try XCTUnwrap(r.field(nx: 160, wakeCd: [cd]))
@@ -41,6 +40,43 @@ final class PanelFieldTests: XCTestCase {
         XCTAssertEqual(cp0.range[1], 0)
         XCTAssertEqual(try XCTUnwrap(f.value("cp0", at: SIMD2(-0.2, 0.2))), 0, accuracy: 1e-6)
         XCTAssertLessThan(try XCTUnwrap(f.value("cp0", at: SIMD2(1.2, 0))), -0.05)
+    }
+
+    /// The loss grows along each surface from nothing at the nose into the
+    /// wake: no step at the trailing edge (it showed as a hard straight edge).
+    func testLossGrowsAlongTheSurfaceIntoTheWake() throws {
+        let pts = naca("0012")
+        let r = try XCTUnwrap(PanelSolver(elements: [pts])).solve(alphaDeg: 0)
+        let box = (x0: -0.3, y0: -0.4, x1: 1.8, y1: 0.4)
+        let wake = try XCTUnwrap(Wake(body: pts, cd: 0.012, panels: VortexPanels(r), box: box))
+        let off = 0.004  // above the trailing edge's centreline
+        let ahead = wake.deficit(at: SIMD2(0.995, off)), behind = wake.deficit(at: SIMD2(1.005, off))
+        XCTAssertGreaterThan(ahead, 0.1)
+        XCTAssertEqual(ahead, behind, accuracy: 0.2 * behind)  // the surface layer is off the wall, the wake off its centreline
+        // Thin near the nose, thicker towards the trailing edge, at the same height off the surface.
+        func above(_ x: Double) -> Double {
+            let t = 0.6 * (0.2969 * x.squareRoot() - 0.126 * x - 0.3516 * x * x + 0.2843 * x * x * x - 0.1015 * x * x * x * x)
+            return wake.deficit(at: SIMD2(x, t + 0.002))
+        }
+        XCTAssertLessThan(above(0.05), above(0.5))
+        XCTAssertLessThan(above(0.5), above(0.95))
+        XCTAssertLessThan(above(0.05), 0.05)
+    }
+
+    /// The suction side (the faster one) carries the thicker layer: an upright
+    /// cambered section's upper side, an inverted one's lower side.
+    func testTheSuctionSideHasTheThickerLayer() throws {
+        let box = (x0: -0.3, y0: -0.4, x1: 1.8, y1: 0.4)
+        for inverted in [false, true] {
+            let pts = WingElement(airfoil: Airfoil.naca4("4412")!, chord: 1, angle: 4, inverted: inverted).placed()
+            let r = try XCTUnwrap(PanelSolver(elements: [pts])).solve(alphaDeg: 0)
+            let wake = try XCTUnwrap(Wake(body: pts, cd: 0.02, panels: VortexPanels(r), box: box, speed: r.speed[0]))
+            // 6 mm off each surface at 80% chord.
+            let up = try XCTUnwrap(pts.filter { $0.x > 0.7 && $0.x < 0.9 }.max { $0.y < $1.y })
+            let down = try XCTUnwrap(pts.filter { $0.x > 0.7 && $0.x < 0.9 }.min { $0.y < $1.y })
+            let above = wake.deficit(at: up + SIMD2(0, 0.006)), below = wake.deficit(at: down - SIMD2(0, 0.006))
+            if inverted { XCTAssertGreaterThan(below, above) } else { XCTAssertGreaterThan(above, below) }
+        }
     }
 
     func testMainWakeSlidesPastTheFlap() throws {

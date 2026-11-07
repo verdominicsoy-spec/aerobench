@@ -14,7 +14,8 @@ extension PanelSolution {
     /// there are no elements or `isCancelled` turned true.
     public func field(nx: Int = 400, wakeCd: [Double]? = nil, isCancelled: @escaping () -> Bool = { false }) -> WingField? {
         let panels = VortexPanels(self)
-        let bodies = zip(elements, speed).filter { $0.count == $1.count && $0.count > 2 }.map(\.0)
+        let flows = zip(elements, speed).filter { $0.count == $1.count && $0.count > 2 }
+        let bodies = flows.map(\.0)
         guard !bodies.isEmpty, nx > 1 else { return nil }
         let all = bodies.joined()
         let lo = all.reduce(SIMD2(Double.infinity, .infinity)) { simd_min($0, $1) }
@@ -27,7 +28,7 @@ extension PanelSolution {
         let dx = (x1 - x0) / Double(nx), dy = (y1 - y0) / Double(ny)
         let box = (x0: x0, y0: y0, x1: x1, y1: y1)
         let wakes: [Wake] = wakeCd.map { cds in
-            zip(bodies, cds).compactMap { Wake(body: $0, cd: $1, panels: panels, box: box) }
+            zip(flows, cds).compactMap { Wake(body: $0.0, cd: $1, panels: panels, box: box, speed: $0.1, cell: min(dx, dy)) }
         } ?? []
 
         let n = nx * ny
@@ -130,24 +131,70 @@ enum Colormap {
 /// element's drag), its width growing as the plane turbulent wake's,
 /// half-width 0.3 √(θ s) (Wygnanski, Champagne & Marasli 1986), from a
 /// virtual origin that starts it about θ wide with a deficit about 0.5.
+/// Ahead of the trailing edge the loss lies along both surfaces, its width
+/// growing from nothing at the nose as a turbulent boundary layer's (x^0.8),
+/// thicker on the suction side, and it blends into the wake across the
+/// trailing edge, so the wake has no cut start. The wake starts as lopsided
+/// as the surfaces and evens out over half a chord.
 struct Wake {
     private let line: [SIMD2<Double>]
     private let along: [Double]  // arc length to each point
     private let theta: Double
     private let reach: Double  // past this distance off the line the deficit is nil
+    private let body: [SIMD2<Double>]
+    private let fromNose: [Double]  // each body point's share of its surface, 0 at the nose to 1 at the trailing edge
+    private let near: (lo: SIMD2<Double>, hi: SIMD2<Double>)  // past this box the surface loss is nil
+    private let nose: Int
+    private let upperWidth: Double, lowerWidth: Double  // each surface's width at the trailing edge over the wake's
+    private let blend: Double  // the surfaces hand over to the wake across this distance either side of the trailing edge
+    private let minSigma: Double  // a cell, so a layer thinner than the grid does not show as beads
+    private let widths: [Double]  // the surface layer's σ at each body point
+    private let outside: Double  // the sign of the outside's cross product with each segment (+1 left, -1 right)
+    private let upperLeft: Bool  // the upper surface's side of the wake, looking downstream
+    private let chord: Double
 
     init?(body: [SIMD2<Double>], cd: Double, panels: VortexPanels,
-          box: (x0: Double, y0: Double, x1: Double, y1: Double)) {
+          box: (x0: Double, y0: Double, x1: Double, y1: Double), speed: [Double]? = nil, cell: Double = 0) {
         guard cd.isFinite, cd > 0, let first = body.first, let last = body.last else { return nil }
         let te = 0.5 * (first + last)
-        guard let le = body.max(by: { simd_distance($0, te) < simd_distance($1, te) }) else { return nil }
+        guard let nose = body.indices.max(by: { simd_distance(body[$0], te) < simd_distance(body[$1], te) }) else { return nil }
+        let le = body[nose]
         let chord = simd_distance(le, te)
         guard chord > 0 else { return nil }
         theta = 0.5 * cd * chord
+        self.chord = chord
+        // Selig order: upper trailing edge, round the nose, lower trailing edge.
+        func share(_ pts: [SIMD2<Double>]) -> [Double] {
+            var s = [0.0]
+            for k in 1..<pts.count { s.append(s[k - 1] + simd_distance(pts[k], pts[k - 1])) }
+            return s.map { $0 / max(s[s.count - 1], 1e-12) }
+        }
+        self.body = body
+        fromNose = share(body[...nose].reversed()).reversed() + share(Array(body[nose...])).dropFirst()
+        self.nose = nose
+        // shortcut: the suction side (the faster one) gets the thicker layer by a fixed 1.4 : 0.6; a separation model would size it.
+        if let v = speed, v.count == body.count {
+            let mean = { (r: ArraySlice<Double>) in r.reduce(0) { $0 + abs($1) } / Double(max(r.count, 1)) }
+            let upperFaster = mean(v[...nose]) > mean(v[nose...])
+            (upperWidth, lowerWidth) = upperFaster ? (1.4, 0.6) : (0.6, 1.4)
+        } else {
+            (upperWidth, lowerWidth) = (1, 1)
+        }
+        minSigma = cell
+        let sg0 = Self.sigma(theta, 0)
+        let area = zip(body, body.dropFirst() + [body[0]]).reduce(0) { $0 + $1.0.x * $1.1.y - $1.1.x * $1.0.y }
+        outside = area > 0 ? -1 : 1  // counter-clockwise: the outside is on the right
+        let (shares, up, low) = (fromNose, upperWidth, lowerWidth)
+        widths = shares.indices.map { k in sg0 * (k <= nose ? up : low) * pow(shares[k], 0.8) }
+        blend = max(Self.sigma(theta, 0), cell)
+        let pad = SIMD2(repeating: 5 * max(Self.sigma(theta, 0) * 1.4, cell))
+        near = (body.reduce(le, simd_min) - pad, body.reduce(le, simd_max) + pad)
         // Off the trailing edge along the chord, then down the inviscid flow,
         // in shorter steps past another element so it slides by, not into it.
         var p = te + 0.01 * chord * (te - le) / chord
         var pts = [te, p]
+        let out = p - te
+        upperLeft = out.x * (first.y - te.y) - out.y * (first.x - te.x) > 0
         march: for _ in 0..<2000 {
             var h = min(max(0.3 * panels.distance(p), 0.002 * chord), 0.02 * chord)
             for _ in 0..<3 {
@@ -178,9 +225,18 @@ struct Wake {
         0.255 * (theta * (s + 22 * theta)).squareRoot()
     }
 
-    /// The velocity deficit (0 none, 1 stopped) at a point, 0 off the wake or upstream of the trailing edge.
+    /// The velocity deficit (0 none, 1 stopped) at a point: the surfaces' ahead of the
+    /// trailing edge, the wake's past it, blended smoothly across it.
     func deficit(at p: SIMD2<Double>) -> Double {
-        var best = Double.infinity, s = 0.0, beyond = false
+        let d = line[1] - line[0]
+        let x = simd_dot(p - line[0], d) / max(simd_length(d), 1e-12) / blend
+        let w = x <= -1 ? 0 : x >= 1 ? 1 : 0.5 + 0.75 * x - 0.25 * x * x * x  // smoothstep over -1...1
+        return (w < 1 ? (1 - w) * surfaceDeficit(at: p) : 0) + (w > 0 ? w * wakeDeficit(at: p) : 0)
+    }
+
+    /// Off the line traced from the trailing edge (ahead of it, off its start); 0 off the wake.
+    private func wakeDeficit(at p: SIMD2<Double>) -> Double {
+        var best = Double.infinity, s = 0.0, beyond = false, left = true
         for k in 1..<line.count {
             let a = line[k - 1], d = line[k] - a
             let l2 = simd_length_squared(d)
@@ -191,16 +247,51 @@ struct Wake {
             if gap < best {
                 best = gap
                 s = along[k - 1] + c * l2.squareRoot()
-                // Nearest to its start from ahead of the trailing edge, or to its end from past it.
-                beyond = (k == 1 && t < 0) || (k == line.count - 1 && t > 1)
+                beyond = k == line.count - 1 && t > 1  // past its end
+                left = d.x * (p.y - a.y) - d.y * (p.x - a.x) > 0
             }
         }
         guard !beyond, best < reach else { return 0 }
         let sg = Self.sigma(theta, s)
-        // Momentum deficit ∫ u (1 - u) dn = θ with u = 1 - A exp(-n²/2σ²): A σ √(2π) - A² σ √π = θ.
+        let side = left == upperLeft ? upperWidth : lowerWidth
+        return Self.shown(Self.amplitude(theta, sg), sg * (1 + (side - 1) * exp(-s / (0.5 * chord))), best, minSigma)
+    }
+
+    /// Off the nearest surface, the wake's starting profile narrowed towards the nose.
+    private func surfaceDeficit(at p: SIMD2<Double>) -> Double {
+        guard p.x > near.lo.x, p.y > near.lo.y, p.x < near.hi.x, p.y < near.hi.y else { return 0 }
+        // The strongest over every segment, each at its own width: the nearest point alone
+        // jumps along a concave surface, and its width with it, which drew a step.
+        var score = Double.infinity  // -ln(deficit / amplitude), least wins
+        for k in 1..<body.count {
+            let a = body[k - 1], d = body[k] - a
+            let l2 = simd_length_squared(d)
+            guard l2 > 0 else { continue }
+            // Only from its own side, or a thick layer at one trailing edge corner wraps round the other.
+            guard outside * (d.x * (p.y - a.y) - d.y * (p.x - a.x)) >= 0 else { continue }
+            let c = min(max(simd_dot(p - a, d) / l2, 0), 1)
+            let sg = widths[k - 1] + c * (widths[k] - widths[k - 1])
+            guard sg > 1e-12 else { continue }
+            let w = max(sg, minSigma)
+            let here = simd_distance_squared(p, a + c * d) / (2 * w * w) - (sg < w ? log(sg / w) : 0)
+            score = min(score, here)
+        }
+        return score.isFinite ? Self.amplitude(theta, Self.sigma(theta, 0)) * exp(-score) : 0
+    }
+
+    /// A Gaussian of centre `amp` and width σ at distance n, drawn at least `least` wide
+    /// and as much fainter, so a layer thinner than a cell neither beads nor rings.
+    private static func shown(_ amp: Double, _ sg: Double, _ n: Double, _ least: Double) -> Double {
+        let w = max(sg, least)
+        guard w > 1e-12 else { return 0 }
+        return amp * (sg / w) * exp(-n * n / (2 * w * w))
+    }
+
+    /// The centre deficit A carrying momentum θ at width σ: ∫ u (1 - u) dn = θ with
+    /// u = 1 - A exp(-n²/2σ²), so A σ √(2π) - A² σ √π = θ.
+    private static func amplitude(_ theta: Double, _ sg: Double) -> Double {
         let b = sg * (2 * Double.pi).squareRoot(), a2 = sg * Double.pi.squareRoot()
         let disc = b * b - 4 * a2 * theta
-        let amp = disc >= 0 ? (b - disc.squareRoot()) / (2 * a2) : 1
-        return min(amp, 1) * exp(-best * best / (2 * sg * sg))
+        return min(disc >= 0 ? (b - disc.squareRoot()) / (2 * a2) : 1, 1)
     }
 }
