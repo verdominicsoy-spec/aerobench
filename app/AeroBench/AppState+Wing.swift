@@ -36,7 +36,7 @@ extension AppState {
     func importAirfoilsPanel() {
         let panel = NSOpenPanel()
         panel.title = "Import Airfoils"
-        panel.message = "Selig or Lednicer .dat files, or x,y .csv files. They go into My Airfoils."
+        panel.message = "Selig or Lednicer .dat files, or x,y .csv files. They go into My Airfoils; a wing's points also go on the canvas."
         panel.allowsMultipleSelection = true
         panel.allowedContentTypes = [UTType(filenameExtension: "dat") ?? .data, .commaSeparatedText, .tabSeparatedText,
                                      .plainText, .text]
@@ -45,19 +45,27 @@ extension AppState {
         // CSV files become Selig .dat files in a temporary folder, so the engine imports them like any other.
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("AeroBench-csv-\(UUID().uuidString)")
         var paths: [String] = [], failed: [String] = []
+        var wingFile: (name: String, elements: [(key: String, name: String, at: AirfoilCSV.Placement)])?
         for url in panel.urls {
             guard ["csv", "tsv"].contains(url.pathExtension.lowercased()) else { paths.append(url.path); continue }
             do {
-                // A multi-element file (a wing's points) gives one section per element.
+                // Each section goes in upright; a multi-element file (a wing's points) gives one
+                // section per element and, once imported, that wing on the canvas as placed.
                 let stem = url.deletingPathExtension().lastPathComponent
                 let elements = try AirfoilCSV.parseElements(String(contentsOf: url, encoding: .utf8))
+                let scale = AirfoilCSV.metresPerUnit(elements)
                 try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+                var placed: [(key: String, name: String, at: AirfoilCSV.Placement)] = []
                 for e in elements {
                     let name = e.name.map { "\(stem) \($0)" } ?? stem
-                    let out = temp.appendingPathComponent(name.replacingOccurrences(of: "/", with: "_") + ".dat")
-                    try AirfoilCSV.dat(name: name, points: e.points).write(to: out, atomically: true, encoding: .utf8)
+                    let file = name.replacingOccurrences(of: "[^A-Za-z0-9._-]+", with: "_", options: .regularExpression)  // as the engine names it
+                    let at = e.placement(scale: scale)
+                    let out = temp.appendingPathComponent(file + ".dat")
+                    try AirfoilCSV.dat(name: name, points: at.section).write(to: out, atomically: true, encoding: .utf8)
                     paths.append(out.path)
+                    placed.append(("mine/" + file, name, at))
                 }
+                if placed.count > 1, wingFile == nil { wingFile = (url.lastPathComponent, placed) }
             } catch {
                 failed.append("\(url.lastPathComponent): \(error.localizedDescription)")
             }
@@ -75,7 +83,22 @@ extension AppState {
             guard let self, item.status == .succeeded else { return }
             self.wingLab.loadLibrary(engineDirectory: self.settings.engineDirectory)
             self.wingLab.filter.source = "mine"
+            if let wingFile { self.placeImportedWing(wingFile.name, wingFile.elements) }
         }
+    }
+
+    /// A wing's points from a CSV, on the canvas with its sections from My Airfoils (undoable).
+    private func placeImportedWing(_ file: String, _ elements: [(key: String, name: String, at: AirfoilCSV.Placement)]) {
+        let parts = elements.map { e in
+            let section = wingLab.airfoil(e.key) ?? Airfoil(key: e.key, name: e.name, family: "Other", source: "mine",
+                                                            thickness: 0, thicknessX: 0, camber: 0, camberX: 0,
+                                                            teThickness: 0, coords: e.at.section).measured()
+            return WingElement(airfoil: section, chord: e.at.chord, angle: e.at.angle, leadingEdge: e.at.leadingEdge,
+                               inverted: e.at.inverted)
+        }
+        wingLab.editStep("Import \(file)") { $0.wing.elements = parts; $0.cardID = nil }
+        wingLab.selection = 0
+        wingLab.markOrigin("imported \(file)")
     }
 
     /// Deletes the user's own imported sections, after asking.

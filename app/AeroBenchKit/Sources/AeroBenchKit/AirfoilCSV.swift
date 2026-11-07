@@ -1,4 +1,5 @@
 import Foundation
+import simd
 
 /// Airfoil coordinates from a CSV file: comma, semicolon or tab separated,
 /// with or without a header row, as one Selig loop or as upper and lower
@@ -43,9 +44,49 @@ public enum AirfoilCSV {
     public struct Element: Equatable, Sendable {
         /// From an element column or a label row; nil for a lone section.
         public var name: String?
-        /// Selig order, scaled so x runs 0 to 1 (unit chord for a section at 0°;
-        /// the engine's import derotates a placed element).
+        /// Selig order, scaled so x runs 0 to 1 (unit chord for a section at 0°).
         public var points: [SIMD2<Double>]
+        /// The same loop in the file's own units and frame, for placement().
+        public var outline: [SIMD2<Double>]
+
+        /// Where the element sits, and its section upright: unit chord, leading
+        /// edge at the origin, chord along +x, positive camber, Selig order. The
+        /// inverse of WingElement.placed(): a section whose camber points down
+        /// in the file is an inverted element. `scale` turns file units into metres.
+        public func placement(scale: Double = 1) -> Placement {
+            let p = outline.map { $0 * scale }
+            let te = 0.5 * (p[0] + p[p.count - 1])
+            let le = p.max { simd_distance($0, te) < simd_distance($1, te) }!
+            let v = te - le, chord = simd_length(v), phi = atan2(v.y, v.x)
+            let c = cos(phi), s = sin(phi)
+            var unit = p.map { q -> SIMD2<Double> in
+                let d = (q - le) / chord
+                return SIMD2(c * d.x + s * d.y, -s * d.x + c * d.y)
+            }
+            let i = unit.indices.min { unit[$0].x < unit[$1].x }!
+            func meanY(_ s: ArraySlice<SIMD2<Double>>) -> Double { s.reduce(0) { $0 + $1.y } / Double(s.count) }
+            if meanY(unit[...i]) < meanY(unit[i...]) { unit.reverse() }  // upper surface first
+            let camber = Airfoil(key: "", name: "", family: "", source: "", thickness: 0, thicknessX: 0, camber: 0,
+                                 camberX: 0, teThickness: 0, coords: unit).measured().camber
+            let inverted = camber < 0
+            if inverted { unit = unit.reversed().map { SIMD2($0.x, -$0.y) } }
+            return Placement(section: unit, chord: chord, angle: (inverted ? 1 : -1) * phi * 180 / .pi,
+                             leadingEdge: le, inverted: inverted)
+        }
+    }
+
+    public struct Placement: Equatable, Sendable {
+        public var section: [SIMD2<Double>]
+        public var chord: Double
+        public var angle: Double  // degrees, as WingElement.angle
+        public var leadingEdge: SIMD2<Double>
+        public var inverted: Bool
+    }
+
+    /// Metres per file unit for a wing's elements: millimetres when any chord
+    /// is over 2 (no element is 2 m long), else metres.
+    public static func metresPerUnit(_ elements: [Element]) -> Double {
+        elements.contains { $0.placement().chord > 2 } ? 0.001 : 1
     }
 
     /// Label rows that only split one section into its surfaces.
@@ -113,14 +154,16 @@ public enum AirfoilCSV {
         guard !filled.isEmpty else { throw ParseError.tooFewPoints(0) }
         return try filled.map { g in
             do {
-                return Element(name: g.name, points: try outline(g.blocks.filter { !$0.isEmpty }))
+                let loop = try outline(g.blocks.filter { !$0.isEmpty })
+                let minX = loop.map(\.x).min()!, extent = loop.map(\.x).max()! - minX
+                return Element(name: g.name, points: loop.map { SIMD2(($0.x - minX) / extent, $0.y / extent) }, outline: loop)
             } catch let error as ParseError where g.name != nil && filled.count > 1 {
                 throw ParseError.inElement(g.name!, error)
             }
         }
     }
 
-    /// One section's blocks of points as a Selig loop scaled to unit x extent.
+    /// One section's blocks of points as one loop from the trailing edge, upper surface first.
     private static func outline(_ blocks: [[SIMD2<Double>]]) throws -> [SIMD2<Double>] {
         let count = blocks.reduce(0) { $0 + $1.count }
         guard count >= 6 else { throw ParseError.tooFewPoints(count) }
@@ -138,8 +181,7 @@ public enum AirfoilCSV {
         if b[0].x > b[b.count - 1].x { b.reverse() }
         func meanY(_ s: [SIMD2<Double>]) -> Double { s.reduce(0) { $0 + $1.y } / Double(s.count) }
         let (upper, lower) = meanY(a) >= meanY(b) ? (a, b) : (b, a)
-        let loop = Array(upper.reversed()) + (upper[0] == lower[0] ? lower.dropFirst() : lower[...])
-        return loop.map { SIMD2(($0.x - minX) / chord, $0.y / chord) }
+        return Array(upper.reversed()) + (upper[0] == lower[0] ? lower.dropFirst() : lower[...])
     }
 
     /// A Selig .dat: the name line, then one "x y" pair per line.

@@ -89,8 +89,8 @@ final class WingLabModel {
         case pressure = "Pressure"
         case polar = "Polar"
         case estimate = "Estimate"
-        case cfd = "CFD"
         case study = "Study"
+        case cfd = "CFD"
 
         var id: String { rawValue }
     }

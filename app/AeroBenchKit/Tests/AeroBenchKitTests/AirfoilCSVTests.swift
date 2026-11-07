@@ -121,6 +121,44 @@ final class AirfoilCSVTests: XCTestCase {
         }
     }
 
+    /// The wing comes back where it was, each section upright, either way up.
+    func testPlacementUndoesTheExport() throws {
+        let foil4412 = Airfoil.naca4("4412", points: 41)!  // its LE node is the true LE, as in library sections
+        for inverted in [true, false] {
+            let wing = Wing(elements: [
+                WingElement(airfoil: foil4412, chord: 0.48, angle: 8, leadingEdge: SIMD2(0, -0.048), inverted: inverted),
+                WingElement(airfoil: foil4412, chord: 0.156, angle: 19, leadingEdge: SIMD2(0.48, 0.034), inverted: inverted),
+                WingElement(airfoil: foil4412, chord: 0.078, angle: 32, leadingEdge: SIMD2(0.62, 0.10), inverted: inverted),
+            ])
+            let elements = try AirfoilCSV.parseElements(wing.csvFile())
+            let scale = AirfoilCSV.metresPerUnit(elements)
+            XCTAssertEqual(scale, 0.001)
+            for (e, want) in zip(elements, wing.elements) {
+                let at = e.placement(scale: scale)
+                XCTAssertEqual(at.inverted, inverted)
+                XCTAssertEqual(at.chord, want.chord, accuracy: want.chord * 1e-3)
+                XCTAssertEqual(at.angle, want.angle, accuracy: 0.1)
+                XCTAssertEqual(simd_distance(at.leadingEdge, want.leadingEdge), 0, accuracy: want.chord * 1e-3)
+                let section = Airfoil(key: "", name: "", family: "", source: "", thickness: 0, thicknessX: 0, camber: 0,
+                                      camberX: 0, teThickness: 0, coords: at.section).measured()
+                XCTAssertEqual(section.camber, 0.04, accuracy: 1e-3)  // upright
+                XCTAssertEqual(section.thickness, 0.12, accuracy: 2e-3)
+                // Placed again, it lies on the file's points.
+                let again = WingElement(airfoil: section, chord: at.chord, angle: at.angle, leadingEdge: at.leadingEdge,
+                                        inverted: at.inverted).placed()
+                let worst = zip(again, want.placed()).map { simd_distance($0, $1) }.max()!
+                XCTAssertLessThan(worst, want.chord * 2e-3)
+            }
+        }
+        // A lone section drawn upside down comes in upright, in metres it stays as given.
+        let upsideDown = csv(foil.reversed().map { SIMD2($0.x, -$0.y) })
+        let one = try AirfoilCSV.parseElements(upsideDown)
+        XCTAssertEqual(AirfoilCSV.metresPerUnit(one), 1)
+        let at = one[0].placement()
+        XCTAssertTrue(at.inverted)
+        XCTAssertGreaterThan(at.section[at.section.count / 4].y, 0)
+    }
+
     func testDatRoundTrip() throws {
         let dat = AirfoilCSV.dat(name: "my foil", points: try AirfoilCSV.parse(csv(foil, chord: 250)))
         let lines = dat.split(separator: "\n")

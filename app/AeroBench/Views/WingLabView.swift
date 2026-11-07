@@ -1043,6 +1043,11 @@ struct CFDResults: View {
                 }
                 .disabled(app.settings.su2Executable == nil || app.wingLab.wing.elements.isEmpty
                           || !app.wingLab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty)
+                if app.wingLab.wing.elements.isEmpty {
+                    Text("Add an element first: drag an airfoil onto the canvas.").font(.caption).foregroundStyle(S37.C.inkSecondary)
+                } else if !app.wingLab.wing.issues.filter({ $0.kind != .outsideRules }).isEmpty {
+                    Text("Fix the overlapping or touching elements first.").font(.caption).foregroundStyle(S37.C.clayInk)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -1353,7 +1358,9 @@ struct WingInspector: View {
             .buttonStyle(S37ButtonStyle(kind: .prominent))
             .disabled(!haveSU2 || lab.wing.elements.isEmpty || !lab.wing.issues.filter { $0.kind != .outsideRules }.isEmpty
                       || [lab.ransJob, lab.sweepJob].contains { $0.map { !$0.status.isFinished } ?? false })
-        if !lab.wing.issues.filter({ $0.kind != .outsideRules }).isEmpty {
+        if lab.wing.elements.isEmpty {
+            Text("Add an element first: drag an airfoil onto the canvas.").font(.caption).foregroundStyle(S37.C.inkSecondary)
+        } else if !lab.wing.issues.filter({ $0.kind != .outsideRules }).isEmpty {
             Text("Fix the overlapping or touching elements first.").font(.caption).foregroundStyle(S37.C.clayInk)
         }
         let needsSU2 = lab.ransJob.map { $0.status == .failed && ($0.message ?? "").contains("SU2 is not installed") } ?? false
@@ -2164,6 +2171,10 @@ struct ResultsSummary: View {
                                             String(format: "L/D %.1f", abs($0.cl) / max($0.cd, 1e-9)) + ($0.separating == true ? "  separating" : "")] }
                         ?? lab.preview.map { [String(format: "Cl %.3f inviscid", wing.shownCl($0.clTotal)), lab.liveStatus ?? "no drag yet"] } ?? ["—"],
                      warn: estimate.map { !$0.trusted || $0.separating == true } ?? false, lab: lab)
+                if let s = lab.study, let b = s.bestTrial, let v = b.value {
+                    card("Study best", tab: .study, lines: [String(format: "trial %ld: %.4g", b.number, v),
+                                                            "\(s.complete + s.failed) of \(s.target) run"], lab: lab)
+                }
                 let advice = rans.map { app.meshAdvice($0) }
                 card("RANS CFD", tab: .cfd,
                      lines: rans.map { [String(format: "Cl %.3f  Cd %.4f", wing.shownCl($0.cl), $0.cd),
@@ -2178,10 +2189,6 @@ struct ResultsSummary: View {
                 }
                 if let a = lab.pinned {
                     card("A, pinned", tab: nil, lines: pinnedLines(a, estimate: estimate, lab: lab), lab: lab)
-                }
-                if let s = lab.study, let b = s.bestTrial, let v = b.value {
-                    card("Study best", tab: .study, lines: [String(format: "trial %ld: %.4g", b.number, v),
-                                                            "\(s.complete + s.failed) of \(s.target) run"], lab: lab)
                 }
             }
             .padding(8)
