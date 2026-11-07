@@ -69,6 +69,17 @@ public struct WingField: Sendable {
         values = blocks
     }
 
+    /// A field made in the app (the live panel-method field), blocks as `values`.
+    init(nx: Int, ny: Int, window: (x0: Double, y0: Double, x1: Double, y1: Double), scalars: [Scalar], values: [[Float]]) {
+        self.nx = nx
+        self.ny = ny
+        self.window = window
+        self.scalars = scalars
+        self.values = values
+        streamlines = []
+        outlines = []
+    }
+
     /// Reads field.json and field.bin from a run folder.
     public static func load(from folder: URL) throws -> WingField {
         try WingField(json: Data(contentsOf: folder.appendingPathComponent("field.json")),

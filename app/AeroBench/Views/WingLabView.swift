@@ -450,7 +450,7 @@ struct WingCanvas: View {
                         .font(.caption.monospacedDigit())
                 }
                 fieldControls(lab)
-                if shownScalar(lab) == nil, lab.preview != nil {
+                if shownField(lab) == nil, lab.preview != nil {
                     Toggle("Streamlines (inviscid, rough)", isOn: Binding(get: { lab.showStreamlines }, set: { lab.showStreamlines = $0 }))
                         .toggleStyle(.checkbox).font(.caption)
                         .help("The panel method's flow, traced on every edit: no boundary layer, wake or separation. Run RANS CFD for the real flow.")
@@ -512,7 +512,7 @@ struct WingCanvas: View {
             }
             if let r = lab.ransResult, lab.ransField != nil, lab.fieldOnCanvas {
                 if !lab.fieldIsCurrent {
-                    Text("Flow field hidden: the wing has changed since the last RANS run.")
+                    Text("Live field: the wing has changed since the last RANS run.")
                         .font(.caption2).foregroundStyle(S37.C.inkSecondary)
                         .canvasPlate()
                 } else if !r.converged {
@@ -521,12 +521,17 @@ struct WingCanvas: View {
                 }
             }
             Spacer()
-            if let scalar = shownScalar(lab) {
+            if let shown = shownField(lab) {
                 Group {
-                    if lab.showChange, let change = lab.changeImage(scalar.key) {
-                        ChangeColorbar(name: scalar.name, limit: change.limit)
+                    if shown.rans != nil, lab.showChange, let change = lab.changeImage(shown.scalar.key) {
+                        ChangeColorbar(name: shown.scalar.name, limit: change.limit)
                     } else {
-                        FieldColorbar(scalar: scalar)
+                        HStack(spacing: 6) {
+                            FieldColorbar(scalar: shown.scalar)
+                            if shown.rans == nil {
+                                Text("live, rough").font(.caption2).foregroundStyle(S37.C.inkSecondary)
+                            }
+                        }
                     }
                 }
                 .canvasPlate()
@@ -538,36 +543,63 @@ struct WingCanvas: View {
         .padding(6)
     }
 
-    /// The scalar on the canvas, if the field is shown.
-    private func shownScalar(_ lab: WingLabModel) -> WingField.Scalar? {
-        guard lab.fieldOnCanvas, lab.fieldIsCurrent, let f = lab.ransField else { return nil }
-        return f.scalars.first { $0.key == lab.fieldScalar } ?? f.scalars.first
+    /// A field on the canvas, the scalar shown and how its frame sits in the wing's.
+    private struct ShownField {
+        let field: WingField
+        let scalar: WingField.Scalar
+        /// Degrees that turn the field's frame into the wing's.
+        let turn: Double
+        /// The RANS run it is from; nil for the live field.
+        let rans: WingRansResult?
+
+        func toWing(_ p: SIMD2<Double>) -> SIMD2<Double> { Self.turn(p, turn) }
+        func toField(_ p: SIMD2<Double>) -> SIMD2<Double> { Self.turn(p, -turn) }
+        private static func turn(_ p: SIMD2<Double>, _ degrees: Double) -> SIMD2<Double> {
+            let a = degrees * .pi / 180
+            return SIMD2(p.x * cos(a) - p.y * sin(a), p.x * sin(a) + p.y * cos(a))
+        }
     }
 
-    /// Which RANS scalar to show behind the wing, streamlines, the value under the pointer.
+    /// The field there is for the canvas: the last RANS run's while it is of
+    /// this wing, else the live one from the preview.
+    private func availableField(_ lab: WingLabModel) -> ShownField? {
+        func pick(_ f: WingField) -> WingField.Scalar? { f.scalars.first { $0.key == lab.fieldScalar } ?? f.scalars.first }
+        if lab.fieldIsCurrent, let f = lab.ransField, let r = lab.ransResult, let s = pick(f) {
+            return ShownField(field: f, scalar: s, turn: -(r.frameTurn ?? 0), rans: r)
+        }
+        if let f = lab.liveField, let s = pick(f) { return ShownField(field: f, scalar: s, turn: lab.liveFieldTurn, rans: nil) }
+        return nil
+    }
+
+    /// The field on the canvas, if one is shown.
+    private func shownField(_ lab: WingLabModel) -> ShownField? {
+        lab.fieldOnCanvas ? availableField(lab) : nil
+    }
+
+    /// Which scalar to show behind the wing, streamlines, the value under the pointer.
     @ViewBuilder private func fieldControls(_ lab: WingLabModel) -> some View {
-        if let f = lab.ransField, let r = lab.ransResult {
-            Picker("Field", selection: Binding(get: { lab.fieldOnCanvas ? lab.fieldScalar : "" },
+        if let a = availableField(lab) {
+            Picker("Field", selection: Binding(get: { lab.fieldOnCanvas ? a.scalar.key : "" },
                                                set: { key in
                                                    lab.fieldOnCanvas = !key.isEmpty
                                                    if !key.isEmpty { lab.fieldScalar = key }
                                                })) {
                 Text("Off").tag("")
-                ForEach(f.scalars) { Text($0.name).tag($0.key) }
+                ForEach(a.field.scalars) { Text($0.name).tag($0.key) }
             }
             .pickerStyle(.menu).fixedSize().font(.caption)
-            .disabled(!lab.fieldIsCurrent)
-            .help("The last RANS run's flow over the plane, behind the wing")
-            if lab.canShowChange {
+            .help(a.rans != nil ? "The last RANS run's flow over the plane, behind the wing"
+                  : "The live field, remade on every edit: the panel method's inviscid flow, and for Cp0 a wake off each trailing edge sized by the live estimate's drag of that element. No boundary layer, separation or slot effects: run RANS CFD for the real flow.")
+            if a.rans != nil, lab.canShowChange {
                 Toggle("Change from A", isOn: Binding(get: { lab.showChange }, set: { lab.showChange = $0 }))
                     .toggleStyle(.checkbox).font(.caption)
                     .help("B's field minus A's: blue where it fell, red where it rose, white where it held")
             }
-            if let scalar = shownScalar(lab) {
+            if let shown = shownField(lab) {
                 Toggle("Streamlines", isOn: Binding(get: { lab.showStreamlines }, set: { lab.showStreamlines = $0 }))
                     .toggleStyle(.checkbox).font(.caption)
-                if let p = hover, let v = f.value(scalar.key, at: r.toRun(p)) {
-                    Text(String(format: "%@ %.3f at %.0f, %.0f mm", scalar.name, v, p.x * 1000, p.y * 1000))
+                if let p = hover, let v = shown.field.value(shown.scalar.key, at: shown.toField(p)) {
+                    Text(String(format: "%@ %.3f at %.0f, %.0f mm", shown.scalar.name, v, p.x * 1000, p.y * 1000))
                         .font(.caption.monospacedDigit())
                 }
             }
@@ -579,16 +611,18 @@ struct WingCanvas: View {
             drawReplay(ctx, m, lab, replay)
             return
         }
-        let onField = shownScalar(lab) != nil
-        if onField, let r = lab.ransResult, let f = lab.ransField { drawField(ctx, m, lab, r, f) }
-        if !onField, lab.showStreamlines, !lab.roughStreamlines.isEmpty {
-            // The live preview's inviscid flow: lighter and dashed, as it is only rough.
+        let shown = shownField(lab)
+        let onField = shown != nil
+        if let shown { drawField(ctx, m, lab, shown) }
+        if shown?.rans == nil, lab.showStreamlines, !lab.roughStreamlines.isEmpty {
+            // The live preview's inviscid flow: dashed, as it is only rough.
             var path = Path()
             for line in lab.roughStreamlines where line.count > 1 {
                 path.move(to: m.view(line[0]))
                 for p in line.dropFirst() { path.addLine(to: m.view(p)) }
             }
-            ctx.stroke(path, with: .color(S37.C.inkTertiary.opacity(0.55)), style: StrokeStyle(lineWidth: 0.6, dash: [3, 2]))
+            let ink = onField ? Color.black.opacity(0.4) : S37.C.inkTertiary.opacity(0.55)
+            ctx.stroke(path, with: .color(ink), style: StrokeStyle(lineWidth: 0.6, dash: [3, 2]))
         }
         if let a = lab.pinned {
             for e in a.wing.elements {
@@ -662,16 +696,16 @@ struct WingCanvas: View {
         }
     }
 
-    /// The RANS field behind the wing: the scalar as an image placed in the
-    /// wing's frame (the run's frame turned back), then the streamlines.
-    private func drawField(_ ctx: GraphicsContext, _ m: WingMapping, _ lab: WingLabModel, _ r: WingRansResult, _ f: WingField) {
-        guard let scalar = shownScalar(lab) else { return }
-        let t = -(r.frameTurn ?? 0) * .pi / 180, c = cos(t), sn = sin(t), s = m.scale
+    /// The field behind the wing: the scalar as an image placed in the
+    /// wing's frame (the field's frame turned back), then a RANS run's streamlines.
+    private func drawField(_ ctx: GraphicsContext, _ m: WingMapping, _ lab: WingLabModel, _ shown: ShownField) {
+        let f = shown.field, key = shown.scalar.key
+        let t = shown.turn * .pi / 180, c = cos(t), sn = sin(t), s = m.scale
         let w = f.window.x1 - f.window.x0, h = f.window.y1 - f.window.y0
-        let change = lab.showChange ? lab.changeImage(scalar.key)?.image : nil
-        if let image = change ?? lab.fieldImage(scalar.key) {
+        let change = shown.rans != nil && lab.showChange ? lab.changeImage(key)?.image : nil
+        if let image = change ?? (shown.rans != nil ? lab.fieldImage(key) : lab.liveFieldImage(key)) {
             var g = ctx
-            if !r.converged { g.opacity = 0.5 }
+            if let r = shown.rans, !r.converged { g.opacity = 0.5 }
             // Image space (metres from the window's top left, y down) to the view:
             // into the run's frame, turned into the wing's, then the canvas mapping.
             let tx = m.origin.x + s * (c * f.window.x0 - sn * f.window.y1)
@@ -679,11 +713,11 @@ struct WingCanvas: View {
             g.concatenate(CGAffineTransform(a: s * c, b: -s * sn, c: s * sn, d: s * c, tx: tx, ty: ty))
             g.draw(Image(decorative: image, scale: 1), in: CGRect(x: 0, y: 0, width: w, height: h))
         }
-        if lab.showStreamlines {
+        if lab.showStreamlines, shown.rans != nil {
             var path = Path()
             for line in f.streamlines where line.count > 1 {
-                path.move(to: m.view(r.toWing(line[0])))
-                for p in line.dropFirst() { path.addLine(to: m.view(r.toWing(p))) }
+                path.move(to: m.view(shown.toWing(line[0])))
+                for p in line.dropFirst() { path.addLine(to: m.view(shown.toWing(p))) }
             }
             ctx.stroke(path, with: .color(.black.opacity(0.4)), lineWidth: 0.6)
         }

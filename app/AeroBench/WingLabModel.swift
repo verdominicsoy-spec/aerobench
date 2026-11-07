@@ -2,6 +2,7 @@ import AeroBenchKit
 import CoreGraphics
 import Foundation
 import Observation
+import os
 import simd
 
 /// Wing Lab state: the wing on the canvas, its undo history, the library and
@@ -165,7 +166,9 @@ final class WingLabModel {
     var estimateFrom = -4.0
     var estimateTo = 10.0
     var estimateStep = 1.0
-    var estimate: WingEstimate?
+    var estimate: WingEstimate? {
+        didSet { if estimate != oldValue { makeLiveField() } }  // its drag sizes the live field's wakes
+    }
     /// Re-run the estimate through the warm engine on every change to the wing: always on.
     let liveEstimate = true
     var liveStatus: String?  // loading, or why the last live estimate failed
@@ -203,9 +206,11 @@ final class WingLabModel {
     var ransField: WingField? {
         didSet { fieldImages = [:]; changeImages = [:] }
     }
-    var fieldScalar = "cp"
+    /// The scalar on the canvas, RANS or live: total pressure unless picked otherwise.
+    var fieldScalar = "cp0"
     var showStreamlines = true
-    /// The last RANS run's field on the canvas, behind the wing.
+    /// A field on the canvas behind the wing: the last RANS run's while it is
+    /// of this wing, else the live one from the preview.
     var fieldOnCanvas = true
     /// Whether the last RANS run's field is of the wing as it is now (each
     /// element within a millimetre): once the wing is edited it is not shown.
@@ -223,11 +228,22 @@ final class WingLabModel {
     /// The scalar as an image, made once per scalar and kept.
     func fieldImage(_ key: String) -> CGImage? {
         if let image = fieldImages[key] { return image }
-        guard let f = ransField else { return nil }
-        let px = f.pixels(key)
-        guard px.count == f.nx * f.ny * 4, let image = Self.image(px, f.nx, f.ny) else { return nil }
+        guard let f = ransField, let image = Self.image(f, key) else { return nil }
         fieldImages[key] = image
         return image
+    }
+
+    /// The live field's scalar as an image, kept until the next live field.
+    func liveFieldImage(_ key: String) -> CGImage? {
+        if let image = liveImages[key] { return image }
+        guard let f = liveField, let image = Self.image(f, key) else { return nil }
+        liveImages[key] = image
+        return image
+    }
+
+    private static func image(_ f: WingField, _ key: String) -> CGImage? {
+        let px = f.pixels(key)
+        return px.count == f.nx * f.ny * 4 ? image(px, f.nx, f.ny) : nil
     }
 
     static func image(_ px: [UInt8], _ w: Int, _ h: Int) -> CGImage? {
@@ -654,6 +670,17 @@ final class WingLabModel {
     /// traced off the main thread after each edit (the last set until then).
     private(set) var roughStreamlines: [[SIMD2<Double>]] = []
     @ObservationIgnored private var streamlineTask: Task<Void, Never>?
+    /// The preview's flow as a colour field (Cp, speed and, once the live
+    /// estimate has each element's drag, Cp0 from their wakes) in the
+    /// preview's frame, made off the main thread after each edit (about 10 ms).
+    private(set) var liveField: WingField? {
+        didSet { liveImages = [:] }
+    }
+    /// Degrees that turn the live field's frame into the wing's (over a ground the preview runs along the flow).
+    private(set) var liveFieldTurn = 0.0
+    @ObservationIgnored private var liveImages: [String: CGImage] = [:]
+    @ObservationIgnored private var liveFieldTask: Task<Void, Never>?
+    @ObservationIgnored private var previewTurn = 0.0
 
     var families: [String] { Array(Set(library.map(\.family))).sorted() }
 
@@ -945,6 +972,8 @@ final class WingLabModel {
     /// Traces the preview's streamlines in the background, turned back by
     /// `turn` degrees (over a ground the preview's frame runs along the flow).
     private func traceStreamlines(turn: Double) {
+        previewTurn = turn
+        makeLiveField()
         streamlineTask?.cancel()
         guard let p = preview else {
             roughStreamlines = []
@@ -957,6 +986,34 @@ final class WingLabModel {
             await MainActor.run {
                 guard !Task.isCancelled else { return }
                 self?.roughStreamlines = wingFrame
+            }
+        }
+    }
+
+    /// Makes the live field of the preview in the background, its wakes from
+    /// the live estimate's drag of each element at the wing's angle.
+    private func makeLiveField() {
+        liveFieldTask?.cancel()
+        guard let p = preview else {
+            liveField = nil
+            return
+        }
+        let turn = previewTurn
+        var wakeCd: [Double]?
+        if let row = estimate?.row(nearest: wing.alpha), abs(row.alpha - wing.alpha) < 0.6, row.elements.count == p.elements.count {
+            wakeCd = row.elements.map(\.cdOwn)
+        }
+        liveFieldTask = Task.detached(priority: .userInitiated) { [weak self, wakeCd] in
+            let stop = OSAllocatedUnfairLock(initialState: false)
+            let field = await withTaskCancellationHandler {
+                p.field(wakeCd: wakeCd, isCancelled: { stop.withLock { $0 } })
+            } onCancel: {
+                stop.withLock { $0 = true }
+            }
+            await MainActor.run {
+                guard !Task.isCancelled, let field else { return }
+                self?.liveField = field
+                self?.liveFieldTurn = turn
             }
         }
     }
