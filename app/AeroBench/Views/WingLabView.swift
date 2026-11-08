@@ -529,7 +529,9 @@ struct WingCanvas: View {
                         HStack(spacing: 6) {
                             FieldColorbar(scalar: shown.scalar)
                             if shown.rans == nil {
-                                Text("live, rough").font(.caption2).foregroundStyle(S37.C.inkSecondary)
+                                Text((lab.preview?.liftMatched == true ? "live, lift from the estimate" : "live, inviscid")
+                                     + (lab.estimateSeparates ? "; separating, not shown" : ""))
+                                    .font(.caption2).foregroundStyle(lab.estimateSeparates ? S37.C.clayInk : S37.C.inkSecondary)
                             }
                         }
                     }
@@ -1132,7 +1134,8 @@ struct CpPlot: View {
         let lab = app.wingLab
         let points = makePoints(lab)
         VStack(alignment: .leading, spacing: 2) {
-            Text("Surface pressure, inviscid (−Cp up)").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
+            Text(lab.preview?.liftMatched == true ? "Surface pressure, inviscid, lift from the live estimate (−Cp up)" : "Surface pressure, inviscid (−Cp up)")
+                .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
             if points.isEmpty {
                 Rectangle().fill(.quaternary)
             } else {
@@ -1173,13 +1176,14 @@ struct CpPlot: View {
             let name = "\(WingIssue.label(i)) upper", lower = "\(WingIssue.label(i)) lower"
             guard pts.count > 1 else { continue }
             let half = (pts.count - 1) / 2
+            let cp = r.chartCp(element: i, chord: e.chord)  // lift-matched: no trailing-edge spike
             // The two surfaces as separate series so the line does not wrap round the nose.
             for (surface, ks) in [(name, Array(0...half)), (lower, Array((half + 1)..<pts.count))] {
-                let ks = ks.filter { $0 < r.cp[i].count }
-                let runs = CpSpikes.runs(x: ks.map { pts[$0].x * 1000 }, y: ks.map { -r.cp[i][$0] })
+                let ks = ks.filter { $0 < cp.count && cp[$0] != nil }
+                let runs = CpSpikes.runs(x: ks.map { pts[$0].x * 1000 }, y: ks.map { -cp[$0]! })
                 for (k, run) in zip(ks, runs) {
                     guard let run else { continue }
-                    out.append(Point(id: out.count, element: surface, design: design, x: pts[k].x * 1000, minusCp: -r.cp[i][k], run: run))
+                    out.append(Point(id: out.count, element: surface, design: design, x: pts[k].x * 1000, minusCp: -cp[k]!, run: run))
                 }
             }
         }

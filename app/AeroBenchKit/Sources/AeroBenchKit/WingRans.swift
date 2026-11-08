@@ -193,6 +193,15 @@ public struct WingEstimate: Codable, Equatable, Sendable {
     public func row(nearest alpha: Double) -> Row? {
         rows.min { abs($0.alpha - alpha) < abs($1.alpha - alpha) }
     }
+
+    /// Each element's lift for the live flow to carry: only when this estimate
+    /// was made for `wing` as drawn (`madeFor`), has a row within 0.6° of its
+    /// angle and one entry per element; otherwise nil (the Kutta flow).
+    public func liftTargets(madeFor: Wing?, wing: Wing) -> [Double]? {
+        guard madeFor == wing, let r = row(nearest: wing.alpha), abs(r.alpha - wing.alpha) < 0.6,
+              r.elements.count == wing.elements.count else { return nil }
+        return r.elements.map(\.cl)
+    }
 }
 
 extension WingRansResult {

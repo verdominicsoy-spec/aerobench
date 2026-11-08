@@ -19,7 +19,52 @@ final class LiveFieldValidationTests: XCTestCase {
         let g = try ValidationCase.load("20261106-120151-c003")
         XCTAssertEqual(fieldCp(try XCTUnwrap(preview(g, matched: false).field(nx: 400, wakeCd: g.estimateCdOwn)), g).nearRMS, 0.77, accuracy: 0.15)
     }
+
+    /// With each element's lift the estimate's, the flow round the wing comes to
+    /// RANS's: bands from the spec's prototype, about half again its worst case.
+    func testMatchedLiftBringsTheFlowToRans() throws {
+        for (id, near, outer, p50, p95) in [("20261106-171046-1b32", 0.08, 0.04, 0.015, 0.03),
+                                            ("20261104-173556-baec", 0.08, 0.04, 0.015, 0.03),
+                                            ("20261106-120151-c003", 0.15, 0.07, 0.03, 0.06)] {
+            let (c, s, live) = try matchedFlow(id)
+            XCTAssertTrue(s.liftMatched, id)
+            let f = fieldCp(live, c), e = streamlineError(s, c), mid = surfaceCpMidRMS(s, c)
+            print("matched \(id):", f, e, "surface mid", mid)
+            XCTAssertLessThan(f.nearRMS, near, id)
+            XCTAssertLessThan(f.outerRMS, outer, id)
+            XCTAssertLessThan(e.p50, p50, id)
+            XCTAssertLessThan(e.p95, p95, id)
+            XCTAssertLessThan(mid, id.hasSuffix("c003") ? 0.6 : 0.25, id)
+        }
+    }
+
+    /// At a quarter and a half reference chord behind the last trailing edge the
+    /// wake's centre sits where RANS's does (it ran 0.025–0.12 high on Kutta lift).
+    func testMatchedWakesSitWhereRansPutsThem() throws {
+        for id in allCases {
+            let (c, _, live) = try matchedFlow(id)
+            for x in stations(c) {
+                let l = try XCTUnwrap(wakeMoments(live, x: x)), r = try XCTUnwrap(wakeMoments(c.rans, x: x))
+                print("wake \(id) at x \(x): live", l, "RANS", r)
+                XCTAssertLessThan(abs(l.yc - r.yc) / c.refChord, 0.02, "\(id) at x = \(x)")
+            }
+        }
+    }
 }
+
+let allCases = ["20261106-171046-1b32", "20261104-173556-baec", "20261106-120151-c003"]
+
+/// Each case's lift-matched preview and its live field at the app's size, made
+/// once per test run (a debug build takes about ten seconds a field).
+func matchedFlow(_ id: String) throws -> (ValidationCase, PanelSolution, WingField) {
+    if let done = matchedFlows[id] { return done }
+    let c = try ValidationCase.load(id)
+    let s = preview(c, matched: true)
+    let done = (c, s, try XCTUnwrap(s.field(nx: 400, wakeCd: c.estimateCdOwn)))
+    matchedFlows[id] = done
+    return done
+}
+nonisolated(unsafe) private var matchedFlows: [String: (ValidationCase, PanelSolution, WingField)] = [:]
 
 // MARK: The harness
 
@@ -62,17 +107,22 @@ struct ValidationCase {
     func trailingEdge(_ i: Int) -> SIMD2<Double> { 0.5 * (elements[i][0] + elements[i][elements[i].count - 1]) }
 }
 
-/// The preview as `WingLabModel.recompute()` makes it. Every case has alpha 0,
+/// The preview as `WingLabModel.recompute()` makes it; `matched`: with the
+/// estimate's lift, as when the estimate is of the wing as drawn. Every case has alpha 0,
 /// so the turned ground frame is the wing's.
 func preview(_ c: ValidationCase, matched: Bool) -> PanelSolution {
     precondition(c.alpha == 0, "the harness assumes the wing frame is the flow's")
+    let targets = matched ? c.estimateCl : nil
     if let h = c.rideHeight {
         let ground = c.elements.flatMap { $0 }.map(\.y).min()! - h
-        let image = PanelSolver(elements: c.elements, refChord: c.refChord, ground: ground)!.solve(alphaDeg: 0)
+        let solver = PanelSolver(elements: c.elements, refChord: c.refChord, ground: ground)!
+        if let targets { return solver.solve(alphaDeg: 0, targetCl: targets) }
+        let image = solver.solve(alphaDeg: 0)
         let free = PanelSolver(elements: c.elements, refChord: c.refChord)?.solve(alphaDeg: c.alpha)
         return free.map { image.groundCorrected(free: $0) } ?? image
     }
-    return PanelSolver(elements: c.elements, refChord: c.refChord)!.solve(alphaDeg: c.alpha)
+    let solver = PanelSolver(elements: c.elements, refChord: c.refChord)!
+    return targets.map { solver.solve(alphaDeg: c.alpha, targetCl: $0) } ?? solver.solve(alphaDeg: c.alpha)
 }
 
 /// Field Cp minus RANS's on the RANS grid, where both have flow. "Near": within

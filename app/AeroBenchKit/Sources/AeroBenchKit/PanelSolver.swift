@@ -166,28 +166,82 @@ public final class PanelSolver: @unchecked Sendable {
     }
 
     /// The flow with each element's lift set to `targetCl` instead of by the
-    /// Kutta condition: each element's circulation is prescribed, started from
-    /// the Kutta solution's and scaled three times by target / achieved lift
-    /// (clamped to 0.3...1.5), leaving alone an element whose achieved or target
-    /// lift is within 0.02 of zero (the ratio means nothing there). The Kutta
-    /// solution when the targets do not fit (count, NaN) or the system is singular.
+    /// Kutta condition: each element's circulation is prescribed and found by
+    /// Newton's method (the strengths are linear in the circulations, so each
+    /// try is a sum of k + 1 solutions, not a new solve) until every lift is
+    /// within 0.1% of its target. An element whose target is within 0.02 of zero
+    /// keeps its Kutta circulation (its lift then means nothing to aim at).
+    /// The Kutta solution when the targets do not fit (count, NaN), the system
+    /// is singular, or the lifts cannot be reached within 1%.
     public func solve(alphaDeg: Double, targetCl: [Double]) -> PanelSolution {
         let kutta = solve(alphaDeg: alphaDeg)
-        guard targetCl.count == elements.count, targetCl.allSatisfy(\.isFinite), let f = matchedFactors() else { return kutta }
-        var circulation = (0..<elements.count).map { e in
+        let k = elements.count
+        guard targetCl.count == k, targetCl.allSatisfy(\.isFinite), let f = matchedFactors() else { return kutta }
+        let base = backSolve(alphaDeg: alphaDeg, lu: f.lu, piv: f.piv, circulation: [Double](repeating: 0, count: k))
+        let unit = (0..<k).map { e in
+            var c = [Double](repeating: 0, count: k)
+            c[e] = 1
+            return zip(backSolve(alphaDeg: alphaDeg, lu: f.lu, piv: f.piv, circulation: c), base).map { $0 - $1 }
+        }
+        let flow = { (c: [Double]) -> PanelSolution in
+            var g = base
+            for e in 0..<k { for i in g.indices { g[i] += c[e] * unit[e][i] } }
+            return self.forces(g, alphaDeg: alphaDeg)
+        }
+        var circulation = (0..<k).map { e in
             let pts = elements[e], g = kutta.speed[e]
             return (0..<(pts.count - 1)).reduce(0.0) { $0 + 0.5 * (g[$1] + g[$1 + 1]) * simd_distance(pts[$1], pts[$1 + 1]) }
         }
-        var out = kutta
-        for _ in 0..<3 {
-            for e in circulation.indices where abs(out.cl[e]) > 0.02 && abs(targetCl[e]) > 0.02 {
-                circulation[e] *= min(max(targetCl[e] / out.cl[e], 0.3), 1.5)
+        let aimed = (0..<k).filter { abs(targetCl[$0]) > 0.02 }
+        let miss = { (s: PanelSolution) in aimed.map { (s.cl[$0] - targetCl[$0]) / max(abs(targetCl[$0]), 0.05) } }
+        let size = { (r: [Double]) in r.map(abs).max() ?? 0 }
+        var out = flow(circulation)
+        var r = miss(out)
+        for _ in 0..<20 where size(r) > 1e-3 {
+            // Jacobian of the scaled misses in the aimed circulations, by differences.
+            let h = 1e-6 * max(circulation.map(abs).max() ?? 1, 1e-3)
+            var jac = [[Double]](repeating: [Double](repeating: 0, count: aimed.count), count: aimed.count)
+            for (col, e) in aimed.enumerated() {
+                var c = circulation
+                c[e] += h
+                for (row, d) in miss(flow(c)).enumerated() { jac[row][col] = (d - r[row]) / h }
             }
-            out = forces(backSolve(alphaDeg: alphaDeg, lu: f.lu, piv: f.piv, circulation: circulation), alphaDeg: alphaDeg)
+            guard let step = Self.solveSmall(jac, r.map { -$0 }) else { break }
+            // Halve the step until it helps (the lifts are quadratic in the strengths).
+            var t = 1.0, took = false
+            for _ in 0..<6 {
+                var c = circulation
+                for (i, e) in aimed.enumerated() { c[e] += t * step[i] }
+                let s = flow(c), rs = miss(s)
+                if size(rs) < size(r) { circulation = c; out = s; r = rs; took = true; break }
+                t /= 2
+            }
+            if !took { break }
         }
-        guard out.cl.allSatisfy(\.isFinite), out.cp.allSatisfy({ $0.allSatisfy(\.isFinite) }) else { return kutta }
+        guard size(r) <= 0.01, out.cl.allSatisfy(\.isFinite), out.cp.allSatisfy({ $0.allSatisfy(\.isFinite) }) else { return kutta }
         out.liftMatched = true
         return out
+    }
+
+    /// x with a x = b for a small square system (Gaussian elimination, partial pivoting); nil if singular.
+    private static func solveSmall(_ a: [[Double]], _ b: [Double]) -> [Double]? {
+        var a = a, b = b
+        let n = b.count
+        for c in 0..<n {
+            guard let p = (c..<n).max(by: { abs(a[$0][c]) < abs(a[$1][c]) }), abs(a[p][c]) > 1e-12 else { return nil }
+            a.swapAt(c, p)
+            b.swapAt(c, p)
+            for r in (c + 1)..<n {
+                let m = a[r][c] / a[c][c]
+                for j in c..<n { a[r][j] -= m * a[c][j] }
+                b[r] -= m * b[c]
+            }
+        }
+        var x = [Double](repeating: 0, count: n)
+        for r in stride(from: n - 1, through: 0, by: -1) {
+            x[r] = (b[r] - ((r + 1)..<n).reduce(0) { $0 + a[r][$1] * x[$1] }) / a[r][r]
+        }
+        return x
     }
 
     /// The lift-matched system's factors: each Kutta row replaced by the
@@ -279,6 +333,15 @@ public enum GroundEffect {
 }
 
 extension PanelSolution {
+    /// Element `i`'s Cp for a chart: lift-matched, the nodes within 5% of
+    /// `chord` of its trailing edge are nil (the prescribed circulation is
+    /// singular there); otherwise all of them.
+    public func chartCp(element i: Int, chord: Double) -> [Double?] {
+        guard liftMatched, i < elements.count, let first = elements[i].first, let last = elements[i].last else { return cp[i] }
+        let te = 0.5 * (first + last)
+        return zip(elements[i], cp[i]).map { simd_distance($0, te) < 0.05 * chord ? nil : $1 }
+    }
+
     /// This solution over a ground with each element's lift and moment kept to
     /// the share of the image's gain over `free` (the same wing in free air) that RANS holds.
     public func groundCorrected(free: PanelSolution) -> PanelSolution {

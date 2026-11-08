@@ -93,6 +93,19 @@ final class PanelSolverTests: XCTestCase {
         }
     }
 
+    /// Targets far from the Kutta lift (as the estimate gives a loaded flap):
+    /// each element still lands within 1% (three proportional passes left a flap 20% off in the app).
+    func testFarTargetsAreReachedToo() throws {
+        let s = try mainAndFlap()
+        let k = s.solve(alphaDeg: 0)
+        for f in [(0.75, 0.2), (1.3, 0.5), (0.9, -0.3)] {
+            let target = [f.0 * k.cl[0], f.1 * k.cl[1]]
+            let m = s.solve(alphaDeg: 0, targetCl: target)
+            XCTAssertTrue(m.liftMatched, "\(f)")
+            for (a, t) in zip(m.cl, target) { XCTAssertEqual(a, t, accuracy: 0.01 * abs(t), "\(f): \(m.cl) for \(target)") }
+        }
+    }
+
     func testANearZeroLiftElementKeepsItsCirculation() throws {
         let s = try mainAndFlap()
         let k = s.solve(alphaDeg: 0)
@@ -142,6 +155,41 @@ final class PanelSolverTests: XCTestCase {
         print("matched solve, 805 nodes: \(Int(ms)) ms")
         XCTAssertTrue(m.liftMatched)
         XCTAssertLessThan(ms, 500)  // a debug build; under 15 ms in release
+    }
+
+    private func estimate(_ alpha: Double, _ cls: [Double]) -> WingEstimate {
+        let el = { (cl: Double) in
+            WingEstimate.Element(cl: cl, cd: 0.01, cm: 0, clOwn: cl, cdOwn: 0.01, clInviscidOwn: cl, effectiveAngle: 0, upwash: 0,
+                                 transitionSuction: 0.5, transitionPressure: 0.5, confidence: 1, trusted: true, heldBelowStall: false,
+                                 stallAngle: nil, pastStall: nil, deflection: nil)
+        }
+        return WingEstimate(refChord: 1, rows: [WingEstimate.Row(alpha: alpha, cl: cls.reduce(0, +), cd: 0.02, trusted: true,
+                                                                 separating: nil, why: nil, elements: cls.map(el))], re: [1e6])
+    }
+
+    func testLiftTargetsNeedTheSameWingTheRowAndElementCount() {
+        var wing = twoElement(inverted: false)
+        wing.elements.append(WingElement(airfoil: naca("4412"), chord: 0.2, angle: 35, leadingEdge: SIMD2(1.3, 0.2)))
+        let e = estimate(wing.alpha + 0.4, [1.5, 0.4, 0.2])
+        XCTAssertEqual(e.liftTargets(madeFor: wing, wing: wing), [1.5, 0.4, 0.2])
+        XCTAssertNil(e.liftTargets(madeFor: nil, wing: wing))
+        var moved = wing
+        moved.elements[1].leadingEdge.x += 0.001
+        XCTAssertNil(e.liftTargets(madeFor: wing, wing: moved))  // the estimate is of the wing before the drag
+        XCTAssertNil(estimate(wing.alpha + 3, [1.5, 0.4, 0.2]).liftTargets(madeFor: wing, wing: wing))
+        XCTAssertNil(estimate(wing.alpha, [1.5, 0.4]).liftTargets(madeFor: wing, wing: wing))
+    }
+
+    func testChartCpLeavesOutTheTrailingEdgeOnlyWhenMatched() throws {
+        let s = try XCTUnwrap(PanelSolver(elements: [naca("4412").coords]))
+        let k = s.solve(alphaDeg: 4), m = s.solve(alphaDeg: 4, targetCl: [0.9 * k.cl[0]])
+        XCTAssertEqual(k.chartCp(element: 0, chord: 1), k.cp[0].map { Optional($0) })
+        let chart = m.chartCp(element: 0, chord: 1), pts = m.elements[0]
+        let te = 0.5 * (pts[0] + pts[pts.count - 1])
+        for (p, c) in zip(pts, chart) {
+            if simd_distance(p, te) < 0.05 { XCTAssertNil(c) } else { XCTAssertNotNil(c) }
+        }
+        XCTAssertTrue(chart.contains { $0 == nil })
     }
 
     func testFastEnoughToDrag() throws {

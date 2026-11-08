@@ -197,16 +197,18 @@ struct WingReportView: View {
                 }
             }
         } else if let p = preview, p.cp.count == wing.elements.count {
+            if p.liftMatched { source = "inviscid, lift from the live estimate" }
             for (i, e) in wing.elements.enumerated() {
                 let pts = e.placed()
                 guard pts.count > 1 else { continue }
                 let half = (pts.count - 1) / 2
+                let cp = p.chartCp(element: i, chord: e.chord)  // lift-matched: no trailing-edge spike
                 for (side, ks) in [("u", Array(0...half)), ("l", Array((half + 1)..<pts.count))] {
-                    let ks = ks.filter { $0 < p.cp[i].count }
-                    let runs = CpSpikes.runs(x: ks.map { pts[$0].x * 1000 }, y: ks.map { -p.cp[i][$0] })
+                    let ks = ks.filter { $0 < cp.count && cp[$0] != nil }
+                    let runs = CpSpikes.runs(x: ks.map { pts[$0].x * 1000 }, y: ks.map { -cp[$0]! })
                     for (k, run) in zip(ks, runs) {
                         guard let run else { continue }
-                        points.append(CpPoint(id: points.count, series: "\(i)\(side) \(run)", x: pts[k].x * 1000, minusCp: -p.cp[i][k]))
+                        points.append(CpPoint(id: points.count, series: "\(i)\(side) \(run)", x: pts[k].x * 1000, minusCp: -cp[k]!))
                     }
                 }
             }

@@ -405,10 +405,11 @@ extension AppState {
         Task { @MainActor in
             repeat {
                 lab.liveDirty = false
+                let asked = lab.wing
                 let params = JSONValue.object(estimateParams())
                 do {
                     let data = try await engine.request("wing-estimate", params: params)
-                    lab.estimate = try WingEstimate.decode(resultFile: data)
+                    lab.takeEstimate(try WingEstimate.decode(resultFile: data), madeFor: asked)
                     lab.liveStatus = nil
                 } catch {
                     lab.liveStatus = error.localizedDescription
@@ -552,6 +553,7 @@ extension AppState {
         estimate(for: start) { [weak self] est in
             guard let self, self.wingLab.pinned?.wing == start else { return }
             self.wingLab.pinned?.estimate = est
+            self.wingLab.pinned?.estimateWing = start
         }
     }
 

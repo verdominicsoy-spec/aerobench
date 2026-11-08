@@ -167,7 +167,23 @@ final class WingLabModel {
     var estimateTo = 10.0
     var estimateStep = 1.0
     var estimate: WingEstimate? {
-        didSet { if estimate != oldValue { makeLiveField() } }  // its drag sizes the live field's wakes
+        didSet { if estimate != oldValue { recompute() } }  // its lift sets the preview's, its drag the wakes'
+    }
+    /// The wing `estimate` was made for: the preview takes its lift only while
+    /// that is the wing on the canvas (a drag in flight shows the Kutta flow).
+    private(set) var estimateWing: Wing?
+
+    /// An estimate and the wing it was made for, together.
+    func takeEstimate(_ e: WingEstimate?, madeFor w: Wing?) {
+        let retag = estimateWing != w
+        estimateWing = w
+        if estimate != e { estimate = e } else if retag { recompute() }
+    }
+
+    /// The estimate says an element separates at the wing's angle, which the live flow cannot show.
+    var estimateSeparates: Bool {
+        guard let r = estimate?.row(nearest: wing.alpha), abs(r.alpha - wing.alpha) < 0.6 else { return false }
+        return r.separating == true
     }
     /// Re-run the estimate through the warm engine on every change to the wing: always on.
     let liveEstimate = true
@@ -800,6 +816,7 @@ final class WingLabModel {
         var wing: Wing
         var preview: PanelSolution?
         var estimate: WingEstimate?
+        var estimateWing: Wing?
         var rans: WingRansResult?
         var version = "Your design"
         var field: WingField?
@@ -831,7 +848,7 @@ final class WingLabModel {
     }
 
     private var current: Pinned {
-        Pinned(wing: wing, preview: preview, estimate: estimate, rans: ransIsCurrent ? ransResult : nil, version: shownVersion,
+        Pinned(wing: wing, preview: preview, estimate: estimate, estimateWing: estimateWing, rans: ransIsCurrent ? ransResult : nil, version: shownVersion,
                field: fieldIsCurrent ? ransField : nil)
     }
 
@@ -843,7 +860,7 @@ final class WingLabModel {
         pinned = current
         edit("Swap with A") { $0 = a.wing }
         markOrigin(a.version)
-        estimate = a.estimate
+        takeEstimate(a.estimate, madeFor: a.estimateWing)
         ransResult = a.rans
         ransField = nil
         sweep = nil
@@ -949,15 +966,22 @@ final class WingLabModel {
         }
         defer { traceStreamlines(turn: wing.inGroundEffect == nil ? 0 : wing.alpha) }
         let start = Date()
+        // The estimate's lift per element when it is of this wing: the flow then matches RANS's far better.
+        let targets = estimate?.liftTargets(madeFor: estimateWing, wing: wing)
         if let g = wing.inGroundEffect,
            let solver = PanelSolver(elements: g.elements, refChord: wing.refChord, ground: g.ground) {
-            let image = solver.solve(alphaDeg: 0)  // turned: the flow and the ground run along x
-            // The image's lift gain alone grows without limit near the ground: keep what RANS holds.
-            let free = PanelSolver(elements: wing.elements.map { $0.placed() }, refChord: wing.refChord)?.solve(alphaDeg: wing.alpha)
-            preview = free.map { image.groundCorrected(free: $0) } ?? image
+            // Turned: the flow and the ground run along x.
+            if let targets {
+                preview = solver.solve(alphaDeg: 0, targetCl: targets)
+            } else {
+                let image = solver.solve(alphaDeg: 0)
+                // The image's lift gain alone grows without limit near the ground: keep what RANS holds.
+                let free = PanelSolver(elements: wing.elements.map { $0.placed() }, refChord: wing.refChord)?.solve(alphaDeg: wing.alpha)
+                preview = free.map { image.groundCorrected(free: $0) } ?? image
+            }
             previewError = nil
         } else if wing.rideHeight == nil, let solver = PanelSolver(elements: wing.elements.map { $0.placed() }, refChord: wing.refChord) {
-            preview = solver.solve(alphaDeg: wing.alpha)
+            preview = targets.map { solver.solve(alphaDeg: wing.alpha, targetCl: $0) } ?? solver.solve(alphaDeg: wing.alpha)
             previewError = nil
         } else {
             preview = nil
