@@ -128,8 +128,9 @@ enum Colormap {
 
 /// One element's wake: a Gaussian velocity deficit along the inviscid
 /// streamline off its trailing edge, its momentum deficit θ = Cd c / 2 (the
-/// element's drag), its width growing as the plane turbulent wake's,
-/// half-width 0.3 √(θ s) (Wygnanski, Champagne & Marasli 1986), from a
+/// element's drag), its width growing three times as fast as the plane
+/// turbulent wake's half-width 0.3 √(θ s) (Wygnanski, Champagne & Marasli
+/// 1986), as RANS shows behind a high-lift wing (`sigma`), from a
 /// virtual origin that starts it half θ wide and stopped at its centre, as the
 /// boundary layers leave the trailing edge (one RANS boundary layer reached half
 /// its loss 2 mm off the wall at 60% chord; a 22 θ origin drew 12 mm).
@@ -222,9 +223,12 @@ struct Wake {
     /// Where the traced wake ends.
     var end: SIMD2<Double> { line[line.count - 1] }
 
-    /// σ of the Gaussian: half-width 0.3 √(θ (s + s0)) over √(2 ln 2), with s0 = 4 θ.
+    /// σ of the Gaussian: half-width 0.3 √(θ (3 s + s0)) over √(2 ln 2), with s0 = 4 θ.
+    /// Three times the zero-pressure-gradient law's growth: fitted to six RANS
+    /// wakes behind high-lift wings (mean width error 24%, was 62%; see
+    /// docs/superpowers/specs/2026-11-07-live-field-vs-rans-design.md).
     private static func sigma(_ theta: Double, _ s: Double) -> Double {
-        0.255 * (theta * (s + 4 * theta)).squareRoot()
+        0.255 * (theta * (3 * s + 4 * theta)).squareRoot()
     }
 
     /// The velocity deficit (0 none, 1 stopped) at a point: the surfaces' ahead of the

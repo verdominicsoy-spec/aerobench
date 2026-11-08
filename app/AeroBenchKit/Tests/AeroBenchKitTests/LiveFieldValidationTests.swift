@@ -50,6 +50,23 @@ final class LiveFieldValidationTests: XCTestCase {
             }
         }
     }
+
+    /// Behind a high-lift wing the wakes spread faster than the flat-plate law:
+    /// the mean |ln(live width / RANS width)| over both stations of every case
+    /// (on these three cases 0.31 at the flat-plate rate, 0.16 at three times it).
+    func testWakesSpreadAsRansDoes() throws {
+        var logs: [Double] = []
+        for id in allCases {
+            let (c, _, live) = try matchedFlow(id)
+            for x in stations(c) {
+                let l = try XCTUnwrap(wakeMoments(live, x: x)), r = try XCTUnwrap(wakeMoments(c.rans, x: x))
+                logs.append(abs(log(l.sd / r.sd)))
+            }
+        }
+        let mean = logs.reduce(0, +) / Double(logs.count)
+        print("wake width, mean |ln(live / RANS)|:", mean, logs)
+        XCTAssertLessThan(mean, 0.22)
+    }
 }
 
 let allCases = ["20261106-171046-1b32", "20261104-173556-baec", "20261106-120151-c003"]
@@ -59,8 +76,12 @@ let allCases = ["20261106-171046-1b32", "20261104-173556-baec", "20261106-120151
 func matchedFlow(_ id: String) throws -> (ValidationCase, PanelSolution, WingField) {
     if let done = matchedFlows[id] { return done }
     let c = try ValidationCase.load(id)
+    let start = Date()
     let s = preview(c, matched: true)
+    let solved = Date()
     let done = (c, s, try XCTUnwrap(s.field(nx: 400, wakeCd: c.estimateCdOwn)))
+    print("\(id), \(c.elements.count) elements: solver and matched solve \(Int(solved.timeIntervalSince(start) * 1000)) ms,",
+          "field \(Int(Date().timeIntervalSince(solved) * 1000)) ms")
     matchedFlows[id] = done
     return done
 }
