@@ -222,7 +222,7 @@ the runs the estimate's corrections were fitted to.
      and 60 mm). The only RANS of an optimiser ground pick (30 mm) separated
      with Cd 0.51.
 
-## 5. Recommended guards (not implemented)
+## 5. Recommended guards (1 to 4 and 6 are now in: see After the guards)
 
 1. **Score a margin, not a line.** Give each separation test a soft penalty
    that starts about 2 degrees before the line. For example, take
@@ -254,11 +254,57 @@ the runs the estimate's corrections were fitted to.
    it changes. Today the 22 overnight RANS trials behind the headline
    numbers are gone.
 
+## After the guards
+
+Guards added the same night (engine `wing/optimise.py`, `wing/estimate.py`;
+app Wing Lab). The estimate itself is unchanged.
+
+1. **A margin, not a line.** `optimise.separation_margin` gives an estimate
+   row's degrees to its nearest line: a flap 25 degrees past the element in
+   front or past the main, or a front element 9 degrees past its stall (where
+   its lift stops growing). `optimise.score` takes `MARGIN_COST` x
+   ((2 − margin)/2)² of the load off when the margin is under 2 degrees:
+   nothing from 2 degrees out, half the load on the line, smooth in between.
+   RANS checks have no margin and are scored as before.
+2. **Untrusted rows fail.** `optimise.from_estimate` (the trial's view of an
+   estimate row, used by `commands/wing.py` and `small_study.py`) fails a row
+   NeuralFoil does not trust, like a separating one, with the element and its
+   confidence as the reason.
+3. **Version stamp.** `estimate.VERSION` (1) goes in an estimate study's
+   `spec`. A resume of an estimate study scored by another version, or from
+   before versions, is refused: "start a new study (another name)". So every
+   saved study above must be started again under a new name.
+4. **Efficiency counts induced drag.** With no endplate height,
+   `max_efficiency` adds ClA²/(π b²) to CdA (lifting line on the typed span).
+   The shown CdA is unchanged. `max_ld` is now "Best L/D (2D section)".
+5. **App.** The Study header and results card mark a best no RANS run has held
+   "unconfirmed" (`WingStudy.isConfirmed`), and the Design card's
+   estimate-only finalists read "unconfirmed: estimate only". Study checks the
+   best 3 with RANS by default when SU2 is set up. Without SU2 it runs no
+   checks and says the best is unconfirmed.
+
+`small_study.py` again, same seeds and trials (`small_study_after.json`;
+before: `small_study.json`):
+
+| Problem | Best value before → after | Pick before → after | Margin to the nearest line before → after |
+|---|---|---|---|
+| A: flap + gap, max Cl | 1.933–1.935 → 1.89 | flap 27.92–27.99° → **26.01–26.08°** | deflection 0.01–0.08° → **1.92–1.99°** |
+| B: + main angle | 2.60–2.63 → 2.46–2.47 | main 11.0–11.7°, flap 33.0–36.6° → main 9.9–10.8°, flap 31.1–32.7° | main 9.0–9.6° past stall → **7.1–7.2°**; deflection 2.6–3.9° |
+| C: max L/D | 50.8–58.7 → unchanged | flap 15.0–15.6° (one 22.3°) | unchanged: far from any line, still at the bounds (2D L/D) |
+| D: over a ground | 3.57–3.76 → 2.95–3.18 | main 4.7–11.3°, flap 21.6–24.1° → main 2.1–10.7°, flap 15.4–21.0° | main 11.7–13.0° past stall → **7.0–7.3°** |
+
+Problem A's pick now sits at 26.0 degrees, inside what RANS held (to 28.2;
+RANS's own optimum 26.9, Cl 1.977). The estimate's best Cl falls 2% (A) to
+16% (D), which is the price of staying where the estimate has been checked.
+Separating trials fall too (A: 32–60 to 10–30 of 150). C does not move: the
+margin cannot help a goal whose optimum is a 2D drag artefact at a bound.
+Not re-checked with RANS: whether the new picks for B and D hold.
+
 ## Files
 
 - `common.py`: job and study loading, the estimate call as a trial makes it, flags
 - `saved_studies.py` → `saved_studies.json`: section 2
-- `small_study.py` → `small_study.json`: section 1 (optimiser runs and the problem A grid)
+- `small_study.py` → `small_study.json`: section 1 (optimiser runs and the problem A grid); `small_study_after.json`: the same after the guards
 - `rans_vs_estimate.py` → `rans_vs_estimate.json`: section 3
 
 Run each from `engine/`: `uv run python ../docs/validation/optimiser/<script>.py`.

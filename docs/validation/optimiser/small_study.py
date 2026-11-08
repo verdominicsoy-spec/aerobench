@@ -13,8 +13,8 @@ Problems (inverted wings, free air unless said, 15 m/s, 0 degrees):
   D  NACA 6212 starting wing (design.layout), ride height 30-300 mm, main
      and flap angles free: most downforce over a ground.
 
-    cd engine && uv run python ../docs/validation/optimiser/small_study.py [scratch_dir]
-Writes small_study.json beside this script. Runs no RANS."""
+    cd engine && uv run python ../docs/validation/optimiser/small_study.py [scratch_dir] [out.json]
+Writes small_study.json beside this script (or out.json). Runs no RANS."""
 
 from __future__ import annotations
 
@@ -141,7 +141,8 @@ def main():
     print(f"\ngrid best: flap {top['angle']} deg, gap {top['gap'] * 1000:.0f} mm, Cl {top['load']:.3f}, trusted {top['trusted']}")
     for k, v in cliff.items():
         print(f"  gap {k} mm: highest valid and attached {v['highest_valid_attached_angle']} deg (Cl {v['load_there']:.3f}), best at {v['best_angle']}")
-    (HERE / "small_study.json").write_text(json.dumps({"runs": runs, "grid": g, "grid_best": top, "cliff": cliff},
+    out = Path(sys.argv[2]) if len(sys.argv) > 2 else HERE / "small_study.json"
+    out.write_text(json.dumps({"runs": runs, "grid": g, "grid_best": top, "cliff": cliff},
                                                       indent=1, default=float))
 
 
