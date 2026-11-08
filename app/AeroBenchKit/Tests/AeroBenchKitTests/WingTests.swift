@@ -58,6 +58,92 @@ final class PanelSolverTests: XCTestCase {
         XCTAssertNil(PanelSolver(elements: [Array(c.prefix(4))]))
     }
 
+    // MARK: Lift prescribed per element (the live flow matched to the estimate)
+
+    private func mainAndFlap() throws -> PanelSolver {
+        let main = WingElement(airfoil: naca("6412"), chord: 0.3, angle: 3)
+        let flap = WingElement(airfoil: naca("4412"), chord: 0.12, angle: 20, leadingEdge: main.trailingEdge + SIMD2(-0.01, 0.015))
+        return try XCTUnwrap(PanelSolver(elements: [main.placed(), flap.placed()]))
+    }
+
+    func testTargetsEqualToKuttaLiftChangeNothing() throws {
+        let s = try XCTUnwrap(PanelSolver(elements: [naca("4412").coords]))
+        let k = s.solve(alphaDeg: 5), m = s.solve(alphaDeg: 5, targetCl: k.cl)
+        XCTAssertTrue(m.liftMatched)
+        XCTAssertFalse(k.liftMatched)
+        XCTAssertEqual(m.cl[0], k.cl[0], accuracy: 1e-6)
+        for (a, b) in zip(k.cp[0][10..<150], m.cp[0][10..<150]) { XCTAssertEqual(a, b, accuracy: 1e-4) }
+    }
+
+    func testEachElementReachesItsTargetLift() throws {
+        let s = try mainAndFlap()
+        let k = s.solve(alphaDeg: 0)
+        let target = k.cl.map { 0.8 * $0 }
+        let m = s.solve(alphaDeg: 0, targetCl: target)
+        XCTAssertTrue(m.liftMatched)
+        for (a, t) in zip(m.cl, target) { XCTAssertEqual(a, t, accuracy: 0.02 * abs(t)) }
+        // Still no flow through the surface: at each panel middle the velocity runs along the panel.
+        let v = VortexPanels(m)
+        for e in m.elements {
+            for j in stride(from: 5, to: e.count - 6, by: 7) {
+                let d = simd_normalize(e[j + 1] - e[j]), n = SIMD2(d.y, -d.x)
+                let mid = 0.5 * (e[j] + e[j + 1]) + 1e-4 * n
+                XCTAssertLessThan(abs(simd_dot(v.velocity(at: mid), n)), 0.05)
+            }
+        }
+    }
+
+    func testANearZeroLiftElementKeepsItsCirculation() throws {
+        let s = try mainAndFlap()
+        let k = s.solve(alphaDeg: 0)
+        let m = s.solve(alphaDeg: 0, targetCl: [k.cl[0], 0.001])
+        XCTAssertTrue(m.cl.allSatisfy(\.isFinite) && m.cp.joined().allSatisfy(\.isFinite))
+        XCTAssertEqual(m.cl[1], k.cl[1], accuracy: 0.02)
+    }
+
+    func testMismatchedTargetsGiveTheKuttaSolution() throws {
+        let s = try mainAndFlap()
+        let k = s.solve(alphaDeg: 0)
+        for bad in [[k.cl[0]], [k.cl[0], .nan]] {
+            let m = s.solve(alphaDeg: 0, targetCl: bad)
+            XCTAssertFalse(m.liftMatched)
+            XCTAssertEqual(m.cl, k.cl)
+        }
+    }
+
+    func testTargetsWorkOverTheGround() throws {
+        let main = WingElement(airfoil: naca("6412"), chord: 0.3, angle: 3, inverted: true)
+        let flap = WingElement(airfoil: naca("4412"), chord: 0.12, angle: 20, leadingEdge: main.trailingEdge + SIMD2(-0.01, -0.015), inverted: true)
+        var w = Wing(elements: [main, flap])
+        w.rideHeight = 0.06
+        let g = try XCTUnwrap(w.inGroundEffect)
+        let s = try XCTUnwrap(PanelSolver(elements: g.elements, refChord: w.refChord, ground: g.ground))
+        let k = s.solve(alphaDeg: 0)
+        let target = k.cl.map { 0.7 * $0 }
+        let m = s.solve(alphaDeg: 0, targetCl: target)
+        XCTAssertTrue(m.liftMatched)
+        for (a, t) in zip(m.cl, target) { XCTAssertEqual(a, t, accuracy: 0.02 * abs(t)) }
+    }
+
+    func testTheMatchedSolveIsQuick() throws {
+        // Five elements of 161 nodes, as a big wing in the app.
+        var els: [WingElement] = [WingElement(airfoil: naca("6412"), chord: 0.3, angle: 3)]
+        for i in 1..<5 {
+            els.append(WingElement(airfoil: naca("4412"), chord: 0.1, angle: 3 + 10 * Double(i),
+                                   leadingEdge: els[i - 1].trailingEdge + SIMD2(-0.008, 0.012)))
+        }
+        let pts = els.map { $0.placed() }
+        XCTAssertEqual(pts.map(\.count).reduce(0, +), 805)
+        let s = try XCTUnwrap(PanelSolver(elements: pts))
+        let k = s.solve(alphaDeg: 0)
+        let start = Date()
+        let m = s.solve(alphaDeg: 0, targetCl: k.cl.map { 0.8 * $0 })
+        let ms = Date().timeIntervalSince(start) * 1000
+        print("matched solve, 805 nodes: \(Int(ms)) ms")
+        XCTAssertTrue(m.liftMatched)
+        XCTAssertLessThan(ms, 500)  // a debug build; under 15 ms in release
+    }
+
     func testFastEnoughToDrag() throws {
         let wing = Wing(elements: [
             WingElement(airfoil: naca("4412"), chord: 1.0),

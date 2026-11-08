@@ -1,6 +1,7 @@
 import Accelerate
 import simd
 import Foundation
+import os
 
 /// The inviscid preview's result at one angle of attack, per element.
 public struct PanelSolution: Sendable {
@@ -15,6 +16,10 @@ public struct PanelSolution: Sendable {
     /// so the velocity can be had anywhere; empty for a solution made by hand.
     public var elements: [[SIMD2<Double>]] = []
     public var ground: Double? = nil
+    /// Each element's circulation was set to give the lift asked of it, in place
+    /// of the Kutta condition: the flow is right away from the trailing edges, and
+    /// singular right at them (see `PanelSolver.solve(alphaDeg:targetCl:)`).
+    public var liftMatched = false
 
     public var clTotal: Double { cl.reduce(0, +) }
     public var cmTotal: Double { cm.reduce(0, +) }
@@ -39,6 +44,9 @@ public final class PanelSolver: @unchecked Sendable {
     private let order: Int
     private var factors: [Double]
     private var pivots: [__CLPK_integer]
+    /// The matrix before factorising, for the lift-matched system (built on first use).
+    private let unfactorised: [Double]
+    private let matched = OSAllocatedUnfairLock<(lu: [Double], piv: [__CLPK_integer])??>(initialState: nil)
 
     /// A trailing edge gap below this fraction of chord counts as closed.
     static let sharpFraction = 1e-4
@@ -96,6 +104,7 @@ public final class PanelSolver: @unchecked Sendable {
             a[(m + e) + (st + sz - 1) * n] = 1
         }
         sharp = sharpFlags
+        unfactorised = a
 
         var rows = __CLPK_integer(n), cols = __CLPK_integer(n), lda = __CLPK_integer(n), info = __CLPK_integer(0)
         var piv = [__CLPK_integer](repeating: 0, count: n)
@@ -153,19 +162,84 @@ public final class PanelSolver: @unchecked Sendable {
     }
 
     public func solve(alphaDeg: Double) -> PanelSolution {
+        forces(backSolve(alphaDeg: alphaDeg, lu: factors, piv: pivots, circulation: nil), alphaDeg: alphaDeg)
+    }
+
+    /// The flow with each element's lift set to `targetCl` instead of by the
+    /// Kutta condition: each element's circulation is prescribed, started from
+    /// the Kutta solution's and scaled three times by target / achieved lift
+    /// (clamped to 0.3...1.5), leaving alone an element whose achieved or target
+    /// lift is within 0.02 of zero (the ratio means nothing there). The Kutta
+    /// solution when the targets do not fit (count, NaN) or the system is singular.
+    public func solve(alphaDeg: Double, targetCl: [Double]) -> PanelSolution {
+        let kutta = solve(alphaDeg: alphaDeg)
+        guard targetCl.count == elements.count, targetCl.allSatisfy(\.isFinite), let f = matchedFactors() else { return kutta }
+        var circulation = (0..<elements.count).map { e in
+            let pts = elements[e], g = kutta.speed[e]
+            return (0..<(pts.count - 1)).reduce(0.0) { $0 + 0.5 * (g[$1] + g[$1 + 1]) * simd_distance(pts[$1], pts[$1 + 1]) }
+        }
+        var out = kutta
+        for _ in 0..<3 {
+            for e in circulation.indices where abs(out.cl[e]) > 0.02 && abs(targetCl[e]) > 0.02 {
+                circulation[e] *= min(max(targetCl[e] / out.cl[e], 0.3), 1.5)
+            }
+            out = forces(backSolve(alphaDeg: alphaDeg, lu: f.lu, piv: f.piv, circulation: circulation), alphaDeg: alphaDeg)
+        }
+        guard out.cl.allSatisfy(\.isFinite), out.cp.allSatisfy({ $0.allSatisfy(\.isFinite) }) else { return kutta }
+        out.liftMatched = true
+        return out
+    }
+
+    /// The lift-matched system's factors: each Kutta row replaced by the
+    /// element's circulation, the sum over its panels of half the end strengths
+    /// times the panel's length. Nil if singular.
+    private func matchedFactors() -> (lu: [Double], piv: [__CLPK_integer])? {
+        matched.withLock { state in
+            if let done = state { return done }
+            var a = unfactorised
+            let n = order, m = nodes.count
+            for e in 0..<elements.count {
+                let row = m + e, st = starts[e], pts = elements[e]
+                for c in 0..<n { a[row + c * n] = 0 }
+                for j in 0..<(sizes[e] - 1) {
+                    let h = 0.5 * simd_distance(pts[j], pts[j + 1])
+                    a[row + (st + j) * n] += h
+                    a[row + (st + j + 1) * n] += h
+                }
+            }
+            var rows = __CLPK_integer(n), cols = __CLPK_integer(n), lda = __CLPK_integer(n), info = __CLPK_integer(0)
+            var piv = [__CLPK_integer](repeating: 0, count: n)
+            dgetrf_(&rows, &cols, &a, &lda, &piv, &info)
+            let done: (lu: [Double], piv: [__CLPK_integer])? = info == 0 ? (a, piv) : nil
+            state = .some(done)
+            return done
+        }
+    }
+
+    /// Node strengths then each element's psi: the freestream psi rows, the
+    /// sharp-edge rows, and in each element's last row its circulation (matched)
+    /// or zero (Kutta).
+    private func backSolve(alphaDeg: Double, lu: [Double], piv: [__CLPK_integer], circulation: [Double]?) -> [Double] {
         let al = alphaDeg * Double.pi / 180
         let ca = cos(al), sa = sin(al)
         let m = nodes.count
         var rhs = [Double](repeating: 0, count: order)
         for i in 0..<m { rhs[i] = -(ca * nodes[i].y - sa * nodes[i].x) }  // freestream psi, V = 1
         for (e, isSharp) in sharp.enumerated() where isSharp { rhs[starts[e] + sizes[e] - 1] = 0 }
+        if let circulation { for (e, g) in circulation.enumerated() { rhs[m + e] = g } }
         var nn = __CLPK_integer(order), one = __CLPK_integer(1), lda = __CLPK_integer(order), ldb = __CLPK_integer(order)
         var info = __CLPK_integer(0)
         var trans = Int8(UInt8(ascii: "N"))
-        var lu = factors
-        var piv = pivots
+        var lu = lu
+        var piv = piv
         dgetrs_(&trans, &nn, &one, &lu, &lda, &piv, &rhs, &ldb, &info)
+        return rhs
+    }
 
+    /// Surface speed, Cp and the pressure forces from the solved strengths.
+    private func forces(_ rhs: [Double], alphaDeg: Double) -> PanelSolution {
+        let al = alphaDeg * Double.pi / 180
+        let ca = cos(al), sa = sin(al)
         let wind = SIMD2(ca, sa), liftDir = SIMD2(-sa, ca)
         var speed: [[Double]] = [], cps: [[Double]] = [], cls: [Double] = [], cds: [Double] = [], cms: [Double] = []
         for e in 0..<elements.count {
