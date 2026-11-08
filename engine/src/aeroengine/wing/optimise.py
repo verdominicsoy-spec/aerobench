@@ -25,6 +25,7 @@ import numpy as np
 import optuna
 
 from ..job import EngineError
+from .estimate import FRONT_LIFT_LIMIT, MAX_DEFLECTION
 from .geometry import Variable, Wing, apply
 
 OBJECTIVES = {
@@ -43,6 +44,13 @@ OBJECTIVES = {
 PENALTY = 10.0
 INVALID = 1e6  # what a wing that breaks a constraint scores (negated when maximising)
 SEPARATED_DRAG = 3.0  # a RANS check with more than this times the estimate's drag counts as separated
+# The estimate's lift keeps rising right up to its separation lines, and those
+# lines are where it is least sure (docs/validation/optimiser): every
+# downforce study picked a wing on one, and RANS separated 3 of 6 such picks.
+# So a design within MARGIN degrees of a line loses part of its load, smoothly:
+# none from MARGIN out, MARGIN_COST of it on the line, more past it.
+MARGIN = 2.0
+MARGIN_COST = 0.5
 DISTINCT = 0.05  # of a variable's range: how far apart two checked designs must be in at least one
 
 
@@ -178,10 +186,15 @@ class Spec:
         return "minimize" if self.objective in ("min_cd_cl_target", "min_lap_time") else "maximize"
 
 
-def score(spec: Spec, load: float, cd: float, wing: Wing | None = None) -> tuple[float, bool]:
+def score(spec: Spec, load: float, cd: float, wing: Wing | None = None,
+          margin: float | None = None) -> tuple[float, bool]:
     """The value the sampler sees and whether the trial meets the constraint.
     load is Cl in the working direction: downforce for an inverted wing. The
-    goals in car terms need the trial's wing (its chord and place)."""
+    goals in car terms need the trial's wing (its chord and place). margin:
+    the estimate's degrees to its nearest separation line (separation_margin;
+    None for RANS), which costs load within MARGIN of the line."""
+    if margin is not None and margin < MARGIN:
+        load -= abs(load) * MARGIN_COST * ((MARGIN - margin) / MARGIN) ** 2
     if spec.objective in ("max_cla", "max_efficiency", "max_cla_cda_cap", "balance"):
         if wing is None:
             raise EngineError(f"the {spec.objective} goal scores a wing, not bare coefficients")
@@ -211,6 +224,29 @@ def score(spec: Spec, load: float, cd: float, wing: Wing | None = None) -> tuple
         return load - PENALTY * over, over == 0
     short = max(0.0, 1 - load / spec.cl_target)  # type: ignore[operator]
     return cd * (1 + PENALTY * short), short == 0
+
+
+def separation_margin(row: dict) -> float | None:
+    """Degrees an estimate row has left before the nearest separation line the
+    estimate draws: a flap turned MAX_DEFLECTION past the element in front or
+    past the main, a front element FRONT_LIFT_LIMIT past its stall angle (its
+    lift stops growing there; it separates a few degrees on). Negative past a
+    line; None for a single element (its stall check keeps its own margin)."""
+    els = row["elements"]
+    if len(els) < 2:
+        return None
+    turns = [float(e["deflection"]) for e in els[1:]]
+    left = [MAX_DEFLECTION - t for t in turns] + [MAX_DEFLECTION - t for t in np.cumsum(turns)]
+    left += [FRONT_LIFT_LIMIT - (e["effective_angle"] - e["stall_angle"]) for e in els[:-1]]
+    return float(min(left))
+
+
+def from_estimate(row: dict) -> dict:
+    """What a study trial takes from one estimate row. A separating wing is
+    treated like a RANS run that never settles: failed, and the sampler steers away."""
+    return {"cl": row["cl"], "cd": row["cd"], "cm": sum(e["cm"] for e in row["elements"]),
+            "converged": not row["separating"], "reason": row["why"],
+            "elements": [{"cl": e["cl"]} for e in row["elements"]], "margin": separation_margin(row)}
 
 
 def resolve(spec: Spec, values: dict) -> tuple[dict[str, float], dict[int, np.ndarray], dict[int, str]]:
@@ -333,13 +369,13 @@ def run(base: Wing, spec: Spec, evaluate: Evaluate, storage: Path, name: str, wo
                 load = -res["cl"] if inverted else res["cl"]
                 attrs.update(cl=res["cl"], cd=res["cd"], cm=res.get("cm"), load=load,
                              element_cl=[e.get("cl") for e in res.get("elements", [])],
-                             converged=bool(res["converged"]), iterations=res.get("iterations"),
+                             converged=bool(res["converged"]), iterations=res.get("iterations"), margin=res.get("margin"),
                              cells=(res.get("mesh") or {}).get("cells"))
                 if res.get("scheme", "jst") != "jst":
                     # Its drag is on another scheme's footing: not comparable with the rest.
                     attrs["reason"] = "ran only on the upwind fallback scheme, whose drag is not comparable"
                 elif res["converged"]:
-                    value, feasible = score(spec, load, res["cd"], wing)
+                    value, feasible = score(spec, load, res["cd"], wing, res.get("margin"))
                     attrs["feasible"] = feasible
                     if spec.car is not None:
                         attrs.update(spec.car.numbers(load, res["cd"], wing))
@@ -474,7 +510,7 @@ def summary(study: optuna.Study, spec: Spec) -> dict:
                        **{k: a.get(k) for k in ("cl", "cd", "cm", "load", "element_cl", "feasible", "converged",
                                                 "reason", "placement", "gaps", "overlaps", "chords", "airfoils",
                                                 "seconds", "iterations", "cells", "cla", "cda", "cla_cda",
-                                                "car_cla", "car_cda", "rear_share", "ride_height", "x")}})
+                                                "car_cla", "car_cda", "rear_share", "ride_height", "x", "margin")}})
     good = [t for t in trials if t["state"] == "complete" and t["feasible"]]
     best = None
     if good:
@@ -510,7 +546,7 @@ def check(base: Wing, spec: Spec, storage: Path, name: str, evaluate: Evaluate, 
         if scale == (1.0, 1.0) or t.get("load") is None or t.get("cd") is None:
             return t["value"]
         wing = apply(base, *resolve(spec, t["params"])[:2]) if spec.car is not None else None
-        return score(spec, t["load"] * scale[0], t["cd"] * scale[1], wing)[0]
+        return score(spec, t["load"] * scale[0], t["cd"] * scale[1], wing, t.get("margin"))[0]
 
     good.sort(key=ranked, reverse=spec.direction == "maximize")
     # Distinct designs only: each pick differs from every earlier one by at

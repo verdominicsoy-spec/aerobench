@@ -502,3 +502,53 @@ def test_a_check_that_separates_in_rans_does_not_hold(tmp_path):
     assert first.get("value") is None and first["separated"] and "Main" in first["reason"]
     assert second.get("value") is None and second["separated"] and "drag" in second["reason"]
     assert third["value"] == pytest.approx(1.5) and not third["separated"]
+
+
+def test_a_design_near_a_separation_line_scores_less_smoothly():
+    """Within MARGIN degrees of a line the estimate draws, the load a goal sees
+    falls off smoothly (nothing lost from MARGIN out, MARGIN_COST of it on the line)."""
+    spec = optimise.Spec([Variable(1, "angle", 15, 45)])
+    m = optimise.MARGIN
+    assert optimise.score(spec, 2.0, 0.05, margin=None) == (2.0, True)  # RANS: no margin to keep
+    assert optimise.score(spec, 2.0, 0.05, margin=m + 3)[0] == 2.0
+    assert optimise.score(spec, 2.0, 0.05, margin=m)[0] == 2.0
+    assert optimise.score(spec, 2.0, 0.05, margin=m - 1e-4)[0] == pytest.approx(2.0, abs=1e-6)  # no cliff
+    assert optimise.score(spec, 2.0, 0.05, margin=0.0)[0] == pytest.approx(2.0 * (1 - optimise.MARGIN_COST))
+    values = [optimise.score(spec, 2.0, 0.05, margin=x)[0] for x in np.linspace(-1, m + 1, 30)]
+    assert all(b >= a for a, b in zip(values, values[1:]))
+    # The same load lost for a goal that minimises: a lap with less downforce is slower.
+    target = optimise.Spec([Variable(1, "angle", 15, 45)], objective="min_cd_cl_target", cl_target=2.0)
+    assert optimise.score(target, 2.0, 0.05, margin=0.5)[0] > optimise.score(target, 2.0, 0.05)[0]
+
+
+def test_the_margin_is_to_the_nearest_line():
+    def el(deflection, angle, stall):
+        return {"deflection": deflection, "effective_angle": angle, "stall_angle": stall}
+
+    # Front element 5 past its stall (4 left to the lift limit), the flap 24 past it (1 left).
+    row = {"elements": [el(None, 15.0, 10.0), el(24.0, 3.0, 12.0)]}
+    assert optimise.separation_margin(row) == pytest.approx(1.0)
+    row = {"elements": [el(None, 18.5, 10.0), el(10.0, 3.0, 12.0)]}  # 8.5 past stall: 0.5 left
+    assert optimise.separation_margin(row) == pytest.approx(optimise.FRONT_LIFT_LIMIT - 8.5)
+    # Three elements: each flap within 25 of the one in front, the last 30 past the main.
+    row = {"elements": [el(None, 0.0, 10.0), el(15.0, 0.0, 10.0), el(15.0, 3.0, 12.0)]}
+    assert optimise.separation_margin(row) == pytest.approx(25.0 - 30.0)
+    assert optimise.separation_margin({"elements": [el(None, 3.0, 12.0)]}) is None  # one element: no such line
+
+
+def test_the_estimate_study_keeps_off_the_deflection_line(tmp_path):
+    """The overnight problem by the estimate: lift rises right up to the
+    25 degree deflection line, so without the margin every seed picked a flap
+    within 0.1 degrees of it. With it the pick sits about MARGIN inside."""
+    from aeroengine.wing.estimate import MAX_DEFLECTION, estimate
+
+    def evaluate(wing, folder):
+        els = [{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "chord": e.chord, "angle": e.angle,
+                "inverted": e.inverted} for e in wing.elements]
+        return optimise.from_estimate(estimate(els, [0.0], 15.0)["rows"][0])
+
+    spec = optimise.Spec([Variable(1, "angle", 15, 45)], trials=40, seed=1, solver="estimate")
+    out = optimise.run(_starter(), spec, evaluate, tmp_path / "s.db", "s", tmp_path / "w")
+    best = out["trials"][out["best"]]
+    left = MAX_DEFLECTION - (best["params"]["angle_1"] - 3.0)
+    assert 1.0 < left < 3.0 and best["margin"] == pytest.approx(left, abs=1e-6)

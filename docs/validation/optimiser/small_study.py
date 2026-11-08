@@ -46,10 +46,8 @@ def overnight() -> Wing:
 
 
 def evaluate(wing, folder):
-    """commands/wing.py _study.evaluate_estimate, verbatim in effect."""
-    r = trial_row(wing, FLOW)
-    return {"cl": r["cl"], "cd": r["cd"], "cm": sum(e["cm"] for e in r["elements"]), "converged": not r["separating"],
-            "reason": r["why"], "elements": [{"cl": e["cl"]} for e in r["elements"]]}
+    """commands/wing.py _study.evaluate_estimate, verbatim in effect (it calls the same optimise.from_estimate)."""
+    return optimise.from_estimate(trial_row(wing, FLOW))
 
 
 PROBLEMS = {
