@@ -597,3 +597,26 @@ def test_an_estimate_study_is_not_resumed_on_another_estimate(tmp_path, monkeypa
     optimise.run(_starter(), rans, evaluate, tmp_path / "r.db", "r", tmp_path / "w")
     rans.trials = 3
     assert "estimate_version" not in optimise.run(_starter(), rans, evaluate, tmp_path / "r.db", "r", tmp_path / "w")["spec"]
+
+
+def test_efficiency_without_endplates_counts_induced_drag():
+    """With no endplate height the typed factor scales lift and drag alike, so
+    ClA/CdA would be the section's 2D L/D: the efficiency goal adds the induced
+    drag of a plain wing of that span, ClA^2 / (pi b^2)."""
+    import math
+
+    w = _starter()
+    plain = optimise.CarScore(span=1.0, endplate=None, factor=1.0, ref_chord=None, base=None, axles=None)
+    spec = optimise.Spec([Variable(1, "angle", 15, 45)], objective="max_efficiency", car=plain)
+    n = plain.numbers(2.0, 0.04, w)
+    assert n["cla_cda"] == pytest.approx(2.0 / 0.04)  # the shown numbers stay the app's
+    value, _ = optimise.score(spec, 2.0, 0.04, w)
+    assert value == pytest.approx(n["cla"] / (n["cda"] + n["cla"] ** 2 / math.pi))
+    # Same 2D L/D, twice the load: it pays for it in induced drag.
+    assert optimise.score(spec, 2.0, 0.04, w)[0] < optimise.score(spec, 1.0, 0.02, w)[0]
+    # With endplates the lifting-line induced drag is already in CdA: nothing more.
+    plated = optimise.CarScore(span=1.0, endplate=0.25, factor=1.0, ref_chord=None, base=None, axles=None)
+    spec = optimise.Spec([Variable(1, "angle", 15, 45)], objective="max_efficiency", car=plated)
+    n = plated.numbers(2.0, 0.04, w)
+    assert optimise.score(spec, 2.0, 0.04, w)[0] == pytest.approx(n["cla_cda"])
+    assert "2D" in optimise.OBJECTIVES["max_ld"]

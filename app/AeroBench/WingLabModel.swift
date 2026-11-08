@@ -344,7 +344,7 @@ final class WingLabModel {
         var title: String {
             switch self {
             case .maxCl: "Most downforce"
-            case .maxLD: "Best L/D"
+            case .maxLD: "Best L/D (2D section)"
             case .maxClCdCap: "Most downforce, Cd capped"
             case .minCdClTarget: "Least drag for a downforce"
             case .minLapTime: "Fastest lap"

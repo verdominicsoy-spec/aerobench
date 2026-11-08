@@ -35,7 +35,7 @@ OBJECTIVES = {
     "max_cla_cda_cap": "Most downforce under a drag limit",
     "balance": "Hit an aero balance",
     "max_cl": "Most downforce (lift, upright)",
-    "max_ld": "Best L/D",
+    "max_ld": "Best L/D (2D section)",
     "max_cl_cd_cap": "Most downforce under a drag cap",
     "min_cd_cl_target": "Least drag for a downforce target",
     "min_lap_time": "Fastest lap",
@@ -207,6 +207,10 @@ def score(spec: Spec, load: float, cd: float, wing: Wing | None = None,
             return cla, True
         if spec.objective == "max_efficiency":
             total, drag = n.get("car_cla", cla), n.get("car_cda", n["cda"])
+            if car.endplate is None:  # type: ignore[union-attr]
+                # The typed factor scales lift and drag alike, which leaves the 2D L/D:
+                # add a plain wing's induced drag, CL^2 / (pi AR) on span x chord = ClA^2 / (pi b^2).
+                drag += cla**2 / (np.pi * car.span**2)  # type: ignore[union-attr]
             return total / max(drag, 1e-9), True
         if spec.objective == "max_cla_cda_cap":
             over = max(0.0, n.get("car_cda", n["cda"]) / car.cda_cap - 1)  # type: ignore[union-attr,operator]
