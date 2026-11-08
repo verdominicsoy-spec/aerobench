@@ -596,6 +596,13 @@ final class WingStudyCheckTests: XCTestCase {
         XCTAssertEqual(s.checks?[0].estimateValue, 1.95)
         XCTAssertEqual(s.bestCheck?.number, 9)  // RANS disagrees with the estimate's order
         XCTAssertNil(s.checks?[2].value)
+        // Only a design RANS held is confirmed; one it failed or never ran is the estimate's alone.
+        XCTAssertTrue(s.isConfirmed(9))
+        XCTAssertFalse(s.isConfirmed(2))
+        XCTAssertFalse(s.isConfirmed(7))
+        var rans = s
+        rans.solver = "rans"
+        XCTAssertTrue(rans.isConfirmed(7))  // every trial of a RANS study is a RANS result
     }
 }
 

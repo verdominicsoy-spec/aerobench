@@ -362,8 +362,9 @@ final class WingLabModel {
         var studyName = "study-1"
         /// Each trial a quick estimate (seconds) or a RANS run (minutes).
         var solver = "estimate"
-        /// After a quick-estimate study, run this many of the best designs with RANS (0: none).
-        var checkBest = 0
+        /// After a quick-estimate study, run this many of the best designs with RANS (0: none;
+        /// none either without SU2). On by default: the estimate's best sits on its separation lines.
+        var checkBest = 3
         /// Stop the RANS checks at the first design RANS confirms (the rest are fallbacks).
         var untilPass = true
         /// When the study ends, put its best on the canvas (RANS's pick if it checked any).
@@ -397,7 +398,8 @@ final class WingLabModel {
         }
 
         /// Whether this set-up needs SU2 to run.
-        var needsSU2: Bool { solver == "rans" || checkBest > 0 }
+        /// (The RANS checks are skipped without it: the best is then marked unconfirmed.)
+        var needsSU2: Bool { solver == "rans" }
     }
 
     var optimise = OptimiseSetup() {

@@ -320,7 +320,7 @@ extension AppState {
         params["trials"] = .int(setup.trials)
         params["parallel"] = .int(settings.parallelTrials)
         params["solver"] = .string(setup.solver)
-        params["check"] = .int(setup.solver == "estimate" ? setup.checkBest : 0)
+        params["check"] = .int(setup.solver == "estimate" && settings.su2Executable != nil ? setup.checkBest : 0)
         // Stop checking once RANS confirms a design (the next is only a fallback).
         // No calibration run: the check measures the estimate on the wing that
         // matters, and waiting for it cost a minute without changing the pick.

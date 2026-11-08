@@ -111,7 +111,7 @@ struct DesignCard: View {
     }
 
     private func verdict(_ f: WingDesignResult.Finalist) -> String {
-        guard let v = f.rans else { return "estimate only" }
+        guard let v = f.rans else { return "unconfirmed: estimate only" }
         if f.held { return "held in RANS" }
         if v.separated == true { return "separated" }
         return v.converged == false ? "did not converge" : "did not hold"

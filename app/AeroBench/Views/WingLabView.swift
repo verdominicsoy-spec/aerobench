@@ -1579,6 +1579,8 @@ struct WingInspector: View {
         }
         if lab.optimise.needsSU2 && app.settings.su2Executable == nil {
             Text("RANS needs SU2: install it under Solvers, RANS CFD.").font(.caption).foregroundStyle(S37.C.clayInk)
+        } else if lab.optimise.solver == "estimate" && lab.optimise.checkBest > 0 && app.settings.su2Executable == nil {
+            Text("No SU2: no RANS check, so the best is the estimate's, unconfirmed.").font(.caption).foregroundStyle(S37.C.clayInk)
         }
         LabeledContent("Study name") {
             TextField("name", text: Binding(get: { lab.optimise.studyName }, set: { lab.optimise.studyName = $0 }))
@@ -1803,6 +1805,10 @@ struct StudyResults: View {
             Spacer()
             if let b = s.bestTrial, let v = b.value {
                 Text(String(format: "best: trial %ld, %.4g", b.number, v)).font(.caption.monospacedDigit())
+                if !s.isConfirmed(b.number) {
+                    Text("unconfirmed").font(.caption).foregroundStyle(S37.C.clayInk)
+                        .help("The estimate's alone: no RANS run has held it. Its picks sit near its separation lines, where RANS has separated half of them.")
+                }
                 Button("Load Best") { lab.load(trial: b) }.font(.caption)
                 Button("Compare Start and Best") { app.compareStartAndBest() }.font(.caption)
                     .help("Start as A (dashed), best as B, so every chart shows what the study changed")
@@ -2228,7 +2234,9 @@ struct ResultsSummary: View {
                      warn: estimate.map { !$0.trusted || $0.separating == true } ?? false, lab: lab)
                 if let s = lab.study, let b = s.bestTrial, let v = b.value {
                     card("Study best", tab: .study, lines: [String(format: "trial %ld: %.4g", b.number, v),
-                                                            "\(s.complete + s.failed) of \(s.target) run"], lab: lab)
+                                                            "\(s.complete + s.failed) of \(s.target) run"
+                                                                + (s.isConfirmed(b.number) ? "" : ", unconfirmed")],
+                         warn: !s.isConfirmed(b.number), lab: lab)
                 }
                 let advice = rans.map { app.meshAdvice($0) }
                 card("RANS CFD", tab: .cfd,

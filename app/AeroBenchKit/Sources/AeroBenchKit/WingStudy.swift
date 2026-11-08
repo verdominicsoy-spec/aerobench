@@ -149,6 +149,12 @@ public struct WingStudy: Codable, Equatable, Sendable {
         return direction == "minimize" ? ok.min { $0.value! < $1.value! } : ok.max { $0.value! < $1.value! }
     }
 
+    /// Whether RANS stands behind a trial: a RANS study's own result, or an
+    /// estimate trial whose RANS check held. Otherwise it is the estimate's alone.
+    public func isConfirmed(_ number: Int) -> Bool {
+        solver == "rans" || (checks ?? []).contains { $0.number == number && $0.value != nil && $0.feasible != false }
+    }
+
     /// Dictionary keys like "angle_1" must not be touched, so no snake case
     /// strategy: the keys are spelled out above.
     public static func decode(exportFile data: Data) throws -> WingStudy {
