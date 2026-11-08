@@ -212,6 +212,18 @@ final class PanelSolverTests: XCTestCase {
         XCTAssertNil(estimate(wing.alpha, [1.5, 0.4]).liftTargets(madeFor: wing, wing: wing))
     }
 
+    /// The live field cannot draw a separated element: the row says so, or an element's
+    /// own drag is past an attached one's (0.15; the 50° main in the app drew 0.36 unflagged).
+    func testTheLiveFieldKnowsWhatItCannotShow() {
+        var row = estimate(0, [1.5, 0.4]).rows[0]
+        XCTAssertFalse(row.liveFieldCannotShow)
+        row.elements[1].cdOwn = 0.36
+        XCTAssertTrue(row.liveFieldCannotShow)
+        row.elements[1].cdOwn = 0.01
+        row.separating = true
+        XCTAssertTrue(row.liveFieldCannotShow)
+    }
+
     func testChartCpLeavesOutTheTrailingEdgeOnlyWhenMatched() throws {
         let s = try XCTUnwrap(PanelSolver(elements: [naca("4412").coords]))
         let k = s.solve(alphaDeg: 4), m = s.solve(alphaDeg: 4, targetCl: [0.9 * k.cl[0]])

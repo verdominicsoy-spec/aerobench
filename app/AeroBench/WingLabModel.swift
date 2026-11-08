@@ -197,7 +197,7 @@ final class WingLabModel {
     /// The estimate says an element separates at the wing's angle, which the live flow cannot show.
     var estimateSeparates: Bool {
         guard let r = estimate?.row(nearest: wing.alpha), abs(r.alpha - wing.alpha) < 0.6 else { return false }
-        return r.separating == true
+        return r.liveFieldCannotShow
     }
     /// Re-run the estimate through the warm engine on every change to the wing: always on.
     let liveEstimate = true

@@ -176,6 +176,12 @@ public struct WingEstimate: Codable, Equatable, Sendable {
         public var elements: [Element]
 
         public var id: Double { alpha }
+
+        /// The live field cannot draw this row's flow: an element separates, by the
+        /// estimate's word or by its own drag past an attached element's.
+        public var liveFieldCannotShow: Bool {
+            separating == true || elements.contains { $0.cdOwn > PanelSolution.attachedCdLimit }
+        }
     }
 
     public var refChord: Double

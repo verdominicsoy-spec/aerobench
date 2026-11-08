@@ -51,9 +51,9 @@ final class LiveFieldValidationTests: XCTestCase {
         }
     }
 
-    /// Behind a high-lift wing the wakes spread faster than the flat-plate law:
-    /// the mean |ln(live width / RANS width)| over both stations of every case
-    /// (on these three cases 0.31 at the flat-plate rate, 0.16 at three times it).
+    /// The wakes spread as RANS's: the mean |ln(live width / RANS width)| over both
+    /// stations of every case (0.18 with the plane wake law from the narrowest
+    /// Gaussian that carries θ; 0.38 growing three times as fast).
     func testWakesSpreadAsRansDoes() throws {
         var logs: [Double] = []
         for id in allCases {
