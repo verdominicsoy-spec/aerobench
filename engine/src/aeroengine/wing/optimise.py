@@ -26,7 +26,7 @@ import optuna
 
 from ..job import EngineError
 from .estimate import FRONT_LIFT_LIMIT, MAX_DEFLECTION
-from .geometry import Variable, Wing, apply
+from .geometry import Variable, Wing, apply, label
 
 OBJECTIVES = {
     "max_cla": "Most downforce (ClA)",
@@ -243,9 +243,14 @@ def separation_margin(row: dict) -> float | None:
 
 def from_estimate(row: dict) -> dict:
     """What a study trial takes from one estimate row. A separating wing is
-    treated like a RANS run that never settles: failed, and the sampler steers away."""
+    treated like a RANS run that never settles: failed, and the sampler steers
+    away. So is one NeuralFoil does not trust: such answers won studies and
+    RANS then separated them (docs/validation/optimiser)."""
+    why = [row["why"]] if row["why"] else []
+    why += [f"the estimate is not trusted here: NeuralFoil's confidence on {label(i)} is {e['confidence']:.2f}"
+            for i, e in enumerate(row["elements"]) if not e["trusted"]]
     return {"cl": row["cl"], "cd": row["cd"], "cm": sum(e["cm"] for e in row["elements"]),
-            "converged": not row["separating"], "reason": row["why"],
+            "converged": not row["separating"] and row["trusted"], "reason": "; ".join(why) or None,
             "elements": [{"cl": e["cl"]} for e in row["elements"]], "margin": separation_margin(row)}
 
 

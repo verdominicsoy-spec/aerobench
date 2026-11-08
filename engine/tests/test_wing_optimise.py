@@ -552,3 +552,21 @@ def test_the_estimate_study_keeps_off_the_deflection_line(tmp_path):
     best = out["trials"][out["best"]]
     left = MAX_DEFLECTION - (best["params"]["angle_1"] - 3.0)
     assert 1.0 < left < 3.0 and best["margin"] == pytest.approx(left, abs=1e-6)
+
+
+def test_an_untrusted_estimate_fails_its_trial_with_the_reason():
+    def el(confidence):
+        return {"cl": -1.0, "cd": 0.02, "cm": -0.1, "deflection": None, "effective_angle": 3.0, "stall_angle": 12.0,
+                "confidence": confidence, "trusted": confidence >= 0.8}
+
+    row = {"cl": -2.0, "cd": 0.04, "separating": False, "why": None, "elements": [el(0.95), el(0.95)], "trusted": True}
+    row["elements"][1]["deflection"] = 10.0
+    assert optimise.from_estimate(row)["converged"]
+    row["elements"][0].update(confidence=0.72, trusted=False)
+    row["trusted"] = False
+    res = optimise.from_estimate(row)
+    assert not res["converged"] and "Main" in res["reason"] and "0.72" in res["reason"] and "trust" in res["reason"]
+    # Separating and untrusted: both reasons.
+    row.update(separating=True, why="Flap 1 is turned 26.0° past the main: it separates")
+    res = optimise.from_estimate(row)
+    assert not res["converged"] and "separates" in res["reason"] and "0.72" in res["reason"]
