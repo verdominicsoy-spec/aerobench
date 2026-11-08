@@ -1,0 +1,3064 @@
+[
+ {
+  "study": "design-1",
+  "objective": "max_cl",
+  "trials": 335,
+  "states": {
+   "complete": 223,
+   "fail": 112
+  },
+  "variables": [
+   "angle_0",
+   "angle_1",
+   "gap_1",
+   "overlap_1",
+   "angle_2",
+   "gap_2",
+   "overlap_2",
+   "chord_0",
+   "chord_1",
+   "chord_2",
+   "airfoil_0",
+   "airfoil_1",
+   "airfoil_2"
+  ],
+  "designs": [
+   {
+    "number": 314,
+    "value": 2.901147063154384,
+    "cl_stored": -2.901147063154384,
+    "cd_stored": 0.09912576813292687,
+    "cl_rebuilt": -2.901147063154384,
+    "cd_rebuilt": 0.09912576813292687,
+    "reproduced": true,
+    "angles": [
+     6.27,
+     19.17,
+     30.75
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/goe523",
+     "1": "uiuc/goe652",
+     "2": "uiuc/fx74modsm"
+    },
+    "at_bounds": [
+     "chord_1=high"
+    ],
+    "cl_cd": 29.267335000763563,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.7181025565339618,
+    "deflection_margin": 0.5214201584656024,
+    "front_past_stall": 10.007981968036603,
+    "front_held": true,
+    "why_untrusted": [
+     2
+    ]
+   },
+   {
+    "number": 283,
+    "value": 2.8857717876660662,
+    "cl_stored": -2.8857717876660662,
+    "cd_stored": 0.10926811988657158,
+    "cl_rebuilt": -2.8857717876660662,
+    "cd_rebuilt": 0.10926811988657158,
+    "reproduced": true,
+    "angles": [
+     7.62,
+     19.67,
+     31.38
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/goe523",
+     "1": "uiuc/goe652",
+     "2": "uiuc/fx74modsm"
+    },
+    "at_bounds": [],
+    "cl_cd": 26.410006785709424,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.7068704183833499,
+    "deflection_margin": 1.2435456440608306,
+    "front_past_stall": 11.207022212123299,
+    "front_held": true,
+    "why_untrusted": [
+     2
+    ]
+   },
+   {
+    "number": 325,
+    "value": 2.885159883040133,
+    "cl_stored": -2.885159883040133,
+    "cd_stored": 0.09262332567542397,
+    "cl_rebuilt": -2.885159883040133,
+    "cd_rebuilt": 0.09262332567542397,
+    "reproduced": true,
+    "angles": [
+     5.72,
+     19.35,
+     28.65
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/goe523",
+     "1": "uiuc/goe652",
+     "2": "uiuc/fx74modsm"
+    },
+    "at_bounds": [],
+    "cl_cd": 31.14938771633484,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.7249988398143783,
+    "deflection_margin": 2.076939059599404,
+    "front_past_stall": 9.083584086474708,
+    "front_held": true,
+    "why_untrusted": [
+     2
+    ]
+   },
+   {
+    "number": 262,
+    "value": 2.878604667213789,
+    "cl_stored": -2.878604667213789,
+    "cd_stored": 0.11774821249226329,
+    "cl_rebuilt": -2.878604667213789,
+    "cd_rebuilt": 0.11774821249226329,
+    "reproduced": true,
+    "angles": [
+     8.38,
+     20.47,
+     31.76
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/goe523",
+     "1": "uiuc/goe652",
+     "2": "uiuc/fx74modsm"
+    },
+    "at_bounds": [
+     "gap_1=low",
+     "chord_0=high"
+    ],
+    "cl_cd": 24.447119886452025,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.6915848242739834,
+    "deflection_margin": 1.6225561895776366,
+    "front_past_stall": 12.099354820795341,
+    "front_held": true,
+    "why_untrusted": [
+     2
+    ]
+   },
+   {
+    "number": 249,
+    "value": 2.8743637097355643,
+    "cl_stored": -2.8743637097355643,
+    "cd_stored": 0.11210069730342163,
+    "cl_rebuilt": -2.8743637097355643,
+    "cd_rebuilt": 0.11210069730342163,
+    "reproduced": true,
+    "angles": [
+     9.13,
+     17.53,
+     33.57
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/goe523",
+     "1": "uiuc/fx74modsm",
+     "2": "uiuc/fx74modsm"
+    },
+    "at_bounds": [
+     "chord_0=high"
+    ],
+    "cl_cd": 25.640908387532665,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.6976327569515508,
+    "deflection_margin": 0.5570976076733345,
+    "front_past_stall": 11.515990744885862,
+    "front_held": true,
+    "why_untrusted": [
+     2
+    ]
+   }
+  ],
+  "job": "20261103-103355-0d87"
+ },
+ {
+  "study": "design-10",
+  "objective": "max_cla",
+  "trials": 289,
+  "states": {
+   "complete": 115,
+   "invalid": 89,
+   "fail": 85
+  },
+  "variables": [
+   "angle_0",
+   "angle_1",
+   "gap_1",
+   "overlap_1",
+   "angle_2",
+   "gap_2",
+   "overlap_2",
+   "angle_3",
+   "gap_3",
+   "overlap_3",
+   "angle_4",
+   "gap_4",
+   "overlap_4",
+   "chord_0",
+   "chord_1",
+   "chord_2",
+   "chord_3",
+   "chord_4",
+   "xfrac_0",
+   "yfrac_0",
+   "airfoil_0",
+   "airfoil_1",
+   "airfoil_2",
+   "airfoil_3",
+   "airfoil_4"
+  ],
+  "designs": [
+   {
+    "number": 280,
+    "value": 1.095283157710363,
+    "cl_stored": -2.5540306161854165,
+    "cd_stored": 0.05441860332325259,
+    "cl_rebuilt": -2.5540306161854165,
+    "cd_rebuilt": 0.05441860332325259,
+    "reproduced": true,
+    "angles": [
+     0.2,
+     4.18,
+     19.18,
+     16.73,
+     24.57
+    ],
+    "ride_height": 0.710669626115428,
+    "airfoils": {
+     "0": "uiuc/s1223",
+     "1": "uiuc/s1223",
+     "2": "uiuc/goe523",
+     "3": "uiuc/s1223",
+     "4": "uiuc/goe652"
+    },
+    "at_bounds": [],
+    "cl_cd": 46.933042382844505,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.6993632524812562,
+    "deflection_margin": 0.623730323648914,
+    "front_past_stall": 11.456559846382259,
+    "front_held": true,
+    "why_untrusted": [
+     4
+    ]
+   },
+   {
+    "number": 255,
+    "value": 1.0850680878910273,
+    "cl_stored": -2.5233886698994,
+    "cd_stored": 0.055045780138939716,
+    "cl_rebuilt": -2.5233886698994,
+    "cd_rebuilt": 0.055045780138939716,
+    "reproduced": true,
+    "angles": [
+     0.2,
+     3.67,
+     19.29,
+     16.72,
+     25.03
+    ],
+    "ride_height": 0.7216011080533302,
+    "airfoils": {
+     "0": "uiuc/s1223",
+     "1": "uiuc/s1223",
+     "2": "uiuc/goe523",
+     "3": "uiuc/s1223rtl",
+     "4": "uiuc/goe652"
+    },
+    "at_bounds": [],
+    "cl_cd": 45.84163697072103,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.6995293620078028,
+    "deflection_margin": 0.17167224279904403,
+    "front_past_stall": 11.791677771784705,
+    "front_held": true,
+    "why_untrusted": [
+     4
+    ]
+   },
+   {
+    "number": 263,
+    "value": 1.084686972580943,
+    "cl_stored": -2.5216386097399774,
+    "cd_stored": 0.054279324429841805,
+    "cl_rebuilt": -2.5216386097399774,
+    "cd_rebuilt": 0.054279324429841805,
+    "reproduced": true,
+    "angles": [
+     0.15,
+     3.91,
+     19.85,
+     17.02,
+     24.46
+    ],
+    "ride_height": 0.7181347962625597,
+    "airfoils": {
+     "0": "uiuc/s1223",
+     "1": "uiuc/s1223",
+     "2": "uiuc/goe523",
+     "3": "uiuc/s1223",
+     "4": "uiuc/goe652"
+    },
+    "at_bounds": [],
+    "cl_cd": 46.45670586779863,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.7151201161096002,
+    "deflection_margin": 0.6852562021054638,
+    "front_past_stall": 11.463963818309466,
+    "front_held": true,
+    "why_untrusted": [
+     4
+    ]
+   },
+   {
+    "number": 265,
+    "value": 1.0838595906765869,
+    "cl_stored": -2.521714693072438,
+    "cd_stored": 0.050270986735501226,
+    "cl_rebuilt": -2.521714693072438,
+    "cd_rebuilt": 0.050270986735501226,
+    "reproduced": true,
+    "angles": [
+     -0.06,
+     4.16,
+     19.74,
+     16.45,
+     24.36
+    ],
+    "ride_height": 0.714068812382037,
+    "airfoils": {
+     "0": "uiuc/s1223",
+     "1": "uiuc/s1223",
+     "2": "uiuc/goe523",
+     "3": "uiuc/s1221-4deg-flap",
+     "4": "uiuc/goe652"
+    },
+    "at_bounds": [],
+    "cl_cd": 50.16242681569666,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.6626756921371996,
+    "deflection_margin": 0.581313833652878,
+    "front_past_stall": 10.236757467503132,
+    "front_held": true,
+    "why_untrusted": [
+     4
+    ]
+   },
+   {
+    "number": 271,
+    "value": 1.0827374843069133,
+    "cl_stored": -2.5157856523327684,
+    "cd_stored": 0.05524595604326234,
+    "cl_rebuilt": -2.5157856523327684,
+    "cd_rebuilt": 0.05524595604326234,
+    "reproduced": true,
+    "angles": [
+     0.02,
+     4.66,
+     20.26,
+     15.72,
+     24.96
+    ],
+    "ride_height": 0.7100064980929557,
+    "airfoils": {
+     "0": "uiuc/s1223",
+     "1": "uiuc/s1223",
+     "2": "uiuc/goe523",
+     "3": "uiuc/s1223",
+     "4": "uiuc/goe652"
+    },
+    "at_bounds": [],
+    "cl_cd": 45.53791503513292,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.7015186391529321,
+    "deflection_margin": 0.06066901826594773,
+    "front_past_stall": 11.708807241640365,
+    "front_held": true,
+    "why_untrusted": [
+     3,
+     4
+    ]
+   }
+  ],
+  "job": "20261106-115348-5f65"
+ },
+ {
+  "study": "design-11",
+  "objective": "max_efficiency",
+  "trials": 745,
+  "states": {
+   "complete": 480,
+   "fail": 20,
+   "invalid": 245
+  },
+  "variables": [
+   "angle_0",
+   "angle_1",
+   "gap_1",
+   "overlap_1",
+   "angle_2",
+   "gap_2",
+   "overlap_2",
+   "chord_0",
+   "chord_1",
+   "chord_2",
+   "xfrac_0",
+   "yfrac_0",
+   "airfoil_0",
+   "airfoil_1",
+   "airfoil_2"
+  ],
+  "designs": [
+   {
+    "number": 729,
+    "value": 125.8941824948927,
+    "cl_stored": -2.700242287386527,
+    "cd_stored": 0.02144850726121575,
+    "cl_rebuilt": -2.700242287386527,
+    "cd_rebuilt": 0.02144850726121575,
+    "reproduced": true,
+    "angles": [
+     6.12,
+     2.42,
+     14.92
+    ],
+    "ride_height": 0.15052568386545248,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe523",
+     "2": "uiuc/goe226"
+    },
+    "at_bounds": [],
+    "cl_cd": 125.8941824948927,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9561934990895614,
+    "deflection_margin": 12.495604262013485,
+    "front_past_stall": 1.3508717906398715,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 599,
+    "value": 124.45282372305705,
+    "cl_stored": -2.6353923160485966,
+    "cd_stored": 0.021175833839761602,
+    "cl_rebuilt": -2.6353923160485966,
+    "cd_rebuilt": 0.021175833839761602,
+    "reproduced": true,
+    "angles": [
+     6.68,
+     2.05,
+     13.67
+    ],
+    "ride_height": 0.14913711467234766,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe523",
+     "2": "uiuc/goe226"
+    },
+    "at_bounds": [
+     "angle_1=low"
+    ],
+    "cl_cd": 124.45282372305704,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9575385800610151,
+    "deflection_margin": 13.382350487035474,
+    "front_past_stall": 0.9129391913955267,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 664,
+    "value": 124.27309839677123,
+    "cl_stored": -2.706598726375265,
+    "cd_stored": 0.02177944190088356,
+    "cl_rebuilt": -2.706598726375265,
+    "cd_rebuilt": 0.02177944190088356,
+    "reproduced": true,
+    "angles": [
+     6.88,
+     2.55,
+     14.75
+    ],
+    "ride_height": 0.14076368643342171,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe523",
+     "2": "uiuc/goe226"
+    },
+    "at_bounds": [],
+    "cl_cd": 124.27309839677123,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9575220473532712,
+    "deflection_margin": 12.79972955614188,
+    "front_past_stall": 1.4033415242794973,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 519,
+    "value": 123.63338546980852,
+    "cl_stored": -2.7789548335021017,
+    "cd_stored": 0.022477382002782147,
+    "cl_rebuilt": -2.7789548335021017,
+    "cd_rebuilt": 0.022477382002782147,
+    "reproduced": true,
+    "angles": [
+     8.57,
+     2.9,
+     13.74
+    ],
+    "ride_height": 0.13811997098053522,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/fx73cl2152",
+     "2": "uiuc/goe226"
+    },
+    "at_bounds": [],
+    "cl_cd": 123.63338546980852,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9623228400606927,
+    "deflection_margin": 14.160366422678576,
+    "front_past_stall": 1.89988059632587,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 672,
+    "value": 123.1803052399834,
+    "cl_stored": -2.5894683905861053,
+    "cd_stored": 0.021021772803219062,
+    "cl_rebuilt": -2.5894683905861053,
+    "cd_rebuilt": 0.021021772803219062,
+    "reproduced": true,
+    "angles": [
+     5.86,
+     2.85,
+     13.17
+    ],
+    "ride_height": 0.15467716091084685,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe523",
+     "2": "uiuc/goe226"
+    },
+    "at_bounds": [],
+    "cl_cd": 123.1803052399834,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9527506810736472,
+    "deflection_margin": 14.68252844957891,
+    "front_past_stall": 0.11463092273815079,
+    "front_held": true,
+    "why_untrusted": []
+   }
+  ],
+  "job": "20261106-124840-5fd8"
+ },
+ {
+  "study": "design-12",
+  "objective": "max_cla",
+  "trials": 687,
+  "states": {
+   "complete": 269,
+   "invalid": 187,
+   "fail": 231
+  },
+  "variables": [
+   "angle_0",
+   "angle_1",
+   "gap_1",
+   "overlap_1",
+   "angle_2",
+   "gap_2",
+   "overlap_2",
+   "chord_0",
+   "chord_1",
+   "chord_2",
+   "xfrac_0",
+   "yfrac_0",
+   "airfoil_0",
+   "airfoil_1",
+   "airfoil_2"
+  ],
+  "designs": [
+   {
+    "number": 455,
+    "value": 2.707532317863467,
+    "cl_stored": -3.748128648454403,
+    "cd_stored": 0.07364180328938218,
+    "cl_rebuilt": -3.748128648454403,
+    "cd_rebuilt": 0.07364180328938218,
+    "reproduced": true,
+    "angles": [
+     6.51,
+     8.8,
+     30.92
+    ],
+    "ride_height": 0.16115870529159818,
+    "airfoils": {
+     "0": "uiuc/s1223",
+     "1": "uiuc/fx74modsm",
+     "2": "uiuc/s1221-4deg-flap"
+    },
+    "at_bounds": [
+     "yfrac_0=high"
+    ],
+    "cl_cd": 50.896752673556755,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9475714743433639,
+    "deflection_margin": 0.592747008104805,
+    "front_past_stall": 12.916706344273145,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 622,
+    "value": 2.7072429819322354,
+    "cl_stored": -3.747728110929616,
+    "cd_stored": 0.07592947426115,
+    "cl_rebuilt": -3.747728110929616,
+    "cd_rebuilt": 0.07592947426115,
+    "reproduced": true,
+    "angles": [
+     6.98,
+     9.13,
+     31.44
+    ],
+    "ride_height": 0.1604868037450002,
+    "airfoils": {
+     "0": "uiuc/s1223",
+     "1": "uiuc/fx74modsm",
+     "2": "uiuc/s1221-4deg-flap"
+    },
+    "at_bounds": [],
+    "cl_cd": 49.35801475511039,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9336053696273309,
+    "deflection_margin": 0.5361184702600852,
+    "front_past_stall": 12.82725394057416,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 565,
+    "value": 2.692445575927971,
+    "cl_stored": -3.727243560846328,
+    "cd_stored": 0.0789415287322212,
+    "cl_rebuilt": -3.727243560846328,
+    "cd_rebuilt": 0.0789415287322212,
+    "reproduced": true,
+    "angles": [
+     6.46,
+     9.15,
+     30.43
+    ],
+    "ride_height": 0.15252393282583016,
+    "airfoils": {
+     "0": "uiuc/s1223",
+     "1": "uiuc/fx74modsm",
+     "2": "uiuc/s1221-4deg-flap"
+    },
+    "at_bounds": [],
+    "cl_cd": 47.21524425362435,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9263709394206483,
+    "deflection_margin": 1.028120242077108,
+    "front_past_stall": 12.984507372758191,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 603,
+    "value": 2.6921850906274587,
+    "cl_stored": -3.726882962226356,
+    "cd_stored": 0.07707070634151418,
+    "cl_rebuilt": -3.726882962226356,
+    "cd_rebuilt": 0.07707070634151418,
+    "reproduced": true,
+    "angles": [
+     6.39,
+     9.76,
+     31.04
+    ],
+    "ride_height": 0.15297472599971149,
+    "airfoils": {
+     "0": "uiuc/s1223",
+     "1": "uiuc/fx74modsm",
+     "2": "uiuc/s1221-4deg-flap"
+    },
+    "at_bounds": [],
+    "cl_cd": 48.356673230836456,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9355431021934972,
+    "deflection_margin": 0.35095007901373876,
+    "front_past_stall": 12.503070513101271,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 636,
+    "value": 2.688508798837289,
+    "cl_stored": -3.721793747043992,
+    "cd_stored": 0.06919610313822847,
+    "cl_rebuilt": -3.721793747043992,
+    "cd_rebuilt": 0.06919610313822847,
+    "reproduced": true,
+    "angles": [
+     7.8,
+     9.9,
+     31.87
+    ],
+    "ride_height": 0.15694984508099122,
+    "airfoils": {
+     "0": "uiuc/s1223",
+     "1": "uiuc/fx74modsm",
+     "2": "uiuc/s1221-4deg-flap"
+    },
+    "at_bounds": [
+     "yfrac_0=high"
+    ],
+    "cl_cd": 53.786175496172255,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9145620940284772,
+    "deflection_margin": 0.9360095416056389,
+    "front_past_stall": 11.88204442773662,
+    "front_held": true,
+    "why_untrusted": []
+   }
+  ],
+  "job": "20261106-125107-384f"
+ },
+ {
+  "study": "design-13",
+  "objective": "max_efficiency",
+  "trials": 1906,
+  "states": {
+   "complete": 952,
+   "invalid": 906,
+   "fail": 48
+  },
+  "variables": [
+   "angle_0",
+   "angle_1",
+   "gap_1",
+   "overlap_1",
+   "chord_0",
+   "chord_1",
+   "xfrac_0",
+   "yfrac_0",
+   "airfoil_0",
+   "airfoil_1"
+  ],
+  "designs": [
+   {
+    "number": 1733,
+    "value": 178.3621302935554,
+    "cl_stored": -2.941980473715308,
+    "cd_stored": 0.016494423277369923,
+    "cl_rebuilt": -2.941980473715308,
+    "cd_rebuilt": 0.016494423277369923,
+    "reproduced": true,
+    "angles": [
+     6.57,
+     12.0
+    ],
+    "ride_height": 0.18123381020625245,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe523"
+    },
+    "at_bounds": [
+     "angle_1=low",
+     "chord_1=low"
+    ],
+    "cl_cd": 178.36213029355542,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9658539398213214,
+    "deflection_margin": 19.56558993172647,
+    "front_past_stall": -0.6281437280801025,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 1639,
+    "value": 178.2676194313158,
+    "cl_stored": -3.026835405820344,
+    "cd_stored": 0.016979165456273704,
+    "cl_rebuilt": -3.026835405820344,
+    "cd_rebuilt": 0.016979165456273704,
+    "reproduced": true,
+    "angles": [
+     6.58,
+     12.8
+    ],
+    "ride_height": 0.18806835462107957,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe523"
+    },
+    "at_bounds": [
+     "chord_1=low"
+    ],
+    "cl_cd": 178.2676194313158,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9658106188680347,
+    "deflection_margin": 18.78074753592406,
+    "front_past_stall": -0.20807581606794834,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 1905,
+    "value": 177.67391116179465,
+    "cl_stored": -2.973720934025624,
+    "cd_stored": 0.016736958817311527,
+    "cl_rebuilt": -2.973720934025624,
+    "cd_rebuilt": 0.016736958817311527,
+    "reproduced": true,
+    "angles": [
+     6.4,
+     12.62
+    ],
+    "ride_height": 0.19401611153205434,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe523"
+    },
+    "at_bounds": [
+     "chord_1=low"
+    ],
+    "cl_cd": 177.67391116179465,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9659837101375729,
+    "deflection_margin": 18.775939521015985,
+    "front_past_stall": -0.42328864640787955,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 1405,
+    "value": 176.91881168947052,
+    "cl_stored": -2.85648662729134,
+    "cd_stored": 0.016145748436887937,
+    "cl_rebuilt": -2.85648662729134,
+    "cd_rebuilt": 0.016145748436887937,
+    "reproduced": true,
+    "angles": [
+     5.74,
+     12.01
+    ],
+    "ride_height": 0.18938422881776765,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe523"
+    },
+    "at_bounds": [
+     "angle_1=low",
+     "chord_1=low",
+     "xfrac_0=low"
+    ],
+    "cl_cd": 176.91881168947052,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9661323249291562,
+    "deflection_margin": 18.73124296137718,
+    "front_past_stall": -1.1699767604975015,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 1314,
+    "value": 176.91323421373048,
+    "cl_stored": -2.827364105711209,
+    "cd_stored": 0.01598164274299256,
+    "cl_rebuilt": -2.827364105711209,
+    "cd_rebuilt": 0.01598164274299256,
+    "reproduced": true,
+    "angles": [
+     4.96,
+     12.01
+    ],
+    "ride_height": 0.18994466966196738,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe523"
+    },
+    "at_bounds": [
+     "angle_1=low",
+     "chord_1=low"
+    ],
+    "cl_cd": 176.91323421373048,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9658730179149834,
+    "deflection_margin": 17.945010245626285,
+    "front_past_stall": -1.7702020693379055,
+    "front_held": true,
+    "why_untrusted": []
+   }
+  ],
+  "job": "20261106-164841-c953"
+ },
+ {
+  "study": "design-2",
+  "objective": "min_lap_time",
+  "trials": 335,
+  "states": {
+   "fail": 64,
+   "complete": 271
+  },
+  "variables": [
+   "angle_0",
+   "angle_1",
+   "gap_1",
+   "overlap_1",
+   "angle_2",
+   "gap_2",
+   "overlap_2",
+   "chord_0",
+   "chord_1",
+   "chord_2",
+   "airfoil_0",
+   "airfoil_1",
+   "airfoil_2"
+  ],
+  "designs": [
+   {
+    "number": 332,
+    "value": 69.94420187386133,
+    "cl_stored": -2.495137388911713,
+    "cd_stored": 0.07753283802335838,
+    "cl_rebuilt": -2.495137388911713,
+    "cd_rebuilt": 0.07753283802335838,
+    "reproduced": true,
+    "angles": [
+     4.62,
+     18.95,
+     29.46
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/goe525",
+     "1": "uiuc/goe652",
+     "2": "uiuc/fx74modsm"
+    },
+    "at_bounds": [],
+    "cl_cd": 32.18168523845343,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.7297500004794552,
+    "deflection_margin": 0.16311126245946994,
+    "front_past_stall": 9.072603986305264,
+    "front_held": true,
+    "why_untrusted": [
+     2
+    ]
+   },
+   {
+    "number": 227,
+    "value": 69.94922405553582,
+    "cl_stored": -2.481520205776817,
+    "cd_stored": 0.07695252024113955,
+    "cl_rebuilt": -2.481520205776817,
+    "cd_rebuilt": 0.07695252024113955,
+    "reproduced": true,
+    "angles": [
+     5.45,
+     17.03,
+     30.31
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/goe523",
+     "1": "uiuc/goe652",
+     "2": "uiuc/fx74modsm"
+    },
+    "at_bounds": [
+     "overlap_1=low"
+    ],
+    "cl_cd": 32.24741955170135,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.7441312646333329,
+    "deflection_margin": 0.1421307044830833,
+    "front_past_stall": 9.192727235707139,
+    "front_held": true,
+    "why_untrusted": [
+     2
+    ]
+   },
+   {
+    "number": 269,
+    "value": 69.94936547680977,
+    "cl_stored": -2.4817448071470345,
+    "cd_stored": 0.07835228108055875,
+    "cl_rebuilt": -2.4817448071470345,
+    "cd_rebuilt": 0.07835228108055875,
+    "reproduced": true,
+    "angles": [
+     6.43,
+     16.8,
+     29.33
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/goe523",
+     "1": "uiuc/goe652",
+     "2": "uiuc/fx74modsm"
+    },
+    "at_bounds": [
+     "overlap_1=low",
+     "chord_0=high",
+     "chord_1=high"
+    ],
+    "cl_cd": 31.674187055197557,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.743032063397124,
+    "deflection_margin": 2.0933843157340917,
+    "front_past_stall": 9.313143318051992,
+    "front_held": true,
+    "why_untrusted": [
+     2
+    ]
+   },
+   {
+    "number": 287,
+    "value": 69.95121239501448,
+    "cl_stored": -2.476488861930572,
+    "cd_stored": 0.07755532228950023,
+    "cl_rebuilt": -2.476488861930572,
+    "cd_rebuilt": 0.07755532228950023,
+    "reproduced": true,
+    "angles": [
+     6.21,
+     17.7,
+     28.19
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/goe523",
+     "1": "uiuc/goe652",
+     "2": "uiuc/fx74modsm"
+    },
+    "at_bounds": [
+     "chord_0=high",
+     "chord_1=high"
+    ],
+    "cl_cd": 31.93190085248153,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.7411781548907406,
+    "deflection_margin": 3.0254100679594806,
+    "front_past_stall": 9.128162656742575,
+    "front_held": true,
+    "why_untrusted": [
+     2
+    ]
+   },
+   {
+    "number": 324,
+    "value": 69.95188960488723,
+    "cl_stored": -2.474397744549997,
+    "cd_stored": 0.07687945790443257,
+    "cl_rebuilt": -2.474397744549997,
+    "cd_rebuilt": 0.07687945790443257,
+    "reproduced": true,
+    "angles": [
+     5.57,
+     17.83,
+     28.74
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/goe525",
+     "1": "uiuc/goe652",
+     "2": "uiuc/fx74modsm"
+    },
+    "at_bounds": [],
+    "cl_cd": 32.185421333561884,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.7363481567010458,
+    "deflection_margin": 1.8366767345761588,
+    "front_past_stall": 9.040091875837074,
+    "front_held": true,
+    "why_untrusted": [
+     2
+    ]
+   }
+  ],
+  "job": "20261103-103558-46f5"
+ },
+ {
+  "study": "design-3",
+  "objective": "min_lap_time",
+  "trials": 596,
+  "states": {
+   "complete": 481,
+   "fail": 94,
+   "invalid": 21
+  },
+  "variables": [
+   "angle_0",
+   "angle_1",
+   "gap_1",
+   "overlap_1",
+   "angle_2",
+   "gap_2",
+   "overlap_2",
+   "angle_3",
+   "gap_3",
+   "overlap_3",
+   "angle_4",
+   "gap_4",
+   "overlap_4",
+   "chord_0",
+   "chord_1",
+   "chord_2",
+   "chord_3",
+   "chord_4",
+   "airfoil_0",
+   "airfoil_1",
+   "airfoil_2",
+   "airfoil_3",
+   "airfoil_4"
+  ],
+  "designs": [
+   {
+    "number": 581,
+    "value": 54.6635784882256,
+    "cl_stored": -2.402207768696056,
+    "cd_stored": 0.0807865983852117,
+    "cl_rebuilt": -2.402207768696056,
+    "cd_rebuilt": 0.0807865983852117,
+    "reproduced": true,
+    "angles": [
+     4.32,
+     14.2,
+     19.32,
+     19.46,
+     28.67
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/goe652",
+     "1": "uiuc/goe225",
+     "2": "uiuc/30p-30n-flap",
+     "3": "uiuc/fx73cl2152",
+     "4": "uiuc/fx73cl2152"
+    },
+    "at_bounds": [],
+    "cl_cd": 29.73522609829045,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.8269318794356381,
+    "deflection_margin": 0.6561606346106963,
+    "front_past_stall": 10.191979526732826,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 489,
+    "value": 54.67112147868089,
+    "cl_stored": -2.3761969980555215,
+    "cd_stored": 0.08705986709728351,
+    "cl_rebuilt": -2.3761969980555215,
+    "cd_rebuilt": 0.08705986709728351,
+    "reproduced": true,
+    "angles": [
+     4.22,
+     15.1,
+     24.15,
+     17.12,
+     28.39
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/goe652",
+     "1": "uiuc/goe225",
+     "2": "uiuc/30p-30n-flap",
+     "3": "uiuc/fx73cl2152",
+     "4": "uiuc/fx73cl2152"
+    },
+    "at_bounds": [],
+    "cl_cd": 27.293827538241956,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.8377488177795275,
+    "deflection_margin": 0.8336842554885138,
+    "front_past_stall": 9.695948256089338,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 582,
+    "value": 54.67172944750626,
+    "cl_stored": -2.376020924560032,
+    "cd_stored": 0.09052965766977576,
+    "cl_rebuilt": -2.376020924560032,
+    "cd_rebuilt": 0.09052965766977576,
+    "reproduced": true,
+    "angles": [
+     4.22,
+     15.2,
+     22.52,
+     19.77,
+     28.69
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/goe652",
+     "1": "uiuc/goe225",
+     "2": "uiuc/30p-30n-flap",
+     "3": "uiuc/fx73cl2152",
+     "4": "uiuc/fx73cl2152"
+    },
+    "at_bounds": [],
+    "cl_cd": 26.24577387917474,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.7916957091106346,
+    "deflection_margin": 0.5311946824070013,
+    "front_past_stall": 11.265798023644798,
+    "front_held": true,
+    "why_untrusted": [
+     3,
+     4
+    ]
+   },
+   {
+    "number": 583,
+    "value": 54.67323861413344,
+    "cl_stored": -2.3659689937704216,
+    "cd_stored": 0.08426363950012283,
+    "cl_rebuilt": -2.3659689937704216,
+    "cd_rebuilt": 0.08426363950012283,
+    "reproduced": true,
+    "angles": [
+     4.34,
+     16.87,
+     15.01,
+     19.95,
+     28.7
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/goe652",
+     "1": "uiuc/goe225",
+     "2": "uiuc/30p-30n-flap",
+     "3": "uiuc/fx73cl2152",
+     "4": "uiuc/fx73cl2152"
+    },
+    "at_bounds": [],
+    "cl_cd": 28.07817236243365,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.8730545768364383,
+    "deflection_margin": 0.6385326708025438,
+    "front_past_stall": 10.531158829657457,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 488,
+    "value": 54.67324474249292,
+    "cl_stored": -2.366058980818451,
+    "cd_stored": 0.08444061170497513,
+    "cl_rebuilt": -2.366058980818451,
+    "cd_rebuilt": 0.08444061170497513,
+    "reproduced": true,
+    "angles": [
+     4.27,
+     15.18,
+     24.17,
+     16.58,
+     28.4
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/goe652",
+     "1": "uiuc/goe225",
+     "2": "uiuc/30p-30n-flap",
+     "3": "uiuc/fx63137",
+     "4": "uiuc/fx73cl2152"
+    },
+    "at_bounds": [],
+    "cl_cd": 28.020391290924838,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.6412481123811232,
+    "deflection_margin": 0.8721360168480601,
+    "front_past_stall": 9.620856084187615,
+    "front_held": true,
+    "why_untrusted": [
+     3
+    ]
+   }
+  ],
+  "job": "20261103-172550-8756"
+ },
+ {
+  "study": "design-4",
+  "objective": "max_cl",
+  "trials": 2003,
+  "states": {
+   "complete": 848,
+   "invalid": 1003,
+   "fail": 152
+  },
+  "variables": [
+   "angle_0",
+   "angle_1",
+   "gap_1",
+   "overlap_1",
+   "angle_2",
+   "gap_2",
+   "overlap_2",
+   "chord_0",
+   "chord_1",
+   "chord_2",
+   "airfoil_0",
+   "airfoil_1",
+   "airfoil_2"
+  ],
+  "designs": [
+   {
+    "number": 1223,
+    "value": 2.5019413313656704,
+    "cl_stored": -2.5019413313656704,
+    "cd_stored": 0.04958578496211926,
+    "cl_rebuilt": -2.13372227372402,
+    "cd_rebuilt": 0.04228807946374376,
+    "reproduced": false,
+    "angles": [
+     -3.85,
+     21.06,
+     19.81
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/fx74modsm",
+     "2": "uiuc/fx74modsm"
+    },
+    "at_bounds": [
+     "angle_0=low"
+    ],
+    "cl_cd": 50.45682615010679,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.800723679851637,
+    "deflection_margin": 0.08433770731776136,
+    "front_past_stall": 3.294485614006053,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 1965,
+    "value": 2.4907166308237656,
+    "cl_stored": -2.4907166308237656,
+    "cd_stored": 0.052070293485093386,
+    "cl_rebuilt": -2.124149549799361,
+    "cd_rebuilt": 0.04440693457305558,
+    "reproduced": false,
+    "angles": [
+     -4.0,
+     20.94,
+     20.82
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe523",
+     "2": "uiuc/fx74modsm"
+    },
+    "at_bounds": [
+     "angle_0=low",
+     "gap_2=low"
+    ],
+    "cl_cd": 47.833735208739526,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.7953824724436731,
+    "deflection_margin": 0.06174219244351775,
+    "front_past_stall": 3.9231140203973123,
+    "front_held": true,
+    "why_untrusted": [
+     2
+    ]
+   },
+   {
+    "number": 1449,
+    "value": 2.476441766867048,
+    "cl_stored": -2.476441766867048,
+    "cd_stored": 0.06047436956724957,
+    "cl_rebuilt": -2.111975565230354,
+    "cd_rebuilt": 0.05157415472423964,
+    "reproduced": false,
+    "angles": [
+     -3.99,
+     20.7,
+     20.98
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe523",
+     "2": "uiuc/s1223"
+    },
+    "at_bounds": [
+     "angle_0=low",
+     "overlap_1=low"
+    ],
+    "cl_cd": 40.95027008242433,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.8238161227519546,
+    "deflection_margin": 0.024111370582392766,
+    "front_past_stall": 4.355125707450085,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 1579,
+    "value": 2.4732310888911933,
+    "cl_stored": -2.4732310888911933,
+    "cd_stored": 0.05953931611747091,
+    "cl_rebuilt": -2.1092374134544567,
+    "cd_rebuilt": 0.05077671621221096,
+    "reproduced": false,
+    "angles": [
+     -3.47,
+     19.27,
+     20.29
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe525",
+     "2": "uiuc/s1223"
+    },
+    "at_bounds": [
+     "overlap_1=low",
+     "chord_0=high"
+    ],
+    "cl_cd": 41.53946081584575,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.813529698145937,
+    "deflection_margin": 1.2426515729509937,
+    "front_past_stall": 3.8418352127834865,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 1830,
+    "value": 2.4728204777335874,
+    "cl_stored": -2.4728204777335874,
+    "cd_stored": 0.058470060770353854,
+    "cl_rebuilt": -2.108887233346454,
+    "cd_rebuilt": 0.04986482674381861,
+    "reproduced": false,
+    "angles": [
+     -3.98,
+     20.0,
+     20.91
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe523",
+     "2": "uiuc/s1223"
+    },
+    "at_bounds": [
+     "angle_0=low",
+     "chord_0=high"
+    ],
+    "cl_cd": 42.2920798297545,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.8303751553330908,
+    "deflection_margin": 0.10522055692002397,
+    "front_past_stall": 3.8288212519517018,
+    "front_held": true,
+    "why_untrusted": []
+   }
+  ],
+  "job": "20261104-173323-a019"
+ },
+ {
+  "study": "design-5",
+  "objective": "max_cl",
+  "trials": 531,
+  "states": {
+   "complete": 303,
+   "fail": 61,
+   "invalid": 167
+  },
+  "variables": [
+   "angle_0",
+   "angle_1",
+   "gap_1",
+   "overlap_1",
+   "angle_2",
+   "gap_2",
+   "overlap_2",
+   "chord_0",
+   "chord_1",
+   "chord_2",
+   "airfoil_0",
+   "airfoil_1",
+   "airfoil_2"
+  ],
+  "designs": [],
+  "note": "no finished job found for this study file and objective"
+ },
+ {
+  "study": "design-6",
+  "objective": "max_cl",
+  "trials": 1001,
+  "states": {
+   "complete": 761,
+   "fail": 239,
+   "invalid": 1
+  },
+  "variables": [
+   "angle_0",
+   "angle_1",
+   "gap_1",
+   "overlap_1",
+   "angle_2",
+   "gap_2",
+   "overlap_2",
+   "chord_0",
+   "chord_1",
+   "chord_2",
+   "airfoil_0",
+   "airfoil_1",
+   "airfoil_2"
+  ],
+  "designs": [
+   {
+    "number": 777,
+    "value": 2.5190772072987873,
+    "cl_stored": -2.5190772072987873,
+    "cd_stored": 0.0408975100128611,
+    "cl_rebuilt": -2.5190772072987873,
+    "cd_rebuilt": 0.0408975100128611,
+    "reproduced": true,
+    "angles": [
+     3.96,
+     11.89,
+     28.49
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/fx74modsm",
+     "2": "uiuc/s1221-4deg-flap"
+    },
+    "at_bounds": [
+     "chord_0=high"
+    ],
+    "cl_cd": 61.59487965175898,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9784415547925808,
+    "deflection_margin": 0.4709392224922482,
+    "front_past_stall": 9.445703081720431,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 912,
+    "value": 2.5178663974221314,
+    "cl_stored": -2.5178663974221314,
+    "cd_stored": 0.04148583304553917,
+    "cl_rebuilt": -2.5178663974221314,
+    "cd_rebuilt": 0.04148583304553917,
+    "reproduced": true,
+    "angles": [
+     3.0,
+     14.29,
+     26.67
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/fx74modsm",
+     "2": "uiuc/goe234"
+    },
+    "at_bounds": [],
+    "cl_cd": 60.69219809707712,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9583448743380205,
+    "deflection_margin": 1.329759290919224,
+    "front_past_stall": 9.048839140890092,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 831,
+    "value": 2.514844274189042,
+    "cl_stored": -2.514844274189042,
+    "cd_stored": 0.04187041835395286,
+    "cl_rebuilt": -2.514844274189042,
+    "cd_rebuilt": 0.04187041835395286,
+    "reproduced": true,
+    "angles": [
+     3.23,
+     14.3,
+     28.03
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/fx74modsm",
+     "2": "uiuc/s1221-4deg-flap"
+    },
+    "at_bounds": [
+     "chord_0=high",
+     "chord_2=high"
+    ],
+    "cl_cd": 60.0625542579902,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9784086085708281,
+    "deflection_margin": 0.2014238885265165,
+    "front_past_stall": 9.71735270856179,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 928,
+    "value": 2.5147527960181213,
+    "cl_stored": -2.5147527960181213,
+    "cd_stored": 0.04237327879637888,
+    "cl_rebuilt": -2.5147527960181213,
+    "cd_rebuilt": 0.04237327879637888,
+    "reproduced": true,
+    "angles": [
+     3.11,
+     15.74,
+     25.67
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/fx74modsm",
+     "2": "uiuc/goe234"
+    },
+    "at_bounds": [
+     "gap_2=high",
+     "chord_0=high",
+     "chord_2=high"
+    ],
+    "cl_cd": 59.34760932951514,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9579303183500194,
+    "deflection_margin": 2.443108976356342,
+    "front_past_stall": 9.329895207183018,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 906,
+    "value": 2.5140153591738135,
+    "cl_stored": -2.5140153591738135,
+    "cd_stored": 0.041859008980415426,
+    "cl_rebuilt": -2.5140153591738135,
+    "cd_rebuilt": 0.041859008980415426,
+    "reproduced": true,
+    "angles": [
+     3.96,
+     13.03,
+     27.35
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/fx74modsm",
+     "2": "uiuc/goe234"
+    },
+    "at_bounds": [
+     "chord_0=high"
+    ],
+    "cl_cd": 60.05912276494758,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9590193479693552,
+    "deflection_margin": 1.6099344201598171,
+    "front_past_stall": 9.216571122099637,
+    "front_held": true,
+    "why_untrusted": []
+   }
+  ],
+  "job": "20261104-173431-4295"
+ },
+ {
+  "study": "design-7",
+  "objective": "max_cl",
+  "trials": 529,
+  "states": {
+   "complete": 365,
+   "invalid": 29,
+   "fail": 135
+  },
+  "variables": [
+   "angle_0",
+   "angle_1",
+   "gap_1",
+   "overlap_1",
+   "chord_0",
+   "chord_1"
+  ],
+  "designs": [
+   {
+    "number": 448,
+    "value": 19.47251780732801,
+    "cl_stored": -19.47251780732801,
+    "cd_stored": 0.06963281065408901,
+    "cl_rebuilt": -2.006278923521361,
+    "cd_rebuilt": 0.06963281065408901,
+    "reproduced": false,
+    "angles": [
+     11.61,
+     31.92
+    ],
+    "ride_height": 0.03,
+    "airfoils": null,
+    "at_bounds": [
+     "chord_0=high"
+    ],
+    "cl_cd": 28.812263998473938,
+    "separating": true,
+    "trusted": true,
+    "min_confidence": 0.9478194608657942,
+    "deflection_margin": 4.692721526218591,
+    "front_past_stall": 12.808272842175455,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 395,
+    "value": 19.455899233902265,
+    "cl_stored": -19.455899233902265,
+    "cd_stored": 0.06868999168726345,
+    "cl_rebuilt": -1.9937485368007892,
+    "cd_rebuilt": 0.06868999168726345,
+    "reproduced": false,
+    "angles": [
+     11.69,
+     32.29
+    ],
+    "ride_height": 0.03,
+    "airfoils": null,
+    "at_bounds": [
+     "chord_0=high"
+    ],
+    "cl_cd": 29.025313409238215,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9478171741771654,
+    "deflection_margin": 4.403854854290465,
+    "front_past_stall": 12.712563969893537,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 365,
+    "value": 19.440735827319795,
+    "cl_stored": -19.440735827319795,
+    "cd_stored": 0.06611316540392365,
+    "cl_rebuilt": -2.002165099187397,
+    "cd_rebuilt": 0.06611316540392365,
+    "reproduced": false,
+    "angles": [
+     11.64,
+     31.86
+    ],
+    "ride_height": 0.03,
+    "airfoils": null,
+    "at_bounds": [
+     "chord_0=high"
+    ],
+    "cl_cd": 30.28390921770286,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9478291104367406,
+    "deflection_margin": 4.776142744275727,
+    "front_past_stall": 12.18891636078654,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 271,
+    "value": 19.423670219795646,
+    "cl_stored": -19.423670219795646,
+    "cd_stored": 0.06503808235384242,
+    "cl_rebuilt": -1.9564294739703987,
+    "cd_rebuilt": 0.06503808235384242,
+    "reproduced": false,
+    "angles": [
+     12.0,
+     36.2
+    ],
+    "ride_height": 0.03,
+    "airfoils": null,
+    "at_bounds": [
+     "angle_0=high",
+     "chord_0=high"
+    ],
+    "cl_cd": 30.08129088625894,
+    "separating": true,
+    "trusted": true,
+    "min_confidence": 0.9478219555599364,
+    "deflection_margin": 0.7999661598763623,
+    "front_past_stall": 12.166731383396424,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 450,
+    "value": 19.420300387275944,
+    "cl_stored": -19.420300387275944,
+    "cd_stored": 0.06240579114681707,
+    "cl_rebuilt": -2.0183376975573872,
+    "cd_rebuilt": 0.06240579114681707,
+    "reproduced": false,
+    "angles": [
+     11.46,
+     29.48
+    ],
+    "ride_height": 0.03,
+    "airfoils": null,
+    "at_bounds": [
+     "chord_0=high"
+    ],
+    "cl_cd": 32.342153836476605,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9478161605145524,
+    "deflection_margin": 6.975894050874508,
+    "front_past_stall": 11.438328678696706,
+    "front_held": true,
+    "why_untrusted": []
+   }
+  ],
+  "job": "20261104-174400-3fc3"
+ },
+ {
+  "study": "design-8",
+  "objective": "min_lap_time",
+  "trials": 256,
+  "states": {
+   "complete": 127,
+   "invalid": 56,
+   "fail": 73
+  },
+  "variables": [
+   "angle_0",
+   "angle_1",
+   "gap_1",
+   "overlap_1",
+   "angle_2",
+   "gap_2",
+   "overlap_2",
+   "chord_0",
+   "chord_1",
+   "chord_2",
+   "xfrac_0",
+   "yfrac_0",
+   "airfoil_0",
+   "airfoil_1",
+   "airfoil_2"
+  ],
+  "designs": [
+   {
+    "number": 249,
+    "value": 58.46040367768248,
+    "cl_stored": -3.519817800241667,
+    "cd_stored": 0.08487074305332702,
+    "cl_rebuilt": -3.519817800241667,
+    "cd_rebuilt": 0.08487074305332702,
+    "reproduced": true,
+    "angles": [
+     5.16,
+     4.1,
+     22.96
+    ],
+    "ride_height": 0.1750902961024744,
+    "airfoils": {
+     "0": "uiuc/s1223rtl",
+     "1": "uiuc/s1223",
+     "2": "uiuc/goe523"
+    },
+    "at_bounds": [
+     "chord_1=low"
+    ],
+    "cl_cd": 41.47268744931397,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.952655691189343,
+    "deflection_margin": 6.139087609575366,
+    "front_past_stall": 11.689625788956882,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 250,
+    "value": 58.46529737093865,
+    "cl_stored": -3.451465317272473,
+    "cd_stored": 0.08919318283163555,
+    "cl_rebuilt": -3.451465317272473,
+    "cd_rebuilt": 0.08919318283163555,
+    "reproduced": true,
+    "angles": [
+     5.05,
+     4.1,
+     23.11
+    ],
+    "ride_height": 0.17754514049371603,
+    "airfoils": {
+     "0": "uiuc/s1223rtl",
+     "1": "uiuc/s1223",
+     "2": "uiuc/goe523"
+    },
+    "at_bounds": [
+     "chord_1=low"
+    ],
+    "cl_cd": 38.696514774986674,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.953052112770074,
+    "deflection_margin": 5.983238777140812,
+    "front_past_stall": 12.717506072591434,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 248,
+    "value": 58.469008448522146,
+    "cl_stored": -3.4961740587659262,
+    "cd_stored": 0.10129063381119797,
+    "cl_rebuilt": -3.4961740587659262,
+    "cd_rebuilt": 0.10129063381119797,
+    "reproduced": true,
+    "angles": [
+     5.08,
+     4.15,
+     22.88
+    ],
+    "ride_height": 0.16891159105069725,
+    "airfoils": {
+     "0": "uiuc/goe523",
+     "1": "uiuc/s1223",
+     "2": "uiuc/goe523"
+    },
+    "at_bounds": [],
+    "cl_cd": 34.51626203941686,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9558600871422015,
+    "deflection_margin": 6.264227285332105,
+    "front_past_stall": 12.798842906383605,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 197,
+    "value": 58.470190352353264,
+    "cl_stored": -3.431144927718133,
+    "cd_stored": 0.07383734028542621,
+    "cl_rebuilt": -3.431144927718133,
+    "cd_rebuilt": 0.07383734028542621,
+    "reproduced": true,
+    "angles": [
+     4.55,
+     4.36,
+     22.22
+    ],
+    "ride_height": 0.18821415205618233,
+    "airfoils": {
+     "0": "uiuc/s1223rtl",
+     "1": "uiuc/s1223",
+     "2": "uiuc/goe523"
+    },
+    "at_bounds": [
+     "overlap_2=low",
+     "yfrac_0=high"
+    ],
+    "cl_cd": 46.46896698140361,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9553452745334486,
+    "deflection_margin": 7.1401653791502575,
+    "front_past_stall": 10.139973574651108,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 188,
+    "value": 58.47134809032489,
+    "cl_stored": -3.421499039241518,
+    "cd_stored": 0.07432161516460642,
+    "cl_rebuilt": -3.421499039241518,
+    "cd_rebuilt": 0.07432161516460642,
+    "reproduced": true,
+    "angles": [
+     3.9,
+     4.42,
+     22.38
+    ],
+    "ride_height": 0.1876199358140364,
+    "airfoils": {
+     "0": "uiuc/s1223rtl",
+     "1": "uiuc/s1223",
+     "2": "uiuc/goe523"
+    },
+    "at_bounds": [
+     "yfrac_0=high"
+    ],
+    "cl_cd": 46.036392396258236,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9536745907135944,
+    "deflection_margin": 6.513796212976111,
+    "front_past_stall": 10.047774763127542,
+    "front_held": true,
+    "why_untrusted": []
+   }
+  ],
+  "job": "20261106-031500-3c81"
+ },
+ {
+  "study": "design-9",
+  "objective": "max_cla",
+  "trials": 318,
+  "states": {
+   "complete": 135,
+   "invalid": 118,
+   "fail": 65
+  },
+  "variables": [
+   "angle_0",
+   "angle_1",
+   "gap_1",
+   "overlap_1",
+   "angle_2",
+   "gap_2",
+   "overlap_2",
+   "angle_3",
+   "gap_3",
+   "overlap_3",
+   "angle_4",
+   "gap_4",
+   "overlap_4",
+   "chord_0",
+   "chord_1",
+   "chord_2",
+   "chord_3",
+   "chord_4",
+   "xfrac_0",
+   "yfrac_0",
+   "airfoil_0",
+   "airfoil_1",
+   "airfoil_2",
+   "airfoil_3",
+   "airfoil_4"
+  ],
+  "designs": [
+   {
+    "number": 317,
+    "value": 1.246205976420418,
+    "cl_stored": -2.963702501601766,
+    "cd_stored": 0.06380639445750103,
+    "cl_rebuilt": -2.963702501601766,
+    "cd_rebuilt": 0.06380639445750103,
+    "reproduced": true,
+    "angles": [
+     11.97,
+     -1.05,
+     5.18,
+     27.01,
+     23.48
+    ],
+    "ride_height": 0.7058206228406558,
+    "airfoils": {
+     "0": "uiuc/s1223rtl",
+     "1": "uiuc/goe244",
+     "2": "uiuc/goe525",
+     "3": "uiuc/goe242",
+     "4": "uiuc/goe652"
+    },
+    "at_bounds": [
+     "angle_0=high"
+    ],
+    "cl_cd": 46.44836190478955,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.7437962589829442,
+    "deflection_margin": 3.1692535631793852,
+    "front_past_stall": 8.524242716404629,
+    "front_held": true,
+    "why_untrusted": [
+     4
+    ]
+   },
+   {
+    "number": 316,
+    "value": 1.2395702876034085,
+    "cl_stored": -2.9474521749163816,
+    "cd_stored": 0.06327899177728841,
+    "cl_rebuilt": -2.9474521749163816,
+    "cd_rebuilt": 0.06327899177728841,
+    "reproduced": true,
+    "angles": [
+     12.0,
+     -0.99,
+     5.11,
+     27.1,
+     22.64
+    ],
+    "ride_height": 0.7055416631929602,
+    "airfoils": {
+     "0": "uiuc/s1223rtl",
+     "1": "uiuc/goe244",
+     "2": "uiuc/goe525",
+     "3": "uiuc/goe242",
+     "4": "uiuc/goe652"
+    },
+    "at_bounds": [
+     "angle_0=high"
+    ],
+    "cl_cd": 46.57868420675845,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.7438197975041061,
+    "deflection_margin": 3.015249354181904,
+    "front_past_stall": 8.39309147959261,
+    "front_held": true,
+    "why_untrusted": [
+     4
+    ]
+   },
+   {
+    "number": 191,
+    "value": 1.227508605235128,
+    "cl_stored": -2.8751170187456374,
+    "cd_stored": 0.10849146268733113,
+    "cl_rebuilt": -2.8751170187456374,
+    "cd_rebuilt": 0.10849146268733113,
+    "reproduced": true,
+    "angles": [
+     11.69,
+     5.12,
+     7.83,
+     28.72,
+     19.85
+    ],
+    "ride_height": 0.700732209415442,
+    "airfoils": {
+     "0": "uiuc/goe652",
+     "1": "uiuc/goe244",
+     "2": "uiuc/s1223",
+     "3": "uiuc/s1223rtl",
+     "4": "uiuc/goe652"
+    },
+    "at_bounds": [
+     "chord_2=low"
+    ],
+    "cl_cd": 26.50085958405438,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.7805839627864615,
+    "deflection_margin": 4.113101026618757,
+    "front_past_stall": 12.699869817033559,
+    "front_held": true,
+    "why_untrusted": [
+     3,
+     4
+    ]
+   },
+   {
+    "number": 197,
+    "value": 1.21723670369759,
+    "cl_stored": -2.8389839635247194,
+    "cd_stored": 0.09451477508189335,
+    "cl_rebuilt": -2.8389839635247194,
+    "cd_rebuilt": 0.09451477508189335,
+    "reproduced": true,
+    "angles": [
+     10.37,
+     2.2,
+     6.92,
+     30.18,
+     20.42
+    ],
+    "ride_height": 0.7222895077794607,
+    "airfoils": {
+     "0": "uiuc/goe652",
+     "1": "uiuc/goe244",
+     "2": "uiuc/s1223",
+     "3": "uiuc/s1223rtl",
+     "4": "uiuc/goe652"
+    },
+    "at_bounds": [],
+    "cl_cd": 30.0374619848045,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.7829233953005112,
+    "deflection_margin": 1.7342370763904853,
+    "front_past_stall": 10.7760985501701,
+    "front_held": true,
+    "why_untrusted": [
+     4
+    ]
+   },
+   {
+    "number": 186,
+    "value": 1.2157270550410606,
+    "cl_stored": -2.8600065749500496,
+    "cd_stored": 0.09872874411929294,
+    "cl_rebuilt": -2.8600065749500496,
+    "cd_rebuilt": 0.09872874411929294,
+    "reproduced": true,
+    "angles": [
+     9.66,
+     5.21,
+     5.97,
+     28.12,
+     20.02
+    ],
+    "ride_height": 0.715318355842518,
+    "airfoils": {
+     "0": "uiuc/goe652",
+     "1": "uiuc/goe244",
+     "2": "uiuc/s1223",
+     "3": "uiuc/s1223rtl",
+     "4": "uiuc/goe652"
+    },
+    "at_bounds": [],
+    "cl_cd": 28.968327314022474,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.7744392582643056,
+    "deflection_margin": 2.854285382061107,
+    "front_past_stall": 11.54911631324481,
+    "front_held": true,
+    "why_untrusted": [
+     4
+    ]
+   }
+  ],
+  "job": "20261106-115214-1035"
+ },
+ {
+  "study": "study-1",
+  "objective": "max_cl",
+  "trials": 607,
+  "states": {
+   "complete": 1,
+   "invalid": 7,
+   "fail": 599
+  },
+  "variables": [
+   "angle_0",
+   "camber_0",
+   "chord_0",
+   "thickness_0",
+   "angle_1",
+   "camber_1",
+   "chord_1",
+   "gap_1",
+   "overlap_1",
+   "thickness_1",
+   "angle_2",
+   "camber_2",
+   "chord_2",
+   "gap_2",
+   "overlap_2",
+   "thickness_2",
+   "angle_3",
+   "camber_3",
+   "chord_3",
+   "gap_3",
+   "overlap_3",
+   "thickness_3",
+   "angle_4",
+   "camber_4",
+   "chord_4",
+   "gap_4",
+   "overlap_4",
+   "thickness_4"
+  ],
+  "designs": [
+   {
+    "number": 0,
+    "value": 2.467921248050575,
+    "cl_stored": -2.467921248050575,
+    "cd_stored": 0.05256510648217162,
+    "cl_rebuilt": -2.467921248050575,
+    "cd_rebuilt": 0.05256510648217162,
+    "reproduced": true,
+    "angles": [
+     0.2,
+     4.18,
+     19.18,
+     16.73,
+     24.57
+    ],
+    "ride_height": 0.7120026141978931,
+    "airfoils": null,
+    "at_bounds": [
+     "camber_0=low",
+     "camber_1=low",
+     "camber_2=low",
+     "camber_3=low",
+     "camber_4=low"
+    ],
+    "cl_cd": 46.94980022322628,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.6994647429589647,
+    "deflection_margin": 0.623730323648914,
+    "front_past_stall": 11.44380931882803,
+    "front_held": true,
+    "why_untrusted": [
+     4
+    ]
+   }
+  ],
+  "job": "20261106-115509-432e"
+ },
+ {
+  "study": "study-2",
+  "objective": "max_cl",
+  "trials": 627,
+  "states": {
+   "complete": 414,
+   "invalid": 52,
+   "fail": 161
+  },
+  "variables": [
+   "angle_0",
+   "camber_0",
+   "thickness_0",
+   "angle_1",
+   "camber_1",
+   "gap_1",
+   "overlap_1",
+   "thickness_1",
+   "angle_2",
+   "camber_2",
+   "gap_2",
+   "overlap_2",
+   "thickness_2",
+   "angle_3",
+   "camber_3",
+   "gap_3",
+   "overlap_3",
+   "thickness_3",
+   "angle_4",
+   "camber_4",
+   "gap_4",
+   "overlap_4",
+   "thickness_4"
+  ],
+  "designs": [
+   {
+    "number": 483,
+    "value": 2.845118719792157,
+    "cl_stored": -2.845118719792157,
+    "cd_stored": 0.08047200400427681,
+    "cl_rebuilt": -2.845118719792157,
+    "cd_rebuilt": 0.08047200400427681,
+    "reproduced": true,
+    "angles": [
+     4.01,
+     2.51,
+     23.64,
+     19.99,
+     28.62
+    ],
+    "ride_height": 0.7120026141978931,
+    "airfoils": null,
+    "at_bounds": [
+     "gap_1=low",
+     "thickness_4=high"
+    ],
+    "cl_cd": 35.35538545356654,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.7077823051439842,
+    "deflection_margin": 0.3973145488296801,
+    "front_past_stall": 12.850970422274958,
+    "front_held": true,
+    "why_untrusted": [
+     4
+    ]
+   },
+   {
+    "number": 481,
+    "value": 2.8446277272967175,
+    "cl_stored": -2.8446277272967175,
+    "cd_stored": 0.0809145761836256,
+    "cl_rebuilt": -2.8446277272967175,
+    "cd_rebuilt": 0.0809145761836256,
+    "reproduced": true,
+    "angles": [
+     3.98,
+     2.64,
+     23.68,
+     19.95,
+     28.58
+    ],
+    "ride_height": 0.7120026141978931,
+    "airfoils": null,
+    "at_bounds": [
+     "gap_1=low",
+     "thickness_1=high",
+     "thickness_4=high"
+    ],
+    "cl_cd": 35.155936809718774,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.7058428917767768,
+    "deflection_margin": 0.3932495930480613,
+    "front_past_stall": 12.954561819880094,
+    "front_held": true,
+    "why_untrusted": [
+     4
+    ]
+   },
+   {
+    "number": 523,
+    "value": 2.840926771271022,
+    "cl_stored": -2.840926771271022,
+    "cd_stored": 0.07994869048745981,
+    "cl_rebuilt": -2.840926771271022,
+    "cd_rebuilt": 0.07994869048745981,
+    "reproduced": true,
+    "angles": [
+     4.02,
+     2.24,
+     23.57,
+     20.06,
+     28.5
+    ],
+    "ride_height": 0.7120026141978931,
+    "airfoils": null,
+    "at_bounds": [
+     "thickness_4=high"
+    ],
+    "cl_cd": 35.534375284316006,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.709383082042662,
+    "deflection_margin": 0.5259331096775455,
+    "front_past_stall": 12.718194139200698,
+    "front_held": true,
+    "why_untrusted": [
+     4
+    ]
+   },
+   {
+    "number": 510,
+    "value": 2.84068883307896,
+    "cl_stored": -2.84068883307896,
+    "cd_stored": 0.07985516609751031,
+    "cl_rebuilt": -2.84068883307896,
+    "cd_rebuilt": 0.07985516609751031,
+    "reproduced": true,
+    "angles": [
+     4.29,
+     2.0,
+     23.31,
+     19.93,
+     28.71
+    ],
+    "ride_height": 0.7120026141978931,
+    "airfoils": null,
+    "at_bounds": [],
+    "cl_cd": 35.573012641539364,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.7031024391628511,
+    "deflection_margin": 0.5790896713728273,
+    "front_past_stall": 12.779562291614472,
+    "front_held": true,
+    "why_untrusted": [
+     4
+    ]
+   },
+   {
+    "number": 619,
+    "value": 2.8404742028542582,
+    "cl_stored": -2.8404742028542582,
+    "cd_stored": 0.07955405810853401,
+    "cl_rebuilt": -2.8404742028542582,
+    "cd_rebuilt": 0.07955405810853401,
+    "reproduced": true,
+    "angles": [
+     3.99,
+     1.81,
+     22.24,
+     20.32,
+     28.98
+    ],
+    "ride_height": 0.7120026141978931,
+    "airfoils": null,
+    "at_bounds": [],
+    "cl_cd": 35.70495673494187,
+    "separating": false,
+    "trusted": false,
+    "min_confidence": 0.6976515350553623,
+    "deflection_margin": 0.007955381883277823,
+    "front_past_stall": 12.902107738882037,
+    "front_held": true,
+    "why_untrusted": [
+     4
+    ]
+   }
+  ],
+  "job": "20261106-115721-e291"
+ },
+ {
+  "study": "study-3",
+  "objective": "max_ld",
+  "trials": 336,
+  "states": {
+   "complete": 300,
+   "invalid": 36
+  },
+  "variables": [
+   "airfoil_0",
+   "angle_0",
+   "camber_0",
+   "chord_0",
+   "thickness_0",
+   "airfoil_1",
+   "angle_1",
+   "camber_1",
+   "chord_1",
+   "gap_1",
+   "overlap_1",
+   "thickness_1"
+  ],
+  "designs": [
+   {
+    "number": 300,
+    "value": 123.75166739887999,
+    "cl_stored": -1.71496236916948,
+    "cd_stored": 0.013858095048059136,
+    "cl_rebuilt": -1.71496236916948,
+    "cd_rebuilt": 0.013858095048059136,
+    "reproduced": true,
+    "angles": [
+     2.29,
+     15.05
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe525"
+    },
+    "at_bounds": [],
+    "cl_cd": 123.75166739887999,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9418793998689775,
+    "deflection_margin": 12.231447030489957,
+    "front_past_stall": -1.1020039554854115,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 330,
+    "value": 123.16176975961034,
+    "cl_stored": -1.7539659962000822,
+    "cd_stored": 0.01424115616090536,
+    "cl_rebuilt": -1.7539659962000822,
+    "cd_rebuilt": 0.01424115616090536,
+    "reproduced": true,
+    "angles": [
+     2.58,
+     15.46
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe525"
+    },
+    "at_bounds": [],
+    "cl_cd": 123.16176975961034,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9389336998169805,
+    "deflection_margin": 12.12978443081105,
+    "front_past_stall": -0.7685729594262263,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 318,
+    "value": 123.09002725274482,
+    "cl_stored": -1.7384953544793265,
+    "cd_stored": 0.014123770977072063,
+    "cl_rebuilt": -1.7384953544793265,
+    "cd_rebuilt": 0.014123770977072063,
+    "reproduced": true,
+    "angles": [
+     2.65,
+     15.36
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe525"
+    },
+    "at_bounds": [
+     "thickness_0=low"
+    ],
+    "cl_cd": 123.09002725274482,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.939624740622255,
+    "deflection_margin": 12.28624723930478,
+    "front_past_stall": -0.7293552380276864,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 311,
+    "value": 123.07630878542624,
+    "cl_stored": -1.7276758454529442,
+    "cd_stored": 0.014037436306811977,
+    "cl_rebuilt": -1.7276758454529442,
+    "cd_rebuilt": 0.014037436306811977,
+    "reproduced": true,
+    "angles": [
+     2.27,
+     15.13
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe525"
+    },
+    "at_bounds": [],
+    "cl_cd": 123.07630878542624,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9425541301567781,
+    "deflection_margin": 12.13621602055874,
+    "front_past_stall": -1.153296514781223,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 291,
+    "value": 123.01120194139767,
+    "cl_stored": -1.6473278766075008,
+    "cd_stored": 0.013391689948629923,
+    "cl_rebuilt": -1.6473278766075008,
+    "cd_rebuilt": 0.013391689948629923,
+    "reproduced": true,
+    "angles": [
+     2.15,
+     14.7
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe525"
+    },
+    "at_bounds": [],
+    "cl_cd": 123.01120194139767,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9449292784643701,
+    "deflection_margin": 12.445948948888663,
+    "front_past_stall": -1.3052651384304381,
+    "front_held": true,
+    "why_untrusted": []
+   }
+  ],
+  "job": "20261106-165414-e86f"
+ },
+ {
+  "study": "study-4",
+  "objective": "max_ld",
+  "trials": 1524,
+  "states": {
+   "complete": 1000,
+   "invalid": 524
+  },
+  "variables": [
+   "airfoil_0",
+   "angle_0",
+   "camber_0",
+   "chord_0",
+   "thickness_0",
+   "airfoil_1",
+   "angle_1",
+   "camber_1",
+   "chord_1",
+   "gap_1",
+   "overlap_1",
+   "thickness_1"
+  ],
+  "designs": [
+   {
+    "number": 1263,
+    "value": 129.67809069695534,
+    "cl_stored": -1.966274313083905,
+    "cd_stored": 0.015162733369346797,
+    "cl_rebuilt": -1.966274313083905,
+    "cd_rebuilt": 0.015162733369346797,
+    "reproduced": true,
+    "angles": [
+     2.94,
+     17.0
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe525"
+    },
+    "at_bounds": [
+     "angle_1=high"
+    ],
+    "cl_cd": 129.67809069695534,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9516219704368063,
+    "deflection_margin": 10.939889689417814,
+    "front_past_stall": -1.08606389535041,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 1511,
+    "value": 129.64693833315826,
+    "cl_stored": -1.9002162202432644,
+    "cd_stored": 0.014656853795962481,
+    "cl_rebuilt": -1.9002162202432644,
+    "cd_rebuilt": 0.014656853795962481,
+    "reproduced": true,
+    "angles": [
+     2.89,
+     16.15
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe525"
+    },
+    "at_bounds": [
+     "camber_0=low"
+    ],
+    "cl_cd": 129.64693833315826,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.953951724303411,
+    "deflection_margin": 11.7383614938028,
+    "front_past_stall": -1.424318509333224,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 1445,
+    "value": 129.6365804163678,
+    "cl_stored": -1.907349344611438,
+    "cd_stored": 0.014713048882386424,
+    "cl_rebuilt": -1.907349344611438,
+    "cd_rebuilt": 0.014713048882386424,
+    "reproduced": true,
+    "angles": [
+     2.82,
+     16.52
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe525"
+    },
+    "at_bounds": [],
+    "cl_cd": 129.6365804163678,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9546160542063181,
+    "deflection_margin": 11.29453149717158,
+    "front_past_stall": -1.511316791214572,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 1473,
+    "value": 129.54461356612333,
+    "cl_stored": -1.9140728338815012,
+    "cd_stored": 0.014775394987028949,
+    "cl_rebuilt": -1.9140728338815012,
+    "cd_rebuilt": 0.014775394987028949,
+    "reproduced": true,
+    "angles": [
+     2.85,
+     16.36
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe525"
+    },
+    "at_bounds": [],
+    "cl_cd": 129.54461356612333,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9545556094496104,
+    "deflection_margin": 11.491427002541993,
+    "front_past_stall": -1.4324664799221907,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 1518,
+    "value": 129.3360388740523,
+    "cl_stored": -1.9008657307481376,
+    "cd_stored": 0.01469710799322689,
+    "cl_rebuilt": -1.9008657307481376,
+    "cd_rebuilt": 0.01469710799322689,
+    "reproduced": true,
+    "angles": [
+     3.1,
+     16.0
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe525"
+    },
+    "at_bounds": [
+     "camber_0=low"
+    ],
+    "cl_cd": 129.3360388740523,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9539025176935966,
+    "deflection_margin": 12.101805711055345,
+    "front_past_stall": -1.328552341840954,
+    "front_held": true,
+    "why_untrusted": []
+   }
+  ],
+  "job": "20261106-165445-7a9e"
+ },
+ {
+  "study": "study-5",
+  "objective": "max_ld",
+  "trials": 1194,
+  "states": {
+   "complete": 1000,
+   "invalid": 194
+  },
+  "variables": [
+   "airfoil_0",
+   "angle_0",
+   "camber_0",
+   "chord_0",
+   "thickness_0",
+   "airfoil_1",
+   "angle_1",
+   "camber_1",
+   "chord_1",
+   "gap_1",
+   "overlap_1",
+   "thickness_1"
+  ],
+  "designs": [
+   {
+    "number": 966,
+    "value": 118.84297308724615,
+    "cl_stored": -1.9373767943764362,
+    "cd_stored": 0.016301988616139303,
+    "cl_rebuilt": -1.9373767943764362,
+    "cd_rebuilt": 0.016301988616139303,
+    "reproduced": true,
+    "angles": [
+     2.0,
+     14.83
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe523"
+    },
+    "at_bounds": [
+     "angle_0=low",
+     "overlap_1=low"
+    ],
+    "cl_cd": 118.84297308724615,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9548534961178093,
+    "deflection_margin": 12.170353228312838,
+    "front_past_stall": 0.4369714627177288,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 1062,
+    "value": 118.29600435383452,
+    "cl_stored": -1.9354554147939114,
+    "cd_stored": 0.01636112246872499,
+    "cl_rebuilt": -1.9354554147939114,
+    "cd_rebuilt": 0.01636112246872499,
+    "reproduced": true,
+    "angles": [
+     2.18,
+     14.57
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe523"
+    },
+    "at_bounds": [],
+    "cl_cd": 118.29600435383452,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9524761663436545,
+    "deflection_margin": 12.611257371748136,
+    "front_past_stall": 0.5011495827514132,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 1051,
+    "value": 118.06248789611956,
+    "cl_stored": -1.9249786957507435,
+    "cd_stored": 0.01630474446247895,
+    "cl_rebuilt": -1.9249786957507435,
+    "cd_rebuilt": 0.01630474446247895,
+    "reproduced": true,
+    "angles": [
+     2.26,
+     14.54
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe523"
+    },
+    "at_bounds": [
+     "overlap_1=low"
+    ],
+    "cl_cd": 118.06248789611956,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9536413583820953,
+    "deflection_margin": 12.72189615329994,
+    "front_past_stall": 0.31560260648999794,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 1139,
+    "value": 118.03370394487963,
+    "cl_stored": -1.9080083372840158,
+    "cd_stored": 0.01616494504124884,
+    "cl_rebuilt": -1.9080083372840158,
+    "cd_rebuilt": 0.01616494504124884,
+    "reproduced": true,
+    "angles": [
+     2.0,
+     14.46
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe523"
+    },
+    "at_bounds": [
+     "angle_0=low"
+    ],
+    "cl_cd": 118.03370394487963,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.9564769986112478,
+    "deflection_margin": 12.545013207695897,
+    "front_past_stall": 0.33825680907829003,
+    "front_held": true,
+    "why_untrusted": []
+   },
+   {
+    "number": 1184,
+    "value": 118.03096208632398,
+    "cl_stored": -1.9233221535201397,
+    "cd_stored": 0.016295064612906272,
+    "cl_rebuilt": -1.9233221535201397,
+    "cd_rebuilt": 0.016295064612906272,
+    "reproduced": true,
+    "angles": [
+     2.0,
+     14.56
+    ],
+    "ride_height": null,
+    "airfoils": {
+     "0": "uiuc/fx74modsm",
+     "1": "uiuc/goe523"
+    },
+    "at_bounds": [
+     "angle_0=low"
+    ],
+    "cl_cd": 118.03096208632398,
+    "separating": false,
+    "trusted": true,
+    "min_confidence": 0.959633873625437,
+    "deflection_margin": 12.443169629944022,
+    "front_past_stall": 0.682697653013232,
+    "front_held": true,
+    "why_untrusted": []
+   }
+  ],
+  "job": "20261106-165616-dc60"
+ }
+]
