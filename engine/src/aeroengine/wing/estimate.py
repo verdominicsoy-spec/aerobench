@@ -53,6 +53,10 @@ from .panel import Solver
 from .viscous import polar, reynolds
 
 
+# Bump on any change to what the estimate returns for a wing: a study records
+# the version that scored it and will not resume on another (optimise.run).
+# Version 1: November 2026, with ground_share and the optimiser's margin and trust guards.
+VERSION = 1
 STALL_MARGIN = 2.0  # degrees: the last element counts as separating this far short of its stall angle
 # An element with another behind it: the slot keeps it attached well past its
 # own stall angle, but not for ever. Fitted on a NACA 6212 main-and-flap wing

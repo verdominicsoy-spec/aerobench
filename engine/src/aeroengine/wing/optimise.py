@@ -26,6 +26,7 @@ import optuna
 
 from ..job import EngineError
 from .estimate import FRONT_LIFT_LIMIT, MAX_DEFLECTION
+from .estimate import VERSION as ESTIMATE_VERSION
 from .geometry import Variable, Wing, apply, label
 
 OBJECTIVES = {
@@ -49,6 +50,7 @@ SEPARATED_DRAG = 3.0  # a RANS check with more than this times the estimate's dr
 # downforce study picked a wing on one, and RANS separated 3 of 6 such picks.
 # So a design within MARGIN degrees of a line loses part of its load, smoothly:
 # none from MARGIN out, MARGIN_COST of it on the line, more past it.
+# (Changing them changes every estimate score: bump estimate.VERSION.)
 MARGIN = 2.0
 MARGIN_COST = 0.5
 DISTINCT = 0.05  # of a variable's range: how far apart two checked designs must be in at least one
@@ -301,6 +303,11 @@ def run(base: Wing, spec: Spec, evaluate: Evaluate, storage: Path, name: str, wo
                 or old.get("solver", "rans") != now["solver"]):
         raise EngineError(f"study '{name}' was started with other design variables, another objective or another solver",
                           "start a new study for a different set-up")
+    if old and now["solver"] == "estimate" and old.get("estimate_version") != ESTIMATE_VERSION:
+        was = old.get("estimate_version")
+        raise EngineError(f"study '{name}' was scored by {'an older estimate' if was is None else f'estimate version {was}'}"
+                          f"; this engine's is estimate version {ESTIMATE_VERSION}",
+                          "start a new study (another name): values from two versions of the estimate do not compare")
     study.set_user_attr("spec", now)
     if info:
         study.set_user_attr("info", info)
@@ -502,7 +509,7 @@ def _spec_dict(spec: Spec) -> dict:
     return {"variables": [{"element": v.element, "kind": v.kind, "low": v.low, "high": v.high,
                            **({"choices": list(v.choices)} if v.choices else {})} for v in spec.variables],
             "objective": spec.objective, "cd_cap": spec.cd_cap, "cl_target": spec.cl_target, "sampler": spec.sampler,
-            "solver": spec.solver}
+            "solver": spec.solver, **({"estimate_version": ESTIMATE_VERSION} if spec.solver == "estimate" else {})}
 
 
 def summary(study: optuna.Study, spec: Spec) -> dict:

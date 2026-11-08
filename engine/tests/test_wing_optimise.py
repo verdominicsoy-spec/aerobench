@@ -570,3 +570,30 @@ def test_an_untrusted_estimate_fails_its_trial_with_the_reason():
     row.update(separating=True, why="Flap 1 is turned 26.0° past the main: it separates")
     res = optimise.from_estimate(row)
     assert not res["converged"] and "separates" in res["reason"] and "0.72" in res["reason"]
+
+
+def test_an_estimate_study_is_not_resumed_on_another_estimate(tmp_path, monkeypatch):
+    """Values from two versions of the estimate do not compare: the study
+    records its version, and a resume on another (or none recorded) is refused."""
+    spec = optimise.Spec([Variable(1, "angle", 15, 40)], trials=3, seed=4, solver="estimate")
+    evaluate, _ = _fake()
+    out = optimise.run(_starter(), spec, evaluate, tmp_path / "s.db", "s", tmp_path / "w")
+    assert out["spec"]["estimate_version"] == optimise.ESTIMATE_VERSION
+    spec.trials = 4
+    assert optimise.run(_starter(), spec, evaluate, tmp_path / "s.db", "s", tmp_path / "w")["complete"] == 4
+    monkeypatch.setattr(optimise, "ESTIMATE_VERSION", optimise.ESTIMATE_VERSION + 1)
+    spec.trials = 6
+    with pytest.raises(EngineError, match="estimate version"):
+        optimise.run(_starter(), spec, evaluate, tmp_path / "s.db", "s", tmp_path / "w")
+    # A study from before the estimate had versions.
+    study = optuna.load_study(study_name="s", storage=f"sqlite:///{tmp_path / 's.db'}")
+    old = dict(study.user_attrs["spec"])
+    del old["estimate_version"]
+    study.set_user_attr("spec", old)
+    with pytest.raises(EngineError, match="older estimate"):
+        optimise.run(_starter(), spec, evaluate, tmp_path / "s.db", "s", tmp_path / "w")
+    # A RANS study does not depend on the estimate.
+    rans = optimise.Spec([Variable(1, "angle", 15, 40)], trials=2, seed=4)
+    optimise.run(_starter(), rans, evaluate, tmp_path / "r.db", "r", tmp_path / "w")
+    rans.trials = 3
+    assert "estimate_version" not in optimise.run(_starter(), rans, evaluate, tmp_path / "r.db", "r", tmp_path / "w")["spec"]
