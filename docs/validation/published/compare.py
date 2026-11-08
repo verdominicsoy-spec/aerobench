@@ -82,7 +82,9 @@ def table(case):
               f"{', '.join(f'{v:.3f}' for v in row['panel']['el_cl'])} | {rs} |")
     sep = [r for r in q["rows"] if r["published"] and r["est"]["separating"]]
     for r in sep:
-        print(f"\nEstimate flag at {r['alpha']:g}: {r['est']['why']}")
+        why = r["est"]["why"].split("; ")
+        print(f"\nEstimate flags at {r['alpha']:g} deg: " + "; ".join(w for w in why if "in place" in w)
+              + ("; " if any("in place" in w for w in why) else "") + "; ".join(w for w in why if "in place" not in w))
 
 
 def sweep_table(case):
