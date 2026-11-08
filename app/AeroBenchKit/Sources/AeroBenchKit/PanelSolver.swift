@@ -20,6 +20,12 @@ public struct PanelSolution: Sendable {
     /// of the Kutta condition: the flow is right away from the trailing edges, and
     /// singular right at them (see `PanelSolver.solve(alphaDeg:targetCl:)`).
     public var liftMatched = false
+    /// The panel method's own (Kutta) lift and moment per element when lift-matched.
+    public var kuttaCl: [Double]? = nil
+    public var kuttaCm: [Double]? = nil
+    /// The inviscid split: the Kutta lift and moment, matched or not.
+    public var inviscidCl: [Double] { kuttaCl ?? cl }
+    public var inviscidCm: [Double] { kuttaCm ?? cm }
 
     public var clTotal: Double { cl.reduce(0, +) }
     public var cmTotal: Double { cm.reduce(0, +) }
@@ -220,6 +226,8 @@ public final class PanelSolver: @unchecked Sendable {
         }
         guard size(r) <= 0.01, out.cl.allSatisfy(\.isFinite), out.cp.allSatisfy({ $0.allSatisfy(\.isFinite) }) else { return kutta }
         out.liftMatched = true
+        out.kuttaCl = kutta.cl
+        out.kuttaCm = kutta.cm
         return out
     }
 
@@ -319,6 +327,25 @@ public final class PanelSolver: @unchecked Sendable {
             cms.append(-moment / (refChord * refChord))  // nose up positive
         }
         return PanelSolution(alphaDeg: alphaDeg, speed: speed, cp: cps, cl: cls, cd: cds, cm: cms, elements: elements, ground: ground)
+    }
+}
+
+extension Wing {
+    /// Wing Lab's live preview: over the ground the image solver in the turned
+    /// frame (the flow and the ground along x), else free air at the wing's
+    /// angle. With `liftTargets` each element's lift is prescribed (see
+    /// `PanelSolver.solve(alphaDeg:targetCl:)`); without, the Kutta flow, over
+    /// the ground with the image's lift gain kept to the share RANS holds.
+    /// Nil if the elements overlap or the solver cannot run.
+    public func livePreview(liftTargets: [Double]?) -> PanelSolution? {
+        if let g = inGroundEffect, let solver = PanelSolver(elements: g.elements, refChord: refChord, ground: g.ground) {
+            if let liftTargets { return solver.solve(alphaDeg: 0, targetCl: liftTargets) }
+            let image = solver.solve(alphaDeg: 0)
+            let free = PanelSolver(elements: elements.map { $0.placed() }, refChord: refChord)?.solve(alphaDeg: alpha)
+            return free.map { image.groundCorrected(free: $0) } ?? image
+        }
+        guard rideHeight == nil, let solver = PanelSolver(elements: elements.map { $0.placed() }, refChord: refChord) else { return nil }
+        return liftTargets.map { solver.solve(alphaDeg: alpha, targetCl: $0) } ?? solver.solve(alphaDeg: alpha)
     }
 }
 

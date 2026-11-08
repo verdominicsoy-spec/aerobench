@@ -167,8 +167,10 @@ final class WingLabModel {
     var estimateTo = 10.0
     var estimateStep = 1.0
     var estimate: WingEstimate? {
-        didSet { if estimate != oldValue { recompute() } }  // its lift sets the preview's, its drag the wakes'
+        didSet { if estimate != oldValue { estimateChanged() } }  // its lift sets the preview's, its drag the wakes'
     }
+    /// The lift targets the preview was solved with (nil: the Kutta flow).
+    @ObservationIgnored private var previewTargets: [Double]?
     /// The wing `estimate` was made for: the preview takes its lift only while
     /// that is the wing on the canvas (a drag in flight shows the Kutta flow).
     private(set) var estimateWing: Wing?
@@ -177,7 +179,19 @@ final class WingLabModel {
     func takeEstimate(_ e: WingEstimate?, madeFor w: Wing?) {
         let retag = estimateWing != w
         estimateWing = w
-        if estimate != e { estimate = e } else if retag { recompute() }
+        // A wing pinned as A while its estimate was in flight takes it too.
+        if let e, let w, var a = pinned, a.wing == w, a.estimateWing != w {
+            a.estimate = e
+            a.estimateWing = w
+            pinned = a
+        }
+        if estimate != e { estimate = e } else if retag { estimateChanged() }
+    }
+
+    /// Re-solve the preview only when the estimate changes its lift targets
+    /// (a stale estimate landing mid-drag does not); the wakes' drag always.
+    private func estimateChanged() {
+        if estimate?.liftTargets(madeFor: estimateWing, wing: wing) != previewTargets { recompute() } else { makeLiveField() }
     }
 
     /// The estimate says an element separates at the wing's angle, which the live flow cannot show.
@@ -824,7 +838,15 @@ final class WingLabModel {
 
     var pinnedRansJob: JobItem?
     var pinned: Pinned? {
-        didSet { changeImages = [:] }
+        didSet {
+            changeImages = [:]
+            // A pinned before its estimate landed: its preview takes the estimate's lift too, as B's does.
+            if let a = pinned, a.preview?.liftMatched != true,
+               let t = a.estimate?.liftTargets(madeFor: a.estimateWing, wing: a.wing),
+               let p = a.wing.livePreview(liftTargets: t), p.liftMatched {
+                pinned?.preview = p
+            }
+        }
     }
 
     // How the flow changed from A: B's field minus A's, scalar by scalar.
@@ -968,20 +990,9 @@ final class WingLabModel {
         let start = Date()
         // The estimate's lift per element when it is of this wing: the flow then matches RANS's far better.
         let targets = estimate?.liftTargets(madeFor: estimateWing, wing: wing)
-        if let g = wing.inGroundEffect,
-           let solver = PanelSolver(elements: g.elements, refChord: wing.refChord, ground: g.ground) {
-            // Turned: the flow and the ground run along x.
-            if let targets {
-                preview = solver.solve(alphaDeg: 0, targetCl: targets)
-            } else {
-                let image = solver.solve(alphaDeg: 0)
-                // The image's lift gain alone grows without limit near the ground: keep what RANS holds.
-                let free = PanelSolver(elements: wing.elements.map { $0.placed() }, refChord: wing.refChord)?.solve(alphaDeg: wing.alpha)
-                preview = free.map { image.groundCorrected(free: $0) } ?? image
-            }
-            previewError = nil
-        } else if wing.rideHeight == nil, let solver = PanelSolver(elements: wing.elements.map { $0.placed() }, refChord: wing.refChord) {
-            preview = targets.map { solver.solve(alphaDeg: wing.alpha, targetCl: $0) } ?? solver.solve(alphaDeg: wing.alpha)
+        previewTargets = targets
+        if let p = wing.livePreview(liftTargets: targets) {
+            preview = p
             previewError = nil
         } else {
             preview = nil

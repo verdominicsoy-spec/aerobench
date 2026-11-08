@@ -133,10 +133,10 @@ struct WingReportView: View {
             if let p = preview {
                 GridRow {
                     Text("Live estimate, inviscid part")
-                    Text(String(format: "%.3f", wing.shownCl(p.clTotal)))
+                    Text(String(format: "%.3f", wing.shownCl(p.inviscidCl.reduce(0, +))))
                     Text("–")
                     Text("–")
-                    ForEach(0..<n, id: \.self) { i in Text(i < p.cl.count ? String(format: "%.3f", wing.shownCl(p.cl[i])) : "") }
+                    ForEach(0..<n, id: \.self) { i in Text(i < p.inviscidCl.count ? String(format: "%.3f", wing.shownCl(p.inviscidCl[i])) : "") }
                     Text("")
                     Text("no drag, lift runs high")
                 }

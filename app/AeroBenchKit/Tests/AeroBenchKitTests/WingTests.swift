@@ -106,6 +106,38 @@ final class PanelSolverTests: XCTestCase {
         }
     }
 
+    /// The panel method's own (Kutta) lift stays at hand when matched, for the
+    /// views that show the inviscid split.
+    func testTheMatchedSolutionKeepsTheInviscidLift() throws {
+        let s = try mainAndFlap()
+        let k = s.solve(alphaDeg: 0), m = s.solve(alphaDeg: 0, targetCl: k.cl.map { 0.8 * $0 })
+        XCTAssertEqual(k.inviscidCl, k.cl)
+        XCTAssertEqual(m.inviscidCl, k.cl)
+        XCTAssertEqual(m.inviscidCm, k.cm)
+        XCTAssertNotEqual(m.cl, k.cl)
+    }
+
+    /// The live preview of a wing, as Wing Lab draws it, in free air and over the ground.
+    func testTheLivePreviewTakesTheTargetsInFreeAirAndOverTheGround() throws {
+        var w = twoElement(inverted: true)
+        let free = try XCTUnwrap(w.livePreview(liftTargets: nil))
+        let direct = try XCTUnwrap(PanelSolver(elements: w.elements.map { $0.placed() }, refChord: w.refChord)).solve(alphaDeg: w.alpha)
+        XCTAssertEqual(free.cl, direct.cl)
+        let matched = try XCTUnwrap(w.livePreview(liftTargets: free.cl.map { 0.8 * $0 }))
+        XCTAssertTrue(matched.liftMatched)
+        XCTAssertEqual(matched.clTotal, 0.8 * free.clTotal, accuracy: 0.01 * abs(free.clTotal))
+        w.rideHeight = 0.1
+        let ground = try XCTUnwrap(w.livePreview(liftTargets: nil))
+        XCTAssertFalse(ground.liftMatched)
+        XCTAssertNotNil(ground.ground)
+        let g = try XCTUnwrap(w.inGroundEffect)
+        let image = try XCTUnwrap(PanelSolver(elements: g.elements, refChord: w.refChord, ground: g.ground)).solve(alphaDeg: 0)
+        XCTAssertEqual(ground.cl, image.groundCorrected(free: free).cl)  // the share RANS holds
+        let groundMatched = try XCTUnwrap(w.livePreview(liftTargets: free.cl))
+        XCTAssertTrue(groundMatched.liftMatched)
+        XCTAssertEqual(groundMatched.clTotal, free.clTotal, accuracy: 0.01 * abs(free.clTotal))
+    }
+
     func testANearZeroLiftElementKeepsItsCirculation() throws {
         let s = try mainAndFlap()
         let k = s.solve(alphaDeg: 0)

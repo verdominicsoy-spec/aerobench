@@ -446,7 +446,7 @@ struct WingCanvas: View {
                             .help(e.why ?? "An element separates here.")
                     }
                 } else if let r = lab.preview {
-                    Text(String(format: "Cl %.3f (inviscid)   Cm %.3f   α %.1f°", lab.wing.shownCl(r.clTotal), r.cmTotal, lab.wing.alpha))
+                    Text(String(format: "Cl %.3f (inviscid)   Cm %.3f   α %.1f°", lab.wing.shownCl(r.inviscidCl.reduce(0, +)), r.inviscidCm.reduce(0, +), lab.wing.alpha))
                         .font(.caption.monospacedDigit())
                 }
                 fieldControls(lab)
@@ -1305,8 +1305,8 @@ struct WingInspector: View {
                 NumberField(label: "Gap", unit: "mm", value: mm({ lab.wing.gap(of: i) ?? 0 }, { v in lab.edit("Change Gap") { $0.setGap(v, of: i) } }))
                 NumberField(label: "Overlap", unit: "mm", value: mm({ lab.wing.overlap(of: i) ?? 0 }, { v in lab.edit("Change Overlap") { $0.setOverlap(v, of: i) } }))
             }
-            if let r = lab.preview, r.cl.indices.contains(i) {
-                LabeledContent("Cl (inviscid)", value: String(format: "%.3f", lab.wing.shownCl(r.cl[i])))
+            if let r = lab.preview, r.inviscidCl.indices.contains(i) {
+                LabeledContent("Cl (inviscid)", value: String(format: "%.3f", lab.wing.shownCl(r.inviscidCl[i])))
             }
             HStack(spacing: S37.Space.s3) {
                 Button("Duplicate \(WingIssue.label(i))") { lab.duplicate(i) }
@@ -1643,10 +1643,11 @@ struct WingInspector: View {
     @ViewBuilder private func previewControls(_ lab: WingLabModel) -> some View {
         if let r = lab.preview {
             Text("Panel method (inviscid): how the load splits").font(.caption).bold()
-            ForEach(Array(r.cl.enumerated()), id: \.offset) { i, cl in
+            ForEach(Array(r.inviscidCl.enumerated()), id: \.offset) { i, cl in
                 LabeledContent(WingIssue.label(i), value: String(format: "Cl %.3f", lab.wing.shownCl(cl)))
             }
-            LabeledContent("Total, inviscid", value: String(format: "Cl %.3f   Cm %.3f", lab.wing.shownCl(r.clTotal), r.cmTotal))
+            LabeledContent("Total, inviscid", value: String(format: "Cl %.3f   Cm %.3f", lab.wing.shownCl(r.inviscidCl.reduce(0, +)),
+                                                             r.inviscidCm.reduce(0, +)))
             Text(String(format: "On the total chord, %.0f mm. Solved in %.0f ms.", lab.wing.refChord * 1000, lab.previewMilliseconds))
                 .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
         } else {
