@@ -43,7 +43,9 @@ interaction gives, a slot so narrow it chokes, how the deflection limit
 moves with the gap and the sections (it is fitted on two wings), and a flap
 whose nose sits behind the trailing edge in front (no slot at all; the
 design search keeps every overlap positive). RANS gets those; this is for
-trends and screening.A slat is an element ahead of the main, the first element at least half the
+trends and screening.
+
+A slat is an element ahead of the main, the first element at least half the
 longest chord: see SLAT_PEAK_LIMIT."""
 
 from __future__ import annotations

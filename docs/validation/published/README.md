@@ -1,9 +1,17 @@
 # AeroBench against published multi-element wind-tunnel data
 
-November 2026. Engine at commit e1ba409 (commits made while this ran,
-up to 45ae9e0, touched only the optimiser and a version constant in
-`estimate.py`). Every number here comes from the scripts in this folder;
-how to rerun them is at the end.
+November 2026. RANS at commit e1ba409. Estimate and panel method rerun after the
+fixes of 9 November (estimate version 2): trailing edges closed, effective
+angles found on the solver, slats, a flap limit that rises with Reynolds number.
+Every number here comes from the scripts in this folder; how to rerun them is at
+the end.
+
+**Read this first.** Three things below were set using this same data, so they
+are not independent checks of it: `SLAT_PEAK_LIMIT` (where a slatted wing
+stalls, from 30P30N alone), the 35 degree end of the flap limit (from the
+30P30N flap), and nothing else. The lift numbers themselves were not fitted to
+either case. The front-element constants were refitted to the engine's own RANS
+references only.
 
 ## What was compared
 
@@ -115,17 +123,20 @@ rounded off), flap 0.0001; NLR 7301 main 0.0002, flap 0.0002 (gap 2.6%) and
 
 | case, point | experiment Cl | estimate | panel | RANS quick (SST) |
 |---|---|---|---|---|
-| NLR 7301 gap 2.6%, alpha 13.1 | 3.141 | 3.133 (-0.2%) | 3.592 (+14%) | 2.965 (-5.6%) |
-| NLR 7301 gap 1.3%, alpha 6.0 | 2.416 | 2.322 (-3.9%) | 2.666 (+10%) | 2.371 (-1.9%) |
-| 30P30N, alpha 8.10 | 3.135 | 2.250 (-28%) | 3.765 (+20%) | 3.157 (+0.7%) |
-| 30P30N, alpha 16.21 | 3.976 | 2.386 (-40%) | 4.763 (+20%) | 4.023 (+1.2%) |
-| 30P30N, alpha 21.34 (about Cl max) | 4.278 | 2.322 (-46%) | 5.347 (+25%) | 4.249 (-0.7%) |
-| 30P30N, alpha 23.28 (past Cl max) | 4.170 | 2.295 (-45%) | 5.557 (+33%) | 4.221 (+1.2%) |
+| NLR 7301 gap 2.6%, alpha 13.1 | 3.141 | 3.158 (+0.6%) | 3.598 (+14%) | 2.965 (-5.6%) |
+| NLR 7301 gap 1.3%, alpha 6.0 | 2.416 | 2.352 (-2.6%) | 2.671 (+11%) | 2.371 (-1.9%) |
+| 30P30N, alpha 8.10 | 3.135 | 3.150 (+0.5%) | 3.777 (+20%) | 3.157 (+0.7%) |
+| 30P30N, alpha 16.21 | 3.976 | 3.999 (+0.6%) | 4.776 (+20%) | 4.023 (+1.2%) |
+| 30P30N, alpha 21.34 (about Cl max) | 4.278 | 4.505 (+5.3%) | 5.360 (+25%) | 4.249 (-0.7%) |
+| 30P30N, alpha 23.28 (past Cl max) | 4.170 | 4.690 (+12%), marked separating | 5.570 (+34%) | 4.221 (+1.2%) |
 
 | case, point | experiment Cd | estimate | RANS quick |
 |---|---|---|---|
-| NLR 7301 gap 2.6%, alpha 13.1 | 0.0445 | 0.0443 (-0.4%) | 0.0650 (+46%) |
-| NLR 7301 gap 1.3%, alpha 6.0 | 0.0229 | 0.0286 (+25%) | 0.0278 (+21%) |
+| NLR 7301 gap 2.6%, alpha 13.1 | 0.0445 | 0.0459 (+3%) | 0.0650 (+46%) |
+| NLR 7301 gap 1.3%, alpha 6.0 | 0.0229 | 0.0287 (+25%) | 0.0278 (+21%) |
+
+Before the 9 November fixes the 30P30N estimate read 28 to 46% low (2.250,
+2.386, 2.322, 2.295) with the slat's lift negative.
 
 Mesh check (NLR gap 2.6%, rising sweep 0 to 13.1 deg): the medium mesh
 (89k cells against 48k) moves lift by at most 0.7% (2.950 against 2.965 at
@@ -135,9 +146,7 @@ incompressible). The NLR gap 1.3% medium-mesh result is in the case table.
 No medium-mesh 30P30N run was made (time).
 
 The NLR points are two angles of one model, so they say little about the
-spread: an estimate within 4% at both is encouraging, not proof. The 30P30N
-estimate is not a near miss; it is outside what the estimate can represent
-(a leading-edge slat), and it says so (see below).
+spread: an estimate within 3% at both is encouraging, not proof.
 
 ## Case 1: NLR 7301 with flap
 
@@ -148,54 +157,56 @@ estimate is not a near miss; it is outside what the estimate can represent
 
 | alpha | Cl exp | Cl estimate (err) | Cl panel (err) | Cl RANS (err) | Cd exp | Cd estimate | Cd RANS |
 |---|---|---|---|---|---|---|---|
-| 13.1 | 3.141 | 3.133 (-0.2%) | 3.592 (+14.4%) | 1.612 (-48.7%) quick from rest/sst NOT CONVERGED SEPARATED; 2.965 (-5.6%) quick/sst; 2.950 (-6.1%) medium/sst | 0.0445 | 0.0443 (-0%) | 0.4980 quick from rest; 0.0650 quick; 0.0666 medium |
+| 13.1 | 3.141 | 3.158 (+0.6%) | 3.598 (+14.5%) | 1.612 (-48.7%) quick from rest/sst NOT CONVERGED SEPARATED; 2.965 (-5.6%) quick/sst; 2.950 (-6.1%) medium/sst | 0.0445 | 0.0459 (+3%) | 0.4980 quick from rest; 0.0650 quick; 0.0666 medium |
 
 Per element Cl on the reference chord (main, flap):
 
 | alpha | estimate | panel | RANS |
 |---|---|---|---|
-| 13.1 | 2.787, 0.347 | 3.209, 0.383 | quick from rest: 1.141, 0.471; quick: 2.656, 0.309; medium: 2.642, 0.309 |
+| 13.1 | 2.795, 0.363 | 3.217, 0.381 | quick from rest: 1.141, 0.471; quick: 2.656, 0.309; medium: 2.642, 0.309 |
 
 Lift curve, NLR 7301 gap 2.6: RANS quick | RANS medium
 
 | alpha | exp | estimate | panel | RANS quick Cl / Cd | RANS medium Cl / Cd |
 |---|---|---|---|---|---|
-| 0 | - | 1.570 | 1.788 | 1.600 / 0.0191 | 1.598 / 0.0191 |
-| 4 | - | 2.056 | 2.353 | 2.122 / 0.0243 | 2.118 / 0.0244 |
-| 8 | - | 2.539 | 2.907 | 2.603 / 0.0332 | 2.594 / 0.0335 |
-| 11 | - | 2.891 | 3.313 | 2.898 / 0.0451 | 2.881 / 0.0461 |
-| 13.1 | 3.141 | 3.133 | 3.592 | 2.965 / 0.0650 | 2.950 / 0.0666 |
-| 16 | - | 3.460 | 3.970 | 2.518 / 0.2435 (nc) sep | - |
+| 0 | - | 1.597 | 1.794 | 1.600 / 0.0191 | 1.598 / 0.0191 |
+| 4 | - | 2.083 | 2.359 | 2.122 / 0.0243 | 2.118 / 0.0244 |
+| 8 | - | 2.563 | 2.913 | 2.603 / 0.0332 | 2.594 / 0.0335 |
+| 11 | - | 2.916 | 3.319 | 2.898 / 0.0451 | 2.881 / 0.0461 |
+| 13.1 | 3.141 | 3.158 | 3.598 | 2.965 / 0.0650 | 2.950 / 0.0666 |
+| 16 | - | 3.487 | 3.975 | 2.518 / 0.2435 (nc) sep | - |
 
 #### NLR 7301 gap 1.3
 
 | alpha | Cl exp | Cl estimate (err) | Cl panel (err) | Cl RANS (err) | Cd exp | Cd estimate | Cd RANS |
 |---|---|---|---|---|---|---|---|
-| 6 | 2.416 | 2.322 (-3.9%) | 2.666 (+10.3%) | 2.371 (-1.9%) quick/sst; 2.357 (-2.4%) medium/sst | 0.0229 | 0.0286 (+25%) | 0.0278 quick; 0.0282 medium |
+| 6 | 2.416 | 2.352 (-2.7%) | 2.671 (+10.6%) | 2.371 (-1.9%) quick/sst; 2.357 (-2.4%) medium/sst | 0.0229 | 0.0287 (+26%) | 0.0278 quick; 0.0282 medium |
 
 Per element Cl on the reference chord (main, flap):
 
 | alpha | estimate | panel | RANS |
 |---|---|---|---|
-| 6 | 2.012, 0.310 | 2.318, 0.348 | quick: 2.074, 0.297; medium: 2.062, 0.295 |
+| 6 | 2.019, 0.333 | 2.324, 0.347 | quick: 2.074, 0.297; medium: 2.062, 0.295 |
 
 Lift curve, NLR 7301 gap 1.3: RANS quick | RANS medium
 
 | alpha | exp | estimate | panel | RANS quick Cl / Cd | RANS medium Cl / Cd |
 |---|---|---|---|---|---|
-| 0 | - | 1.584 | 1.818 | 1.598 / 0.0189 | 1.600 / 0.0190 |
-| 3 | - | 1.955 | 2.245 | 2.001 / 0.0224 | 1.997 / 0.0226 |
-| 6 | 2.416 | 2.322 | 2.666 | 2.371 / 0.0278 | 2.357 / 0.0282 |
-| 10 | - | 2.800 | 3.215 | 2.757 / 0.0404 | - |
+| 0 | - | 1.615 | 1.824 | 1.598 / 0.0189 | 1.600 / 0.0190 |
+| 3 | - | 1.986 | 2.250 | 2.001 / 0.0224 | 1.997 / 0.0226 |
+| 6 | 2.416 | 2.352 | 2.671 | 2.371 / 0.0278 | 2.357 / 0.0282 |
+| 10 | - | 2.829 | 3.220 | 2.757 / 0.0404 | - |
+
+plots: ['30p30n_cl.png', '30p30n_cp_21p34.png', '30p30n_cp_8p1.png', 'nlr7301_cl.png']
 <!-- /tables:nlr -->
 
 What it shows:
 
-- **Estimate.** Lift within 0.2% and 3.9% of the two measured points, and its
-  lift-curve slope from 0 to 11 deg (0.120 per deg) matches RANS (0.118);
+- **Estimate.** Lift within 0.6% and 2.6% of the two measured points, and its
+  lift-curve slope from 0 to 11 deg (about 0.12 per deg) matches RANS (0.118);
   the panel method's is 0.138, so most of what the estimate takes off the
   panel method is the right amount of viscous loss. It has no flag at either
-  point, matching attached flow in the test. Drag: within 1% at 13.1 deg and
+  point, matching attached flow in the test. Drag: within 3% at 13.1 deg and
   25% high at 6 deg (gap 1.3%). The test had long laminar runs (flap upper
   surface laminar to about 55% of its chord, flap lower surface laminar
   throughout); NeuralFoil models transition on each element alone, which is
@@ -208,8 +219,8 @@ What it shows:
   the expected direction). At 16 deg the quick-mesh run separates and does
   not converge (Cl 2.52 and falling), so RANS puts stall between 13 and
   16 deg; no published Cl max was available to check that. The estimate's
-  lift keeps rising to 3.59 at 18 deg: the two disagree on Cl max and there
-  is no data here to say which is right.
+  lift keeps rising past that: the two disagree on Cl max and there is no
+  data here to say which is right.
 - **RANS started from rest at 13.1 deg** (one angle, no sweep) fell onto a
   stalled, oscillating solution: Cl swinging between about 1.0 and 1.8,
   Cd about 0.5, main element reversed from 5% chord. The engine flagged it
@@ -231,40 +242,34 @@ What it shows:
 
 | alpha | Cl exp | Cl estimate (err) | Cl panel (err) | Cl RANS (err) | Cd exp | Cd estimate | Cd RANS |
 |---|---|---|---|---|---|---|---|
-| 8.1 | 3.135 | 2.250 (-28.3%) | 3.765 (+20.1%) | 3.157 (+0.7%) quick/sst | - | 0.0596 | 0.0411 quick |
-| 16.21 | 3.976 | 2.386 (-40.0%) | 4.763 (+19.8%) | 4.023 (+1.2%) quick/sst | - | 0.0799 | 0.0574 quick |
-| 21.34 | 4.278 | 2.322 (-45.7%) | 5.347 (+25.0%) | 4.249 (-0.7%) quick/sst | - | 0.0794 | 0.0764 quick |
-| 23.28 | 4.170 | 2.295 (-45.0%) | 5.557 (+33.3%) | 4.221 (+1.2%) quick/sst | - | 0.0793 | 0.0885 quick |
+| 8.1 | 3.135 | 3.150 (+0.5%) | 3.777 (+20.5%) | 3.157 (+0.7%) quick/sst | - | 0.0267 | 0.0411 quick |
+| 16.21 | 3.976 | 3.999 (+0.6%) | 4.776 (+20.1%) | 4.023 (+1.2%) quick/sst | - | 0.0264 | 0.0574 quick |
+| 21.34 | 4.278 | 4.505 (+5.3%) | 5.360 (+25.3%) | 4.249 (-0.7%) quick/sst | - | 0.0259 | 0.0764 quick |
+| 23.28 | 4.170 | 4.690 (+12.5%) | 5.570 (+33.6%) | 4.221 (+1.2%) quick/sst | - | 0.0258 | 0.0885 quick |
 
 Per element Cl on the reference chord (slat, main, flap):
 
 | alpha | estimate | panel | RANS |
 |---|---|---|---|
-| 8.1 | -0.410, 2.209, 0.451 | 0.350, 2.837, 0.577 | quick: 0.257, 2.442, 0.459 |
-| 16.21 | -0.410, 2.416, 0.381 | 0.738, 3.510, 0.515 | quick: 0.604, 3.023, 0.396 |
-| 21.34 | -0.410, 2.416, 0.317 | 1.038, 3.847, 0.462 | quick: 0.812, 3.130, 0.308 |
-| 23.28 | -0.410, 2.416, 0.290 | 1.165, 3.952, 0.440 | quick: 0.876, 3.079, 0.266 |
+| 8.1 | 0.332, 2.260, 0.557 | 0.348, 2.840, 0.588 | quick: 0.257, 2.442, 0.459 |
+| 16.21 | 0.700, 2.797, 0.502 | 0.735, 3.515, 0.526 | quick: 0.604, 3.023, 0.396 |
+| 21.34 | 0.985, 3.066, 0.454 | 1.034, 3.853, 0.473 | quick: 0.812, 3.130, 0.308 |
+| 23.28 | 1.106, 3.150, 0.434 | 1.161, 3.958, 0.450 | quick: 0.876, 3.079, 0.266 |
 
-Estimate flags at 8.1 deg: Main is 28.1° in place, more than 13° past its stall angle (12°): it separates; Flap 1 is turned 46.9° past main, more than the 25° RANS has held: it separates; Flap 2 is turned 34.8° past flap 1, more than the 25° RANS has held: it separates
-
-Estimate flags at 16.21 deg: Main is 52.6° in place, more than 13° past its stall angle (12°): it separates; Flap 1 is turned 46.9° past main, more than the 25° RANS has held: it separates; Flap 2 is turned 34.8° past flap 1, more than the 25° RANS has held: it separates
-
-Estimate flags at 21.34 deg: Main is 71.6° in place, more than 13° past its stall angle (12°): it separates; Flap 1 is turned 46.9° past main, more than the 25° RANS has held: it separates; Flap 2 is turned 34.8° past flap 1, more than the 25° RANS has held: it separates
-
-Estimate flags at 23.28 deg: Main is 79.6° in place, more than 13° past its stall angle (12°): it separates; Flap 1 is turned 46.9° past main, more than the 25° RANS has held: it separates; Flap 2 is turned 34.8° past flap 1, more than the 25° RANS has held: it separates
+Estimate flags at 23.28 deg: Slat's suction peak is 38 below its trailing-edge pressure (Cp) in place, more than the 35 the 30P30N slat held: it separates; 
 
 Lift curve, 30P30N: RANS quick
 
 | alpha | exp | estimate | panel | RANS quick Cl / Cd |
 |---|---|---|---|---|
-| 0 | - | 2.038 | 2.691 | 2.219 / 0.0322 |
-| 4 | - | 2.066 | 3.229 | 2.689 / 0.0357 |
-| 8.1 | 3.135 | 2.250 | 3.765 | 3.157 / 0.0411 |
-| 12 | - | 2.427 | 4.256 | 3.592 / 0.0478 |
-| 16.21 | 3.976 | 2.386 | 4.763 | 4.023 / 0.0574 |
-| 19 | - | 2.353 | 5.086 | 4.229 / 0.0716 (nc) |
-| 21.34 | 4.278 | 2.322 | 5.347 | 4.249 / 0.0764 |
-| 23.28 | 4.170 | 2.295 | 5.557 | 4.221 / 0.0885 |
+| 0 | - | 2.294 | 2.704 | 2.219 / 0.0322 |
+| 4 | - | 2.697 | 3.242 | 2.689 / 0.0357 |
+| 8.1 | 3.135 | 3.150 | 3.777 | 3.157 / 0.0411 |
+| 12 | - | 3.566 | 4.268 | 3.592 / 0.0478 |
+| 16.21 | 3.976 | 3.999 | 4.776 | 4.023 / 0.0574 |
+| 19 | - | 4.277 | 5.098 | 4.229 / 0.0716 (nc) |
+| 21.34 | 4.278 | 4.505 | 5.360 | 4.249 / 0.0764 |
+| 23.28 | 4.170 | 4.690 | 5.570 | 4.221 / 0.0885 |
 <!-- /tables:p30 -->
 
 What it shows:
@@ -283,28 +288,32 @@ What it shows:
   The 19 deg point did not meet the convergence test (Cl still moving by
   0.015 per 100 iterations).
 - **Panel** 20 to 33% high, growing with angle because nothing stalls.
-- **Estimate**: 28 to 46% low and flat from 8 deg up, with every row marked
-  not trusted and separating. It cannot represent a slat:
-  - The engine knows elements as Main, Flap 1, Flap 2 in order front to
-    back. Given the slat first, it calls the slat "Main" and the main "Flap
-    1", so its separation rules read the main as turned 46.9 deg past the
-    "main" and the flap 34.8 deg past the element in front, both beyond its
-    25 deg limit.
-  - The slat comes out with negative lift (-0.41 on the reference chord at
-    every angle from 6 deg up), where the panel method gives +0.35 to +1.17
-    and RANS +0.26 to +0.88. See "Possible engine bugs" for why.
-  - Its NeuralFoil confidence for the slat is essentially zero and for the
-    main 0.43, which is why every row is marked not trusted. The warning is
-    right; the numbers should not be shown as a lift estimate at all.
-- **The 25 deg deflection limit.** Measured chord line to chord line as the
-  engine does (leading edge = point furthest from the trailing edge), the
-  30P30N flap sits 34.8 deg past the main. NASA TM-112858 says the flap
-  stayed attached at Re 9 million at the lower angles, and RANS here finds no
-  separation on it at any angle. So the 25 deg limit, fitted on the
-  engine's own low-Re RANS wings, is conservative for a well-rigged
-  high-Re flap. Note also that the engine's chord-line angle is not the
-  nominal deflection: the NLR flap is "20 deg" nominal and 14.1 deg chord
-  line to chord line.
+- **Estimate**: within 0.6% to 16 deg, 5.3% high at Cl max, and it keeps
+  rising past Cl max (it has no model of the lift falling). It marks the wing
+  separating at 23.28 deg, at the slat. Per element it is less good than the
+  total: up to Cl max, slat 16 to 29% high, flap 21 to 47% high, main 2 to 8%
+  low against RANS. Those errors partly cancel.
+  - Every row is marked **not trusted**: NeuralFoil's confidence is 0.0 on
+    the slat section and 0.43 on the main. That flag is right and stays: the
+    viscous correction on those two comes from a network outside its range.
+    In the app and the optimiser a slatted wing therefore shows as untrusted,
+    and a study fails those trials.
+  - Drag (0.026, flat with angle) is **not usable** on a slatted wing. RANS
+    gives 0.041 to 0.089 and rises with angle. There is no tunnel drag for
+    this case. A slat and the main behind it are held at their stall-onset
+    drag with no growth, which cannot show the rise.
+  - Stall is one fitted number. `SLAT_PEAK_LIMIT` 35 sits between the slat's
+    32.1 at Cl max and 38.0 past it, from this case alone, at Re 9 million.
+    Its dependence on Reynolds and Mach number is unknown.
+- **The flap limit.** Measured chord line to chord line as the engine does
+  (leading edge = point furthest from the trailing edge), the 30P30N flap sits
+  34.8 deg past the main, attached. The limit is now 25 deg up to a flap
+  Reynolds number of 1.5 x 10^5 (where the engine's RANS set it), rising
+  linearly in log Re to 35 deg at 2.7 x 10^6. **Nothing between those two was
+  tested**, and a racing flap at 40 m/s (Re about 5 x 10^5) gets about 29 deg
+  from that line alone. Confirm such a flap with RANS. Note also that the
+  chord-line angle is not the nominal deflection: the NLR flap is "20 deg"
+  nominal and 14.1 deg chord line to chord line.
 
 ## Ground effect
 
@@ -319,65 +328,46 @@ report.
 | quantity | estimate (live) | panel | RANS (quick/medium, SST) |
 |---|---|---|---|
 | Lift, conventional main + flap(s), attached, alpha below about 13 deg | Within 4% on the two NLR points; slope right. Use for design trends and screening. Confirm the final choice with RANS. | 10 to 25% high. Trends only. | Within 2 to 6% (NLR), 1% (30P30N). Use as the number, with a mesh check. |
-| Lift with a leading-edge slat | **Do not use** (28 to 46% low, flagged untrusted). | 20 to 33% high. | Within 1.2% on 30P30N. |
+| Lift with a leading-edge slat | Within 1% to 16 deg, 5% at Cl max, on one case. Marked untrusted (NeuralFoil outside its range). Total only: per-element errors reach 47%. | 20 to 33% high. | Within 1.2% on 30P30N. |
 | Cl max and stall angle | No test of its Cl max matched to data here; the NLR run disagrees with RANS on stall by 2 to 5 deg. Treat as unvalidated. | None (no stall). | 30P30N Cl max within 1% and post-stall drop captured; on NLR no data. Needs a rising sweep; one angle from rest can land on a stalled branch. |
-| Drag | One point within 1%, one 25% high. Order of magnitude only. | Meaningless. | 21 to 46% high on NLR (fully turbulent, quick mesh). Use for comparing designs at the same settings, not for absolute drag. |
-| Surface Cp | Not produced. | Shape right, suction 20 to 30% high, trailing-edge spikes (see below). | Matches 30P30N measurements on all three elements. |
+| Drag | Main + flap: one point within 3%, one 25% high. Order of magnitude only. Slatted: not usable. | Meaningless. | 21 to 46% high on NLR (fully turbulent, quick mesh). Use for comparing designs at the same settings, not for absolute drag. |
+| Surface Cp | Not produced. | Shape right, suction 20 to 30% high. | Matches 30P30N measurements on all three elements. |
 | Ground effect | Not validated against any experiment. | Overstates the ground's gain (by the engine's own account). | Not validated against any experiment. |
 
 Caveats that apply to every row: two configurations, six measured points,
 both at Re 2.5 to 9 million. The racing use of the app is mostly at Re 0.2
 to 1 million and in ground effect, where nothing here applies directly.
 
-## Possible engine bugs and weak spots found
+## Engine bugs found here, and what became of them
 
-1. **Estimate: slat lift wrong in sign, from a linear fit used far outside
-   its range.** `engine/src/aeroengine/wing/estimate.py`, in `estimate()`:
-   "Each element alone, in place: its inviscid lift is linear in the
-   freestream angle, so two solves give it exactly", fitted at 0 and 5 deg.
-   The panel method's lift is linear in sin and cos of the angle, not in the
-   angle, so the fit drifts away from 0 to 5 deg. Element alone, panel
-   method against the fit (lift on its own chord): 30P30N slat at 78 deg
-   freestream 3.99 against 2.28; flap at 30 deg 6.53 against 7.14; main at
-   60 deg 6.02 against 7.24. The slat's in-place lift needs an effective
-   freestream angle of about 78 deg (its chord line sits at -50 deg), so
-   both the effective angle and the FRONT_LIFT_LIMIT cap (`inviscid[k][i] =
-   base + slope_here * (cap - alphas[k])`) are evaluated far outside the
-   fit, and the slat ends at -0.41 (on the reference chord) where the panel
-   method itself gives +0.35. On conventional wings (NLR) the elements'
-   effective angles stay near the fit range and the error is small. Reproduce
-   with the snippet in this README's appendix.
-2. **Panel method: open blunt trailing edges.** `panel.py` leaves a
-   trailing-edge gap open (documented in its docstring). The two trailing-edge
-   nodes then carry very large speeds: NACA 0012 as generated by
-   `airfoils.naca4("0012")` (gap 0.25% c) at 5 deg gives Cp -23.8 at both
-   trailing-edge nodes; the 30P30N slat gives -395 and the flap -173 at
-   8.1 deg. Lift moves too: closing each 30P30N trailing edge at the
-   midpoint of its base changes total Cl at 8.1 deg from 3.765 to 3.594
-   (-4.5%). XFOIL closes such gaps with a source panel; anything that shows
-   panel Cp near a blunt trailing edge will show these spikes.
-3. **No slat in the element model.** Not a bug in code, a gap in scope:
-   `geometry.label()` and the estimate's separation rules assume element 0 is
-   the main and every other element is a flap behind it.
-4. **RANS from rest at high angle** (NLR, 13.1 deg) converges to a stalled
-   branch where the sweep finds attached flow (Cl 1.6 against 3.0). The run
-   is flagged, but a user running one angle would get a wrong, if labelled,
-   answer.
-
-## Appendix: reproducing bug 1 and 2
-
-```python
-import json, numpy as np
-from aeroengine.wing.panel import Solver
-from aeroengine.wing.airfoils import naca4
-c = json.load(open("../docs/validation/published/data/30p30n/elements.json"))
-for e in c["elements"]:  # each element alone: panel lift against the estimate's 0-5 deg linear fit
-    s = Solver([np.array(e["coords"])], e["chord"])
-    c0, c5 = s.solve(0).cl_total, s.solve(5).cl_total
-    print(e["name"], [(a, round(s.solve(a).cl_total, 2), round(c0 + (c5 - c0) / 5 * a, 2)) for a in (10, 30, 60, 78)])
-s = Solver([np.asarray(naca4("0012"), float)], 1.0).solve(5.0)
-print("NACA 0012 trailing-edge node Cp:", s.cp[0][0], s.cp[0][-1])
-```
+1. **Estimate: a straight-line fit of lift against angle, used far outside its
+   range. Fixed.** Effective angles, the front-element lift cap and the viscous
+   ratio now come from secant steps on the panel solver. An element alone read
+   0.5 deg of upwash at 18 deg; it now reads none. Over a ground the straight
+   line stays on purpose: the element's lift alone there rises faster than the
+   line (turned toward the ground), and the ground drag and separation are
+   fitted to RANS on that reading. The exact curve would move the main 6 deg at
+   150 mm and lose the drag calibration, and two RANS points cannot support a
+   new one. The front-element constants were refitted on the seven converged
+   RANS references (`FRONT_LIFT_LIMIT` 9.25, `FRONT_SEPARATION` 15,
+   `DRAG_GROWTH` 0.0076): lift within 3.4%, drag within 9.1%.
+2. **Panel method: open blunt trailing edges. Fixed**, in `panel.py` and the
+   app's `PanelSolver.swift` (they agree to 1e-10). Each surface moves half the
+   gap over the last 20% of chord, as XFOIL's TGAP. NACA 0012 trailing-edge Cp
+   goes from -23.8 to +0.54 (the sharp section's 0.53); the 30P30N slat's -395
+   goes away. Lift moves under 0.5%, and blend lengths of 5 to 40% of chord move
+   it 0.2%. This replaces an earlier note here of -4.5%, which came from moving
+   only the end nodes.
+3. **No slat in the element model. Fixed in the estimate only.** The main is the
+   first element at least half the longest chord; any ahead are slats. The app's
+   canvas and menus (`WingIssue.label`), the gap and overlap rules in
+   `geometry.py`, and the optimiser still assume element 0 is the main, so a
+   slatted wing's estimate says "Slat" where the canvas says "Main".
+4. **The 25 deg deflection limit. Now rises with Reynolds number**, see Case 2.
+5. **RANS from rest at high angle** (NLR, 13.1 deg) converges to a stalled
+   branch where the sweep finds attached flow (Cl 1.6 against 3.0). The run is
+   flagged, but a user running one angle would get a wrong, if labelled, answer.
+   Not changed.
 
 ## How to rerun
 

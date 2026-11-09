@@ -309,3 +309,12 @@ Not re-checked with RANS: whether the new picks for B and D hold.
 
 Run each from `engine/`: `uv run python ../docs/validation/optimiser/<script>.py`.
 Each one takes under 4 minutes and none runs RANS.
+
+## Estimate version 2 (9 November 2026)
+
+Everything above was measured on estimate version 1. Version 2 finds effective
+angles on the panel solver, closes blunt trailing edges and refits the
+front-element limits (`docs/validation/published/README.md`). Separation lines in
+degrees moved with it, so the picks and margins quoted above may have moved too.
+The audit was not rerun. The margin test
+(`test_the_estimate_study_keeps_off_the_deflection_line`) still passes.
