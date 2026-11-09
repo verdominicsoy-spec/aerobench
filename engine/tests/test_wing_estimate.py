@@ -130,3 +130,51 @@ def test_an_element_alone_has_no_upwash_at_any_angle():
     els = [{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "chord": 0.3, "angle": 18.0, "inverted": False}]
     for row in estimate(els, [-10.0, 0.0, 6.0], 15.0)["rows"]:
         assert abs(row["elements"][0]["upwash"]) < 0.01
+
+
+def test_label_names_slats_ahead_of_the_main():
+    from aeroengine.wing.geometry import label
+
+    assert [label(i) for i in range(3)] == ["Main", "Flap 1", "Flap 2"]
+    assert [label(i, main=1) for i in range(3)] == ["Slat", "Main", "Flap 1"]
+    assert [label(i, main=2) for i in range(4)] == ["Slat 1", "Slat 2", "Main", "Flap 1"]
+
+
+def _p30(alphas):
+    """30P30N (slat, main, flap at 30/30 deg) at the tunnel's Reynolds number, 9 million on the stowed chord."""
+    import json
+
+    c = json.loads((Path(__file__).parent / "data" / "30p30n.json").read_text())
+    els = [{k: e[k] for k in ("coords", "unit", "chord", "angle", "inverted")} for e in c["elements"]]
+    rho, mu = 1.225, 1.81e-5
+    return estimate(els, alphas, 9.0e6 * mu / (rho * c["ref_chord"]), rho=rho, mu=mu, ref_chord=c["ref_chord"])["rows"]
+
+
+def test_a_slatted_wing_against_the_tunnel():
+    """NASA LTPT, 30P30N (Klausmeyer and Lin, NASA TM-112858): Cl 3.135 at 8.10
+    degrees, 3.976 at 16.21, 4.278 at 21.34 (about Cl max), 4.170 at 23.28. Before
+    slats were known the estimate called the slat the main and the main a flap
+    turned 47 degrees, and read 28 to 46% low."""
+    rows = _p30([8.10, 16.21, 21.34, 23.28])
+    for r, cl in zip(rows[:3], (3.135, 3.976, 4.278)):
+        assert not r["separating"], r["why"]
+        assert r["cl"] == pytest.approx(cl, rel=0.08)
+        assert r["elements"][0]["cl"] > 0  # the slat lifts
+        assert all(e["deflection"] is None for e in r["elements"][:2])
+    assert rows[3]["separating"] and rows[3]["why"].startswith("Slat")
+
+
+def test_the_deflection_limit_rises_with_reynolds_number():
+    """25 degrees where RANS fixed it (flaps to 1.4 x 10^5), 35 at the 30P30N flap's 2.7 x 10^6."""
+    from aeroengine.wing.estimate import max_deflection
+
+    assert max_deflection(5e4) == max_deflection(1.5e5) == pytest.approx(25.0)
+    assert max_deflection(2.7e6) == max_deflection(9e6) == pytest.approx(35.0)
+    assert 25.0 < max_deflection(5e5) < 35.0
+
+
+def test_a_flap_as_big_as_the_main_is_not_a_slat_case():
+    from aeroengine.wing.estimate import main_index
+
+    assert main_index([0.3, 0.32]) == 0
+    assert main_index([0.15, 0.83, 0.30]) == 1

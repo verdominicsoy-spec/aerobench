@@ -25,7 +25,7 @@ import numpy as np
 import optuna
 
 from ..job import EngineError
-from .estimate import FRONT_LIFT_LIMIT, MAX_DEFLECTION
+from .estimate import FRONT_LIFT_LIMIT
 from .estimate import VERSION as ESTIMATE_VERSION
 from .geometry import Variable, Wing, apply, label
 
@@ -234,17 +234,18 @@ def score(spec: Spec, load: float, cd: float, wing: Wing | None = None,
 
 def separation_margin(row: dict) -> float | None:
     """Degrees an estimate row has left before the nearest separation line the
-    estimate draws: a flap turned MAX_DEFLECTION past the element in front or
-    past the main, a front element FRONT_LIFT_LIMIT past its stall angle (its
-    lift stops growing there; it separates a few degrees on). Negative past a
-    line; None for a single element (its stall check keeps its own margin)."""
+    estimate draws: a flap turned its max_deflection past the element in front
+    or past the main, a front element FRONT_LIFT_LIMIT past its stall angle (its
+    lift stops growing there; it separates a few degrees on). A slat and the
+    main behind it have no line in degrees (their stall is a pressure rule).
+    Negative past a line; None for a single element (its stall check keeps its
+    own margin)."""
     els = row["elements"]
     if len(els) < 2:
         return None
-    turns = [float(e["deflection"]) for e in els[1:]]
-    left = [MAX_DEFLECTION - t for t in turns] + [MAX_DEFLECTION - t for t in np.cumsum(turns)]
-    left += [FRONT_LIFT_LIMIT - (e["effective_angle"] - e["stall_angle"]) for e in els[:-1]]
-    return float(min(left))
+    left = [e["max_deflection"] - e[k] for e in els for k in ("deflection", "past_main") if e[k] is not None]
+    left += [FRONT_LIFT_LIMIT - (e["effective_angle"] - e["stall_angle"]) for e in els[:-1] if not e["led"]]
+    return float(min(left)) if left else None
 
 
 def from_estimate(row: dict) -> dict:

@@ -522,8 +522,9 @@ def test_a_design_near_a_separation_line_scores_less_smoothly():
 
 
 def test_the_margin_is_to_the_nearest_line():
-    def el(deflection, angle, stall):
-        return {"deflection": deflection, "effective_angle": angle, "stall_angle": stall}
+    def el(deflection, angle, stall, past=None):
+        return {"deflection": deflection, "past_main": deflection if past is None else past, "max_deflection": 25.0,
+                "led": False, "effective_angle": angle, "stall_angle": stall}
 
     # Front element 5 past its stall (4 left to the lift limit), the flap 24 past it (1 left).
     row = {"elements": [el(None, 15.0, 10.0), el(24.0, 3.0, 12.0)]}
@@ -531,7 +532,7 @@ def test_the_margin_is_to_the_nearest_line():
     row = {"elements": [el(None, 18.5, 10.0), el(10.0, 3.0, 12.0)]}  # 8.5 past stall: 0.5 left
     assert optimise.separation_margin(row) == pytest.approx(optimise.FRONT_LIFT_LIMIT - 8.5)
     # Three elements: each flap within 25 of the one in front, the last 30 past the main.
-    row = {"elements": [el(None, 0.0, 10.0), el(15.0, 0.0, 10.0), el(15.0, 3.0, 12.0)]}
+    row = {"elements": [el(None, 0.0, 10.0), el(15.0, 0.0, 10.0), el(15.0, 3.0, 12.0, past=30.0)]}
     assert optimise.separation_margin(row) == pytest.approx(25.0 - 30.0)
     assert optimise.separation_margin({"elements": [el(None, 3.0, 12.0)]}) is None  # one element: no such line
 
@@ -556,11 +557,12 @@ def test_the_estimate_study_keeps_off_the_deflection_line(tmp_path):
 
 def test_an_untrusted_estimate_fails_its_trial_with_the_reason():
     def el(confidence):
-        return {"cl": -1.0, "cd": 0.02, "cm": -0.1, "deflection": None, "effective_angle": 3.0, "stall_angle": 12.0,
-                "confidence": confidence, "trusted": confidence >= 0.8}
+        return {"cl": -1.0, "cd": 0.02, "cm": -0.1, "deflection": None, "past_main": None, "max_deflection": 25.0,
+                "led": False, "effective_angle": 3.0, "stall_angle": 12.0, "confidence": confidence,
+                "trusted": confidence >= 0.8}
 
     row = {"cl": -2.0, "cd": 0.04, "separating": False, "why": None, "elements": [el(0.95), el(0.95)], "trusted": True}
-    row["elements"][1]["deflection"] = 10.0
+    row["elements"][1].update(deflection=10.0, past_main=10.0)
     assert optimise.from_estimate(row)["converged"]
     row["elements"][0].update(confidence=0.72, trusted=False)
     row["trusted"] = False

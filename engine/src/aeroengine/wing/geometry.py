@@ -109,8 +109,11 @@ class Wing:
         return out
 
 
-def label(i: int) -> str:
-    return "Main" if i == 0 else f"Flap {i}"
+def label(i: int, main: int = 0) -> str:
+    """An element's name: slats ahead of the main, flaps behind it."""
+    if i < main:
+        return "Slat" if main == 1 else f"Slat {i + 1}"
+    return "Main" if i == main else f"Flap {i - main}"
 
 
 def closest(p: np.ndarray, poly: np.ndarray) -> tuple[np.ndarray, float]:
