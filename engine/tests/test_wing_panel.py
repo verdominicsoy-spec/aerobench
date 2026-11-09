@@ -87,3 +87,14 @@ def test_two_element_wing_converges_with_panel_count():
     # A deflected flap loads the main element up: more lift than the main alone.
     alone = Solver(_two_element(161)[:1]).solve(4).cl_total
     assert Solver(_two_element(161)).solve(4).cl[0] > alone
+
+
+def test_a_blunt_trailing_edge_has_no_speed_spike():
+    """naca4's 0012 has a 0.25% chord trailing-edge base. Left open, its two
+    end nodes read Cp -23.6 at 5 degrees; closed by thinning the last 20% of
+    chord (as XFOIL's TGAP), they read as the sharp section's, lift unchanged."""
+    blunt = Solver([section("o", naca4("0012")).coords]).solve(5)
+    sharp = Solver([section("c", naca4("0012", closed=True)).coords]).solve(5)
+    assert min(blunt.cp[0][0], blunt.cp[0][-1]) > 0.4
+    assert blunt.cp[0][0] == pytest.approx(sharp.cp[0][0], abs=0.05)
+    assert blunt.cl_total == pytest.approx(sharp.cl_total, rel=0.002)

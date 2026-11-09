@@ -37,7 +37,9 @@ public struct PanelSolution: Sendable {
 /// per geometry; each angle of attack is then one back substitution.
 ///
 /// Elements are point lists in Selig order (trailing edge, upper surface,
-/// leading edge, lower surface, trailing edge) in one shared frame.
+/// leading edge, lower surface, trailing edge) in one shared frame. A
+/// trailing edge with a base is closed first, as the engine does
+/// (`closeTrailingEdge`): left open, its end nodes carry unbounded speeds.
 public final class PanelSolver: @unchecked Sendable {
     public let elements: [[SIMD2<Double>]]
     public let refChord: Double
@@ -56,6 +58,27 @@ public final class PanelSolver: @unchecked Sendable {
 
     /// A trailing edge gap below this fraction of chord counts as closed.
     static let sharpFraction = 1e-4
+    /// A blunt trailing edge is closed over this fraction of chord (the engine's CLOSE_BLEND).
+    static let closeBlend = 0.2
+
+    /// The section with its trailing-edge base closed, as the engine's
+    /// close_trailing_edge (XFOIL's TGAP): each surface moves half the gap
+    /// toward the other by (1 - s / blend)² of it at s chords from the trailing
+    /// edge. Sections already closed come back unchanged.
+    public static func closeTrailingEdge(_ pts: [SIMD2<Double>]) -> [SIMD2<Double>] {
+        guard let first = pts.first, let last = pts.last else { return pts }
+        let gap = first - last, te = (first + last) / 2
+        let dist = pts.map { simd_length($0 - te) }
+        guard let le = dist.indices.max(by: { dist[$0] < dist[$1] }), dist[le] > 0,
+              simd_length(gap) >= sharpFraction * dist[le] else { return pts }
+        let axis = (te - pts[le]) / dist[le]
+        return pts.enumerated().map { i, p in
+            let s = simd_dot(te - p, axis) / dist[le]
+            let w = pow(max(0, 1 - s / closeBlend), 2)
+            let side = i < le ? -0.5 : (i > le ? 0.5 : 0)  // upper surface (first) moves down the gap, lower up
+            return p + side * w * gap
+        }
+    }
 
     /// The height (y) of a ground plane along x, the flow's direction, or nil.
     public let ground: Double?
@@ -66,6 +89,7 @@ public final class PanelSolver: @unchecked Sendable {
     /// an image wing of opposite vorticity mirrored in it, as in the engine.
     public init?(elements: [[SIMD2<Double>]], refChord: Double? = nil, refPoint: SIMD2<Double>? = nil, ground: Double? = nil) {
         guard !elements.isEmpty, elements.allSatisfy({ $0.count >= 6 }) else { return nil }
+        let elements = elements.map(Self.closeTrailingEdge)
         self.elements = elements
         self.ground = ground
         let all = elements.flatMap { $0 }

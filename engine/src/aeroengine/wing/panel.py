@@ -8,9 +8,13 @@ gamma itself, so Cp = 1 - (gamma / V)^2.
 
 Elements are point arrays in Selig order (trailing edge, upper surface,
 leading edge, lower surface, trailing edge) in one shared frame, chord
-lengths in metres or any unit. A trailing edge gap is left open (no TE
-panel); a closed trailing edge, whose first and last nodes coincide, gets
-XFOIL's extrapolation condition in place of the duplicate equation.
+lengths in metres or any unit. A trailing edge with a base (a gap between
+its first and last nodes) is closed before solving by thinning the last
+CLOSE_BLEND of chord, as XFOIL's TGAP does: left open, the flow wraps round
+the base and the two end nodes carry speeds without limit (Cp -24 on naca4's
+0012, -395 on the 30P30N slat). Lift moves under 0.5%. A closed trailing
+edge, whose first and last nodes coincide, gets XFOIL's extrapolation
+condition in place of the duplicate equation.
 
 This ignores viscosity, so it has nothing to say about the slot effects
 that set the best gap; it is for angle trends and sanity checks. The stream
@@ -25,6 +29,23 @@ from dataclasses import dataclass
 import numpy as np
 
 SHARP = 1e-4  # a trailing edge gap below this fraction of the element's chord counts as closed
+CLOSE_BLEND = 0.2  # a blunt trailing edge is closed over this fraction of chord (0.05 to 0.4 move lift 0.2%)
+
+
+def close_trailing_edge(xy: np.ndarray, blend: float = CLOSE_BLEND) -> np.ndarray:
+    """The section with its trailing-edge base closed: each surface moves
+    half the gap toward the other, by (1 - s / blend)^2 of it at s chords
+    from the trailing edge, so the ends meet at the base's midpoint."""
+    xy = np.asarray(xy, float)
+    gap = xy[0] - xy[-1]
+    te = 0.5 * (xy[0] + xy[-1])
+    le = int(np.argmax(np.linalg.norm(xy - te, axis=1)))
+    chord = float(np.linalg.norm(xy[le] - te))
+    s = (te - xy) @ ((te - xy[le]) / chord) / chord
+    w = np.clip(1 - s / blend, 0, None) ** 2
+    side = np.where(np.arange(len(xy)) < le, -0.5, 0.5)  # upper surface (first) moves down the gap, lower up
+    side[le] = 0
+    return xy + (side * w)[:, None] * gap
 
 
 @dataclass
@@ -97,7 +118,11 @@ class Solver:
         It is an image wing of opposite vorticity mirrored in that line,
         which makes the line a streamline: a ground moving with the flow, as
         a rolling road, without a boundary layer of its own."""
-        self.elements = [np.asarray(e, float) for e in elements]
+        self.elements = []
+        for e in elements:
+            xy = np.asarray(e, float)
+            chord = np.max(np.linalg.norm(xy - 0.5 * (xy[0] + xy[-1]), axis=1))
+            self.elements.append(close_trailing_edge(xy) if np.linalg.norm(xy[0] - xy[-1]) >= SHARP * chord else xy)
         self.ground = ground
         if not self.elements:
             raise ValueError("no elements")

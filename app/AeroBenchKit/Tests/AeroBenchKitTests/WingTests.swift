@@ -26,11 +26,18 @@ final class PanelSolverTests: XCTestCase {
 
     func testSingleSectionsMatchTheEngine() throws {
         let s0012 = try XCTUnwrap(PanelSolver(elements: [naca("0012").coords]))
-        XCTAssertEqual(s0012.solve(alphaDeg: 5).clTotal, 0.6037127882, accuracy: 1e-6)
+        XCTAssertEqual(s0012.solve(alphaDeg: 5).clTotal, 0.6032020226, accuracy: 1e-6)
         XCTAssertEqual(s0012.solve(alphaDeg: 0).clTotal, 0, accuracy: 1e-9)
         let r = try XCTUnwrap(PanelSolver(elements: [naca("2412").coords])).solve(alphaDeg: 0)
-        XCTAssertEqual(r.clTotal, 0.2608677840, accuracy: 1e-6)
-        XCTAssertEqual(r.cmTotal, -0.0557838567, accuracy: 1e-6)
+        XCTAssertEqual(r.clTotal, 0.2597964066, accuracy: 1e-6)
+        XCTAssertEqual(r.cmTotal, -0.0555730252, accuracy: 1e-6)
+    }
+
+    func testABluntTrailingEdgeHasNoSpeedSpike() throws {
+        // naca4's 0012 has a 0.25% chord base: left open its end nodes read Cp -23.6 at 5 degrees.
+        let r = try XCTUnwrap(PanelSolver(elements: [naca("0012").coords])).solve(alphaDeg: 5)
+        XCTAssertGreaterThan(r.cp[0][0], 0.4)
+        XCTAssertGreaterThan(r.cp[0].last!, 0.4)
     }
 
     private func twoElement(inverted: Bool) -> Wing {
@@ -46,9 +53,9 @@ final class PanelSolverTests: XCTestCase {
             let solver = try XCTUnwrap(PanelSolver(elements: wing.elements.map { $0.placed() }, refChord: wing.refChord))
             let r = solver.solve(alphaDeg: wing.alpha)
             let sign = inverted ? -1.0 : 1.0
-            XCTAssertEqual(r.cl[0], sign * 1.8316764781, accuracy: 1e-6)
-            XCTAssertEqual(r.cl[1], sign * 0.3521301397, accuracy: 1e-6)
-            if !inverted { XCTAssertEqual(r.cmTotal, -0.4099664567, accuracy: 1e-6) }
+            XCTAssertEqual(r.cl[0], sign * 1.8282154342, accuracy: 1e-6)
+            XCTAssertEqual(r.cl[1], sign * 0.3518084095, accuracy: 1e-6)
+            if !inverted { XCTAssertEqual(r.cmTotal, -0.4092349172, accuracy: 1e-6) }
         }
     }
 
