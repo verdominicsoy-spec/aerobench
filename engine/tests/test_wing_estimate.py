@@ -60,7 +60,7 @@ def test_a_flap_turned_too_far_past_the_main_separates():
     six = layout([naca4("6212")] * 2, 0.44, True)
     far = apply(six, {"angle_0": -0.97, "angle_1": 41.2, "gap_1": 0.0069, "overlap_1": 0.0158})
     r = estimate(_elements(far), [0.0], 15.0)["rows"][0]
-    assert r["elements"][1]["effective_angle"] < 15  # low: the main's downwash
+    assert r["elements"][1]["effective_angle"] < 17  # low against its 42-degree turn: the main's downwash
     assert r["separating"] and r["why"].startswith("Flap 1 is turned 42.2")
 
 
@@ -116,3 +116,17 @@ def test_flaps_separate_past_the_main_as_rans_found():
 
     assert not separates(3, -2, 12) and not separates(4, -2, 8)  # 24 degrees: RANS attached
     assert separates(3, -2, 16) and separates(4, -2, 10) and separates(3, 2, 19)  # 32, 30, 38 degrees
+
+
+def test_an_element_alone_has_no_upwash_at_any_angle():
+    """Nothing round it, so the angle that gives its in-place lift alone is
+    the freestream's. A straight-line fit of lift against angle (0 to 5
+    degrees) put it 0.5 degrees off at 18 degrees, and 30 off on the 30P30N
+    slat, whose in-place angle sits far outside the fit."""
+    from aeroengine.wing.airfoils import naca4
+    from aeroengine.wing.geometry import Element
+
+    e = Element(naca4("4412"), 0.3, 18.0, [0.0, 0.0], False)
+    els = [{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "chord": 0.3, "angle": 18.0, "inverted": False}]
+    for row in estimate(els, [-10.0, 0.0, 6.0], 15.0)["rows"]:
+        assert abs(row["elements"][0]["upwash"]) < 0.01

@@ -26,7 +26,8 @@ degrees and separated from 26.0 whatever the gap; on the NACA 6212 starting
 wing it held at 22 and separated at 42 and 46 with the main free to move.
 The flap's effective angle does not split them: with the main free, a
 heavily loaded main's downwash keeps the flap's effective angle low in the
-panel method (9 to 13 degrees on the wings that separated) while the flap,
+panel method (9 to 13 degrees on the wings that separated, by the
+straight-line fit used then; 16 on one found exactly) while the flap,
 recovering pressure in the main's wake, separates; and an effective-angle
 line moved by the gap, fitted earlier on the overnight study, marked two of
 its attached trials separating. With three to five elements (RANS, NACA
@@ -56,19 +57,25 @@ from .viscous import polar, reynolds
 # Bump on any change to what the estimate returns for a wing: a study records
 # the version that scored it and will not resume on another (optimise.run).
 # Version 1: November 2026, with ground_share and the optimiser's margin and trust guards.
-VERSION = 1
+# Version 2: effective angles found on the solver (not a straight-line fit), trailing edges closed,
+# front-element limits refitted on the RANS references.
+VERSION = 2
 STALL_MARGIN = 2.0  # degrees: the last element counts as separating this far short of its stall angle
 # An element with another behind it: the slot keeps it attached well past its
 # own stall angle, but not for ever. Fitted on a NACA 6212 main-and-flap wing
-# swept through stall with RANS (0 to -9 degrees): attached and lift right to
-# 8 degrees past its stall angle in place, lift 7% over at 12, separated at
-# 15.6. Its lift stops growing FRONT_LIFT_LIMIT past stall, it counts as
-# separating FRONT_SEPARATION past stall, and its drag grows with the square
-# of how far past stall onset it is (DRAG_GROWTH fits the three attached
-# angles within 5%; held at onset, the drag was 30 to 60% low).
-FRONT_LIFT_LIMIT = 9.0
-FRONT_SEPARATION = 13.0
-DRAG_GROWTH = 0.0087  # per degree squared past stall onset
+# swept through stall with RANS (0 to -9 degrees): attached at 5.1, 9.4 and
+# 13.8 degrees past its stall angle in place, separated at 18.4, and at 16.0
+# 60 mm over a ground. Its lift stops growing FRONT_LIFT_LIMIT past stall, it
+# counts as separating FRONT_SEPARATION past stall, and its drag grows with
+# the square of how far past stall onset it is (held at onset, the drag was
+# 30 to 60% low). Together they hold the seven converged RANS references in
+# validation.RANS_REFERENCES to 3.4% on lift and 9.1% on drag. (In-place
+# angles found on the panel solver exactly; a straight-line fit of lift
+# against angle had read them 1 to 3 degrees low, with FRONT_SEPARATION 13
+# and DRAG_GROWTH 0.0087 fitted on that.)
+FRONT_LIFT_LIMIT = 9.25
+FRONT_SEPARATION = 15.0
+DRAG_GROWTH = 0.0076  # per degree squared past stall onset
 # An element behind another separates once it is turned more than this past
 # the one in front (degrees, chord line to chord line), whatever its
 # effective angle: the overnight wing held to 25.2 and separated from 26.0,
@@ -129,49 +136,48 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
     ref = float(ref_chord or sum(chords))
     multi = Solver(placed, ref) if ride_height is None else None
 
-    # Each element alone, in place: its inviscid lift is linear in the
-    # freestream angle, so two solves give it exactly.
+    # Each element alone, in place. Its panel lift is close to sinusoidal in
+    # the freestream angle, not linear, and an element behind or ahead of
+    # another sits tens of degrees from the angles a straight-line fit is
+    # made at (the 30P30N slat at 78), so every angle below is found on the
+    # solver itself; two solves at 0 and 5 degrees only give the first step.
+    alone_solvers = [Solver([xy], c) for xy, c in zip(placed, chords)]
     alone = []
-    for xy, c in zip(placed, chords):
-        s = Solver([xy], c)
+    for s in alone_solvers:
         c0, c5 = s.solve(0.0).cl_total, s.solve(5.0).cl_total
         alone.append((c0, (c5 - c0) / 5.0))
 
+    def free_lift(i: int):
+        return lambda fa: alone_solvers[i].solve(float(fa)).cl_total
+
     # Effective angles for every wing angle first, then one NeuralFoil call
-    # per element for all of them. `local` is each element's lift alone in
-    # its surroundings at that wing angle and its slope per degree of
-    # freestream: free air, the linear fit above; over a ground, two solves
-    # of the element alone over the same ground, as placed and turned a
-    # degree about its centroid.
+    # per element for all of them. `lifts` is each element's lift alone in
+    # its surroundings against freestream angle at that wing angle: free
+    # air, the solver above; over a ground, a straight line through the
+    # element alone over the same ground (_over_ground).
     effective = []  # [row][element] in degrees of freestream
     inviscid = []
-    local = []  # [row][element] (lift alone here, slope)
+    lifts = []  # [row][element] lift alone here against freestream angle
     amplify = []  # [row][element] lift alone over the ground / alone in free air (1 in free air)
     for a in alphas:
         if multi is not None:
             r = multi.solve(float(a))
-            here = [(c0 + slope * float(a), slope) for c0, slope in alone]
+            here = [free_lift(i) for i in range(len(placed))]
         else:
             turned, ground = in_ground_effect(placed, float(a), ride_height)
             r = Solver(turned, ref, ground=ground).solve(0.0)
-            here = []
-            for xy, c in zip(turned, chords):
-                base = Solver([xy], c, ground=ground).solve(0.0).cl_total
-                mid = xy.mean(axis=0)
-                d = np.radians(1.0)  # one degree more freestream is the element turned one degree nose down
-                rot = np.array([[np.cos(d), np.sin(d)], [-np.sin(d), np.cos(d)]])
-                tilted = Solver([(xy - mid) @ rot.T + mid], c, ground=ground).solve(0.0).cl_total
-                here.append((base, tilted - base))
+            here = [_over_ground(xy, c, ground, float(a)) for xy, c in zip(turned, chords)]
         row_eff, row_inv, row_amp = [], [], []
-        for i, ((c0, slope), (base, slope_here)) in enumerate(zip(alone, here)):
+        for i, ((c0, slope), lift) in enumerate(zip(alone, here)):
             own = r.cl[i] * ref / chords[i]  # this element's lift on its own chord, in place
             row_inv.append(own)
-            row_eff.append(float(a) + (own - base) / slope_here if abs(slope_here) > 1e-9 else float(a))
-            free = c0 + slope * float(a)
+            base = lift(float(a))
+            row_eff.append(_angle_for(lift, own, float(a), base, slope))
+            free = base if multi is not None else alone_solvers[i].solve(float(a)).cl_total
             row_amp.append(base / free if multi is None and abs(free) > 0.05 else 1.0)
         effective.append(row_eff)
         inviscid.append(row_inv)
-        local.append(here)
+        lifts.append(here)
         amplify.append(row_amp)
 
     viscous = []  # per element: NeuralFoil rows, one per wing angle
@@ -195,12 +201,10 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
         viscous.append(polar(unit, held, re, n_crit, bool(e.get("inverted")), model_size)["rows"])
         # The lift in place stops growing FRONT_LIFT_LIMIT past the section's
         # stall angle: cap the in-place inviscid lift there.
-        c0, slope = alone[i]
         cap = (stall[i] + FRONT_LIFT_LIMIT - float(e.get("angle", 0.0))) * sense  # freestream-equivalent angle
         for k in range(len(alphas)):
-            base, slope_here = local[k][i]
-            if own[k] > stall[i] + FRONT_LIFT_LIMIT and abs(slope_here) > 1e-9:
-                inviscid[k][i] = base + slope_here * (cap - float(alphas[k]))
+            if own[k] > stall[i] + FRONT_LIFT_LIMIT:
+                inviscid[k][i] = lifts[k][i](cap)
         # The viscous loss in the linear part of the lift curve (6 degrees
         # short of stall onset, or lower if the element sits lower): NeuralFoil
         # over the panel method, the section alone, upright.
@@ -208,7 +212,7 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
         for a in held:
             ar = min(a, onset - 6.0)
             nf = float(np.interp(ar, sweep, [r["cl"] for r in curve]))
-            iso = sense * (c0 + slope * sense * (ar - float(e.get("angle", 0.0))))  # upright inviscid lift at ar
+            iso = sense * free_lift(i)(sense * (ar - float(e.get("angle", 0.0))))  # upright inviscid lift at ar
             ratios.append(nf / iso if abs(iso) > 0.05 else 1.0)
         scale.append(ratios)
 
@@ -275,6 +279,42 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
                 row["why"] = base["why"] + " (in free air; nearer the ground it only gets worse)"
     return {"ref_chord": ref, "rows": rows, "ride_height": ride_height,
             "re": [reynolds(speed, c, rho, mu) for c in chords]}
+
+
+def _over_ground(xy: np.ndarray, chord: float, ground: float, alpha: float):
+    """Lift of one element alone over a ground against freestream angle, the
+    flow along x at `alpha`: the straight line through it as placed and turned
+    a degree nose down about its centroid. Not the exact curve: turned toward
+    the ground an element's lift alone rises faster than that line, so the
+    line puts a loaded main further past stall (about 2.5 degrees at 300 mm,
+    6 at 150 mm on the NACA 6212 starting wing), and the drag and separation
+    near the ground are fitted to RANS on that reading (test_wing_ground)."""
+    def turned(deg: float) -> float:
+        mid = xy.mean(axis=0)
+        d = np.radians(deg)  # more freestream is the element turned nose down
+        rot = np.array([[np.cos(d), np.sin(d)], [-np.sin(d), np.cos(d)]])
+        return Solver([(xy - mid) @ rot.T + mid], chord, ground=ground).solve(0.0).cl_total
+    base = turned(0.0)
+    slope = turned(1.0) - base
+    return lambda fa: base + slope * (float(fa) - alpha)
+
+
+def _angle_for(lift, target: float, start: float, at_start: float, slope: float) -> float:
+    """The freestream angle at which lift(angle) is target: secant steps from
+    start, the first along slope (per degree), none over 30 degrees."""
+    if abs(slope) < 1e-9:
+        return start
+    x0, f0 = start, at_start
+    x1 = start + float(np.clip((target - at_start) / slope, -30, 30))
+    for _ in range(12):
+        f1 = lift(x1)
+        if abs(f1 - target) < 1e-8 or x1 == x0:
+            break
+        d = (f1 - f0) / (x1 - x0)
+        if abs(d) < 1e-9:
+            break
+        x0, f0, x1 = x1, f1, x1 + float(np.clip((target - f1) / d, -30, 30))
+    return x1
 
 
 def e_angle(e: dict, freestream: float) -> float:
