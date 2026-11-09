@@ -49,6 +49,9 @@ public struct WingRansResult: Codable, Equatable, Sendable {
     public var reason: String?
     public var cl: Double
     public var cd: Double
+    /// Cd less the friction a fully turbulent model adds by having no laminar runs (flat-plate
+    /// estimate, engine's laminar_saving): nearer a tunnel at low Reynolds number. Nil with a transition model.
+    public var cdLaminar: Double?
     public var cm: Double?
     public var elements: [Element]
     public var surface: [Surface]

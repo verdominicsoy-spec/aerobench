@@ -612,3 +612,16 @@ def test_kill_all_su2_ends_every_live_group_and_empties_the_registry():
     su2mod.kill_all_su2()
     assert proc.wait(timeout=2) != 0 and time.monotonic() - t0 < 1.5
     assert not su2mod._live
+
+
+def test_laminar_saving_is_the_flat_plate_friction_difference():
+    """A fully turbulent model has no laminar runs. Over a run of x chords the
+    saving is x (0.074 / Re_x^0.2 - 1.328 / Re_x^0.5), on the reference chord."""
+    from aeroengine.wing.rans import laminar_saving
+
+    x, re = 0.5, 3e5
+    one = x * (0.074 / (re * x) ** 0.2 - 1.328 / (re * x) ** 0.5)
+    assert laminar_saving([(x, x)], [0.3], 0.3, [re]) == pytest.approx(2 * one)
+    # An element of half the reference chord counts half; no run, no saving.
+    assert laminar_saving([(x, 0.0)], [0.15], 0.3, [re]) == pytest.approx(0.5 * one)
+    assert laminar_saving([(0.0, 0.0)], [0.3], 0.3, [re]) == 0.0

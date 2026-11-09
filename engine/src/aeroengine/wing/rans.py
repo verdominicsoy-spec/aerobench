@@ -134,6 +134,9 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
             log(f"no y+ check: {exc}", level="warning")
     if not result["converged"]:
         log(f"not converged: {result['reason']}", level="warning")
+    cd_laminar = None  # a transition model has its laminar runs already
+    if model in ("sa", "sst") and zones:
+        cd_laminar = result["cd"] - laminar_saving(zones, chords, ref_chord, [reynolds(speed, c, rho, mu) for c in chords])
     view = None
     if field and (workdir / "flow.vtu").exists():
         from .field import extract
@@ -148,9 +151,22 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     # by minus its angle): the surface and field are in that turned frame.
     return {"alpha": alpha, "frame_turn": -alpha if ground is not None else 0.0,
             "re": re_ref, "mesh": mesh, "mesh_level": level, "transition": zones, "model": model,
-            "model_name": su2.MODELS[model], **result, "surface": surface, "separated": separated, "separation": why,
+            "model_name": su2.MODELS[model], **result, "cd_laminar": cd_laminar, "surface": surface, "separated": separated, "separation": why,
             "y_plus": wall_y_plus,
             "field": "flow.vtu" if (workdir / "flow.vtu").exists() else None, "field_view": view}
+
+
+def laminar_saving(zones: list, chords: list[float], ref_chord: float, res: list[float]) -> float:
+    """Drag coefficient a fully turbulent model adds by having no laminar runs:
+    over each surface's run to its transition point, turbulent less laminar
+    flat-plate friction (Schlichting's 0.074 / Re^0.2, Blasius's 1.328 / Re^0.5).
+    No fitted constants. On ten UIUC sections at Re 300,000, SST's 45% high drag
+    becomes 20% high; the NLR 7301 at 6 degrees goes from 21% to 6%.
+    shortcut: flat-plate, so high-camber sections stay 20 to 55% high; replace with a transition model that converges."""
+    def one(x: float, re: float) -> float:
+        rx = re * x
+        return x * (0.074 / rx**0.2 - 1.328 / rx**0.5) if x > 2e-3 else 0.0
+    return sum((one(s, re) + one(p, re)) * c / ref_chord for (s, p), c, re in zip(zones, chords, res))
 
 
 def y_plus(vtu: Path) -> dict | None:

@@ -162,6 +162,7 @@ struct WingReportView: View {
                     Text(r.converged ? car(r.cl, r.cd) : "")
                     Text(r.converged
                          ? String(format: "%@, %ld iterations, residual down %.1f orders", r.modelName, r.iterations, r.residualDrop)
+                            + (r.cdLaminar.map { String(format: "; Cd %.4f allowing for laminar runs", $0) } ?? "")
                          : "NOT CONVERGED: \(r.reason ?? "did not settle")")
                         .foregroundStyle(r.converged ? Color.black : Color.red)
                 }

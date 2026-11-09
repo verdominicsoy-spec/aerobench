@@ -1025,6 +1025,10 @@ struct CFDResults: View {
                     .font(.caption.monospacedDigit())
                     Text(String(format: "L/D %.1f · %ld iterations · residual down %.1f orders", r.liftToDrag, r.iterations, r.residualDrop))
                         .font(.caption2).foregroundStyle(S37.C.inkSecondary)
+                    if let cd = r.cdLaminar {
+                        Text(String(format: "Cd %.4f allowing for laminar runs (fully turbulent model reads high at low Re)", cd))
+                            .font(.caption2).foregroundStyle(S37.C.inkSecondary)
+                    }
                     Text("\(r.mesh.cells) cells: \(r.mesh.quads) quads (\(r.mesh.layers) wall layers), \(r.mesh.triangles) triangles")
                         .font(.caption2).foregroundStyle(S37.C.inkSecondary)
                     if let attempts = r.attempts, attempts.count > 1 {
