@@ -76,12 +76,11 @@ def _uiuc_or_skip():
 def test_high_lift_sections_at_fs_reynolds_numbers():
     """Where the quick estimate stands on FS-type sections at Re 200,000 to
     300,000 (the numbers are what it gets today; docs/DECISIONS.md has the
-    whole table). It reads lift high on every one, most on the most cambered."""
+    whole table). With NeuralFoil's lift scaled to the tunnel the S1223 still reads high, by about a tenth."""
     cases = {c.key: v.compare(c) for c in _uiuc_or_skip()}
     assert {"s1223_200k", "s1223_250k", "s1223_300k", "e387_200k", "e387_300k", "fx63137_300k"} <= set(cases)
-    assert all(c["lift_error_signed"] > 0 for c in cases.values())
-    assert cases["e387_300k"]["lift_error_mean"] <= 0.06
-    assert 0.12 <= cases["s1223_300k"]["lift_error_mean"] <= 0.22  # S1223's lift reads high by about a sixth
+    assert cases["e387_300k"]["lift_error_mean"] <= 0.06 and cases["fx63137_300k"]["lift_error_mean"] <= 0.06
+    assert 0.08 <= cases["s1223_300k"]["lift_error_mean"] <= 0.15
     # Drag within 25% except E387's, 28 to 37% off: its laminar separation
     # bubble's drag is what the viscous core gets worst.
     assert all(c["drag_error_mean"] <= 0.25 for k, c in cases.items() if not k.startswith("e387"))
@@ -94,7 +93,7 @@ def test_survey_of_every_clean_uiuc_run():
     if s["skipped"]:
         pytest.skip("; ".join(s["skipped"]))
     assert s["runs"] >= 150 and s["sections"] >= 45
-    assert s["lift_median"] <= 0.09 and s["lift_signed_median"] > 0  # reads high, by about 8% in the middle
+    assert s["lift_median"] <= 0.06 and abs(s["lift_signed_median"]) <= 0.02  # the scale takes out the high reading
     assert s["drag_median"] <= 0.10 and s["drag_within_target"] >= 0.8
 
 

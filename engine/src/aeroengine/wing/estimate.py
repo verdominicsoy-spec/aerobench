@@ -61,9 +61,10 @@ from .viscous import polar, reynolds
 # Bump on any change to what the estimate returns for a wing: a study records
 # the version that scored it and will not resume on another (optimise.run).
 # Version 1: November 2026, with ground_share and the optimiser's margin and trust guards.
+# Version 3: a single section's lift scaled to the tunnel at low Reynolds number.
 # Version 2: effective angles found on the solver (not a straight-line fit), trailing edges closed,
 # front-element limits refitted on the RANS references, slats, a flap limit that rises with Reynolds number.
-VERSION = 2
+VERSION = 3
 STALL_MARGIN = 2.0  # degrees: the last element counts as separating this far short of its stall angle
 # An element with another behind it: the slot keeps it attached well past its
 # own stall angle, but not for ever. Fitted on a NACA 6212 main-and-flap wing
@@ -230,6 +231,7 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
         lifts.append(here)
         amplify.append(row_amp)
 
+    alone = len(elements) == 1  # a single section is NeuralFoil against the tunnel; more are fitted to RANS on its own lift
     viscous = []  # per element: NeuralFoil rows, one per wing angle
     scale = []  # per element and wing angle: viscous over inviscid lift (elements with one behind them)
     stall = []  # per element: the angle of its maximum lift alone
@@ -239,16 +241,16 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
         re = res[i]
         own = [float(e.get("angle", 0.0)) + sense * effective[k][i] for k in range(len(alphas))]
         sweep = np.arange(-6.0, 26.0, 1.0)
-        curve = polar(unit, sweep, re, n_crit, False, model_size)["rows"]
+        curve = polar(unit, sweep, re, n_crit, False, model_size, tunnel=alone)["rows"]
         stall.append(float(sweep[int(np.argmax([r["cl"] for r in curve]))]))
         if i == len(elements) - 1 and not led[i]:
-            viscous.append(polar(unit, own, re, n_crit, bool(e.get("inverted")), model_size)["rows"])
+            viscous.append(polar(unit, own, re, n_crit, bool(e.get("inverted")), model_size, tunnel=alone)["rows"])
             scale.append([None] * len(alphas))
             continue
         # Stall onset of the section alone: 4 degrees short of its maximum lift.
         onset = stall[i] - 4.0
         held = [min(a, onset) for a in own]
-        viscous.append(polar(unit, held, re, n_crit, bool(e.get("inverted")), model_size)["rows"])
+        viscous.append(polar(unit, held, re, n_crit, bool(e.get("inverted")), model_size, tunnel=alone)["rows"])
         # The lift in place stops growing FRONT_LIFT_LIMIT past the section's
         # stall angle: cap the in-place inviscid lift there (not on a slat or the main behind it).
         cap = (stall[i] + FRONT_LIFT_LIMIT - float(e.get("angle", 0.0))) * sense  # freestream-equivalent angle

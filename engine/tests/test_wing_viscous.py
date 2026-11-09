@@ -53,3 +53,21 @@ def test_bad_input():
         polar(naca4("0012")[:5], [0], 1e6)
     with pytest.raises(EngineError):
         polar(naca4("0012"), [0], 10)
+
+
+def test_lift_is_scaled_to_the_tunnel_at_low_reynolds_number_only():
+    """NeuralFoil reads 5.9% high on 171 UIUC runs (52 sections, Re 1.5 to 5 x 10^5);
+    the scale fades out by 2 x 10^6, where the NLR 7301 and 30P30N elements need none."""
+    import numpy as np
+
+    from aeroengine.wing.airfoils import naca4
+
+    u = np.asarray(naca4("4412"), float)
+    a = [2.0, 6.0]
+    for re, factor in ((3e5, 0.94), (5e5, 0.94), (2e6, 1.0), (6e6, 1.0)):
+        raw = polar(u, a, re, tunnel=False)["rows"]
+        scaled = polar(u, a, re)["rows"]
+        assert [r["cl"] for r in scaled] == pytest.approx([r["cl"] * factor for r in raw])
+        assert [r["cd"] for r in scaled] == pytest.approx([r["cd"] for r in raw])
+    mid = polar(u, a, 1e6)["rows"][0]["cl"] / polar(u, a, 1e6, tunnel=False)["rows"][0]["cl"]
+    assert 0.94 < mid < 1.0
