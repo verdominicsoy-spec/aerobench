@@ -338,6 +338,62 @@ Caveats that apply to every row: two configurations, six measured points,
 both at Re 2.5 to 9 million. The racing use of the app is mostly at Re 0.2
 to 1 million and in ground effect, where nothing here applies directly.
 
+## Root causes of the remaining errors (10 November 2026)
+
+Each large error was traced inside the solution before any change; nothing
+below is a fitted correction.
+
+**RANS model against the tunnel.** Lift and drag error, mean over the
+attached range.
+
+| case | SST | SST + `cd_laminar` | SST-LM (transition) |
+|---|---|---|---|
+| UIUC ten sections, Re 3e5, fine mesh | lift 6.4%, drag 44.8%, 85% converged | drag ~19.5% | lift 4.0%, drag 18.5%, 76% converged (4 h) |
+| UIUC ten sections, quick mesh | | | lift 5.6%, drag 34%, 62% converged |
+| NLR 7301 gap 2.6, 13.1 deg, medium | Cd +50% | Cd +38% | Cl +1.2%, Cd -4.5% (Cd still moving ~1%) |
+| NLR 7301 gap 1.3, 6 deg, medium | Cd +23% | Cd +6% | Cl -0.6%, Cd +5.7%, converged |
+
+At Re 2.5e6 the transition model is inside 6% on lift and drag with no
+correction; fully turbulent SST needs `cd_laminar` (a flat-plate correction
+on top) and still reads 38% high at 13.1 deg. The cost is convergence: 4 of
+8 NLR angles meet the strict test (0.01% over 200 iterations); the rest move
+about 1%.
+
+**Why RANS drag stays high at Re 3e5.** Ruled out, each by test: mesh
+(an extra-fine mesh, spacing 0.36 and growth 1.07, moves drag under 3% on
+e423 and sa7038); free-stream turbulence decay (0.10% at the far field,
+0.09-0.11% just ahead of the wing); far field (50 to 200 chords moves e423 Cd
+4% at Cl 1.6); numerical dissipation (total-pressure loss one chord behind the
+wing equals the surface-integrated drag to 4%); the transition location (the
+laminar bubble sits where XFOIL puts it, to 0.03 chord). The cause: after
+transition, every SU2 model tried (SST, SST-LM, SA, SA-LM with the
+Medida-Baeder correlation) gives the turbulent boundary layer a shape factor
+near 1.9 where XFOIL gives 1.4, at the same momentum thickness. On aft-loaded
+sections (e423, s1223, s1210) it separates ahead of the trailing edge (e423:
+from 0.92 chord at 4 deg, 0.86 at 8, 0.70 at 12) and drag reads 15 to 79%
+high. Sections that stay attached at the trailing edge read 0 to 14% high.
+This is a limit of the eddy-viscosity models at low Reynolds number, not a
+setting. Starting one angle from rest on these sections can also land on an
+unsteady separated state (e423, 8 deg: Cd swings 0.026 to 0.061); a rising
+sweep converges.
+
+**Why NeuralFoil lift reads high at Re 3e5** (about +8% before the 0.94 scale
+of estimate version 3). Not the network (medium to xxxlarge agree to 0.3%),
+not transition (n_crit 4 to 11 all read about +8%), not geometry (the tunnel
+models' as-built coordinates are used). NeuralFoil reproduces XFOIL, and
+XFOIL loads the whole section more than RANS does (e423, 4 deg: suction-side
+Cp 0.1 to 0.2 lower along the chord, pressure side higher): its trailing-edge
+boundary layer takes too little camber off. RANS lift matches the tunnel to
+about 2% (signed). The 0.94 scale is a correction over this; a fix needs a
+different viscous model.
+
+**What a real fix needs.** The fitted pieces left (the 0.94 lift scale,
+`SLAT_PEAK_LIMIT`, `max_deflection`, the front-element limits) all stand in
+for viscous physics the estimate does not model: boundary-layer growth,
+confluent wakes and separation on each element. A coupled viscous-inviscid
+multi-element method (this panel method plus an integral boundary layer on
+each element and wake, as MSES) would give them from the boundary layer.
+
 ## Engine bugs found here, and what became of them
 
 1. **Estimate: a straight-line fit of lift against angle, used far outside its
