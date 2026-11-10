@@ -159,6 +159,56 @@ final class AirfoilCSVTests: XCTestCase {
         XCTAssertGreaterThan(at.section[at.section.count / 4].y, 0)
     }
 
+    private let twoElements = Wing(elements: [
+        WingElement(airfoil: Airfoil.naca4("4412")!, chord: 0.48, angle: 8, leadingEdge: .zero, inverted: true),
+        WingElement(airfoil: Airfoil.naca4("4412")!, chord: 0.16, angle: 19, leadingEdge: SIMD2(0.47, 0.03), inverted: true),
+    ])
+
+    /// Fusion 360's ImportSplineCSV script: plain x,y,z rows in cm (Fusion's
+    /// internal unit, whatever the document's), no header, one spline per file.
+    /// The loop ends on its first point, so Fusion closes the spline.
+    func testFusion360Export() throws {
+        XCTAssertEqual(AirfoilCSV.Format.allCases.map(\.rawValue), ["Generic", "Fusion 360", "CATIA"])
+        for (i, e) in twoElements.elements.enumerated() {
+            let rows = twoElements.fusionCSV(of: i).split(separator: "\n", omittingEmptySubsequences: false)
+            XCTAssertEqual(rows.last, "")  // ends with a newline
+            let points = rows.dropLast().map { $0.split(separator: ",").map { Double($0)! } }  // all numbers: no header
+            let placed = e.placed()
+            XCTAssertEqual(points.count, placed.count + 1)
+            XCTAssertEqual(points.first, points.last)
+            for (p, q) in zip(points, placed) {
+                XCTAssertEqual(p.count, 3)
+                XCTAssertEqual(p[0], q.x * 100, accuracy: 1e-4)
+                XCTAssertEqual(p[1], q.y * 100, accuracy: 1e-4)
+                XCTAssertEqual(p[2], 0)
+            }
+        }
+    }
+
+    /// CATIA's GSD_PointSplineLoftFromExcel sheet: keywords in column A, X,Y,Z
+    /// in mm in columns A to C, one StartCurve/EndCurve spline per element, End last.
+    func testCATIAExport() throws {
+        let rows = twoElements.catiaCSV().split(separator: "\n").map(String.init)
+        XCTAssertEqual(rows.filter { Double($0.split(separator: ",")[0]) == nil },
+                       ["StartCurve", "EndCurve", "StartCurve", "EndCurve", "End"])
+        XCTAssertEqual(rows.last, "End")
+        var at = 0
+        for e in twoElements.elements {
+            XCTAssertEqual(rows[at], "StartCurve")
+            let placed = e.placed()
+            for (k, q) in placed.enumerated() {
+                let p = rows[at + 1 + k].split(separator: ",").map { Double($0)! }
+                XCTAssertEqual(p.count, 3)
+                XCTAssertEqual(p[0], q.x * 1000, accuracy: 1e-3)
+                XCTAssertEqual(p[1], q.y * 1000, accuracy: 1e-3)
+                XCTAssertEqual(p[2], 0)
+            }
+            at += placed.count + 1
+            XCTAssertEqual(rows[at], "EndCurve")
+            at += 1
+        }
+    }
+
     func testDatRoundTrip() throws {
         let dat = AirfoilCSV.dat(name: "my foil", points: try AirfoilCSV.parse(csv(foil, chord: 250)))
         let lines = dat.split(separator: "\n")

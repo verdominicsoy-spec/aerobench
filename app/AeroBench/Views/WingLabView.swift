@@ -1200,6 +1200,15 @@ struct WingInspector: View {
     @Environment(AppState.self) private var app
     @State private var sentNote: String?
     @State private var modelHelp = false
+    @AppStorage("wingCSVFormat") private var csvFormatName = AirfoilCSV.Format.generic.rawValue
+
+    private var csvFootnote: String {
+        switch AirfoilCSV.Format(rawValue: csvFormatName) ?? .generic {
+        case .generic: return "Points in mm, in the wing's frame: element, index, x, y."
+        case .fusion: return "One file per element in cm, for Utilities ▸ Scripts ▸ ImportSplineCSV. Each spline closes at the trailing edge."
+        case .catia: return "One spline per element in mm. Paste into GSD_PointSplineLoftFromExcel.xls at A1 and run it with option 2. Close each trailing edge with a line."
+        }
+    }
 
     var body: some View {
         @Bindable var lab = app.wingLab
@@ -1269,10 +1278,16 @@ struct WingInspector: View {
             carSection
             lapSimSection(lab)
 
-            S37Section("Export", footer: "Points in mm, in the wing's frame, ready for CATIA.") {
+            S37Section("Export", footer: csvFootnote) {
                 HStack(spacing: S37.Space.s3) {
                     Button("Elements as .dat…") { app.exportWingDat() }
                     Button("Points as CSV…") { app.exportWingCSV() }
+                    Picker("CSV for", selection: $csvFormatName) {
+                        ForEach(AirfoilCSV.Format.allCases, id: \.self) { Text($0.rawValue).tag($0.rawValue) }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .accessibilityLabel("CSV for")
                     Button("Report as PDF…") { app.exportWingReport() }
                 }
                 .buttonStyle(S37ButtonStyle())

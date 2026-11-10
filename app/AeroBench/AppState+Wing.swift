@@ -173,14 +173,34 @@ extension AppState {
         if !ok { show("Could not export the report", WingLabError("The PDF could not be written to \(url.path).")) }
     }
 
+    /// The wing's points as CSV, for the CAD tool picked beside the export
+    /// (Wing Lab's Export section): Fusion 360 takes one file per element.
     func exportWingCSV() {
-        let panel = NSSavePanel()
-        panel.title = "Export Wing Points"
-        panel.nameFieldStringValue = "wing_points_mm.csv"
-        panel.allowedContentTypes = [.commaSeparatedText]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let wing = wingLab.wing
+        guard !wing.elements.isEmpty else { return }
+        let format = AirfoilCSV.Format(rawValue: UserDefaults.standard.string(forKey: "wingCSVFormat") ?? "") ?? .generic
         do {
-            try wingLab.wing.csvFile().write(to: url, atomically: true, encoding: .utf8)
+            if format == .fusion {
+                let panel = NSOpenPanel()
+                panel.title = "Export Points for Fusion 360"
+                panel.message = "Choose a folder: one CSV per element, in cm, for the ImportSplineCSV script."
+                panel.canChooseDirectories = true
+                panel.canChooseFiles = false
+                panel.canCreateDirectories = true
+                panel.prompt = "Export"
+                guard panel.runModal() == .OK, let folder = panel.url else { return }
+                for i in wing.elements.indices {
+                    let name = WingIssue.label(i).lowercased().replacingOccurrences(of: " ", with: "_")
+                    try wing.fusionCSV(of: i).write(to: folder.appendingPathComponent("\(name)_cm.csv"), atomically: true, encoding: .utf8)
+                }
+                return
+            }
+            let panel = NSSavePanel()
+            panel.title = format == .catia ? "Export Points for CATIA" : "Export Wing Points"
+            panel.nameFieldStringValue = format == .catia ? "wing_catia_mm.csv" : "wing_points_mm.csv"
+            panel.allowedContentTypes = [.commaSeparatedText]
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            try (format == .catia ? wing.catiaCSV() : wing.csvFile()).write(to: url, atomically: true, encoding: .utf8)
         } catch {
             show("Could not export the points", error)
         }
