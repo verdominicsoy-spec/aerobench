@@ -381,7 +381,7 @@ def _study(ctx: JobContext, p: dict, base, variables, sections, car=None, span=(
         ctx.emit.log("calibrating: one RANS run of the starting wing alongside the estimate study")
     out = optimise.run(base, spec, evaluate, path, name, ctx.scratch_dir,
                        (lambda pct, msg: emit(pct * (0.5 if checks else 1.0), msg)), ctx.emit.log, keep_runs=False,
-                       info={"solver": spec.solver, "mesh": flow.get("mesh", "medium"), "model": flow.get("model", su2.DEFAULT_MODEL),
+                       info={"solver": spec.solver, "mesh": flow.get("mesh", "fine"), "model": flow.get("model", su2.DEFAULT_MODEL),
                              "speed": flow.get("speed"), "alpha": flow.get("alpha", 0.0)})
     scale = (1.0, 1.0)
     if calibrate is not None:

@@ -124,7 +124,7 @@ final class WingLabModel {
             case .sstLM: "SST + transition"
             }
         }
-        /// How close it gets, in a word (UIUC Vol 1 check, 2026-11-05).
+        /// How close it gets, in a word (UIUC Vol 1 and NLR 7301 checks, 2026-11-10).
         var accuracy: String {
             switch self {
             case .sa: "Fair"
@@ -135,13 +135,13 @@ final class WingLabModel {
         var purpose: String {
             switch self {
             case .sa: "Fully turbulent, the lightest model; fine for attached flow and modest flap angles."
-            case .sst: "Fully turbulent, the default: converges reliably and holds up near stall. Drag reads a little high at FS Reynolds numbers."
-            case .sstLM: "Langtry–Menter transition: laminar runs, laminar separation bubbles and where they close. Closer drag against a clean wind tunnel, but slower and often won't settle at low angles or near stall."
+            case .sst: "Fully turbulent: about 1.5× faster and converges more often. It misses the laminar runs, so drag reads 20–50% high at FS Reynolds numbers."
+            case .sstLM: "Langtry–Menter transition, the default and the closest to the tunnel: laminar runs, laminar separation bubbles and where they close. Slower, and some angles still drift by about 1% instead of settling."
             }
         }
     }
-    var turbulenceModel: TurbulenceModel = .sst
-    var meshLevel = "medium"
+    var turbulenceModel: TurbulenceModel = .sstLM
+    var meshLevel = "fine"  // extra-fine moves lift and drag under 3%; coarser levels are for speed
     var predictTransition = true
     var turbulenceIntensity = 1.0  // percent
     var ransJob: JobItem?
@@ -210,7 +210,7 @@ final class WingLabModel {
     // RANS sweep of the wing angle: on the quick mesh within 5 minutes, or
     // through stall (each angle from the one below, the chosen mesh, no limit)
     var sweepOn = false
-    var sweepRising = false
+    var sweepRising = true  // a polar from the angle below converges where angles from rest can land on a stalled state
     var sweepFrom = -2.0  // three angles fit in 5 minutes on 4 cores for a two-element wing
     var sweepTo = 2.0
     var sweepStep = 2.0

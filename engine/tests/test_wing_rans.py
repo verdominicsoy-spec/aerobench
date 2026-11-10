@@ -101,6 +101,12 @@ def test_config_per_model():
         config(case, "m.su2")
 
 
+def test_default_model_is_transition():
+    # Transition RANS is the default: closest to the tunnel on lift and drag (validation README, root causes).
+    case = Case(speed=20, rho=1.2, mu=1.8e-5, alpha_deg=5, ref_chord=0.4, ref_point=(0.1, 0), walls=["wall_0"])
+    assert case.model == "sst-lm" and "KIND_TRANS_MODEL= LM" in config(case, "m.su2")
+
+
 def test_config_schemes():
     case = Case(speed=20, rho=1.2, mu=1.8e-5, alpha_deg=5, ref_chord=0.4, ref_point=(0.1, 0), walls=["wall_0"])
     jst = config(case, "m.su2")  # the default: central, and SU2 refuses MUSCL with it
@@ -400,11 +406,10 @@ def test_rans_says_the_stalled_study_wing_separates_and_an_attached_one_does_not
     assert r["converged"] and not r["separated"] and r["separation"] is None
 
 
-def test_default_model_is_fully_turbulent_sst():
-    # Fully turbulent SST is the default: it converged where SST with transition
-    # did not (UIUC Vol 1 check, 2026-11-05) and it is what STAR-CCM+ runs.
-    case = Case(speed=20.0, rho=1.225, mu=1.81e-5, alpha_deg=0.0, ref_chord=0.3, ref_point=(0.075, 0.0), walls=["wall_0"])
-    assert case.model == "sst"
+def test_sst_option_is_fully_turbulent():
+    # The faster option, and what STAR-CCM+ runs: SST with no transition model.
+    case = Case(speed=20.0, rho=1.225, mu=1.81e-5, alpha_deg=0.0, ref_chord=0.3, ref_point=(0.075, 0.0), walls=["wall_0"],
+                model="sst")
     cfg = config(case, "wing.su2")
     assert "KIND_TURB_MODEL= SST" in cfg
     assert "KIND_TRANS_MODEL" not in cfg

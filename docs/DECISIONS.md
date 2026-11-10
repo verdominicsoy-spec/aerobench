@@ -1542,3 +1542,17 @@ iterations as a stop rule ended runs with Cd up to 9.5% short of its final
 value, so averaging only judges runs that ran to the cap (the user's idea,
 2026-11-05). On the second UIUC run it rescues 4 of the 16 unconverged
 angles, all near stall.
+
+## 2026-11-10: transition RANS, fine mesh and full polar are the defaults
+
+The user asked for whatever gives the most accuracy, with the less accurate
+choices kept as faster options. RANS now defaults to SST with Langtry-Menter
+transition (was fully turbulent SST), the fine mesh (was medium) and the full
+polar sweep, each angle restarted from the one below (was the quick scan from
+rest on the quick mesh). Against the tunnel: on the ten UIUC sections at
+Re 3e5, lift 4.0% and drag 18.5% against SST's 6.4% and 44.8%; on NLR 7301 at
+Re 2.5e6, inside 6% on both, where SST read drag 23 to 50% high. The extra-fine
+mesh moves lift and drag under 3%. Costs: about 1.5x the run time, and
+convergence on 76% of UIUC angles against 85%. SST, SA, the coarser meshes and
+the quick scan stay in Wing Lab for speed. The laminar drag allowance is
+reported for the fully turbulent models only, as before.

@@ -63,7 +63,7 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     model = str(p.get("model", su2.DEFAULT_MODEL))
     if model not in su2.MODELS:
         raise EngineError(f"unknown model '{model}'", f"one of {', '.join(su2.MODELS)}")
-    level = str(p.get("mesh", "medium"))
+    level = str(p.get("mesh", "fine"))  # extra-fine moves lift and drag under 3%
     if level not in MESH_LEVELS:
         raise EngineError(f"mesh must be one of {', '.join(MESH_LEVELS)}")
     re_ref = reynolds(speed, ref_chord, rho, mu)

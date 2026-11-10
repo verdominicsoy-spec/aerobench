@@ -28,10 +28,12 @@ import numpy as np
 from ..job import EngineError
 
 MODELS = {"sa": "Spalart-Allmaras", "sst": "SST", "sst-lm": "SST with Langtry-Menter transition"}
-# Fully turbulent SST: on the UIUC Vol 1 sections it converged where SST with
-# transition kept oscillating, and it passed NASA's NACA 0012 check at Re 6M.
-# Its drag reads high at low Reynolds number (3-25% at Re 200k).
-DEFAULT_MODEL = "sst"
+# SST with Langtry-Menter transition: the closest to the tunnel. On the ten
+# UIUC sections at Re 3e5 (fine mesh) lift 4.0% and drag 18.5% against SST's
+# 6.4% and 44.8%; on NLR 7301 at Re 2.5e6 inside 6% on both, where fully
+# turbulent SST read drag 23-50% high. It converges less often (76% against
+# 85% on UIUC) and runs about 1.5x slower: SST stays as the faster option.
+DEFAULT_MODEL = "sst-lm"
 # Convective schemes. JST (central, light fourth-order dissipation) is the
 # default: SU2's incompressible upwind FDS doubled NACA 0012's pressure drag
 # at 10 degrees on meshes of a few tens of thousands of cells (and on NASA's
