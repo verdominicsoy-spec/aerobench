@@ -392,6 +392,13 @@ public struct Wing: Codable, Equatable, Sendable {
         return (lines + ["End"]).joined(separator: "\n") + "\n"
     }
 
+    /// One element for Designcenter NX's File ▸ Import ▸ Points from File: plain
+    /// ASCII "x y z" per line in mm (read in the part's units), no header, in
+    /// Selig order so a spline through the points follows the file.
+    public func nxPoints(of index: Int) -> String {
+        elements[index].placed().map { String(format: "%.4f %.4f 0", $0.x * 1000, $0.y * 1000) }.joined(separator: "\n") + "\n"
+    }
+
     // MARK: Lap Sim
 
     /// The finite wing from span, total chord and endplates (engine:

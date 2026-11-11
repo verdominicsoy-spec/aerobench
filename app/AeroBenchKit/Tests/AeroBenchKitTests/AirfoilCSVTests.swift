@@ -168,7 +168,7 @@ final class AirfoilCSVTests: XCTestCase {
     /// internal unit, whatever the document's), no header, one spline per file.
     /// The loop ends on its first point, so Fusion closes the spline.
     func testFusion360Export() throws {
-        XCTAssertEqual(AirfoilCSV.Format.allCases.map(\.rawValue), ["Generic", "Fusion 360", "CATIA"])
+        XCTAssertEqual(AirfoilCSV.Format.allCases.map(\.rawValue), ["Generic", "Fusion 360", "CATIA", "Designcenter NX"])
         for (i, e) in twoElements.elements.enumerated() {
             let rows = twoElements.fusionCSV(of: i).split(separator: "\n", omittingEmptySubsequences: false)
             XCTAssertEqual(rows.last, "")  // ends with a newline
@@ -206,6 +206,26 @@ final class AirfoilCSVTests: XCTestCase {
             at += placed.count + 1
             XCTAssertEqual(rows[at], "EndCurve")
             at += 1
+        }
+    }
+
+    /// Designcenter NX's File ▸ Import ▸ Points from File: plain ASCII, one
+    /// "x y z" point per line in mm (the part's units), no header, one file per
+    /// element so each becomes one spline through its points in order.
+    func testDesigncenterNXExport() throws {
+        for (i, e) in twoElements.elements.enumerated() {
+            let text = twoElements.nxPoints(of: i)
+            XCTAssertTrue(text.hasSuffix("\n"))
+            XCTAssertFalse(text.contains(","))
+            let points = text.split(separator: "\n").map { $0.split(separator: " ").map { Double($0)! } }  // no header
+            let placed = e.placed()
+            XCTAssertEqual(points.count, placed.count)
+            for (p, q) in zip(points, placed) {
+                XCTAssertEqual(p.count, 3)
+                XCTAssertEqual(p[0], q.x * 1000, accuracy: 1e-3)
+                XCTAssertEqual(p[1], q.y * 1000, accuracy: 1e-3)
+                XCTAssertEqual(p[2], 0)
+            }
         }
     }
 

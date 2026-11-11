@@ -174,16 +174,18 @@ extension AppState {
     }
 
     /// The wing's points as CSV, for the CAD tool picked beside the export
-    /// (Wing Lab's Export section): Fusion 360 takes one file per element.
+    /// (Wing Lab's Export section): Fusion 360 and Designcenter NX take one file per element.
     func exportWingCSV() {
         let wing = wingLab.wing
         guard !wing.elements.isEmpty else { return }
         let format = AirfoilCSV.Format(rawValue: UserDefaults.standard.string(forKey: "wingCSVFormat") ?? "") ?? .generic
         do {
-            if format == .fusion {
+            if format == .fusion || format == .nx {
+                let fusion = format == .fusion
                 let panel = NSOpenPanel()
-                panel.title = "Export Points for Fusion 360"
-                panel.message = "Choose a folder: one CSV per element, in cm, for the ImportSplineCSV script."
+                panel.title = "Export Points for \(format.rawValue)"
+                panel.message = fusion ? "Choose a folder: one CSV per element, in cm, for the ImportSplineCSV script."
+                    : "Choose a folder: one ASCII points file per element, in mm, for Points from File."
                 panel.canChooseDirectories = true
                 panel.canChooseFiles = false
                 panel.canCreateDirectories = true
@@ -191,7 +193,8 @@ extension AppState {
                 guard panel.runModal() == .OK, let folder = panel.url else { return }
                 for i in wing.elements.indices {
                     let name = WingIssue.label(i).lowercased().replacingOccurrences(of: " ", with: "_")
-                    try wing.fusionCSV(of: i).write(to: folder.appendingPathComponent("\(name)_cm.csv"), atomically: true, encoding: .utf8)
+                    try (fusion ? wing.fusionCSV(of: i) : wing.nxPoints(of: i))
+                        .write(to: folder.appendingPathComponent(fusion ? "\(name)_cm.csv" : "\(name)_mm.txt"), atomically: true, encoding: .utf8)
                 }
                 return
             }
