@@ -189,6 +189,69 @@ public enum AirfoilCSV {
         return Array(upper.reversed()) + (upper[0] == lower[0] ? lower.dropFirst() : lower[...])
     }
 
+    /// 0.05 mm, in metres: inside a moulded part's tolerance and above the
+    /// rounding of a 4-decimal .dat, so guide points follow the shape, not noise.
+    public static let guideTolerance = 5e-5
+
+    /// The fewest of a section's points, in order, that a cubic spline needs to
+    /// pass within `tolerance` of every one: both trailing-edge ends and the
+    /// leading edge, then the worst-fitting point, until none is further off.
+    /// What the CAD exports write, so each tool builds its spline from these.
+    public static func guidePoints(_ p: [SIMD2<Double>], tolerance: Double) -> [SIMD2<Double>] {
+        guard p.count > 3 else { return p }
+        let te = 0.5 * (p[0] + p[p.count - 1])
+        let le = p.indices.max { simd_distance(p[$0], te) < simd_distance(p[$1], te) }!
+        var keep = Array(Set([0, le, p.count - 1])).sorted()
+        while true {
+            let curve = spline(through: keep.map { p[$0] })
+            let knots = chordKnots(keep.map { p[$0] })
+            var worst = (index: 0, distance: 0.0)
+            for j in 0..<(keep.count - 1) where keep[j + 1] - keep[j] > 1 {
+                // The span drawn finely; each skipped point's distance to it.
+                let span = (0...32).map { curve(knots[j] + (knots[j + 1] - knots[j]) * Double($0) / 32) }
+                for i in (keep[j] + 1)..<keep[j + 1] {
+                    let d = zip(span, span.dropFirst()).map { a, b -> Double in
+                        let t = max(0, min(1, simd_dot(p[i] - a, b - a) / max(simd_length_squared(b - a), 1e-300)))
+                        return simd_distance(p[i], a + t * (b - a))
+                    }.min()!
+                    if d > worst.distance { worst = (i, d) }
+                }
+            }
+            guard worst.distance > tolerance else { return keep.map { p[$0] } }
+            keep.insert(worst.index, at: keep.firstIndex { $0 > worst.index }!)
+        }
+    }
+
+    /// Chord-length parameters of a run of points, 0 to 1.
+    private static func chordKnots(_ q: [SIMD2<Double>]) -> [Double] {
+        var u = [0.0]
+        for i in 1..<q.count { u.append(u[i - 1] + simd_distance(q[i - 1], q[i])) }
+        return u.map { $0 / max(u[u.count - 1], 1e-300) }
+    }
+
+    /// A natural cubic spline through the points, chord-length parameterised,
+    /// as a function of 0 to 1: the curve a CAD tool fits through them.
+    static func spline(through q: [SIMD2<Double>]) -> (Double) -> SIMD2<Double> {
+        let u = chordKnots(q), n = q.count - 1
+        guard n >= 2 else { return { t in q[0] + t * (q[n] - q[0]) } }
+        let h = (0..<n).map { u[$0 + 1] - u[$0] }
+        // Second derivatives, zero at both ends (Thomas algorithm).
+        var m = [SIMD2<Double>](repeating: .zero, count: n + 1)
+        var c = [Double](repeating: 0, count: n + 1), d = [SIMD2<Double>](repeating: .zero, count: n + 1)
+        for i in 1..<n {
+            let rhs = 6 * ((q[i + 1] - q[i]) / h[i] - (q[i] - q[i - 1]) / h[i - 1])
+            let den = 2 * (h[i - 1] + h[i]) - h[i - 1] * c[i - 1]
+            c[i] = h[i] / den
+            d[i] = (rhs - h[i - 1] * d[i - 1]) / den
+        }
+        for i in stride(from: n - 1, through: 1, by: -1) { m[i] = d[i] - c[i] * m[i + 1] }
+        return { t in
+            let i = min(max((u.firstIndex { $0 > t } ?? n + 1) - 1, 0), n - 1)
+            let a = (u[i + 1] - t) / h[i], b = (t - u[i]) / h[i]
+            return a * q[i] + b * q[i + 1] + ((a * a * a - a) * m[i] + (b * b * b - b) * m[i + 1]) * (h[i] * h[i] / 6)
+        }
+    }
+
     /// A Selig .dat: the name line, then one "x y" pair per line.
     public static func dat(name: String, points: [SIMD2<Double>]) -> String {
         ([name] + points.map { String(format: "%.6f %.6f", $0.x, $0.y) }).joined(separator: "\n") + "\n"

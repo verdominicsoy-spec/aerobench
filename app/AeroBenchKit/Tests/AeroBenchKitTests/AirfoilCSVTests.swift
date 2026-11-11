@@ -164,6 +164,42 @@ final class AirfoilCSVTests: XCTestCase {
         WingElement(airfoil: Airfoil.naca4("4412")!, chord: 0.16, angle: 19, leadingEdge: SIMD2(0.47, 0.03), inverted: true),
     ])
 
+    /// The CAD exports carry only the points a spline needs: a cubic spline
+    /// through them stays within 0.05 mm of the true section all the way round.
+    func testGuidePointsHoldTheSectionWithFewPoints() throws {
+        let element = twoElements.elements[0]  // 480 mm NACA 4412, 161 points
+        let all = element.placed()
+        let guide = AirfoilCSV.guidePoints(all, tolerance: AirfoilCSV.guideTolerance)
+        XCTAssertEqual(AirfoilCSV.guideTolerance, 5e-5)  // m
+        XCTAssertLessThan(guide.count, all.count / 3)
+        XCTAssertGreaterThan(guide.count, 10)
+        // The file's own points, in order, with both trailing-edge ends and the leading edge.
+        var at = 0
+        for g in guide {
+            guard let k = all[at...].firstIndex(of: g) else { return XCTFail("\(g) is not a section point, in order") }
+            at = k + 1
+        }
+        XCTAssertEqual(guide.first, all.first)
+        XCTAssertEqual(guide.last, all.last)
+        let te = 0.5 * (all[0] + all[all.count - 1])
+        XCTAssertTrue(guide.contains(all.max { simd_distance($0, te) < simd_distance($1, te) }!))
+        // Against the exact section, drawn with 2001 points.
+        var exact = element
+        exact.airfoil = Airfoil.naca4("4412", points: 2001)!
+        let truth = exact.placed()
+        let curve = AirfoilCSV.spline(through: guide)
+        var worst = 0.0
+        for k in 0...4000 {
+            let q = curve(Double(k) / 4000)
+            let d = zip(truth, truth.dropFirst()).map { a, b -> Double in
+                let t = max(0, min(1, simd_dot(q - a, b - a) / simd_length_squared(b - a)))
+                return simd_distance(q, a + t * (b - a))
+            }.min()!
+            worst = max(worst, d)
+        }
+        XCTAssertLessThan(worst, 0.06e-3)
+    }
+
     /// Fusion 360's ImportSplineCSV script: plain x,y,z rows in cm (Fusion's
     /// internal unit, whatever the document's), no header, one spline per file.
     /// The loop ends on its first point, so Fusion closes the spline.
@@ -173,7 +209,8 @@ final class AirfoilCSVTests: XCTestCase {
             let rows = twoElements.fusionCSV(of: i).split(separator: "\n", omittingEmptySubsequences: false)
             XCTAssertEqual(rows.last, "")  // ends with a newline
             let points = rows.dropLast().map { $0.split(separator: ",").map { Double($0)! } }  // all numbers: no header
-            let placed = e.placed()
+            let placed = twoElements.guidePoints(of: i)
+            XCTAssertLessThan(placed.count, e.placed().count)
             XCTAssertEqual(points.count, placed.count + 1)
             XCTAssertEqual(points.first, points.last)
             for (p, q) in zip(points, placed) {
@@ -193,9 +230,9 @@ final class AirfoilCSVTests: XCTestCase {
                        ["StartCurve", "EndCurve", "StartCurve", "EndCurve", "End"])
         XCTAssertEqual(rows.last, "End")
         var at = 0
-        for e in twoElements.elements {
+        for i in twoElements.elements.indices {
             XCTAssertEqual(rows[at], "StartCurve")
-            let placed = e.placed()
+            let placed = twoElements.guidePoints(of: i)
             for (k, q) in placed.enumerated() {
                 let p = rows[at + 1 + k].split(separator: ",").map { Double($0)! }
                 XCTAssertEqual(p.count, 3)
@@ -218,7 +255,8 @@ final class AirfoilCSVTests: XCTestCase {
             XCTAssertTrue(text.hasSuffix("\n"))
             XCTAssertFalse(text.contains(","))
             let points = text.split(separator: "\n").map { $0.split(separator: " ").map { Double($0)! } }  // no header
-            let placed = e.placed()
+            let placed = twoElements.guidePoints(of: i)
+            XCTAssertLessThan(placed.count, e.placed().count)
             XCTAssertEqual(points.count, placed.count)
             for (p, q) in zip(points, placed) {
                 XCTAssertEqual(p.count, 3)

@@ -370,33 +370,38 @@ public struct Wing: Codable, Equatable, Sendable {
         return lines.joined(separator: "\n") + "\n"
     }
 
-    /// One element for Fusion 360's ImportSplineCSV script: x,y,0 rows in cm
+    /// The points of one element as placed that a CAD spline needs (AirfoilCSV.guidePoints).
+    public func guidePoints(of index: Int) -> [SIMD2<Double>] {
+        AirfoilCSV.guidePoints(elements[index].placed(), tolerance: AirfoilCSV.guideTolerance)
+    }
+
+    /// One element's guide points for Fusion 360's ImportSplineCSV script: x,y,0 rows in cm
     /// (the script reads Fusion's internal unit whatever the document's), no
     /// header, and the loop back to its first point so Fusion closes the spline.
     public func fusionCSV(of index: Int) -> String {
-        var p = elements[index].placed()
+        var p = guidePoints(of: index)
         if let first = p.first, first != p.last { p.append(first) }
         return p.map { String(format: "%.5f,%.5f,0", $0.x * 100, $0.y * 100) }.joined(separator: "\n") + "\n"
     }
 
-    /// Every element for CATIA's GSD_PointSplineLoftFromExcel sheet: one
+    /// Every element's guide points for CATIA's GSD_PointSplineLoftFromExcel sheet: one
     /// StartCurve/EndCurve spline per element, X,Y,Z in mm in columns A to C,
     /// End last. The trailing edge stays as the section has it (CATIA joins it with a line).
     public func catiaCSV() -> String {
         var lines: [String] = []
-        for e in elements {
+        for i in elements.indices {
             lines.append("StartCurve")
-            lines += e.placed().map { String(format: "%.4f,%.4f,0", $0.x * 1000, $0.y * 1000) }
+            lines += guidePoints(of: i).map { String(format: "%.4f,%.4f,0", $0.x * 1000, $0.y * 1000) }
             lines.append("EndCurve")
         }
         return (lines + ["End"]).joined(separator: "\n") + "\n"
     }
 
-    /// One element for Designcenter NX's File ▸ Import ▸ Points from File: plain
+    /// One element's guide points for Designcenter NX's File ▸ Import ▸ Points from File: plain
     /// ASCII "x y z" per line in mm (read in the part's units), no header, in
     /// Selig order so a spline through the points follows the file.
     public func nxPoints(of index: Int) -> String {
-        elements[index].placed().map { String(format: "%.4f %.4f 0", $0.x * 1000, $0.y * 1000) }.joined(separator: "\n") + "\n"
+        guidePoints(of: index).map { String(format: "%.4f %.4f 0", $0.x * 1000, $0.y * 1000) }.joined(separator: "\n") + "\n"
     }
 
     // MARK: Lap Sim
