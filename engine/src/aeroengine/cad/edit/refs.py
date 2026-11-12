@@ -16,7 +16,7 @@ from pathlib import Path
 from OCP.OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher as ShapeMap
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE
 from OCP.TopExp import TopExp
-from OCP.TopoDS import TopoDS
+from OCP.TopoDS import TopoDS, TopoDS_Shape
 from OCP.XCAFDoc import XCAFDoc_ShapeTool
 
 from ...job import EngineError
@@ -127,4 +127,10 @@ def resolve(ref: dict, ctx) -> object:
     found = ctx.lookup(ref)
     if len(found) != 1:
         raise RefLost(ref)
-    return found[0]
+    # History hands back plain TopoDS_Shape after a solid change: the adaptors need the real type.
+    shape = found[0]
+    if ref.get("kind") in ("face", "surface") and isinstance(shape, TopoDS_Shape) and shape.ShapeType() == TopAbs_FACE:
+        return TopoDS.Face(shape)
+    if ref.get("kind") == "edge" and isinstance(shape, TopoDS_Shape) and shape.ShapeType() == TopAbs_EDGE:
+        return TopoDS.Edge(shape)
+    return shape
