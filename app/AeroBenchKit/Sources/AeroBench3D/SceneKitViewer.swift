@@ -36,6 +36,11 @@ public final class SceneKitViewer: Viewer3D {
     /// under it, so an edge on a silhouette can still be picked.
     public var onEditHover: ((EditPointer) -> Void)?
     public var onEditClick: ((EditPointer) -> Void)?
+    /// The measure tool's pointer: every mouse move, and a click (before onPick).
+    public var onHover: ((EditPointer) -> Void)?
+    public var onClickPointer: ((EditPointer) -> Void)?
+    /// After every camera move, so overlays placed in view points can follow.
+    public var onCameraChange: (() -> Void)?
     /// Changes whenever the camera moves, so screen projections can be cached between moves.
     public private(set) var cameraRevision = 0
     public var snapToVertices = true
@@ -275,6 +280,7 @@ public final class SceneKitViewer: Viewer3D {
         cameraNode.simdLook(at: SIMD3<Float>(orbit.target), up: SIMD3<Float>(orbit.screenUp), localFront: SIMD3(0, 0, -1))
         cameraNode.camera?.usesOrthographicProjection = orbit.orthographic
         cameraNode.camera?.orthographicScale = orbit.orthoHalfHeight
+        onCameraChange?()
     }
 
     // MARK: Mouse and trackpad
@@ -292,7 +298,11 @@ public final class SceneKitViewer: Viewer3D {
         case .pan(let dx, let dy):
             orbit.pan(dx: dx, dy: dy, viewHeight: Double(scnView.bounds.height))
         case .hover(let location):
-            onEditHover?(editPointer(at: location))
+            if onEditHover != nil || onHover != nil {
+                let pointer = editPointer(at: location)
+                onEditHover?(pointer)
+                onHover?(pointer)
+            }
             return
         case .zoom(let factor, let location, let phase):
             if phase == .began || phase == .discrete || gestureAnchor == nil {
@@ -405,6 +415,10 @@ public final class SceneKitViewer: Viewer3D {
             onEditClick(editPointer(at: gesture.location(in: scnView)))
             return
         }
+        if let onClickPointer, model != nil {
+            onClickPointer(editPointer(at: gesture.location(in: scnView)))
+            return
+        }
         guard let onPick, model != nil else { return }
         let p = gesture.location(in: scnView)
         let hits = scnView.hitTest(p, options: [
@@ -431,29 +445,45 @@ public final class SceneKitViewer: Viewer3D {
     }
 
     public func setMarkers(_ points: [SIMD3<Double>]) {
+        setMeasureOverlay(lines: points.count == 2 ? [points] : [], points: points, hover: nil)
+    }
+
+    /// The measure tool's drawing, over the model: finished and in-progress
+    /// lines and points in red, the snap under the pointer in amber.
+    public func setMeasureOverlay(lines: [[SIMD3<Double>]], points: [SIMD3<Double>], hover: SIMD3<Double>?) {
         markerRoot.childNodes.forEach { $0.removeFromParentNode() }
-        let material = SCNMaterial()
-        material.lightingModel = .constant
-        material.diffuse.contents = NSColor.systemRed
-        material.readsFromDepthBuffer = false
-        let floats = points.map { SIMD3<Float>(Float($0.x), Float($0.y), Float($0.z)) }
-        for p in floats {
-            let sphere = SCNSphere(radius: CGFloat(radius * 0.008))
-            sphere.materials = [material]
+        func material(_ color: NSColor) -> SCNMaterial {
+            let m = SCNMaterial()
+            m.lightingModel = .constant
+            m.diffuse.contents = color
+            m.readsFromDepthBuffer = false
+            return m
+        }
+        let red = material(NSColor(red: 0.85, green: 0.2, blue: 0.15, alpha: 1))
+        func dot(_ p: SIMD3<Double>, _ m: SCNMaterial, _ size: Float) {
+            let sphere = SCNSphere(radius: CGFloat(radius * size))
+            sphere.materials = [m]
             let node = SCNNode(geometry: sphere)
-            node.simdPosition = p
+            node.simdPosition = SIMD3<Float>(Float(p.x), Float(p.y), Float(p.z))
             node.renderingOrder = 100
             markerRoot.addChildNode(node)
         }
-        if floats.count == 2 {
-            let source = SCNGeometrySource(vertices: floats.map { SCNVector3($0) })
-            let element = SCNGeometryElement(indices: [Int32(0), Int32(1)], primitiveType: .line)
-            let line = SCNGeometry(sources: [source], elements: [element])
-            line.materials = [material]
-            let node = SCNNode(geometry: line)
+        for p in points { dot(p, red, 0.006) }
+        var vertices: [SCNVector3] = [], indices: [Int32] = []
+        for line in lines where line.count > 1 {
+            let base = Int32(vertices.count)
+            vertices += line.map { SCNVector3(Float($0.x), Float($0.y), Float($0.z)) }
+            for j in 0..<Int32(line.count - 1) { indices += [base + j, base + j + 1] }
+        }
+        if !indices.isEmpty {
+            let g = SCNGeometry(sources: [SCNGeometrySource(vertices: vertices)],
+                                elements: [SCNGeometryElement(indices: indices, primitiveType: .line)])
+            g.materials = [red]
+            let node = SCNNode(geometry: g)
             node.renderingOrder = 100
             markerRoot.addChildNode(node)
         }
+        if let hover { dot(hover, material(NSColor(red: 0.95, green: 0.7, blue: 0.2, alpha: 1)), 0.008) }
     }
 }
 

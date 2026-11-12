@@ -50,6 +50,8 @@ struct PartEditView: View {
             S37Section("Features") {
                 if edit.file.features.isEmpty {
                     Text("No edits yet").foregroundStyle(S37.C.inkSecondary)
+                } else {
+                    Text("Click a feature to edit it; press Delete to remove it.").font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 List(selection: Binding(get: { edit.selectedFeature }, set: { if let id = $0 { edit.edit(id) } })) {
                     ForEach(edit.file.features) { f in
@@ -63,6 +65,7 @@ struct PartEditView: View {
                 }
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: 120, maxHeight: 280)
+                .onDeleteCommand { if let id = edit.selectedFeature { edit.remove(id, undo: undo) } }
             }
             if let status = edit.status { Text(status).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.clayInk) }
             HStack {

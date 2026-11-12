@@ -13,6 +13,7 @@ extension AppState {
         }
         partEdit.engine = warm(partEdit.engine, executable)
         guard let engine = partEdit.engine else { return }
+        cad.measure.on = false  // the edit tools take the clicks
         partEdit.viewer = cad.viewer
         partEdit.showModel = { [weak self] model in self?.cad.showEdited(model) }
         partEdit.showError = { [weak self] title, error in self?.show(title, error) }

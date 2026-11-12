@@ -218,7 +218,10 @@ struct AeroBenchCommands: Commands {
         Toggle("Orthographic", isOn: Binding(get: { cad.projection == .orthographic },
                                              set: { cad.projection = $0 ? .orthographic : .perspective }))
             .disabled(!hasModel)
-        Toggle("Measure", isOn: Binding(get: { cad.measuring }, set: { cad.measuring = $0 })).disabled(!hasModel)
+        Toggle("Measure", isOn: Binding(get: { cad.measure.on }, set: { cad.measure.on = $0 })).disabled(!hasModel)
+        Button("Delete Part from Scene") { if let id = cad.selectedPart { app.deleteCADPart(id) } }
+            .keyboardShortcut(.delete, modifiers: .command)
+            .disabled(cad.selectedPart == nil)
         Toggle("Section", isOn: Binding(get: { cad.sectionOn }, set: { cad.sectionOn = $0 })).disabled(!hasModel)
         Toggle("Show Frame Rate", isOn: Binding(get: { cad.showStatistics }, set: { cad.showStatistics = $0 }))
         Divider()

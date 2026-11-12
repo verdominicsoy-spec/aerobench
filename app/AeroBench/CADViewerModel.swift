@@ -36,15 +36,18 @@ final class CADViewerModel {
     var meshUnits: LengthUnit = .millimetre
     var upAxis: UpAxis = .z { didSet { viewer.upAxis = upAxis } }
     var projection: Projection = .perspective { didSet { viewer.projection = projection } }
-    var snap = true { didSet { viewer.snapToVertices = snap } }
     var showStatistics = false { didSet { viewer.showsStatistics = showStatistics } }
-    var hidden: Set<Int> = [] {
-        didSet {
-            viewer.setHidden(hidden)
-            visibleBounds = model?.bounds(hidden: hidden)
-            cutter = nil
-            updateSection()
-        }
+    var hidden: Set<Int> = [] { didSet { applyVisibility() } }
+    /// Parts deleted from the scene (the file is untouched): hidden and left out of the part tree.
+    private(set) var removed: Set<Int> = [] { didSet { applyVisibility() } }
+    var selectedPart: Int?
+    private var notShown: Set<Int> { hidden.union(removed) }
+
+    private func applyVisibility() {
+        viewer.setHidden(notShown)
+        visibleBounds = model?.bounds(hidden: notShown)
+        cutter = nil
+        updateSection()
     }
 
     // Section cut: the visible parts cut by a plane across one axis
@@ -74,7 +77,7 @@ final class CADViewerModel {
             viewer.setSlice(nil, center: .zero, right: .zero, up: .zero)
             return
         }
-        if cutter == nil { cutter = SectionCutter(model: model, hidden: hidden) }
+        if cutter == nil { cutter = SectionCutter(model: model, hidden: notShown) }
         sectionSegments = cutter?.cut(axis: sectionAxis, at: sectionPosition) ?? []
         // The plane itself in the 3D view, a little larger than the parts.
         guard let b = visibleBounds else { return }
@@ -97,12 +100,7 @@ final class CADViewerModel {
     }()
     private(set) var visibleBounds: (min: SIMD3<Double>, max: SIMD3<Double>)?
 
-    var measuring = false {
-        didSet { if !measuring { points = [] } }
-    }
-    private(set) var points: [SIMD3<Double>] = [] {
-        didSet { viewer.setMarkers(points) }
-    }
+    let measure: MeasureModel
 
     // Geometry check
     var checkJob: JobItem?
@@ -126,7 +124,7 @@ final class CADViewerModel {
     init() {
         viewer = SceneKitViewer()
         viewer.pointSize = 9
-        viewer.onPick = { [weak self] pick in self?.picked(pick) }
+        measure = MeasureModel(viewer: viewer)
     }
 
     static let tessellatedExtensions: Set<String> = ["step", "stp", "iges", "igs"]
@@ -145,17 +143,20 @@ final class CADViewerModel {
             setReport(nil)
             setBodyPlan(nil)
             hidden = []
+            removed = []
+            measure.setModel(nil)
         }
         fileURLs = urls
-        points = []
     }
 
     func setModel(_ model: Model3D, fromCache: Bool) {
         self.model = model
         self.fromCache = fromCache
-        points = []
         hidden = []
+        removed = []
+        selectedPart = nil
         viewer.show(model)
+        measure.setModel(model)
         visibleBounds = model.bounds()
         status = .ready
         setReport(nil)
@@ -168,6 +169,7 @@ final class CADViewerModel {
     func showEdited(_ model: Model3D) {
         self.model = model
         viewer.show(model, resetCamera: false)
+        measure.setModel(model, keepMeasurements: true)
         visibleBounds = model.bounds()
         status = .ready
     }
@@ -175,8 +177,9 @@ final class CADViewerModel {
     func clear() {
         model = nil
         fileURLs = []
-        points = []
         hidden = []
+        removed = []
+        measure.setModel(nil)
         viewer.show(nil)
         status = .empty
         setReport(nil)
@@ -191,12 +194,13 @@ final class CADViewerModel {
         if visible { hidden.remove(id) } else { hidden.insert(id) }
     }
 
-    func clearMeasurement() { points = [] }
-
-    private func picked(_ pick: PickResult) {
-        guard measuring else { return }
-        points = points.count >= 2 ? [pick.point] : points + [pick.point]
+    /// Takes a part out of the scene; Restore brings every deleted part back.
+    func remove(_ id: Int) {
+        removed.insert(id)
+        if selectedPart == id { selectedPart = nil }
     }
+
+    func restoreRemoved() { removed = [] }
 
     // MARK: Geometry check
 

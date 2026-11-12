@@ -99,6 +99,10 @@ final class PartEditModel {
 
     func remove(_ id: String, undo: UndoManager?) {
         guard let f = file.features.first(where: { $0.id == id }) else { return }
+        if selectedFeature == id {  // it was open in its tool: Apply must not bring it back
+            selectedFeature = nil
+            tool = nil
+        }
         set(file.features.filter { $0.id != id }, actionName: "Remove \(Self.describe(f))", undo: undo)
     }
 

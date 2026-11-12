@@ -32,6 +32,18 @@ extension AppState {
         load(urls, done: [])
     }
 
+    /// Takes a part out of the scene. With several files open, deleting a
+    /// file's own part closes that file, so check and repair come back at one.
+    func deleteCADPart(_ id: Int) {
+        if cad.fileURLs.count > 1, let k = cad.model?.roots.firstIndex(where: { $0.id == id }) {
+            var urls = cad.fileURLs
+            urls.remove(at: k)
+            openCAD(urls)
+        } else {
+            cad.remove(id)
+        }
+    }
+
     /// Re-opens the current files, after a preset or unit change.
     func reloadCAD() {
         if !cad.fileURLs.isEmpty { openCAD(cad.fileURLs) }

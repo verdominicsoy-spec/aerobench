@@ -15,6 +15,7 @@ struct CADViewerView: View {
                 Divider()
                 ZStack {
                     Viewer3DView(viewer: app.cad.viewer)
+                    MeasureLabels()
                     overlay
                 }
                 if app.cad.sectionOn {
@@ -66,6 +67,7 @@ struct CADToolbar: View {
 
     var body: some View {
         @Bindable var cad = app.cad
+        @Bindable var measure = app.cad.measure
         HStack(spacing: S37.Space.s2) {
             if cad.model != nil {
                 Button("Open…") { app.openCADPanel() }
@@ -81,9 +83,15 @@ struct CADToolbar: View {
                 S37Segmented(options: [(Projection.perspective, "Persp"), (.orthographic, "Ortho")], selection: $cad.projection)
                     .fixedSize()
                 Divider().frame(height: 18)
-                Toggle("Measure", isOn: $cad.measuring)
-                if cad.measuring {
-                    Toggle("Snap", isOn: $cad.snap).help("Snap measuring points to the nearest vertex")
+                Toggle("Measure", isOn: $measure.on)
+                if cad.measure.on {
+                    S37Segmented(options: MeasureMode.allCases.map { ($0, $0.rawValue) }, selection: $measure.mode)
+                        .fixedSize()
+                    Toggle("Snap", isOn: $measure.snap)
+                        .help("Snap to the part's corners, edge midpoints, hole centres and edges under the pointer")
+                    if !cad.measure.pending.isEmpty {
+                        Button("Cancel") { cad.measure.cancelPending() }.keyboardShortcut(.escape, modifiers: [])
+                    }
                 }
                 Toggle("Section", isOn: $cad.sectionOn)
             }
@@ -148,12 +156,22 @@ struct CADSidePanel: View {
                             .padding(.vertical, S37.Space.s1)
                     }
                 }
+                if !cad.measure.items.isEmpty {
+                    MeasurementsSection()
+                }
                 if let model = cad.model {
                     S37Section("Parts") {
-                        if !cad.hidden.isEmpty {
-                            Button("Show all") { cad.hidden = [] }.buttonStyle(S37ButtonStyle(kind: .plain))
+                        HStack {
+                            if !cad.hidden.isEmpty {
+                                Button("Show all") { cad.hidden = [] }.buttonStyle(S37ButtonStyle(kind: .plain))
+                            }
+                            if !cad.removed.isEmpty {
+                                Button("Restore deleted (\(cad.removed.count))") { cad.restoreRemoved() }.buttonStyle(S37ButtonStyle(kind: .plain))
+                            }
                         }
                         PartTree(model: model).padding(.vertical, S37.Space.s1)
+                        Text("Click a part, then press Delete to take it out of the scene. The file is not changed.")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -167,18 +185,97 @@ struct PartTree: View {
     let model: Model3D
 
     var body: some View {
-        OutlineGroup(model.roots, children: \.childNodes) { node in
-            Toggle(isOn: Binding(get: { app.cad.isVisible(node.id) }, set: { app.cad.setVisible(node.id, $0) })) {
+        VStack(alignment: .leading, spacing: 0) {
+            OutlineGroup(visibleRoots, children: \.childNodes) { node in
                 HStack {
+                    Toggle("", isOn: Binding(get: { app.cad.isVisible(node.id) }, set: { app.cad.setVisible(node.id, $0) }))
+                        .toggleStyle(.checkbox).labelsHidden()
                     Text(node.name).lineLimit(1)
                     Spacer()
                     if let m = node.mesh {
                         Text(model.meshes[m].triangleCount.formatted()).font(.system(size: 12)).monospacedDigit().foregroundStyle(S37.C.inkTertiary)
                     }
                 }
+                .padding(.horizontal, 4)
+                .background(RoundedRectangle(cornerRadius: 4).fill(app.cad.selectedPart == node.id ? S37.C.sageWash : .clear))
+                .contentShape(Rectangle())
+                .onTapGesture { app.cad.selectedPart = node.id }
+                .contextMenu { Button("Delete from scene") { app.deleteCADPart(node.id) } }
             }
-            .toggleStyle(.checkbox)
         }
+        .focusable()
+        .focusEffectDisabled()
+        .onDeleteCommand { if let id = app.cad.selectedPart { app.deleteCADPart(id) } }
+    }
+
+    /// The tree without deleted parts.
+    private var visibleRoots: [ModelNode] {
+        func keep(_ n: ModelNode) -> ModelNode? {
+            guard !app.cad.removed.contains(n.id) else { return nil }
+            var n = n
+            n.children = n.children.compactMap(keep)
+            return n
+        }
+        return model.roots.compactMap(keep)
+    }
+}
+
+/// Every measurement kept, with its value; select one and press Delete to remove it.
+struct MeasurementsSection: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        let m = app.cad.measure
+        S37Section("Measurements") {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(m.items) { item in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("\(item.mode.rawValue)  \(item.title)").fontWeight(.medium).textSelection(.enabled)
+                            if let d = item.detail { Text(d).font(.system(size: 11)).foregroundStyle(S37.C.inkSecondary).textSelection(.enabled) }
+                        }
+                        Spacer()
+                        Button { m.remove(item.id) } label: { Image(systemName: "xmark") }
+                            .buttonStyle(.borderless).help("Delete this measurement").accessibilityLabel("Delete measurement")
+                    }
+                    .font(.system(size: 12).monospacedDigit())
+                    .padding(4)
+                    .background(RoundedRectangle(cornerRadius: 4).fill(m.selected == item.id ? S37.C.sageWash : .clear))
+                    .contentShape(Rectangle())
+                    .onTapGesture { m.selected = item.id }
+                }
+            }
+            .focusable()
+            .focusEffectDisabled()
+            .onDeleteCommand { if let id = m.selected { m.remove(id) } }
+            Button("Delete all") { m.removeAll() }.buttonStyle(S37ButtonStyle(kind: .plain)).padding(.vertical, S37.Space.s1)
+        }
+    }
+}
+
+/// Each measurement's value beside it in the view, following the camera.
+struct MeasureLabels: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        let m = app.cad.measure
+        GeometryReader { geo in
+            let _ = m.cameraTick  // redraw when the camera moves
+            ForEach(m.items) { item in
+                let p = m.project(item.anchor)
+                if p.z >= 0, p.z <= 1 {
+                    Text(item.title)
+                        .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(m.selected == item.id ? S37.C.sageWash : S37.C.surface.opacity(0.92)))
+                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(S37.C.critical.opacity(0.6), lineWidth: 1))
+                        .fixedSize()
+                        .position(x: p.x, y: geo.size.height - p.y - 14)
+                        .onTapGesture { m.selected = item.id }
+                }
+            }
+        }
+        .allowsHitTesting(!m.items.isEmpty)
     }
 }
 
@@ -193,18 +290,13 @@ struct CADStatusBar: View {
                 Text("Visible bounds  \(mm(s.x)) × \(mm(s.y)) × \(mm(s.z)) mm")
             }
             Spacer()
-            if cad.measuring {
-                if cad.points.count == 2 {
-                    let a = cad.points[0], b = cad.points[1]
-                    let d = (b - a) * 1000
-                    Text("Distance \(mm(Measure.distance(a, b) * 1000)) mm   Δx \(mm(d.x))  Δy \(mm(d.y))  Δz \(mm(d.z))")
-                        .fontWeight(.semibold)
-                        .textSelection(.enabled)
-                    Button("Clear") { cad.clearMeasurement() }.buttonStyle(S37ButtonStyle(kind: .plain)).controlSize(.small)
-                } else {
-                    Text(cad.points.isEmpty ? "Click the first point" : "Click the second point")
-                        .foregroundStyle(S37.C.inkSecondary)
+            if cad.measure.on {
+                Text(cad.measure.prompt).foregroundStyle(cad.measure.message == nil ? S37.C.inkSecondary : S37.C.clayInk)
+                if let h = cad.measure.hover, h.kind != .surface {
+                    Text("Snap: \(h.kind.rawValue)").foregroundStyle(S37.C.inkTertiary)
                 }
+            } else if let m = cad.measure.items.last {
+                Text(m.title + (m.detail.map { "   " + $0 } ?? "")).fontWeight(.semibold).textSelection(.enabled)
             }
         }
         .font(.system(size: 13).monospacedDigit())

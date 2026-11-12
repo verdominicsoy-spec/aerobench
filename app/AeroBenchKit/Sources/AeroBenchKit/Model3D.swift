@@ -188,6 +188,18 @@ public enum Measure {
         simd_distance(a, b)
     }
 
+    /// The angle at `vertex` between the lines to `a` and `b`, degrees.
+    public static func angle(_ a: SIMD3<Double>, _ vertex: SIMD3<Double>, _ b: SIMD3<Double>) -> Double {
+        let u = a - vertex, v = b - vertex
+        return atan2(simd_length(simd_cross(u, v)), simd_dot(u, v)) * 180 / .pi
+    }
+
+    /// A point's distance to a plane, and its foot on the plane.
+    public static func toPlane(_ p: SIMD3<Double>, point: SIMD3<Double>, normal: SIMD3<Double>) -> (Double, SIMD3<Double>) {
+        let n = simd_normalize(normal), d = simd_dot(p - point, n)
+        return (abs(d), p - d * n)
+    }
+
     /// The corner of a triangle nearest to a picked point, for exact
     /// vertex-to-vertex measurements.
     public static func nearestCorner(to p: SIMD3<Double>, of corners: [SIMD3<Double>]) -> SIMD3<Double> {
