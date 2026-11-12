@@ -246,23 +246,33 @@ final class AirfoilCSVTests: XCTestCase {
         }
     }
 
-    /// Designcenter NX's File ▸ Import ▸ Points from File: plain ASCII, one
-    /// "x y z" point per line in mm (the part's units), no header, one file per
-    /// element so each becomes one spline through its points in order.
-    func testDesigncenterNXExport() throws {
+    /// Designcenter NX journal (Tools ▸ Journal ▸ Play): per element, a spline
+    /// through the guide points with those points shown, and every section
+    /// point kept as hidden points, all in mm (the journal scales for inch parts).
+    func testDesigncenterNXJournal() throws {
+        let text = twoElements.nxJournal()
+        XCTAssertTrue(text.contains("import NXOpen"))
+        XCTAssertTrue(text.contains("CreateStudioSplineBuilderEx"))
+        XCTAssertTrue(text.contains("Layer.State.Hidden"))
+        // Data rows: "(x, y)," under each element's "# guide" and "# every" markers.
+        func block(_ marker: String) -> [[[Double]]] {
+            text.components(separatedBy: marker).dropFirst().map { chunk in
+                chunk.split(separator: "\n", omittingEmptySubsequences: false).dropFirst().prefix { $0.hasPrefix("    (") }.map { line in
+                    line.trimmingCharacters(in: CharacterSet(charactersIn: " (),")).components(separatedBy: ", ").map { Double($0)! }
+                }
+            }
+        }
+        let guide = block("# guide"), every = block("# every")
+        XCTAssertEqual(guide.count, twoElements.elements.count)
+        XCTAssertEqual(every.count, twoElements.elements.count)
         for (i, e) in twoElements.elements.enumerated() {
-            let text = twoElements.nxPoints(of: i)
-            XCTAssertTrue(text.hasSuffix("\n"))
-            XCTAssertFalse(text.contains(","))
-            let points = text.split(separator: "\n").map { $0.split(separator: " ").map { Double($0)! } }  // no header
-            let placed = twoElements.guidePoints(of: i)
-            XCTAssertLessThan(placed.count, e.placed().count)
-            XCTAssertEqual(points.count, placed.count)
-            for (p, q) in zip(points, placed) {
-                XCTAssertEqual(p.count, 3)
+            let g = twoElements.guidePoints(of: i), all = e.placed()
+            XCTAssertLessThan(g.count, all.count)
+            XCTAssertEqual(guide[i].count, g.count)
+            XCTAssertEqual(every[i].count, all.count, "every point is kept")
+            for (p, q) in zip(guide[i] + every[i], g + all) {
                 XCTAssertEqual(p[0], q.x * 1000, accuracy: 1e-3)
                 XCTAssertEqual(p[1], q.y * 1000, accuracy: 1e-3)
-                XCTAssertEqual(p[2], 0)
             }
         }
     }

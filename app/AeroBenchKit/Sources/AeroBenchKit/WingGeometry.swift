@@ -397,12 +397,75 @@ public struct Wing: Codable, Equatable, Sendable {
         return (lines + ["End"]).joined(separator: "\n") + "\n"
     }
 
-    /// One element's guide points for Designcenter NX's File ▸ Import ▸ Points from File: plain
-    /// ASCII "x y z" per line in mm (read in the part's units), no header, in
-    /// Selig order so a spline through the points follows the file.
-    public func nxPoints(of index: Int) -> String {
-        guidePoints(of: index).map { String(format: "%.4f %.4f 0", $0.x * 1000, $0.y * 1000) }.joined(separator: "\n") + "\n"
+    /// The whole wing as a Designcenter NX journal (Tools ▸ Journal ▸ Play):
+    /// per element a Studio Spline through its guide points, with those points
+    /// shown, and every section point kept on a hidden layer to check against.
+    /// mm in the wing's frame; the journal scales them for an inch part.
+    public func nxJournal() -> String {
+        func rows(_ p: [SIMD2<Double>]) -> String {
+            p.map { String(format: "    (%.4f, %.4f),", $0.x * 1000, $0.y * 1000) }.joined(separator: "\n")
+        }
+        let data = elements.indices.map { i in
+            "(\"\(WingIssue.label(i))\",\n  [  # guide\n\(rows(guidePoints(of: i)))\n  ],\n  [  # every\n\(rows(elements[i].placed()))\n  ]),"
+        }.joined(separator: "\n")
+        return Self.nxJournalHead + "ELEMENTS = [\n" + data + "\n]\n" + Self.nxJournalBody
     }
+
+    private static let nxJournalHead = """
+        # AeroBench wing for Designcenter NX.
+        # In a part: Tools > Journal > Play (Alt+F8), choose this file, Run.
+        # Each element becomes a Studio Spline through its guide points: the fewest a
+        # cubic spline needs to pass within 0.05 mm of every section point. Those points
+        # are shown and drive the spline. Every section point is also made, on layer 200,
+        # hidden: show that layer in Layer Settings to check the spline against them.
+        import NXOpen
+
+        ALL_POINTS_LAYER = 200
+
+        # (name, guide points, every section point): x, y in mm in the wing's frame.
+
+        """
+
+    private static let nxJournalBody = """
+
+        def main():
+            session = NXOpen.Session.GetSession()
+            part = session.Parts.Work
+            if part is None:
+                raise RuntimeError("Open or create a part first, then play this journal.")
+            scale = 1 / 25.4 if part.PartUnits == NXOpen.BasePart.Units.Inches else 1.0
+            session.SetUndoMark(NXOpen.Session.MarkVisibility.Visible, "AeroBench wing")
+
+            def at(x, y):
+                return NXOpen.Point3d(x * scale, y * scale, 0.0)
+
+            def point(x, y):
+                p = part.Points.CreatePoint(at(x, y))
+                p.SetVisibility(NXOpen.SmartObject.VisibilityOption.Visible)
+                return p
+
+            every = []
+            for name, guide, section in ELEMENTS:
+                builder = part.Features.CreateStudioSplineBuilderEx(NXOpen.NXObject.Null)
+                builder.Type = NXOpen.Features.StudioSplineBuilderEx.Types.ThroughPoints
+                builder.Degree = 3
+                for x, y in guide:
+                    data = builder.ConstraintManager.CreateGeometricConstraintData()
+                    data.Point = point(x, y)
+                    builder.ConstraintManager.Append(data)
+                builder.Commit().SetName(name)
+                builder.Destroy()
+                if guide[0] != guide[-1]:  # a blunt trailing edge: close it with a line
+                    part.Curves.CreateLine(at(*guide[0]), at(*guide[-1]))
+                every += [point(x, y) for x, y in section]
+            if part.Layers.WorkLayer != ALL_POINTS_LAYER:  # the work layer cannot be hidden
+                part.Layers.MoveDisplayableObjects(ALL_POINTS_LAYER, every)
+                part.Layers.SetState(ALL_POINTS_LAYER, NXOpen.Layer.State.Hidden)
+
+
+        main()
+
+        """
 
     // MARK: Lap Sim
 

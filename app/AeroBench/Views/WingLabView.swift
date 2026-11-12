@@ -1207,7 +1207,7 @@ struct WingInspector: View {
         case .generic: return "Points in mm, in the wing's frame: element, index, x, y."
         case .fusion: return "One file per element in cm, for Utilities ▸ Scripts ▸ ImportSplineCSV. Each spline closes at the trailing edge and keeps only the points it needs, within 0.05 mm."
         case .catia: return "One spline per element in mm, through only the points it needs, within 0.05 mm. Paste into GSD_PointSplineLoftFromExcel.xls at A1 and run it with option 2. Close each trailing edge with a line."
-        case .nx: return "One ASCII file per element in mm, for File ▸ Import ▸ Points from File: only the points a spline needs, within 0.05 mm. Draw a spline through them in order."
+        case .nx: return "A journal for Tools ▸ Journal ▸ Play: one spline per element through only the points it needs (within 0.05 mm), shown. Every section point is kept on layer 200, hidden."
         }
     }
 

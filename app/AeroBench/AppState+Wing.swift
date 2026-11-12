@@ -174,18 +174,16 @@ extension AppState {
     }
 
     /// The wing's points as CSV, for the CAD tool picked beside the export
-    /// (Wing Lab's Export section): Fusion 360 and Designcenter NX take one file per element.
+    /// (Wing Lab's Export section): Fusion 360 takes one file per element, Designcenter NX a journal.
     func exportWingCSV() {
         let wing = wingLab.wing
         guard !wing.elements.isEmpty else { return }
         let format = AirfoilCSV.Format(rawValue: UserDefaults.standard.string(forKey: "wingCSVFormat") ?? "") ?? .generic
         do {
-            if format == .fusion || format == .nx {
-                let fusion = format == .fusion
+            if format == .fusion {
                 let panel = NSOpenPanel()
                 panel.title = "Export Points for \(format.rawValue)"
-                panel.message = fusion ? "Choose a folder: one CSV per element, in cm, for the ImportSplineCSV script."
-                    : "Choose a folder: one ASCII points file per element, in mm, for Points from File."
+                panel.message = "Choose a folder: one CSV per element, in cm, for the ImportSplineCSV script."
                 panel.canChooseDirectories = true
                 panel.canChooseFiles = false
                 panel.canCreateDirectories = true
@@ -193,9 +191,17 @@ extension AppState {
                 guard panel.runModal() == .OK, let folder = panel.url else { return }
                 for i in wing.elements.indices {
                     let name = WingIssue.label(i).lowercased().replacingOccurrences(of: " ", with: "_")
-                    try (fusion ? wing.fusionCSV(of: i) : wing.nxPoints(of: i))
-                        .write(to: folder.appendingPathComponent(fusion ? "\(name)_cm.csv" : "\(name)_mm.txt"), atomically: true, encoding: .utf8)
+                    try wing.fusionCSV(of: i).write(to: folder.appendingPathComponent("\(name)_cm.csv"), atomically: true, encoding: .utf8)
                 }
+                return
+            }
+            if format == .nx {
+                let panel = NSSavePanel()
+                panel.title = "Export Journal for Designcenter NX"
+                panel.nameFieldStringValue = "wing_nx.py"
+                panel.allowedContentTypes = [.pythonScript]
+                guard panel.runModal() == .OK, let url = panel.url else { return }
+                try wing.nxJournal().write(to: url, atomically: true, encoding: .utf8)
                 return
             }
             let panel = NSSavePanel()
