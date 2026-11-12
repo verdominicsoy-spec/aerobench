@@ -420,16 +420,17 @@ public struct Wing: Codable, Equatable, Sendable {
     }
 
     /// Every element's guide points for CATIA's GSD_PointSplineLoftFromExcel sheet: one
-    /// StartCurve/EndCurve spline per element, X,Y,Z in mm in columns A to C,
-    /// End last. The trailing edge stays as the section has it (CATIA joins it with a line).
+    /// StartCurve/EndCurve spline per element inside one StartLoft/EndLoft block (the
+    /// macro's import fails without it), X,Y,Z in mm in columns A to C, End last.
+    /// The trailing edge stays as the section has it (CATIA joins it with a line).
     public func catiaCSV() -> String {
-        var lines: [String] = []
+        var lines = ["StartLoft"]
         for i in elements.indices {
             lines.append("StartCurve")
             lines += guidePoints(of: i).map { String(format: "%.4f,%.4f,0", $0.x * 1000, $0.y * 1000) }
             lines.append("EndCurve")
         }
-        return (lines + ["End"]).joined(separator: "\n") + "\n"
+        return (lines + ["EndLoft", "End"]).joined(separator: "\n") + "\n"
     }
 
     /// The whole wing as a Designcenter NX journal (Tools ▸ Journal ▸ Play):

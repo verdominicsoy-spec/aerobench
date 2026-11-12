@@ -223,13 +223,14 @@ final class AirfoilCSVTests: XCTestCase {
     }
 
     /// CATIA's GSD_PointSplineLoftFromExcel sheet: keywords in column A, X,Y,Z
-    /// in mm in columns A to C, one StartCurve/EndCurve spline per element, End last.
+    /// in mm in columns A to C, one StartCurve/EndCurve spline per element inside
+    /// one StartLoft/EndLoft block, End last.
     func testCATIAExport() throws {
         let rows = twoElements.catiaCSV().split(separator: "\n").map(String.init)
         XCTAssertEqual(rows.filter { Double($0.split(separator: ",")[0]) == nil },
-                       ["StartCurve", "EndCurve", "StartCurve", "EndCurve", "End"])
+                       ["StartLoft", "StartCurve", "EndCurve", "StartCurve", "EndCurve", "EndLoft", "End"])
         XCTAssertEqual(rows.last, "End")
-        var at = 0
+        var at = 1
         for i in twoElements.elements.indices {
             XCTAssertEqual(rows[at], "StartCurve")
             let placed = twoElements.guidePoints(of: i)
