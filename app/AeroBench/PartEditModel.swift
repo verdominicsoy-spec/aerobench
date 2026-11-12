@@ -13,7 +13,12 @@ final class PartEditModel {
     private(set) var step: URL?
     private(set) var file = FeatureFile(part: nil, fingerprint: nil, features: [])
     var tool: EditFeature.Kind? {
-        didSet { if tool != oldValue { draft = tool.map { EditFeature(id: nextID(), kind: $0) } } }
+        didSet {
+            if tool != oldValue {
+                draft = tool.map { EditFeature(id: nextID(), kind: $0) }
+                hint = nil
+            }
+        }
     }
     var draft: EditFeature? {
         didSet { if draft != oldValue { rebuild() } }
@@ -24,6 +29,10 @@ final class PartEditModel {
     var busy = false
     var saving = false
     private var hoveredEdge: Int?
+    private var hoveredFace: Int?  // index in reply.faces
+    /// Why the last click picked nothing, in words.
+    var hint: String?
+    @ObservationIgnored private var shown: Model3D?  // the rebuilt part on screen, for drawing its faces
 
     @ObservationIgnored var engine: WarmEngine?
     @ObservationIgnored weak var viewer: SceneKitViewer?
@@ -211,6 +220,7 @@ final class PartEditModel {
             let url = URL(fileURLWithPath: r.glb)
             let model = try await Task.detached(priority: .userInitiated) { try ModelLoader.load(url, units: .metre) }.value
             guard mine == generation, on else { return }  // a newer rebuild finished loading first
+            shown = model
             showModel?(model)
         } catch {
             status = "Could not show the rebuilt part: \(error.localizedDescription)"
@@ -233,7 +243,7 @@ final class PartEditModel {
             lines = reply.edges.map { $0.points.compactMap { p in p.count == 3 ? viewer.projectWithDepth(SIMD3(p[0], p[1], p[2])) : nil } }
             projected = (key, lines)
         }
-        return EdgePick.nearest(lines, to: pointer.screen, within: 6,
+        return EdgePick.nearest(lines, to: pointer.screen, within: 9,
                                 surfaceDepth: pointer.hit.map { viewer.projectWithDepth($0.point).z })
     }
 
@@ -250,17 +260,31 @@ final class PartEditModel {
         pointer.hit?.faceIndex.flatMap { reply?.face(atTriangle: $0)?.ref }
     }
 
+    /// What the active tool picks, so only that lights up under the pointer.
+    private var wantsEdges: Bool { [.point, .extrude, .fill, .fillet, .chamfer].contains(draft?.kind) }
+    private var wantsFaces: Bool {
+        guard let d = draft else { return false }
+        return [.point, .add, .pushpull].contains(d.kind) || (d.kind == .plane && d.refs.isEmpty)
+    }
+
     func hover(_ pointer: EditPointer) {
-        let e = edgeIndex(at: pointer)
-        if e != hoveredEdge {
+        let e = wantsEdges ? edgeIndex(at: pointer) : nil
+        let f = e == nil && wantsFaces ? pointer.hit?.faceIndex.flatMap { t in reply?.faces.firstIndex { t >= $0.start && t < $0.start + $0.count } } : nil
+        if e != hoveredEdge || f != hoveredFace {
             hoveredEdge = e
+            hoveredFace = f
             drawOverlay()
         }
     }
 
     func pick(_ pointer: EditPointer) {
         guard var d = draft else { return }
+        hint = nil
         let edge = edgeIndex(at: pointer).flatMap { reply?.edges[$0].ref }
+        let before = d.refs
+        defer {
+            if draft?.refs == before, hint == nil { hint = Self.missHint(d.kind, edge: edge, face: faceRef(pointer)) }
+        }
         switch d.kind {
         case .point:
             guard let host = edge ?? faceRef(pointer), let hit = pointer.hit?.point else { return }
@@ -292,6 +316,29 @@ final class PartEditModel {
         drawOverlay()
     }
 
+    /// Why a click picked nothing, for the tool's panel.
+    private static func missHint(_ kind: EditFeature.Kind, edge: EditRef?, face: EditRef?) -> String {
+        let nearEdge = "Click closer to an edge: it lights up when it can be picked."
+        switch kind {
+        case .point: return "Click on the part: an edge or a face."
+        case .spline: return "Click the amber points, in order. Make points with the Point tool first."
+        case .plane: return "Click a flat face first, or pick XY, YZ or ZX; then an amber point."
+        case .extrude: return "Click a spline or an edge. " + nearEdge
+        case .fill: return nearEdge
+        case .add: return face?.kind == "face" ? "Add takes surfaces made by Fill or Extrude, not the part's own faces."
+            : "Click the surfaces made by Fill or Extrude."
+        case .fillet, .chamfer: return edge != nil ? "That is a spline, not an edge of the part." : nearEdge
+        case .pushpull: return face == nil ? "Click a flat face of the part." : "Push/Pull needs a face of the part, not a surface."
+        }
+    }
+
+    /// Drops the active tool's picks, keeping its values.
+    func clearPicks() {
+        draft?.refs = []
+        hint = nil
+        drawOverlay()
+    }
+
     /// The plane of an extrude or a plane feature: a standard one or a plane feature.
     func usePlane(_ ref: EditRef) {
         guard var d = draft else { return }
@@ -304,9 +351,29 @@ final class PartEditModel {
         guard let reply, let viewer else { return }
         let picked = Set(draft?.refs.map { EditRef(src: $0.src, kind: $0.kind, i: $0.i) } ?? [])
         let selected = Set(reply.edges.indices.filter { k in reply.edges[k].ref.map { picked.contains($0) } ?? false })
+        let pickedFaces = reply.faces.indices.filter { k in reply.faces[k].ref.map { picked.contains(EditRef(src: $0.src, kind: $0.kind, i: $0.i)) } ?? false }
         viewer.setEditOverlay(edges: reply.edges.map { $0.points.compactMap { p in p.count == 3 ? SIMD3(p[0], p[1], p[2]) : nil } },
                               highlighted: hoveredEdge.map { [$0] } ?? [], selected: selected,
-                              points: reply.points.map { Self.v($0.position) })
+                              points: reply.points.map { Self.v($0.position) },
+                              hoverFaces: hoveredFace.map { faceCorners([$0]) } ?? [], selectedFaces: faceCorners(pickedFaces))
+    }
+
+    /// The triangles of the reply's faces on the shown part, world space.
+    private func faceCorners(_ faces: [Int]) -> [SIMD3<Double>] {
+        guard let reply, let shown, let inst = shown.instances().first, let m = inst.node.mesh else { return [] }
+        let mesh = shown.meshes[m]
+        var out: [SIMD3<Double>] = []
+        for k in faces where reply.faces.indices.contains(k) {
+            let f = reply.faces[k]
+            for t in f.start..<(f.start + f.count) {
+                guard let tri = mesh.triangle(t) else { break }
+                for v in [tri.0, tri.1, tri.2] {
+                    let w = inst.world * SIMD4<Float>(v, 1)
+                    out.append(SIMD3(Double(w.x), Double(w.y), Double(w.z)))
+                }
+            }
+        }
+        return out
     }
 
     private static func v(_ p: [Double]) -> SIMD3<Double> { p.count == 3 ? SIMD3(p[0], p[1], p[2]) : .zero }

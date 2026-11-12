@@ -13,6 +13,21 @@ struct PartEditView: View {
         (.fillet, "roundedbottom.horizontal"), (.chamfer, "triangle"), (.pushpull, "arrow.up.and.down.square"),
     ]
 
+    /// What each tool does, for its tooltip.
+    static func explain(_ k: EditFeature.Kind) -> String {
+        switch k {
+        case .point: "Point: place a point on an edge or face, to build splines and planes from"
+        case .spline: "Spline: a curve through points, in the order clicked"
+        case .plane: "Plane: a datum plane on a flat face or standard plane, through a point"
+        case .extrude: "Extrude: sweep a spline or edge into a surface along a plane's normal"
+        case .fill: "Fill: a surface across a loop of edges, tangent to the part where it meets it"
+        case .add: "Add: join surfaces that close a volume onto the part as solid"
+        case .fillet: "Fillet: round the picked edges"
+        case .chamfer: "Chamfer: bevel the picked edges"
+        case .pushpull: "Push/Pull: move a flat face in or out"
+        }
+    }
+
     var body: some View {
         @Bindable var edit = app.partEdit
         ScrollView {
@@ -35,16 +50,24 @@ struct PartEditView: View {
                 }
             }
             S37Section("Tools") {
-                HStack(spacing: 4) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 4)], alignment: .leading, spacing: 4) {
                     ForEach(Self.tools, id: \.0) { kind, icon in
-                        Button { edit.tool = edit.tool == kind ? nil : kind } label: { Image(systemName: icon) }
-                            .buttonStyle(.borderless)
-                            .foregroundStyle(edit.tool == kind ? S37.C.sageInk : S37.C.inkSecondary)
-                            .accessibilityLabel(kind.title)
-                            .help(kind.title)  // icon-only: the tooltip is its name
+                        Button { edit.tool = edit.tool == kind ? nil : kind } label: {
+                            Label(kind.title, systemImage: icon).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.borderless)
+                        .padding(.horizontal, 6).padding(.vertical, 4)
+                        .background(RoundedRectangle(cornerRadius: 5).fill(edit.tool == kind ? S37.C.sageWash : S37.C.inset))
+                        .foregroundStyle(edit.tool == kind ? S37.C.sageInk : S37.C.inkSecondary)
+                        .help(Self.explain(kind))
                     }
                 }
+                .font(.system(size: 12))
                 .padding(.vertical, S37.Space.s1)
+                if edit.tool == nil {
+                    Text("Pick a tool. It tells you what to click; what it can pick lights up under the pointer.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
                 if edit.tool != nil { ToolPanel() }
             }
             S37Section("Features") {
@@ -69,7 +92,10 @@ struct PartEditView: View {
             }
             if let status = edit.status { Text(status).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.clayInk) }
             HStack {
-                if edit.busy || edit.saving { ProgressView().controlSize(.small) }
+                if edit.busy || edit.saving {
+                    ProgressView().controlSize(.small)
+                    Text(edit.saving ? "Saving…" : "Rebuilding…").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
+                }
                 Spacer()
                 Button("Save part…") { app.savePartEdit() }
                     .buttonStyle(S37ButtonStyle(kind: .prominent))
@@ -111,6 +137,18 @@ private struct ToolPanel: View {
         let edit = app.partEdit
         if let draft = edit.draft {
             Text(need(draft)).font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if !draft.refs.isEmpty {
+                HStack {
+                    Text(picked(draft)).font(.system(size: 12, weight: .medium)).foregroundStyle(S37.C.sageInk)
+                    Spacer()
+                    Button("Clear picks") { edit.clearPicks() }.buttonStyle(S37ButtonStyle(kind: .plain)).controlSize(.small)
+                }
+            }
+            if let hint = edit.hint {
+                Label(hint, systemImage: "hand.point.up.left").font(.system(size: 12)).foregroundStyle(S37.C.clayInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             switch draft.kind {
             case .plane, .extrude:
                 HStack {
@@ -131,8 +169,11 @@ private struct ToolPanel: View {
             default: EmptyView()
             }
             HStack {
-                Button("Cancel") { edit.cancel() }.buttonStyle(S37ButtonStyle(kind: .plain))
+                Button("Cancel") { edit.cancel() }.buttonStyle(S37ButtonStyle(kind: .plain)).keyboardShortcut(.escape, modifiers: [])
                 Spacer()
+                if !edit.ready(draft) {
+                    Text("Needs more picks").font(.system(size: 11)).foregroundStyle(S37.C.inkTertiary)
+                }
                 Button("Apply") { edit.apply(undo: undo) }
                     .buttonStyle(S37ButtonStyle())
                     .keyboardShortcut(.return)
@@ -146,6 +187,17 @@ private struct ToolPanel: View {
         return NumberField(label: label, unit: "mm", digits: 3,
                            value: Binding(get: { edit.draft?.values[key] ?? d }, set: { edit.draft?.values[key] = $0 }))
         .onAppear { if edit.draft?.values[key] == nil { edit.draft?.values[key] = d } }
+    }
+
+    /// What has been picked so far, counted by kind.
+    private func picked(_ d: EditFeature) -> String {
+        let names = ["face": "face", "surface": "surface", "edge": "edge", "curve": "spline", "point": "point", "plane": "plane"]
+        var counts: [(String, Int)] = []
+        for r in d.refs {
+            let n = names[r.kind] ?? r.kind
+            if let i = counts.firstIndex(where: { $0.0 == n }) { counts[i].1 += 1 } else { counts.append((n, 1)) }
+        }
+        return "Picked: " + counts.map { "\($0.1) \($0.0)\($0.1 == 1 ? "" : "s")" }.joined(separator: ", ")
     }
 
     private func need(_ d: EditFeature) -> String {

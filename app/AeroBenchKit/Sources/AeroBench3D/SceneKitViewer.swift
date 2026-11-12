@@ -371,8 +371,28 @@ public final class SceneKitViewer: Viewer3D {
 
     /// Edit mode's drawing over the part: every edge thin, the hovered ones
     /// brighter, the picked ones in sage, and the points placed so far.
-    public func setEditOverlay(edges: [[SIMD3<Double>]], highlighted: Set<Int>, selected: Set<Int>, points: [SIMD3<Double>]) {
+    /// `hoverFaces` and `selectedFaces` are triangle corners, three per triangle, world space:
+    /// the face under the pointer tinted light, the picked ones sage.
+    public func setEditOverlay(edges: [[SIMD3<Double>]], highlighted: Set<Int>, selected: Set<Int>, points: [SIMD3<Double>],
+                               hoverFaces: [SIMD3<Double>] = [], selectedFaces: [SIMD3<Double>] = []) {
         editRoot.childNodes.forEach { $0.removeFromParentNode() }
+        func tint(_ corners: [SIMD3<Double>], _ color: NSColor) {
+            guard corners.count >= 3 else { return }
+            let m = SCNMaterial()
+            m.lightingModel = .constant
+            m.diffuse.contents = color
+            m.isDoubleSided = true
+            m.readsFromDepthBuffer = true
+            m.writesToDepthBuffer = false
+            let g = SCNGeometry(sources: [SCNGeometrySource(vertices: corners.map { SCNVector3(Float($0.x), Float($0.y), Float($0.z)) })],
+                                elements: [SCNGeometryElement(indices: (0..<Int32(corners.count - corners.count % 3)).map { $0 }, primitiveType: .triangles)])
+            g.materials = [m]
+            let node = SCNNode(geometry: g)
+            node.renderingOrder = 99
+            editRoot.addChildNode(node)
+        }
+        tint(selectedFaces, NSColor(red: 0.59, green: 0.72, blue: 0.5, alpha: 0.55))
+        tint(hoverFaces, NSColor(red: 0.95, green: 0.93, blue: 0.89, alpha: 0.35))
         func lines(_ ids: [Int], _ color: NSColor, order: Int) {
             var vertices: [SCNVector3] = [], indices: [Int32] = []
             for k in ids where edges[k].count > 1 {
