@@ -333,7 +333,7 @@ extension AppState {
                      "leading_edge": pair(e.leadingEdge), "inverted": .bool(e.inverted)])
         })
         params["min_gap"] = .double(wing.minGap)
-        if let b = wing.rulesBox {
+        if let b = wing.clearedRulesBox {  // the optimiser keeps the wing inside the clearance too
             params["rules_box"] = .array([.double(b.minX), .double(b.minY), .double(b.maxX), .double(b.maxY)])
         }
         params["variables"] = .array(setup.variables.map { v in

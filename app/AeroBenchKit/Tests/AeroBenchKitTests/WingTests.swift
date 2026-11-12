@@ -327,6 +327,32 @@ final class WingGeometryTests: XCTestCase {
         XCTAssertEqual(w.issues, [WingIssue(kind: .outsideRules, elements: [1])])
     }
 
+    /// A clearance per side of the rules box: the wing must stay that far
+    /// inside each edge, flagged apart from reaching outside the box itself.
+    func testRulesBoxClearance() throws {
+        var w = wing()
+        w.setGap(0.012, of: 1)
+        let pts = w.elements.flatMap { $0.placed() }
+        let top = pts.map(\.y).max()!, right = pts.map(\.x).max()!
+        w.rulesBox = RulesBox(minX: -0.1, minY: -0.5, maxX: right + 0.01, maxY: top + 0.01)
+        XCTAssertTrue(w.issues.isEmpty, "\(w.issues)")
+        w.rulesClearance.top = 0.02  // 20 mm off the top edge: the highest element now reaches into it
+        let issues = w.issues
+        XCTAssertFalse(issues.isEmpty)
+        XCTAssertTrue(issues.allSatisfy { $0.kind == .outsideRules && $0.clearanceOnly })
+        XCTAssertTrue(issues[0].message.contains("clearance"), issues[0].message)
+        XCTAssertEqual(w.clearedRulesBox?.maxY ?? 0, top - 0.01, accuracy: 1e-12)
+        XCTAssertEqual(w.clearedRulesBox?.minY, -0.5)
+        w.rulesClearance = RulesClearance(front: 0, rear: 0.02, bottom: 0, top: 0)
+        XCTAssertEqual(w.clearedRulesBox?.maxX ?? 0, right - 0.01, accuracy: 1e-12)
+        XCTAssertFalse(w.issues.isEmpty)
+        let back = try JSONDecoder().decode(Wing.self, from: JSONEncoder().encode(w))
+        XCTAssertEqual(back.rulesClearance, w.rulesClearance)
+        // Older saves have none.
+        let old = try JSONDecoder().decode(Wing.self, from: Data(#"{"elements":[]}"#.utf8))
+        XCTAssertEqual(old.rulesClearance, RulesClearance())
+    }
+
     func testExportAndLapSim() {
         var w = wing()
         w.span = 1.2

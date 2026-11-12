@@ -654,6 +654,11 @@ struct WingCanvas: View {
                          at: CGPoint(x: r.maxX - 60, y: r.midY))
             }
             ctx.stroke(Path(rect), with: .color(S37.C.chart6), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+            if !wing.rulesClearance.isZero, let i = wing.clearedRulesBox {
+                let p = m.view(SIMD2(i.minX, i.maxY)), q = m.view(SIMD2(i.maxX, i.minY))
+                ctx.stroke(Path(CGRect(x: p.x, y: p.y, width: q.x - p.x, height: q.y - p.y)),
+                           with: .color(S37.C.chart6.opacity(0.7)), style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
+            }
             ctx.draw(Text("Rules box").font(.caption2).foregroundStyle(S37.C.chart6), at: CGPoint(x: rect.minX + 30, y: rect.minY - 8))
         }
         if let g = wing.groundLine {
@@ -1270,6 +1275,12 @@ struct WingInspector: View {
                         .disabled(app.car.setup != nil)
                     NumberField(label: "Box to y", unit: "mm", value: mm({ box.maxY }, { v in lab.edit("Change Box to y") { $0.rulesBox?.maxY = v } }))
                         .disabled(app.car.setup != nil)
+                    // Clearance stays editable on a car: it is the team's margin, not the car's box.
+                    NumberField(label: "Clearance front", unit: "mm", value: mm({ wing.rulesClearance.front }, { v in lab.edit("Change Clearance") { $0.rulesClearance.front = max(v, 0) } }))
+                        .help("How far the wing must stay inside the box's low-x edge, the one the flow meets first")
+                    NumberField(label: "Clearance rear", unit: "mm", value: mm({ wing.rulesClearance.rear }, { v in lab.edit("Change Clearance") { $0.rulesClearance.rear = max(v, 0) } }))
+                    NumberField(label: "Clearance bottom", unit: "mm", value: mm({ wing.rulesClearance.bottom }, { v in lab.edit("Change Clearance") { $0.rulesClearance.bottom = max(v, 0) } }))
+                    NumberField(label: "Clearance top", unit: "mm", value: mm({ wing.rulesClearance.top }, { v in lab.edit("Change Clearance") { $0.rulesClearance.top = max(v, 0) } }))
                 }
             }
 

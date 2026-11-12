@@ -49,7 +49,8 @@ extension AppState {
         p["ride_height"] = nil
         p["alpha"] = .double(0)  // designs are scored and shown at 0°: the box and the car take the elements as drawn
         func pair(_ v: SIMD2<Double>) -> JSONValue { .array([.double(v.x), .double(v.y)]) }
-        p["box"] = .array([f.box.minX, f.box.minY, f.box.maxX, f.box.maxY].map { .double($0) })
+        let box = f.box.inset(by: wing.rulesClearance)  // designs fit inside the clearance
+        p["box"] = .array([box.minX, box.minY, box.maxX, box.maxY].map { .double($0) })
         p["free_air"] = .bool(f.freeAir)
         p["elements"] = .int(d.startFrom == .existing ? wing.elements.count : d.elements)
         p["inverted"] = .bool(wing.elements.first?.inverted ?? true)

@@ -113,6 +113,31 @@ public struct RulesBox: Codable, Equatable, Sendable {
     }
 
     public func contains(_ p: SIMD2<Double>) -> Bool { p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY }
+
+    /// The box with each edge moved in by its clearance.
+    public func inset(by c: RulesClearance) -> RulesBox {
+        var b = self
+        b.minX += c.front
+        b.maxX -= c.rear
+        b.minY += c.bottom
+        b.maxY -= c.top
+        return b
+    }
+}
+
+/// How far the wing must stay inside each edge of the rules box (m), in the
+/// wing's frame: front is the low-x edge the flow meets first, bottom the low-y edge.
+public struct RulesClearance: Codable, Equatable, Sendable {
+    public var front = 0.0, rear = 0.0, bottom = 0.0, top = 0.0
+
+    public init(front: Double = 0, rear: Double = 0, bottom: Double = 0, top: Double = 0) {
+        self.front = front
+        self.rear = rear
+        self.bottom = bottom
+        self.top = top
+    }
+
+    public var isZero: Bool { self == RulesClearance() }
 }
 
 public struct WingIssue: Equatable, Sendable {
@@ -120,13 +145,16 @@ public struct WingIssue: Equatable, Sendable {
     public var kind: Kind
     public var elements: [Int]
     public var distance: Double?
+    /// outsideRules only: inside the box, but into its clearance.
+    public var clearanceOnly = false
 
     public var message: String {
         let names = elements.map { WingIssue.label($0) }.joined(separator: " and ")
         switch kind {
         case .intersects: return "\(names) intersect."
         case .tooClose: return "\(names) are \(String(format: "%.1f", (distance ?? 0) * 1000)) mm apart, closer than the minimum gap."
-        case .outsideRules: return "\(names) reaches outside the rules box."
+        case .outsideRules:
+            return clearanceOnly ? "\(names) reaches into the rules box clearance." : "\(names) reaches outside the rules box."
         }
     }
 
@@ -145,6 +173,7 @@ public struct Wing: Codable, Equatable, Sendable {
     public var rulesBox: RulesBox?  // the box in force, for `rulesFor`
     public var rulesFor: WingPosition = .rear
     public var otherRulesBox: RulesBox?  // the other position's box, kept while it is not in force
+    public var rulesClearance = RulesClearance()  // kept inside each edge of the rules box
     public var minGap: Double  // m, closer than this is flagged
     public var span: Double  // m, for turning 2D coefficients into ClA and CdA
     public var factor3D: Double  // 2D to 3D: below 1 for a finite wing, user's estimate
@@ -184,6 +213,7 @@ public struct Wing: Codable, Equatable, Sendable {
         rulesBox = try c.decodeIfPresent(RulesBox.self, forKey: .rulesBox)
         rulesFor = try c.decodeIfPresent(WingPosition.self, forKey: .rulesFor) ?? .rear
         otherRulesBox = try c.decodeIfPresent(RulesBox.self, forKey: .otherRulesBox)
+        rulesClearance = try c.decodeIfPresent(RulesClearance.self, forKey: .rulesClearance) ?? RulesClearance()
         minGap = try c.decodeIfPresent(Double.self, forKey: .minGap) ?? 0.005
         span = try c.decodeIfPresent(Double.self, forKey: .span) ?? 1.0
         factor3D = try c.decodeIfPresent(Double.self, forKey: .factor3D) ?? 1.0
@@ -193,6 +223,9 @@ public struct Wing: Codable, Equatable, Sendable {
         rho = try c.decodeIfPresent(Double.self, forKey: .rho) ?? 1.225
         mu = try c.decodeIfPresent(Double.self, forKey: .mu) ?? 1.81e-5
     }
+
+    /// The rules box less its clearance: where the wing must fit.
+    public var clearedRulesBox: RulesBox? { rulesBox?.inset(by: rulesClearance) }
 
     /// A starting box in the wing's plane (m): the front wing has 700 mm ahead
     /// of the front tyres and 320 mm from the 30 mm ground clearance up to the
@@ -295,6 +328,8 @@ public struct Wing: Codable, Equatable, Sendable {
             }
             if let box = rulesBox, !shapes[i].allSatisfy(box.contains) {
                 out.append(WingIssue(kind: .outsideRules, elements: [i]))
+            } else if let box = clearedRulesBox, !shapes[i].allSatisfy(box.contains) {
+                out.append(WingIssue(kind: .outsideRules, elements: [i], clearanceOnly: true))
             }
         }
         return out
