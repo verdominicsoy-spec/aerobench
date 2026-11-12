@@ -401,3 +401,88 @@ def test_a_part_with_many_faces_rebuilds_quickly(tmp_path):
     r = rebuild.build(step, None, [F("f1", "pushpull", [R("part", "face", top)], distance=5)], None, tmp_path)
     assert statuses(r) == ["ok"]
     assert time.perf_counter() - start < 3.0
+
+
+# Delete face, move, mirror, cut by plane, thicken ---------------------------
+
+def _drilled():
+    """A 100 mm box with a 20 mm hole down through it."""
+    hole = BRepPrimAPI_MakeCylinder(10, 100).Shape()
+    t = __import__("OCP.gp", fromlist=["gp_Trsf"]).gp_Trsf()
+    t.SetTranslation(gp_Vec(50, 50, 0))
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
+    return BRepAlgoAPI_Cut(box(), BRepBuilderAPI_Transform(hole, t, True).Shape()).Shape()
+
+
+def test_delete_face_fills_a_hole():
+    s = _drilled()
+    wall = next(f for f in Topology(s).faces if BRepAdaptor_Surface(f).GetType() != ops.GeomAbs_Plane)
+    out, _ = ops.delete_faces(s, [wall])
+    assert volume(out) == pytest.approx(1e6, rel=1e-4)
+
+
+def test_delete_face_refuses_what_cannot_heal():
+    with pytest.raises(EngineError, match="could not be removed"):
+        ops.delete_faces(box(), Topology(box()).faces[:3])
+    s = box()
+    with pytest.raises(EngineError, match="could not be removed"):  # one face of a box: nothing can grow over it
+        ops.delete_faces(s, Topology(s).faces[:1])
+
+
+def test_move_turns_about_the_centre_then_shifts():
+    out, _ = ops.move(box(), dx=10, dy=0, dz=-5, rx=0, ry=0, rz=90)
+    lo, hi = bounds(out)
+    assert lo == pytest.approx((10, 0, -5), abs=1e-6) and hi == pytest.approx((110, 100, 95), abs=1e-6)
+    out, _ = ops.move(BRepPrimAPI_MakeBox(100, 20, 10).Shape(), 0, 0, 0, 0, 0, 90)
+    lo, hi = bounds(out)
+    assert (hi[0] - lo[0], hi[1] - lo[1]) == pytest.approx((20, 100), abs=1e-6)
+    assert centre(out) == pytest.approx((50, 10, 5), abs=1e-6)
+
+
+def test_mirror_copies_or_flips():
+    s = BRepPrimAPI_MakeBox(gp_Pnt(10, 0, 0), 50, 20, 10).Shape()
+    both, _ = ops.mirror(s, ops.STD["YZ"], keep=True)
+    assert volume(both) == pytest.approx(2 * 50 * 20 * 10, rel=1e-6)
+    assert bounds(both)[0][0] == pytest.approx(-60)
+    flipped, _ = ops.mirror(s, ops.STD["YZ"], keep=False)
+    lo, hi = bounds(flipped)
+    assert lo + hi == pytest.approx((-60, 0, 0, -10, 20, 10), abs=1e-6)
+
+
+def test_cut_by_plane_keeps_one_side():
+    plane = ops.gp_Pln(gp_Pnt(0, 0, 30), ops.gp_Dir(0, 0, 1))
+    below, _ = ops.cut_by_plane(box(), plane, flip=False)
+    assert bounds(below)[1][2] == pytest.approx(30) and volume(below) == pytest.approx(0.3e6, rel=1e-6)
+    above, _ = ops.cut_by_plane(box(), plane, flip=True)
+    assert bounds(above)[0][2] == pytest.approx(30) and volume(above) == pytest.approx(0.7e6, rel=1e-6)
+    with pytest.raises(EngineError, match="misses the part"):
+        ops.cut_by_plane(box(), ops.gp_Pln(gp_Pnt(0, 0, 500), ops.gp_Dir(0, 0, 1)), flip=True)
+
+
+def test_thicken_turns_a_surface_into_material():
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
+    plate = BRepBuilderAPI_MakeFace(ops.gp_Pln(gp_Pnt(0, 0, 100), ops.gp_Dir(0, 0, 1)), 0, 100, 0, 100).Face()
+    out, _ = ops.thicken(box(), [plate], 5)
+    assert volume(out) == pytest.approx(1.05e6, rel=1e-4)
+
+
+def test_new_tools_rebuild(box_step, tmp_path):
+    t = part_topology(box_step)
+    top = next(i for i, f in enumerate(t.faces) if centre(f) == pytest.approx((50, 50, 100)))
+    feats = [F("f1", "move", [], dx=-30, dy=0, dz=0, rx=0, ry=0, rz=0),  # the box now spans x = -30 to 70
+             F("f2", "cut", [R("std", "plane", name="YZ")], flip=1, offset=-10),  # keeps x > -10
+             F("f3", "mirror", [R("part", "face", top)], keep=1)]
+    r = rebuild.build(box_step, None, feats, None, tmp_path)
+    assert statuses(r) == ["ok", "ok", "ok"], r["features"]
+    assert r["valid"] and r["closed"]
+
+
+def test_a_face_tool_after_a_solid_change(box_step, tmp_path):
+    """History hands back plain shapes for modified faces and edges: face and edge tools must still work on them."""
+    t = part_topology(box_step)
+    top = next(i for i, f in enumerate(t.faces) if centre(f) == pytest.approx((50, 50, 100)))
+    feats = [F("f1", "move", [], dx=5, dy=0, dz=0, rx=0, ry=0, rz=0),
+             F("f2", "pushpull", [R("part", "face", top)], distance=10),
+             F("f3", "fillet", [R("part", "edge", edge_index(t, (50, 0, 0)))], radius=5)]
+    assert statuses(rebuild.build(box_step, None, feats, None, tmp_path)) == ["ok", "ok", "ok"]

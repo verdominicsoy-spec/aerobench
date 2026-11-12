@@ -11,6 +11,8 @@ struct PartEditView: View {
         (.point, "smallcircle.filled.circle"), (.spline, "scribble"), (.plane, "square.on.square.dashed"),
         (.extrude, "arrow.up.square"), (.fill, "square.dashed.inset.filled"), (.add, "plus.square.on.square"),
         (.fillet, "roundedbottom.horizontal"), (.chamfer, "triangle"), (.pushpull, "arrow.up.and.down.square"),
+        (.deleteface, "eraser"), (.move, "arrow.up.and.down.and.arrow.left.and.right"), (.mirror, "arrow.left.and.right.righttriangle.left.righttriangle.right"),
+        (.cut, "scissors"), (.thicken, "square.stack.3d.up"),
     ]
 
     /// What each tool does, for its tooltip.
@@ -25,6 +27,11 @@ struct PartEditView: View {
         case .fillet: "Fillet: round the picked edges"
         case .chamfer: "Chamfer: bevel the picked edges"
         case .pushpull: "Push/Pull: move a flat face in or out"
+        case .deleteface: "Delete face: take off holes, fillets, chamfers or bosses and heal the gap, for a cleaner CFD model"
+        case .move: "Move: shift the part, and turn it about its own centre"
+        case .mirror: "Mirror: reflect the part in a plane, as a joined copy or in its place"
+        case .cut: "Cut: slice the part with a plane and keep one side, e.g. a half car for symmetry"
+        case .thicken: "Thicken: give a Fill or Extrude surface a thickness and join it to the part, e.g. an endplate"
         }
     }
 
@@ -150,21 +157,35 @@ private struct ToolPanel: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             switch draft.kind {
-            case .plane, .extrude:
+            case .plane, .extrude, .mirror, .cut:
                 HStack {
                     ForEach(["XY", "YZ", "ZX"], id: \.self) { name in
                         Button(name) { edit.usePlane(EditRef(src: "std", kind: "plane", name: name)) }.buttonStyle(S37ButtonStyle()).controlSize(.small)
                     }
                     ForEach(edit.reply?.planes ?? [], id: \.id) { p in
-                        if draft.kind == .extrude { Button(p.id) { edit.usePlane(EditRef(src: p.id, kind: "plane")) }.buttonStyle(S37ButtonStyle()).controlSize(.small) }
+                        if draft.kind != .plane { Button(p.id) { edit.usePlane(EditRef(src: p.id, kind: "plane")) }.buttonStyle(S37ButtonStyle()).controlSize(.small) }
                     }
                 }
+                if draft.kind == .mirror || draft.kind == .cut {
+                    value("Offset along normal", "offset", default: 0)
+                        .help("Moves the plane along its normal: e.g. YZ offset to the car's centreline")
+                }
+                if draft.kind == .mirror { toggle("Keep the original (mirror copy)", "keep", default: true) }
+                if draft.kind == .cut { toggle("Keep the other side", "flip", default: false) }
                 if draft.kind == .extrude {
                     value("Distance", "distance", default: 10)
                     Toggle("Symmetric", isOn: Binding(get: { (edit.draft?.values["symmetric"] ?? 0) != 0 },
                                                       set: { edit.draft?.values["symmetric"] = $0 ? 1 : 0 }))
                 }
             case .fillet: value("Radius", "radius", default: 2)
+            case .thicken: value("Thickness", "thickness", default: 2)
+            case .move:
+                value("Shift x", "dx", default: 0)
+                value("Shift y", "dy", default: 0)
+                value("Shift z", "dz", default: 0)
+                value("Turn about x", "rx", default: 0, unit: "°")
+                value("Turn about y", "ry", default: 0, unit: "°")
+                value("Turn about z", "rz", default: 0, unit: "°")
             case .chamfer, .pushpull: value("Distance", "distance", default: 2)
             default: EmptyView()
             }
@@ -182,9 +203,16 @@ private struct ToolPanel: View {
         }
     }
 
-    private func value(_ label: String, _ key: String, default d: Double) -> some View {
+    private func toggle(_ label: String, _ key: String, default d: Bool) -> some View {
         let edit = app.partEdit
-        return NumberField(label: label, unit: "mm", digits: 3,
+        return Toggle(label, isOn: Binding(get: { (edit.draft?.values[key] ?? (d ? 1 : 0)) != 0 },
+                                           set: { edit.draft?.values[key] = $0 ? 1 : 0 }))
+            .onAppear { if edit.draft?.values[key] == nil { edit.draft?.values[key] = d ? 1 : 0 } }
+    }
+
+    private func value(_ label: String, _ key: String, default d: Double, unit: String = "mm") -> some View {
+        let edit = app.partEdit
+        return NumberField(label: label, unit: unit, digits: 3,
                            value: Binding(get: { edit.draft?.values[key] ?? d }, set: { edit.draft?.values[key] = $0 }))
         .onAppear { if edit.draft?.values[key] == nil { edit.draft?.values[key] = d } }
     }
@@ -210,6 +238,11 @@ private struct ToolPanel: View {
         case .add: "Click the surfaces that close a volume (\(d.refs.count) so far)"
         case .fillet, .chamfer: "Click the edges (\(d.refs.count) picked)"
         case .pushpull: "Click a flat face"
+        case .deleteface: "Click the faces to remove (\(d.refs.count) picked): a hole's wall, a fillet, a boss's faces"
+        case .move: "Type the shift (mm) and the turn about the part's centre (°)"
+        case .mirror: "Pick a plane, or click a flat face to mirror in"
+        case .cut: "Pick a plane, or click a flat face: the part is cut there and the side behind the plane's normal kept"
+        case .thicken: "Click the Fill or Extrude surfaces to thicken (\(d.refs.count) picked)"
         }
     }
 }

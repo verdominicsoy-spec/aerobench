@@ -31,7 +31,7 @@ from ..tessellate import MM, PRESETS, _mesh_shape
 from . import ops
 from .refs import History, PickPart, RefLost, Topology, load_part, resolve
 
-CHANGES_SOLID = {"add", "fillet", "chamfer", "pushpull"}
+CHANGES_SOLID = {"add", "fillet", "chamfer", "pushpull", "deleteface", "move", "mirror", "cut", "thicken"}
 CACHE_SIZE = 64
 EDGE_SAMPLES = 24
 _cache: OrderedDict = OrderedDict()
@@ -92,6 +92,12 @@ def _new(before: Topology, maker, after: Topology) -> dict:
     return out
 
 
+def _plane(ref: dict, get):
+    """A standard plane, a plane feature, or a flat face's plane."""
+    p = get(ref)
+    return p if isinstance(p, ops.gp_Pln) else ops.face_plane(p)
+
+
 def _apply(feature: dict, ctx: _Context) -> None:
     kind, v, s = feature["kind"], feature.get("values", {}), ctx.state
     refs = feature.get("refs", [])
@@ -126,8 +132,19 @@ def _apply(feature: dict, ctx: _Context) -> None:
             shape, maker = ops.fillet(s.solid, [get(r) for r in refs], v.get("radius", 1.0))
         elif kind == "chamfer":
             shape, maker = ops.chamfer(s.solid, [get(r) for r in refs], v.get("distance", 1.0))
-        else:
+        elif kind == "pushpull":
             shape, maker = ops.pushpull(s.solid, get(refs[0]), v.get("distance", 1.0))
+        elif kind == "deleteface":
+            shape, maker = ops.delete_faces(s.solid, [get(r) for r in refs])
+        elif kind == "move":
+            shape, maker = ops.move(s.solid, *(float(v.get(k, 0.0)) for k in ("dx", "dy", "dz", "rx", "ry", "rz")))
+        elif kind == "mirror":
+            shape, maker = ops.mirror(s.solid, ops.offset(_plane(refs[0], get), v.get("offset", 0.0)), bool(v.get("keep", 1)))
+        elif kind == "cut":
+            shape, maker = ops.cut_by_plane(s.solid, ops.offset(_plane(refs[0], get), v.get("offset", 0.0)), bool(v.get("flip", 0)))
+        else:  # thicken
+            shape, maker = ops.thicken(s.solid, [get(r) for r in refs], v.get("thickness", 2.0))
+            s.used.update(r["src"] for r in refs)
         s.hist.apply(maker, s.solid)
         s.solid = shape
         s.made[fid] = (_new(before, maker, Topology(shape)), len(s.hist.steps))

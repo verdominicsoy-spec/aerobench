@@ -47,6 +47,7 @@ public struct EditRef: Codable, Hashable, Sendable {
 public struct EditFeature: Codable, Identifiable, Hashable, Sendable {
     public enum Kind: String, Codable, CaseIterable, Sendable {
         case point, spline, plane, extrude, fill, add, fillet, chamfer, pushpull
+        case deleteface, move, mirror, cut, thicken
     }
 
     public var id: String

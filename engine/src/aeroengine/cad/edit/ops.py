@@ -8,18 +8,24 @@ from __future__ import annotations
 
 from OCP.BRep import BRep_Tool
 from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Surface
-from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut, BRepAlgoAPI_Fuse
-from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeVertex, BRepBuilderAPI_Transform
+from OCP.Bnd import Bnd_Box
+from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut, BRepAlgoAPI_Defeaturing, BRepAlgoAPI_Fuse
+from OCP.BRepBndLib import BRepBndLib
+from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakeVertex, BRepBuilderAPI_Transform
+from OCP.BRepOffsetAPI import BRepOffsetAPI_MakeThickSolid
 from OCP.BRepExtrema import BRepExtrema_DistShapeShape
+from OCP.BRepGProp import BRepGProp
 from OCP.BRepFilletAPI import BRepFilletAPI_MakeChamfer, BRepFilletAPI_MakeFillet
 from OCP.BRepOffsetAPI import BRepOffsetAPI_MakeFilling
 from OCP.BRepPrimAPI import BRepPrimAPI_MakePrism
 from OCP.GeomAbs import GeomAbs_C0, GeomAbs_G1, GeomAbs_Plane
 from OCP.GeomAPI import GeomAPI_Interpolate
-from OCP.gp import gp_Ax3, gp_Dir, gp_Pln, gp_Pnt, gp_Trsf, gp_Vec
+from OCP.GProp import GProp_GProps
+from OCP.gp import gp_Ax1, gp_Ax2, gp_Ax3, gp_Dir, gp_Pln, gp_Pnt, gp_Trsf, gp_Vec
 from OCP.OCP.collections import List_TopoDS_Shape
 from OCP.OCP.collections import HArray1_gp_Pnt as TColgp_HArray1OfPnt
-from OCP.TopAbs import TopAbs_REVERSED
+from OCP.TopAbs import TopAbs_FACE, TopAbs_REVERSED
+from OCP.OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher as TopTools_IndexedMapOfShape
 from OCP.TopExp import TopExp
 from OCP.TopoDS import TopoDS
 
@@ -79,6 +85,11 @@ def face_plane(face) -> gp_Pln:
     if s.GetType() != GeomAbs_Plane:
         raise EngineError("pick a flat face", "a plane needs a flat face as its reference")
     return s.Plane()
+
+
+def offset(plane: gp_Pln, mm: float) -> gp_Pln:
+    """The plane moved along its normal."""
+    return plane.Translated(gp_Vec(plane.Axis().Direction()).Multiplied(mm)) if mm else plane
 
 
 def plane_through(reference: gp_Pln, point: gp_Pnt) -> gp_Pln:
@@ -195,3 +206,104 @@ def pushpull(solid, face, distance: float):
     if not op.IsDone():
         raise EngineError("the face could not be pushed in")
     return op.Shape(), op
+
+
+def _signed_volume(shape) -> float:
+    p = GProp_GProps()
+    BRepGProp.VolumeProperties_s(shape, p)
+    return p.Mass()
+
+
+def _box(shape):
+    b = Bnd_Box()
+    BRepBndLib.Add_s(shape, b)
+    return b
+
+
+def delete_faces(solid, faces: list):
+    """Removes faces and heals the gap from the faces around them: a hole,
+    fillet, chamfer or boss taken off, as for a cleaner CFD model."""
+    mk = BRepAlgoAPI_Defeaturing()
+    mk.SetShape(solid)
+    for f in faces:
+        mk.AddFaceToRemove(f)
+    mk.SetRunParallel(True)
+    try:
+        mk.Build()
+        ok = mk.IsDone()
+    except Exception:
+        ok = False
+    if ok:  # a face it cannot heal comes back untouched with only a warning: check they are gone
+        left = TopTools_IndexedMapOfShape()
+        TopExp.MapShapes_s(mk.Shape(), TopAbs_FACE, left)
+        ok = not any(left.Contains(f) for f in faces)
+    if not ok:
+        raise EngineError("the faces could not be removed",
+                          "the faces around them must be able to grow over the gap: pick a whole hole, fillet or boss")
+    return mk.Shape(), mk
+
+
+def move(solid, dx: float, dy: float, dz: float, rx: float, ry: float, rz: float):
+    """Turns the part about its own centre, X then Y then Z (degrees), then shifts it (mm)."""
+    lo, hi = _box(solid).CornerMin(), _box(solid).CornerMax()
+    c = gp_Pnt((lo.X() + hi.X()) / 2, (lo.Y() + hi.Y()) / 2, (lo.Z() + hi.Z()) / 2)
+    t = gp_Trsf()
+    for angle, axis in ((rx, gp_Dir(1, 0, 0)), (ry, gp_Dir(0, 1, 0)), (rz, gp_Dir(0, 0, 1))):
+        if angle:
+            r = gp_Trsf()
+            r.SetRotation(gp_Ax1(c, axis), angle * 3.141592653589793 / 180)
+            t = r.Multiplied(t)
+    shift = gp_Trsf()
+    shift.SetTranslation(gp_Vec(dx, dy, dz))
+    mk = BRepBuilderAPI_Transform(solid, shift.Multiplied(t), True)
+    return mk.Shape(), mk
+
+
+def mirror(solid, plane: gp_Pln, keep: bool):
+    """Reflects the part in a plane: joined to the original when `keep`, else in its place."""
+    t = gp_Trsf()
+    t.SetMirror(gp_Ax2(plane.Location(), plane.Axis().Direction()))
+    mk = BRepBuilderAPI_Transform(solid, t, True)
+    if not keep:
+        return mk.Shape(), mk
+    return _fuse(solid, mk.Shape())
+
+
+def cut_by_plane(solid, plane: gp_Pln, flip: bool):
+    """Cuts the part with a plane, keeping the side behind its normal (or in front, with `flip`)."""
+    b = _box(solid)
+    size = 4 * b.CornerMin().Distance(b.CornerMax()) + 1
+    n = gp_Vec(plane.Axis().Direction())
+    if flip:  # the tool takes the side the normal points to
+        n.Reverse()
+    origin = plane.Location()
+    sheet = BRepBuilderAPI_MakeFace(gp_Pln(origin, gp_Dir(n)), -size, size, -size, size).Face()
+    tool = BRepPrimAPI_MakePrism(sheet, n.Multiplied(size)).Shape()
+    op = BRepAlgoAPI_Cut(solid, tool)
+    if not op.IsDone():
+        raise EngineError("the part could not be cut by that plane")
+    out = op.Shape()
+    kept, whole = abs(_signed_volume(out)), abs(_signed_volume(solid))
+    if kept < 1e-9 or abs(kept - whole) < 1e-9 * max(whole, 1):
+        raise EngineError("the plane misses the part", "move the plane so it passes through the part, or flip the side kept")
+    return out, op
+
+
+def thicken(solid, surfaces: list, thickness: float):
+    """Gives surfaces a thickness (mm, along their normal; negative the other way) and joins
+    the material to the part: an endplate or gurney from a fill or extrude."""
+    pieces = []
+    for f in surfaces:
+        mk = BRepOffsetAPI_MakeThickSolid()
+        try:
+            mk.MakeThickSolidBySimple(f, thickness)
+            mk.Build()
+            if not mk.IsDone():
+                raise RuntimeError
+        except Exception:
+            raise EngineError(f"a {thickness:g} mm thickness could not be built", "try a thinner one, or a smoother surface")
+        piece = mk.Shape()
+        if _signed_volume(piece) < 0:  # MakeThickSolidBySimple can hand back the solid inside out
+            piece = piece.Reversed()
+        pieces.append(piece)
+    return _fuse(solid, pieces[0] if len(pieces) == 1 else _compound(pieces))

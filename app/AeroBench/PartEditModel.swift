@@ -136,7 +136,9 @@ final class PartEditModel {
     /// Whether a draft has every pick its kind needs, so it can be previewed.
     func ready(_ f: EditFeature) -> Bool {
         switch f.kind {
-        case .point, .pushpull: f.refs.count == 1
+        case .point, .pushpull, .mirror, .cut: f.refs.count == 1
+        case .move: true
+        case .deleteface, .thicken: !f.refs.isEmpty
         case .spline: f.refs.count >= 2
         case .plane, .extrude: f.refs.count == 2
         case .fill: f.refs.count >= 3
@@ -151,6 +153,14 @@ final class PartEditModel {
         case .chamfer: return "Chamfer \(mm("distance"))"
         case .extrude: return "Extrude \(mm("distance"))"
         case .pushpull: return "Push/Pull \(mm("distance"))"
+        case .thicken: return "Thicken \(mm("thickness"))"
+        case .deleteface: return "Delete \(f.refs.count) face\(f.refs.count == 1 ? "" : "s")"
+        case .move:
+            let v = { (k: String) in f.values[k] ?? 0 }
+            return String(format: "Move %g, %g, %g mm", v("dx"), v("dy"), v("dz"))
+                + (["rx", "ry", "rz"].contains { v($0) != 0 } ? String(format: ", turn %g, %g, %g°", v("rx"), v("ry"), v("rz")) : "")
+        case .mirror: return (f.values["keep"] ?? 1) != 0 ? "Mirror copy" : "Mirror"
+        case .cut: return "Cut by plane"
         default: return f.kind.title
         }
     }
@@ -264,7 +274,8 @@ final class PartEditModel {
     private var wantsEdges: Bool { [.point, .extrude, .fill, .fillet, .chamfer].contains(draft?.kind) }
     private var wantsFaces: Bool {
         guard let d = draft else { return false }
-        return [.point, .add, .pushpull].contains(d.kind) || (d.kind == .plane && d.refs.isEmpty)
+        return [.point, .add, .pushpull, .deleteface, .thicken].contains(d.kind)
+            || ([.plane, .mirror, .cut].contains(d.kind) && d.refs.isEmpty)
     }
 
     func hover(_ pointer: EditPointer) {
@@ -311,6 +322,18 @@ final class PartEditModel {
             }
         case .pushpull:
             if let f = faceRef(pointer), f.kind == "face" { d.refs = [f] }
+        case .deleteface:
+            if let f = faceRef(pointer), f.kind == "face" {
+                if let i = d.refs.firstIndex(of: f) { d.refs.remove(at: i) } else { d.refs.append(f) }
+            }
+        case .thicken:
+            if let f = faceRef(pointer), f.kind == "surface" {
+                if let i = d.refs.firstIndex(of: f) { d.refs.remove(at: i) } else { d.refs.append(f) }
+            }
+        case .mirror, .cut:
+            if let f = faceRef(pointer), f.kind == "face" { d.refs = [f] }
+        case .move:
+            return
         }
         draft = d
         drawOverlay()
@@ -329,6 +352,10 @@ final class PartEditModel {
             : "Click the surfaces made by Fill or Extrude."
         case .fillet, .chamfer: return edge != nil ? "That is a spline, not an edge of the part." : nearEdge
         case .pushpull: return face == nil ? "Click a flat face of the part." : "Push/Pull needs a face of the part, not a surface."
+        case .deleteface: return face == nil ? "Click the faces to remove: a hole's wall, a fillet, a boss's faces." : "Delete face works on the part's own faces."
+        case .thicken: return "Click the surfaces made by Fill or Extrude."
+        case .mirror, .cut: return "Pick XY, YZ, ZX or a plane feature, or click a flat face of the part."
+        case .move: return "Move takes no picks: type the shift and turn."
         }
     }
 
@@ -344,6 +371,7 @@ final class PartEditModel {
         guard var d = draft else { return }
         if d.kind == .plane { d.refs = [ref] + d.refs.dropFirst().filter { $0.kind == "point" } }
         if d.kind == .extrude { d.refs = d.refs.filter { $0.kind != "plane" } + [ref] }
+        if d.kind == .mirror || d.kind == .cut { d.refs = [ref] }
         draft = d
     }
 
@@ -391,6 +419,11 @@ extension EditFeature.Kind {
         case .fillet: "Fillet"
         case .chamfer: "Chamfer"
         case .pushpull: "Push/Pull"
+        case .deleteface: "Delete face"
+        case .move: "Move"
+        case .mirror: "Mirror"
+        case .cut: "Cut"
+        case .thicken: "Thicken"
         }
     }
 }
