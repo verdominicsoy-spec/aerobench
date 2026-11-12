@@ -33,7 +33,7 @@ struct CADViewerView: View {
     @ViewBuilder private var overlay: some View {
         switch app.cad.status {
         case .empty:
-            S37EmptyState(title: "No model", line: "Open a STEP, IGES, STL or OBJ file, or drop one on the window.") {
+            S37EmptyState(title: "No model", line: "Open STEP, IGES, STL or OBJ files, or drop them on the window. Several open together.") {
                 Button("Open…") { app.openCADPanel() }.buttonStyle(S37ButtonStyle(kind: .prominent))
             }
             .background(S37.C.surface)
@@ -69,6 +69,7 @@ struct CADToolbar: View {
         HStack(spacing: S37.Space.s2) {
             if cad.model != nil {
                 Button("Open…") { app.openCADPanel() }
+                Button("Add…") { app.openCADPanel(adding: true) }.help("Show more files with the open ones")
                 Divider().frame(height: 18)
             }
             // The view, measuring and section tools need a model to act on.
@@ -113,18 +114,22 @@ struct CADSidePanel: View {
         ScrollView {
             VStack(alignment: .leading, spacing: S37.Space.s4) {
                 S37Section("File") {
-                    if let url = cad.fileURL {
+                    ForEach(cad.fileURLs, id: \.self) { url in
                         LabeledContent("Name") { Text(url.lastPathComponent).lineLimit(1).truncationMode(.middle) }
                             .help(url.path)
+                    }
+                    if cad.fileURLs.count > 1 {
+                        Text("Check, repair and Edit Part work with one file open.")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                     Picker("Tessellation", selection: $cad.preset) {
                         ForEach(TessellationPreset.allCases) { Text($0.rawValue.capitalized).tag($0) }
                     }
-                    .onChange(of: cad.preset) { if cad.isTessellatedFormat { app.reloadCAD() } }
+                    .onChange(of: cad.preset) { if cad.hasTessellatedFile { app.reloadCAD() } }
                     Picker("STL/OBJ units", selection: $cad.meshUnits) {
                         ForEach(LengthUnit.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }
-                    .onChange(of: cad.meshUnits) { if cad.fileURL != nil && !cad.isTessellatedFormat { app.reloadCAD() } }
+                    .onChange(of: cad.meshUnits) { if cad.hasMeshFile { app.reloadCAD() } }
                     Picker("Up axis", selection: $cad.upAxis) {
                         Text("Z up (CAD)").tag(UpAxis.z)
                         Text("Y up").tag(UpAxis.y)

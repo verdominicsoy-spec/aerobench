@@ -91,6 +91,20 @@ final class ModelLoaderTests: XCTestCase {
         XCTAssertThrowsError(try ModelLoader.load(dir.appendingPathComponent("x.fbx")))
     }
 
+    func testMergedFilesKeepEachFileAsAHideablePart() throws {
+        let car = try ModelLoader.load(Self.samples.appendingPathComponent("sample_car.obj"), units: .millimetre)
+        let cube = Model3D(meshes: [TriangleMesh(positions: [.zero, [5, 0, 0], [0, 5, 0]], normals: [], indices: [0, 1, 2])],
+                           roots: [ModelNode(name: "cube", mesh: 0)], sourceName: "model.glb")
+        let merged = Model3D.merged([("car.stp", car), ("cube.stp", cube)])
+        XCTAssertEqual(merged.roots.map(\.name), ["car.stp", "cube.stp"])
+        XCTAssertEqual(merged.triangleCount, car.triangleCount + cube.triangleCount)
+        // The second file's leaf points at its own mesh, after the first file's.
+        XCTAssertEqual(merged.roots[1].children.first?.mesh, car.meshes.count)
+        XCTAssertEqual(Set(merged.instances().map { $0.node.id }).count, merged.instances().count, "ids renumbered")
+        XCTAssertEqual(try size(merged, hidden: [merged.roots[1].id]), try size(car), "hiding a file leaves the other")
+        XCTAssertEqual(Model3D.merged([("car.stp", car)]).roots.map(\.name), car.roots.map(\.name), "one file stays as it was")
+    }
+
     func testHidingASubtreeShrinksTheBounds() throws {
         let model = try ModelLoader.load(Self.samples.appendingPathComponent("sample_car.obj"), units: .millimetre)
         let root = try XCTUnwrap(model.roots.first)

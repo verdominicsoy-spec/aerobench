@@ -3,56 +3,75 @@ import AppKit
 import UniformTypeIdentifiers
 
 extension AppState {
-    func openCADPanel() {
+    /// `adding` keeps the open files and shows the chosen ones with them.
+    func openCADPanel(adding: Bool = false) {
         let panel = NSOpenPanel()
-        panel.title = "Open Model"
-        panel.message = "STEP, IGES, STL, OBJ or glb"
+        panel.title = adding ? "Add Models" : "Open Models"
+        panel.message = "STEP, IGES, STL, OBJ or glb. Several files open together."
         panel.allowedContentTypes = CADViewerModel.openableExtensions.compactMap { UTType(filenameExtension: $0) }
         panel.allowsOtherFileTypes = true
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        openCAD(url)
+        panel.allowsMultipleSelection = true
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        openCAD((adding ? cad.fileURLs : []) + panel.urls.filter { !(adding && cad.fileURLs.contains($0)) })
     }
 
-    /// Opens a model: STL, OBJ and glb load directly; STEP and IGES are
-    /// tessellated by the engine once per preset and cached.
-    func openCAD(_ url: URL) {
-        let ext = url.pathExtension.lowercased()
-        guard CADViewerModel.openableExtensions.contains(ext) else {
-            alert = AppAlert(title: "Cannot open \(url.lastPathComponent)",
+    func openCAD(_ url: URL) { openCAD([url]) }
+
+    /// Opens models together in one scene: STL, OBJ and glb load directly;
+    /// STEP and IGES are tessellated by the engine once per preset and cached.
+    func openCAD(_ urls: [URL]) {
+        if let bad = urls.first(where: { !CADViewerModel.openableExtensions.contains($0.pathExtension.lowercased()) }) {
+            alert = AppAlert(title: "Cannot open \(bad.lastPathComponent)",
                              message: "The CAD Viewer opens STEP, IGES, STL, OBJ and glb files.")
             return
         }
-        // Edit Part works on the open STEP: leave it before another file takes its place.
+        guard !urls.isEmpty else { return }
+        // Edit Part works on the open STEP: leave it before other files take its place.
         if partEdit.on { exitPartEdit(reload: false) }
-        cad.setFile(url)
-        if CADViewerModel.tessellatedExtensions.contains(ext) {
-            tessellate(url)
+        cad.setFiles(urls)
+        load(urls, done: [])
+    }
+
+    /// Re-opens the current files, after a preset or unit change.
+    func reloadCAD() {
+        if !cad.fileURLs.isEmpty { openCAD(cad.fileURLs) }
+    }
+
+    /// Loads the files one after another, then shows them together.
+    private func load(_ urls: [URL], done: [(name: String, model: Model3D, fromCache: Bool)]) {
+        guard cad.fileURLs == urls else { return }  // other files were opened meanwhile
+        guard done.count < urls.count else {
+            cad.setModel(Model3D.merged(done.map { ($0.name, $0.model) }), fromCache: done.allSatisfy(\.fromCache))
+            return
+        }
+        let url = urls[done.count]
+        let of = urls.count > 1 ? " (\(done.count + 1) of \(urls.count))" : ""
+        let next: (Model3D, Bool) -> Void = { [weak self] model, cached in
+            self?.load(urls, done: done + [(url.lastPathComponent, model, cached)])
+        }
+        if CADViewerModel.tessellatedExtensions.contains(url.pathExtension.lowercased()) {
+            tessellate(url, among: urls, of, then: next)
         } else {
-            loadModel(url, units: cad.meshUnits, fromCache: false)
+            loadModel(url, units: cad.meshUnits, fromCache: false, among: urls, of, then: next)
         }
     }
 
-    /// Re-opens the current file, after a preset or unit change.
-    func reloadCAD() {
-        if let url = cad.fileURL { openCAD(url) }
-    }
-
-    private func tessellate(_ url: URL) {
+    private func tessellate(_ url: URL, among urls: [URL], _ of: String, then next: @escaping (Model3D, Bool) -> Void) {
         let preset = cad.preset
         if let cached = CADViewerModel.cacheURL(for: url, preset: preset),
            FileManager.default.fileExists(atPath: cached.path) {
-            loadModel(cached, units: .metre, fromCache: true)
+            loadModel(cached, units: .metre, fromCache: true, among: urls, of, then: next)
             return
         }
-        cad.status = .loading("Tessellating \(url.lastPathComponent) (\(preset.rawValue))…")
+        cad.status = .loading("Tessellating \(url.lastPathComponent) (\(preset.rawValue))\(of)…")
         cad.job = jobs.submit(
             command: "tessellate",
             params: ["path": .string(url.path), "preset": .string(preset.rawValue)],
             in: jobsRoot
         ) { [weak self] item in
-            guard let self, self.cad.fileURL == url else { return }
+            guard let self, self.cad.fileURLs == urls else { return }
             guard item.status == .succeeded else {
-                self.cad.status = .failed(item.message ?? "Tessellation \(item.status.rawValue)", item.detail)
+                self.cad.status = .failed(item.message ?? "Tessellation of \(url.lastPathComponent) \(item.status.rawValue)", item.detail)
                 return
             }
             let glb = item.workdir.appendingPathComponent("model.glb")
@@ -61,22 +80,22 @@ extension AppState {
                 try? FileManager.default.removeItem(at: cached)
                 try? FileManager.default.copyItem(at: glb, to: cached)
             }
-            self.loadModel(glb, units: .metre, fromCache: false)
+            self.loadModel(glb, units: .metre, fromCache: false, among: urls, of, then: next)
         }
     }
 
-    private func loadModel(_ url: URL, units: LengthUnit, fromCache: Bool) {
-        cad.status = .loading("Reading \(url.lastPathComponent)…")
-        let target = cad.fileURL
+    private func loadModel(_ url: URL, units: LengthUnit, fromCache: Bool, among urls: [URL], _ of: String,
+                           then next: @escaping (Model3D, Bool) -> Void) {
+        cad.status = .loading("Reading \(url.lastPathComponent)\(of)…")
         Task {
             do {
                 let model = try await Task.detached(priority: .userInitiated) {
                     try ModelLoader.load(url, units: units)
                 }.value
-                guard self.cad.fileURL == target else { return }  // another file was opened meanwhile
-                self.cad.setModel(model, fromCache: fromCache)
+                guard self.cad.fileURLs == urls else { return }  // other files were opened meanwhile
+                next(model, fromCache)
             } catch {
-                guard self.cad.fileURL == target else { return }
+                guard self.cad.fileURLs == urls else { return }
                 self.cad.status = .failed("Could not read \(url.lastPathComponent)", error.localizedDescription)
             }
         }

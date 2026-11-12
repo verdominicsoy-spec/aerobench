@@ -121,13 +121,14 @@ struct ContentView: View {
             EngineSetupView()
         }
         .dropDestination(for: URL.self) { urls, _ in
-            guard let url = urls.first else { return false }
-            let ext = url.pathExtension.lowercased()
-            if CADViewerModel.openableExtensions.contains(ext) {
+            let models = urls.filter { CADViewerModel.openableExtensions.contains($0.pathExtension.lowercased()) }
+            if !models.isEmpty {
                 app.tool = .cadViewer
-                app.openCAD(url)
+                app.openCAD(models)
                 return true
             }
+            guard let url = urls.first else { return false }
+            let ext = url.pathExtension.lowercased()
             if ["mp4", "mov", "m4v"].contains(ext) {
                 app.tool = .flowField
                 app.openFlowVideo(url)

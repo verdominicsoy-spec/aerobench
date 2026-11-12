@@ -24,7 +24,10 @@ final class CADViewerModel {
 
     let viewer: SceneKitViewer
     private(set) var model: Model3D?
-    private(set) var fileURL: URL?
+    /// The open files, shown together in one scene.
+    private(set) var fileURLs: [URL] = []
+    /// The open file when there is only one: check, repair and Edit Part work on one file.
+    var fileURL: URL? { fileURLs.count == 1 ? fileURLs[0] : nil }
     var status: Status = .empty
     private(set) var fromCache = false
     var job: JobItem?
@@ -129,21 +132,21 @@ final class CADViewerModel {
     static let tessellatedExtensions: Set<String> = ["step", "stp", "iges", "igs"]
     static let openableExtensions = tessellatedExtensions.union(ModelLoader.directExtensions)
 
-    var isTessellatedFormat: Bool {
-        fileURL.map { Self.tessellatedExtensions.contains($0.pathExtension.lowercased()) } ?? false
-    }
+    /// Whether any open file is STEP or IGES (tessellation preset applies) or a mesh (units apply).
+    var hasTessellatedFile: Bool { fileURLs.contains { Self.tessellatedExtensions.contains($0.pathExtension.lowercased()) } }
+    var hasMeshFile: Bool { fileURLs.contains { !Self.tessellatedExtensions.contains($0.pathExtension.lowercased()) } }
 
     var triangleCount: Int { model?.triangleCount ?? 0 }
 
-    func setFile(_ url: URL) {
-        // Another file: the last one's model, check and repair plan are not of this one.
-        if url != fileURL {
+    func setFiles(_ urls: [URL]) {
+        // Other files: the last model, check and repair plan are not of these.
+        if urls != fileURLs {
             model = nil
             setReport(nil)
             setBodyPlan(nil)
             hidden = []
         }
-        fileURL = url
+        fileURLs = urls
         points = []
     }
 
@@ -171,7 +174,7 @@ final class CADViewerModel {
 
     func clear() {
         model = nil
-        fileURL = nil
+        fileURLs = []
         points = []
         hidden = []
         viewer.show(nil)

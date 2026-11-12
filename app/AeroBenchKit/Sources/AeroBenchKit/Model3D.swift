@@ -112,6 +112,26 @@ public struct Model3D: Sendable {
         self.roots = roots.map(number)
     }
 
+    /// Several files in one scene, each under a root named for it so it can be
+    /// hidden on its own. One file is returned as it is.
+    public static func merged(_ files: [(name: String, model: Model3D)]) -> Model3D {
+        guard files.count != 1 else { return files[0].model }
+        var meshes: [TriangleMesh] = []
+        var roots: [ModelNode] = []
+        for (name, model) in files {
+            let offset = meshes.count
+            func shift(_ n: ModelNode) -> ModelNode {
+                var n = n
+                n.mesh = n.mesh.map { $0 + offset }
+                n.children = n.children.map(shift)
+                return n
+            }
+            meshes += model.meshes
+            roots.append(ModelNode(name: name, children: model.roots.map(shift)))
+        }
+        return Model3D(meshes: meshes, roots: roots, sourceName: files.map(\.name).joined(separator: ", "))
+    }
+
     /// Every node with a mesh and its world transform, skipping hidden subtrees.
     public func instances(hidden: Set<Int> = []) -> [ModelInstance] {
         var out: [ModelInstance] = []
