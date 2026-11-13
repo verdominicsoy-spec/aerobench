@@ -196,7 +196,25 @@ turbulent regions and along the wakes, far field 50 chords out. (SU2 reads
 triangles and quads in 2D, not polyhedra.) SU2 runs its JST central scheme;
 on NACA 0012 at Re 6 million that matches Ladson's lift within 2% and drag
 within about 15% up to 10° (docs/DECISIONS.md has the numbers). Runs that do
-not converge are shown as not converged, not as results.
+not converge are shown as not converged, not as results. A flow with no
+steady answer (vortex shedding off a separated element) shows its mean,
+labelled unsteady.
+
+*As on the car (3D)* (needs span and endplate height): the section runs at
+the angle the wing's own trailing vortices leave it. That angle comes from
+lifting line on the effective aspect ratio AR (1 + 1.9 h/b), cut by
+Wieselsberger's ground factor over a ground. The wing is solved again until
+the angle and its lift agree, usually in one to three solves. Its Cl stands
+for the whole wing, and induced drag is added. Zerihan's front wing
+(Southampton, 2001) lands within 3% of the balance in ground effect and 10%
+low in free air, about 4 points of that from his tunnel's walls
+(docs/validation/ground-3d). On frontwing#1 it finds the main-element stall
+STAR-CCM+ found. *Check it fully turbulent too* runs the wing again with
+SST and says when transition decides the answer (lift differs by over 5%).
+The verdict lists every bubble and separation, with skin friction along each
+surface. Drag reads 5–34% high over a laminar bubble, from SST-LM's turbulent
+layer behind it (docs/validation/uiuc-transition), so drag is shown with that
+band.
 
 The *Quick* mesh gives a multi-element answer in about 1½ minutes,
 converged to three figures (medium is the validated default). *Sweep the
