@@ -514,6 +514,25 @@ final class WingRansResultTests: XCTestCase {
         XCTAssertEqual(r.transitionDecides, true)
     }
 
+    /// RANS drag over a laminar bubble at low Reynolds number reads high (UIUC, ten sections, Re 3e5):
+    /// the run says so, with the measured band, and says nothing where that validation does not apply.
+    func testDragOverALaminarBubbleAtLowReCarriesItsMeasuredError() throws {
+        func run(_ model: String, re: Double, regions: String) throws -> WingRansResult {
+            try WingRansResult.decode(resultFile: Data("""
+            {"data": {"re": \(re), "mesh": {"cells": 1, "triangles": 1, "quads": 0, "first_cell_height_m": 1e-5,
+              "layer_thickness_m": 0.01, "layers": 1}, "mesh_level": "fine", "transition": [], "model": "\(model)",
+              "model_name": "M", "iterations": 10, "converged": true, "residual_drop": 6, "cl": 1.7, "cd": 0.028,
+              "cm": 0, "elements": [], "surface": [], "regions": \(regions)}}
+            """.utf8))
+        }
+        let bubble = #"[{"element": 0, "surface": "upper", "loaded": "suction", "kind": "bubble", "start": 0.26, "end": 0.39}]"#
+        XCTAssertNotNil(try run("sst-lm", re: 3e5, regions: bubble).dragCaveat)
+        XCTAssertTrue(try run("sst-lm", re: 3e5, regions: bubble).dragCaveat!.contains("5–34%"))
+        XCTAssertNil(try run("sst-lm", re: 3e5, regions: "[]").dragCaveat)  // no bubble: not what was measured
+        XCTAssertNil(try run("sst-lm", re: 6e6, regions: bubble).dragCaveat)  // high Re: NACA 0012 and NLR within 6%
+        XCTAssertTrue(try run("sst", re: 3e5, regions: "[]").dragCaveat!.contains("45%"))
+    }
+
     /// A run as on the car already holds the 3D lift and induced drag: the car gets it as it is, not scaled again.
     func testARunOnTheCarGoesToTheCarAsItIs() throws {
         var wing = Wing(elements: [WingElement(airfoil: Airfoil.naca4("4412")!, chord: 0.5, angle: 3, leadingEdge: .zero, inverted: true)])

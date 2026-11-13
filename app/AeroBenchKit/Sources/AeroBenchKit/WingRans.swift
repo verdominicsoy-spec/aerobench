@@ -151,6 +151,21 @@ public struct WingRansResult: Codable, Equatable, Sendable {
         return wing.sectionCoefficients(cla: -cl * area, cda: cd * area)
     }
 
+    /// What the validation says about this run's drag, where it applies: SST-LM over a laminar
+    /// bubble below Re 1.5 million read drag 5–34% high (mean 18%) on ten UIUC sections at Re 3e5,
+    /// because the model's turbulent layer behind the bubble is too thin-walled and separates early
+    /// (docs/validation/uiuc-transition); fully turbulent SST read 45% high there. Nil elsewhere
+    /// (at Re 2.5–9 million NLR 7301 and NACA 0012 came within 6% and 15%).
+    public var dragCaveat: String? {
+        guard re < 1.5e6 else { return nil }
+        if model == "sst" {
+            return "Fully turbulent at low Reynolds number: drag read 45% high on average on ten UIUC sections at Re 300,000 (no laminar runs). SST with transition is closer."
+        }
+        let bubble = (regions ?? []).contains { $0.kind == "bubble" || $0.kind == "leading-edge bubble" }
+        guard model == "sst-lm", bubble else { return nil }
+        return "Drag over a laminar bubble reads high: 5–34% (mean 18%) on ten UIUC sections at Re 300,000. Behind the bubble the model's turbulent layer is too thin-walled, so a trailing-edge separation shows earlier than it should. Lift came within 4% on average there."
+    }
+
     /// Each region in words, for the results panel.
     public func regionLines() -> [String] {
         (regions ?? []).map { r in
