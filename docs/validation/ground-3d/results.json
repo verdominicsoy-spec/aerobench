@@ -1,0 +1,226 @@
+{
+ "free": {
+  "two_d": {
+   "cl": 0.835986336,
+   "cd": 0.01385020234,
+   "converged": true,
+   "reason": null,
+   "x_sep": null,
+   "regions": [
+    {
+     "element": 0,
+     "surface": "upper",
+     "loaded": "suction",
+     "kind": "bubble",
+     "start": 0.6712,
+     "end": 0.8414
+    },
+    {
+     "element": 0,
+     "surface": "lower",
+     "loaded": "pressure",
+     "kind": "bubble",
+     "start": 0.205,
+     "end": 0.2919
+    }
+   ],
+   "finite": null,
+   "tu_at_wing": 0.0021020616764287443
+  },
+  "on_car": {
+   "cl": 0.6232581767812001,
+   "cd": 0.03365090423028803,
+   "converged": true,
+   "reason": "settled on average: Cl and Cd are the means of the last 1000 iterations (Cl swings \u00b10.006 about it)",
+   "x_sep": null,
+   "regions": [
+    {
+     "element": 0,
+     "surface": "upper",
+     "loaded": "suction",
+     "kind": "bubble",
+     "start": 0.6384,
+     "end": 0.8055
+    },
+    {
+     "element": 0,
+     "surface": "lower",
+     "loaded": "pressure",
+     "kind": "bubble",
+     "start": 0.2099,
+     "end": 0.3208
+    }
+   ],
+   "finite": {
+    "alpha_effective": 1.973,
+    "induced_angle": 1.973,
+    "aspect_ratio_effective": 5.774,
+    "ground_factor": 1.0,
+    "solves": 1,
+    "converged": true,
+    "cd_induced": 0.02141310051346803,
+    "span": 1.1,
+    "endplate": 0.1,
+    "stopped": null
+   },
+   "tu_at_wing": 0.002064705063163714
+  },
+  "measured": {
+   "cl_centre": null,
+   "cl_wing": null,
+   "x_sep": null
+  }
+ },
+ "0.448": {
+  "two_d": {
+   "cl": 1.121966573,
+   "cd": 0.01745143836,
+   "converged": true,
+   "reason": null,
+   "x_sep": null,
+   "regions": [
+    {
+     "element": 0,
+     "surface": "upper",
+     "loaded": "suction",
+     "kind": "bubble",
+     "start": 0.6757,
+     "end": 0.8444
+    },
+    {
+     "element": 0,
+     "surface": "lower",
+     "loaded": "pressure",
+     "kind": "bubble",
+     "start": 0.2065,
+     "end": 0.2934
+    }
+   ],
+   "finite": null,
+   "tu_at_wing": 0.001999267926175546
+  },
+  "on_car": {
+   "cl": 0.9163807357194,
+   "cd": 0.037767730620184514,
+   "converged": true,
+   "reason": "settled on average: Cl and Cd are the means of the last 1000 iterations (Cl swings \u00b10.013 about it)",
+   "x_sep": null,
+   "regions": [
+    {
+     "element": 0,
+     "surface": "upper",
+     "loaded": "suction",
+     "kind": "bubble",
+     "start": 0.6533,
+     "end": 0.8174
+    },
+    {
+     "element": 0,
+     "surface": "lower",
+     "loaded": "pressure",
+     "kind": "bubble",
+     "start": 0.2112,
+     "end": 0.31
+    }
+   ],
+   "finite": {
+    "alpha_effective": 1.389,
+    "induced_angle": 1.389,
+    "aspect_ratio_effective": 5.774,
+    "ground_factor": 0.4894,
+    "solves": 1,
+    "converged": true,
+    "cd_induced": 0.022655032571974515,
+    "span": 1.1,
+    "endplate": 0.1,
+    "stopped": null
+   },
+   "tu_at_wing": 0.0020003615139273434
+  },
+  "measured": {
+   "cl_centre": 1.026,
+   "cl_wing": 0.941,
+   "x_sep": null
+  }
+ },
+ "0.224": {
+  "two_d": {
+   "cl": 1.443594762,
+   "cd": 0.02285444965,
+   "converged": false,
+   "reason": "residual fell 3.7 orders, needs 4.0; Cl still moving (4.1e-02 over the last 200 iterations); Cd still moving (4.5e-02)",
+   "x_sep": 0.9882,
+   "regions": [
+    {
+     "element": 0,
+     "surface": "upper",
+     "loaded": "suction",
+     "kind": "bubble",
+     "start": 0.6787,
+     "end": 0.8459
+    },
+    {
+     "element": 0,
+     "surface": "lower",
+     "loaded": "pressure",
+     "kind": "bubble",
+     "start": 0.214,
+     "end": 0.3201
+    },
+    {
+     "element": 0,
+     "surface": "lower",
+     "loaded": "pressure",
+     "kind": "trailing-edge separation",
+     "start": 0.9882,
+     "end": 1.0
+    }
+   ],
+   "finite": null,
+   "tu_at_wing": 0.0019816176573539688
+  },
+  "on_car": {
+   "cl": 1.277112488,
+   "cd": 0.04863147920188895,
+   "converged": false,
+   "reason": "Cl still moving (8.9e-03 over the last 200 iterations); Cd still moving (5.2e-03)",
+   "x_sep": null,
+   "regions": [
+    {
+     "element": 0,
+     "surface": "upper",
+     "loaded": "suction",
+     "kind": "bubble",
+     "start": 0.6623,
+     "end": 0.8174
+    },
+    {
+     "element": 0,
+     "surface": "lower",
+     "loaded": "pressure",
+     "kind": "bubble",
+     "start": 0.2201,
+     "end": 0.3518
+    }
+   ],
+   "finite": {
+    "alpha_effective": 1.19,
+    "induced_angle": 1.19,
+    "aspect_ratio_effective": 5.774,
+    "ground_factor": 0.3221,
+    "solves": 1,
+    "converged": false,
+    "cd_induced": 0.028963204981888948,
+    "span": 1.1,
+    "endplate": 0.1,
+    "stopped": "solve 1 at +1.19\u00b0 did not converge: Cl still moving (8.9e-03 over the last 200 iterations); Cd still moving (5.2e-03)"
+   },
+   "tu_at_wing": 0.001981167413365635
+  },
+  "measured": {
+   "cl_centre": 1.395,
+   "cl_wing": 1.269,
+   "x_sep": 0.99
+  }
+ }
+}

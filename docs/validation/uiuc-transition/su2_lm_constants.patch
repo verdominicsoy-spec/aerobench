@@ -1,0 +1,58 @@
+diff --git a/Common/include/CConfig.hpp b/Common/include/CConfig.hpp
+index 71f780b..1abb726 100644
+--- a/Common/include/CConfig.hpp
++++ b/Common/include/CConfig.hpp
+@@ -624,6 +624,8 @@ private:
+   TURB_TRANS_MODEL Kind_Trans_Model;  /*!< \brief Transition model definition. */
+   TURB_TRANS_CORRELATION Kind_Trans_Correlation;  /*!< \brief Transition correlation model definition. */
+   su2double hRoughness;             /*!< \brief RMS roughness for Transition model. */
++  su2double LM_Sep_S1;          /*!< \brief LM separation-induced transition production factor s1 (Langtry-Menter 2009: 2). AeroBench. */
++  su2double LM_Reattach_Rt;     /*!< \brief LM eddy-viscosity ratio at which F_reattach switches the separation term off (2009: 20). AeroBench. */
+   unsigned short Kind_ActDisk, Kind_Engine_Inflow,
+   *Kind_Data_Riemann,
+   *Kind_Data_Giles;                /*!< \brief Kind of inlet boundary treatment. */
+@@ -4633,6 +4635,8 @@ public:
+    * \return Value of roughness.
+    */
+   su2double GethRoughness(void) const { return hRoughness; }
++  su2double GetLM_Sep_S1(void) const { return LM_Sep_S1; }
++  su2double GetLM_Reattach_Rt(void) const { return LM_Reattach_Rt; }
+ 
+   /*!
+    * \brief Get the kind of the species model.
+diff --git a/Common/src/CConfig.cpp b/Common/src/CConfig.cpp
+index 0f7a5c6..6ccbcef 100644
+--- a/Common/src/CConfig.cpp
++++ b/Common/src/CConfig.cpp
+@@ -1145,6 +1145,9 @@ void CConfig::SetConfig_Options() {
+   addEnumListOption("LM_OPTIONS", nLM_Options, LM_Options, LM_Options_Map);
+   /*!\brief HROUGHNESS \n DESCRIPTION: Value of RMS roughness for transition model \n DEFAULT: 1E-6 \ingroup Config*/
+   addDoubleOption("HROUGHNESS", hRoughness, 1e-6);
++  /* AeroBench: the Langtry-Menter separation-induced transition constants, defaults as published (2009). */
++  addDoubleOption("LM_SEP_S1", LM_Sep_S1, 2.0);
++  addDoubleOption("LM_REATTACH_RT", LM_Reattach_Rt, 20.0);
+ 
+   /*!\brief KIND_SCALAR_MODEL \n DESCRIPTION: Specify scalar transport model \n Options: see \link Scalar_Model_Map \endlink \n DEFAULT: NONE \ingroup Config*/
+   addEnumOption("KIND_SCALAR_MODEL", Kind_Species_Model, Species_Model_Map, SPECIES_MODEL::NONE);
+diff --git a/SU2_CFD/src/solvers/CTransLMSolver.cpp b/SU2_CFD/src/solvers/CTransLMSolver.cpp
+index 87ac5c5..bda5357 100644
+--- a/SU2_CFD/src/solvers/CTransLMSolver.cpp
++++ b/SU2_CFD/src/solvers/CTransLMSolver.cpp
+@@ -238,7 +238,7 @@ void CTransLMSolver::Postprocessing(CGeometry *geometry, CSolver **solver_contai
+     if(TurbFamily == TURB_FAMILY::SA)
+       R_t = muT/ mu;
+ 
+-    const su2double f_reattach = exp(-pow(R_t/20,4));
++    const su2double f_reattach = exp(-pow(R_t/config->GetLM_Reattach_Rt(),4));
+     su2double f_wake = 0.0;
+     if(TurbFamily == TURB_FAMILY::KW){
+       const su2double re_omega = rho*omega*dist*dist/mu;
+@@ -253,7 +253,7 @@ void CTransLMSolver::Postprocessing(CGeometry *geometry, CSolver **solver_contai
+     const su2double var1 = (Intermittency-1.0/50.0)/(1.0-1.0/50.0);
+     const su2double var2 = 1.0 - pow(var1,2.0);
+     const su2double f_theta = min(max(f_wake*exp(-pow(dist/delta, 4)), var2), 1.0);
+-    su2double Intermittency_Sep = 2.0*max(0.0, Re_v/(3.235*Corr_Rec)-1.0)*f_reattach;
++    su2double Intermittency_Sep = config->GetLM_Sep_S1()*max(0.0, Re_v/(3.235*Corr_Rec)-1.0)*f_reattach;
+     Intermittency_Sep = min(Intermittency_Sep,2.0)*f_theta;
+     Intermittency_Sep = min(max(0.0, Intermittency_Sep), 2.0);
+     nodes->SetIntermittencySep(iPoint, Intermittency_Sep);
