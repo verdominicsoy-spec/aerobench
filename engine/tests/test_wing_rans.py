@@ -766,6 +766,12 @@ def _fake_solver(calls, cl_of_alpha):
     return fake
 
 
+def _estimate(monkeypatch, cl_of_alpha):
+    from aeroengine.wing import rans
+
+    monkeypatch.setattr(rans, "_estimate_polar", lambda p, alphas: [(a, cl_of_alpha(a, 0)) for a in alphas])
+
+
 def _finite_params(**extra):
     e = {"coords": [[1, 0], [0, 0], [1, 0]], "unit": [[1, 0], [0, 0], [1, 0]], "angle": 0, "inverted": True, "chord": 1.0}
     return {"elements": [e], "alpha": 0.0, "ref_chord": 1.0, "finite": {"span": 2.0, "endplate": 0.0}, **extra}
@@ -777,12 +783,14 @@ def test_finite_wing_runs_at_the_induced_angle(monkeypatch, tmp_path):
     calls = []
     # A downforce wing losing 0.08 of Cl per degree the flow turns up, zero lift at +12 deg.
     monkeypatch.setattr(rans, "solve", _fake_solver(calls, lambda a, n: -0.08 * (12 - a)))
+    _estimate(monkeypatch, lambda a, n: -0.09 * (13 - a))  # the quick estimate: a little more lift
     r = rans.solve_finite(_finite_params(), tmp_path, tmp_path / "m.su2", None, 1, None, lambda *a: None,
                           lambda *a, **k: None)
     # Fixed point a = (0.08 * 180/pi / (pi * 2)) * (12 - a): 5.061 deg.
     f = r["finite"]
     assert f["converged"] and f["solves"] <= 4 and f["alpha_effective"] == pytest.approx(5.061, abs=0.1)
-    assert calls[0]["alpha"] == 0.0 and f["two_d"]["cl"] == pytest.approx(-0.96)
+    # The first solve at the estimate's own fixed point (0.8207 (13 - a) = a: 5.86 deg), not at the full angle.
+    assert calls[0]["alpha"] == pytest.approx(5.86, abs=0.02) and len(calls) >= 2
     assert all(c["ready"] and c["restart"] is not None for c in calls[1:])  # free air: one mesh, each from the last
     assert r["cl"] == pytest.approx(-0.08 * (12 - calls[-1]["alpha"]))
     assert r["cd"] == pytest.approx(0.03 + f["cd_induced"]) and f["cd_induced"] == pytest.approx(r["cl"] ** 2 / (np.pi * 2))
@@ -793,6 +801,7 @@ def test_finite_wing_that_never_settles_stops_at_four_solves(monkeypatch, tmp_pa
 
     calls = []
     monkeypatch.setattr(rans, "solve", _fake_solver(calls, lambda a, n: -2.0 if n % 2 else -0.5))
+    _estimate(monkeypatch, lambda a, n: -0.08 * (12 - a))
     r = rans.solve_finite(_finite_params(), tmp_path, tmp_path / "m.su2", None, 1, None, lambda *a: None,
                           lambda *a, **k: None)
     assert len(calls) == 4 and not r["finite"]["converged"]
@@ -803,6 +812,7 @@ def test_finite_wing_over_a_ground_meshes_each_angle(monkeypatch, tmp_path):
 
     calls = []
     monkeypatch.setattr(rans, "solve", _fake_solver(calls, lambda a, n: -0.08 * (12 - a)))
+    _estimate(monkeypatch, lambda a, n: -0.09 * (13 - a))
     r = rans.solve_finite(_finite_params(ride_height=0.1), tmp_path, tmp_path / "m.su2", None, 1, None,
                           lambda *a: None, lambda *a, **k: None)
     assert all(not c["ready"] and c["restart"] is None for c in calls)
@@ -885,6 +895,7 @@ def test_finite_wing_settles_where_lift_falls_steeply(monkeypatch, tmp_path):
 
     calls = []
     monkeypatch.setattr(rans, "solve", _fake_solver(calls, lambda a, n: -2.38 if a == 0 else -1.37 + 0.161 * (a - 10.45)))
+    _estimate(monkeypatch, lambda a, n: -2.4 + 0.1 * a)  # the estimate misses the stall: its angle is well off
     r = rans.solve_finite(_finite_params(finite={"span": 1.0, "endplate": 0.25}, ref_chord=0.682), tmp_path, tmp_path / "m.su2",
                           None, 1, None, lambda *a: None, lambda *a, **k: None)
     assert r["finite"]["converged"] and r["finite"]["solves"] <= 4
@@ -903,6 +914,7 @@ def test_finite_wing_stops_at_a_solve_that_did_not_converge(monkeypatch, tmp_pat
         return {**r, "converged": False, "reason": "residual fell 3.2 orders"}
 
     monkeypatch.setattr(rans, "solve", unconverged)
+    _estimate(monkeypatch, lambda a, n: -0.08 * (12 - a))
     r = rans.solve_finite(_finite_params(ride_height=0.08), tmp_path, tmp_path / "m.su2", None, 1, None,
                           lambda *a: None, lambda *a, **k: None)
     assert len(calls) == 1 and not r["converged"] and not r["finite"]["converged"]

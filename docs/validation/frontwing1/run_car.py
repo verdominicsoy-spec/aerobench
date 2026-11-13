@@ -17,8 +17,9 @@ p = {**json.loads((HERE / "job.json").read_text()), "model": "sst-lm", "mesh": "
      "finite": {"span": 1.0, "endplate": endplate}}
 work = Path(tempfile.mkdtemp())
 log = lambda *a, **k: print(*a, flush=True)
-r = rans.solve_finite(p, work, work / "wing.su2", None, 12, None, lambda *a: None, log, field=False)
-r = rans.bracket(p, r, work, work / "wing.su2", None, 12, None, lambda *a: None, log)
+cores = int(__import__("os").environ.get("AEROBENCH_CORES", 12))
+r = rans.solve_finite(p, work, work / "wing.su2", None, cores, None, lambda *a: None, log, field=False)
+r = rans.bracket(p, r, work, work / "wing.su2", None, cores, None, lambda *a: None, log)
 key = f"endplate {endplate:g} m, " + (f"ride height {ride:g} m" if ride else "free air")
 out_path = HERE / "car.json"
 out = json.loads(out_path.read_text()) if out_path.exists() else {}

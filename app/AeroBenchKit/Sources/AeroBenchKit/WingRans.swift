@@ -111,7 +111,8 @@ public struct WingRansResult: Codable, Equatable, Sendable {
         public var cdInduced: Double
         public var span: Double
         public var endplate: Double
-        public var twoD: TwoD
+        /// The 2D section at its full angle (runs before 13 Nov 2026 only: now the loop starts from the estimate).
+        public var twoD: TwoD?
         /// Why the loop stopped early: a solve that did not converge (its Cl is not a result to steer by).
         public var stopped: String?
     }

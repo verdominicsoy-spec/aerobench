@@ -402,17 +402,36 @@ FINITE_TOLERANCE = 0.1  # degrees: the induced angle has settled
 FINITE_RELAX = 0.7
 
 
+def _estimate_polar(p: dict, alphas: list[float]) -> list[tuple[float, float]]:
+    """(angle, Cl) from the quick estimate (panel method and NeuralFoil) at these angles."""
+    from ..commands.wing import estimate_from_params
+
+    rows = estimate_from_params({**p, "alphas": alphas})["rows"]
+    return [(float(r["alpha"]), float(r["cl"])) for r in rows if r.get("cl") is not None]
+
+
+def _fixed_point(f: list[tuple[float, float]], start: float) -> float:
+    """The angle where f (angle, wanted - angle) crosses zero nearest start, by linear
+    interpolation; the angle of smallest |f| when it never crosses."""
+    f = sorted(f)
+    roots = [x0 - y0 * (x1 - x0) / (y1 - y0) for (x0, y0), (x1, y1) in zip(f, f[1:]) if y0 == 0 or y0 * y1 < 0]
+    if roots:
+        return min(roots, key=lambda x: abs(x - start))
+    return min(f, key=lambda q: abs(q[1]))[0]
+
+
 def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: int, env: dict | None,
                  progress: Callable[[float, str], None], log: Callable[..., None], field: bool = True) -> dict:
     """The wing as it runs on the car: its section at the angle the flow meets
-    it there. p["finite"] holds span and endplate height (m). A 2D solve
-    first; then the flow is turned by the induced angle (lifting line, with
-    the ground's image cutting it over a ground) and solved again, each from
-    the last solution in free air, until that angle settles within
-    FINITE_TOLERANCE or FINITE_SOLVES solves. cl, cd (with induced drag),
-    regions and the field are the last solve's; finite holds the angles and
-    the 2D answer. No car upwash, endplate vortex or spanwise variation:
-    the mid-span section on the car."""
+    it there. p["finite"] holds span and endplate height (m). The induced
+    angle (lifting line, Cl / (pi AR_eff), cut by the ground's image over a
+    ground) is first settled on the quick estimate's polar; RANS starts
+    there and the angle is moved by its own Cl (relaxed, then secant), each
+    solve from the last in free air, until it settles within
+    FINITE_TOLERANCE or FINITE_SOLVES solves, or a solve does not converge
+    (stopped). cl, cd (with induced drag), regions and the field are the
+    last solve's. No car upwash, endplate vortex or spanwise variation: the
+    mid-span section on the car."""
     import shutil
 
     from .finite import effective_aspect_ratio, ground_factor, induced_angle
@@ -429,7 +448,13 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     alpha = float(p.get("alpha", 0.0))
     ground = ride is not None
     q = {k: v for k, v in p.items() if k != "finite"}
-    ready, prev, a, r, two_d, settled, tried, stopped = None, None, alpha, None, None, False, [], None
+    # The first angle: the induced-angle fixed point on the quick estimate's polar (seconds). The 2D
+    # section at its full angle may have no steady answer (frontwing#1 at 80 mm) and is not on the car.
+    sweep_a = [alpha + k for k in range(-25, 26)]
+    polar = _estimate_polar(q, sweep_a)
+    a = _fixed_point([(x, alpha + induced_angle(c, span, chord, endplate, ride) - x) for x, c in polar], alpha)
+    log(f"quick estimate: the induced angle settles at {a:+.2f}°; RANS from there")
+    ready, prev, r, settled, tried, stopped = None, None, None, False, [], None
     for n in range(1, FINITE_SOLVES + 1):
         folder = workdir / f"s{n}"
         folder.mkdir(parents=True, exist_ok=True)
@@ -439,28 +464,20 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
         if not r.get("converged"):  # its Cl is not a result to steer the next angle by
             stopped = f"solve {n} at {a:+.2f}° did not converge: {r.get('reason') or 'no reason given'}"
             log(stopped, level="warning")
-            if n == 1:
-                two_d = {k: r.get(k) for k in ("cl", "cd", "separated", "separation", "converged")}
             break
-        if n == 1:
-            two_d = {k: r.get(k) for k in ("cl", "cd", "separated", "separation", "converged")}
-            target = alpha + induced_angle(r["cl"] * ar / (ar + 2), span, chord, endplate, ride)  # linear first guess
-        else:
-            target = alpha + induced_angle(r["cl"], span, chord, endplate, ride)
-            log(f"solve {n} at {a:+.2f}°: Cl {r['cl']:.4f}, induced angle wants {target:+.2f}°")
-            if abs(target - a) < FINITE_TOLERANCE:
-                settled = True
-                break
+        target = alpha + induced_angle(r["cl"], span, chord, endplate, ride)
+        log(f"solve {n} at {a:+.2f}°: Cl {r['cl']:.4f}, induced angle wants {target:+.2f}°")
+        if abs(target - a) < FINITE_TOLERANCE:
+            settled = True
+            break
         if not ground:
             ready = {"mesh": r["mesh"], "transition": r["transition"]}
             prev = (folder / "restart.dat").resolve() if (folder / "restart.dat").exists() else None
         tried.append((a, target - a))
         if n < FINITE_SOLVES:
-            if n == 1:
-                a = target
-            elif len(tried) >= 3 and tried[-1][1] != tried[-2][1]:
-                # Secant on (target - angle) over the last two at the induced angle: where the main
-                # stalls Cl moves fast with angle and relaxing swings about the answer (frontwing#1).
+            if len(tried) >= 2 and tried[-1][1] != tried[-2][1]:
+                # Secant on (target - angle) over the last two: where the main stalls Cl moves
+                # fast with angle and relaxing swings about the answer (frontwing#1).
                 (a0, f0), (a1, f1) = tried[-2], tried[-1]
                 a = a1 - f1 * (a1 - a0) / (f1 - f0)
             else:
@@ -476,7 +493,7 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     r = {**r, "alpha": alpha, "cd": r["cd"] + cd_induced,
          "finite": {"alpha_effective": round(a, 3), "induced_angle": round(a - alpha, 3), "aspect_ratio_effective": round(ar, 3),
                     "ground_factor": round(gf, 4), "solves": n, "converged": settled, "cd_induced": cd_induced,
-                    "span": span, "endplate": endplate, "two_d": two_d, "stopped": stopped}}
+                    "span": span, "endplate": endplate, "stopped": stopped}}
     return r
 
 

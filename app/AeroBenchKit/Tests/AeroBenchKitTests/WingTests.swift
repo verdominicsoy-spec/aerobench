@@ -489,7 +489,7 @@ final class WingRansResultTests: XCTestCase {
         XCTAssertEqual(r.regionLines(), ["Main, upper (pressure) surface: leading-edge stall, 1% to 91% of chord",
                                          "Flap 3, lower (suction) surface: trailing-edge separation, 86% to the trailing edge"])
         XCTAssertEqual(r.finite?.alphaEffective, 9.6)
-        XCTAssertEqual(r.finite?.twoD.cl, -2.33)
+        XCTAssertEqual(r.finite?.twoD?.cl, -2.33)
         XCTAssertFalse(r.beforeTurbulenceFix)
         let older = try WingRansResult.decode(resultFile: Data(base.replacingOccurrences(of: "EXTRA", with: "").utf8))
         XCTAssertNil(older.regions)

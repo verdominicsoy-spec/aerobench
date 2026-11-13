@@ -1022,10 +1022,9 @@ struct CFDResults: View {
                             .font(.caption2).foregroundStyle(S37.C.clayInk).fixedSize(horizontal: false, vertical: true)
                     }
                     if let f = r.finite {
-                        Text(String(format: "As on the car: flow turned %+.1f° by the induced angle (AR %.1f with endplates%@), %ld solves%@. In 2D at its full angle: Cl %.3f, Cd %.4f%@.",
+                        Text(String(format: "As on the car: flow turned %+.1f° by the induced angle (AR %.1f with endplates%@), %ld solves%@. Cd includes %.4f induced drag.",
                                     f.inducedAngle, f.aspectRatioEffective, f.groundFactor < 1 ? ", ground" : "", f.solves,
-                                    f.converged ? "" : ", not settled", lab.wing.shownCl(f.twoD.cl), f.twoD.cd,
-                                    f.twoD.separated == true ? ", separated" : ""))
+                                    f.converged ? "" : ", not settled", f.cdInduced))
                             .font(.caption2).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
                         if let why = f.stopped {
                             Text("Stopped before the induced angle settled: \(why).")
