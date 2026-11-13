@@ -234,8 +234,8 @@ def score(spec: Spec, load: float, cd: float, wing: Wing | None = None,
 
 def separation_margin(row: dict) -> float | None:
     """Degrees an estimate row has left before the nearest separation line the
-    estimate draws: a flap turned its max_deflection past the element in front
-    or past the main, a front element FRONT_LIFT_LIMIT past its stall angle (its
+    estimate draws: a flap turned its max_deflection past the element in front,
+    a front element FRONT_LIFT_LIMIT past its stall angle (its
     lift stops growing there; it separates a few degrees on). A slat and the
     main behind it have no line in degrees (their stall is a pressure rule).
     Negative past a line; None for a single element (its stall check keeps its
@@ -243,7 +243,7 @@ def separation_margin(row: dict) -> float | None:
     els = row["elements"]
     if len(els) < 2:
         return None
-    left = [e["max_deflection"] - e[k] for e in els for k in ("deflection", "past_main") if e[k] is not None]
+    left = [e["max_deflection"] - e["deflection"] for e in els if e["deflection"] is not None]  # past the main: a warning only
     left += [FRONT_LIFT_LIMIT - (e["effective_angle"] - e["stall_angle"]) for e in els[:-1] if not e["led"]]
     return float(min(left)) if left else None
 
@@ -334,10 +334,11 @@ def run(base: Wing, spec: Spec, evaluate: Evaluate, storage: Path, name: str, wo
         if set(t.params) == set(dists):
             study.enqueue_trial(t.params)
     if not study.trials:
-        # Start from the wing as drawn, when it lies inside the bounds.
+        # Start from the wing as drawn, brought inside the bounds where it lies just outside one
+        # (frontwing#2: a gap 0.01127 against 0.011 lost the study its one valid point).
         start = _current(base, spec.variables)
-        if all(v.low <= start[v.name] <= v.high for v in spec.variables):
-            study.enqueue_trial(start)
+        study.enqueue_trial({v.name: start[v.name] if v.kind == "airfoil" else float(np.clip(start[v.name], v.low, v.high))
+                             for v in spec.variables})
 
     lock = threading.Lock()
     stop = threading.Event()
@@ -413,16 +414,19 @@ def run(base: Wing, spec: Spec, evaluate: Evaluate, storage: Path, name: str, wo
         with lock:
             if attrs.get("unsettled"):
                 # A run that never settles is nearly always separated flow: a
-                # poor wing. Once there are two real results to measure by, it
-                # is told to the sampler as half their spread below the worst
-                # (a failed trial would teach it nothing); shown as failed,
-                # never as a result.
+                # poor wing. It is told to the sampler as half the spread of the
+                # real results below the worst (halfway to invalid until there are
+                # two); shown as failed, never as a result.
                 real = [t.value for t in study.get_trials(deepcopy=False, states=(optuna.trial.TrialState.COMPLETE,))
                         if not t.user_attrs.get("invalid") and not t.user_attrs.get("unsettled")]
+                state = optuna.trial.TrialState.COMPLETE
                 if len(real) >= 2:
                     worst, best = (min(real), max(real)) if spec.direction == "maximize" else (max(real), min(real))
-                    state = optuna.trial.TrialState.COMPLETE
                     value = worst - 0.5 * (best - worst)
+                else:
+                    # Halfway to a wing that breaks a constraint: told nothing, a sampler that has seen
+                    # only invalid wings draws the same failing corner again (frontwing#2, 13 Nov 2026).
+                    value = -INVALID / 2 if spec.direction == "maximize" else INVALID / 2
             for k, v in attrs.items():
                 trial.set_user_attr(k, v)
             study.tell(trial, value, state=state)

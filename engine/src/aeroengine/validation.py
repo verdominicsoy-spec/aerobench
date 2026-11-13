@@ -403,7 +403,10 @@ def against_rans() -> dict:
         if cl is not None:
             row["lift_error"] = abs(r["cl"] / cl - 1)
             row["drag_error"] = abs(r["cd"] / cd - 1)
-        row["agrees"] = (not r["separating"] and row["lift_error"] <= TARGET_LIFT) if cl is not None else r["separating"]
+        # Where RANS did not settle the estimate agrees if it calls it separating, or warns that only RANS can
+        # tell whether the ground holds the flow (estimate v4).
+        flagged = r["separating"] or any("ground" in w for w in r.get("warnings", []))
+        row["agrees"] = (not r["separating"] and row["lift_error"] <= TARGET_LIFT) if cl is not None else flagged
         out.append(row)
     held = [x for x in out if x["cl_rans"] is not None]
     return {"cases": out, "lift_error_max": max(x["lift_error"] for x in held),

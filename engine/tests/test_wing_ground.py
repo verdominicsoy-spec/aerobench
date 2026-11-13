@@ -77,9 +77,9 @@ def test_the_ground_estimate_against_rans():
         assert r["cl_free_air"] == pytest.approx(-2.1677, rel=0.03)
         assert sum(e["cl"] for e in r["elements"]) == pytest.approx(r["cl"])
     low = estimate(els, [0.0], 15.0, ride_height=0.06)["rows"][0]
-    # RANS never settled at 60 mm: the ground separates it (image gain 2.68), where the main's own angle
-    # in free air (20 deg, stall 15) holds.
-    assert low["separating"] and "ground separates" in low["why"]
+    # RANS never settled at 60 mm (image gain 2.68); the main's own angle in free air (20 deg, stall 15) holds,
+    # and whether the ground separates it the estimate cannot tell (Zerihan's wing held to 6.0): it warns.
+    assert any("ground" in w for w in low["warnings"])
 
 
 def _els(w):
@@ -160,8 +160,8 @@ def test_a_cascade_near_the_ground_is_judged_on_sane_angles():
     high = estimate(els, [0.0], 20.0, 1.184, 1.81e-5, 9.0, ref, ride_height=0.30)["rows"][0]
     low = estimate(els, [0.0], 20.0, 1.184, 1.81e-5, 9.0, ref, ride_height=0.05)["rows"][0]
     assert not free["separating"], free["why"]  # RANS: main attached in free air
-    assert not high["separating"], high["why"]  # image gain 0.68: well short of the ground's separation
-    assert low["separating"] and "ground" in low["why"]  # image gain 5.1
+    assert not high["separating"] and not any("ground" in w for w in high["warnings"]), high["why"]  # image gain 0.68
+    assert not low["separating"] and any("ground" in w for w in low["warnings"])  # image gain 5.1: RANS decides
     assert all("in place" not in w for w in (low["why"] or "").split("; ") if w.startswith("Main"))
 
 
@@ -171,7 +171,22 @@ def test_the_ground_separates_a_wing_between_the_gains_rans_bracketed():
     from aeroengine.wing.design import layout
     from aeroengine.wing.estimate import GROUND_SEPARATION_GAIN, estimate
 
+    # But Zerihan's Tyrrell 026 wing (built for the ground) held, its downforce still rising, at image gains
+    # 3.1 (h/c 0.134) to 6.0 (0.067): the gain does not decide it, so the estimate warns and RANS decides.
     assert 1.45 < GROUND_SEPARATION_GAIN < 2.68
     els = _els(layout([naca4("6212")] * 2, 0.44, True))
-    assert not estimate(els, [0.0], 15.0, ride_height=0.10)["rows"][0]["separating"]
-    assert estimate(els, [0.0], 15.0, ride_height=0.06)["rows"][0]["separating"]
+    assert not estimate(els, [0.0], 15.0, ride_height=0.10)["rows"][0]["warnings"]
+    low = estimate(els, [0.0], 15.0, ride_height=0.06)["rows"][0]
+    assert not low["separating"] and any("ground" in w for w in low["warnings"])
+
+
+def test_a_front_element_reports_the_angle_it_is_judged_on():
+    # The optimiser's margin reads effective_angle: over a ground it was the inflated reading (59 deg on
+    # frontwing#2's main at 35 mm) while the verdict used the free-air one, so every trial's downforce was
+    # spent on the margin and no study had a best.
+    from aeroengine.wing.estimate import estimate
+
+    els, ref = _frontwing()
+    free = estimate(els, [0.0], 20.0, 1.184, 1.81e-5, 9.0, ref)["rows"][0]["elements"][0]["effective_angle"]
+    low = estimate(els, [0.0], 20.0, 1.184, 1.81e-5, 9.0, ref, ride_height=0.05)["rows"][0]["elements"][0]["effective_angle"]
+    assert low == pytest.approx(free, abs=0.5)

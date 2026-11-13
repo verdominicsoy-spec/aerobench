@@ -214,8 +214,8 @@ def test_unsettled_runs_are_failed_but_steer_the_sampler(tmp_path):
     bad = [t for t in out["trials"] if t["params"]["angle_1"] > 34 and t["state"] != "invalid"]
     assert bad and all(t["state"] == "fail" and t["value"] is None and "not converged" in t["reason"] for t in bad)
     assert out["complete"] + out["failed"] == 10 and out["trials"][out["best"]]["params"]["angle_1"] <= 34
-    # The sampler saw each as worse than every real result before it (and
-    # nothing until there were two to measure by).
+    # The sampler saw each as worse than every real result before it, and before
+    # there were two to measure by, as halfway to a wing that breaks a constraint.
     study = optuna.load_study(study_name="s", storage=f"sqlite:///{tmp_path / 's.db'}")
     told = 0
     for t in study.trials:
@@ -224,7 +224,7 @@ def test_unsettled_runs_are_failed_but_steer_the_sampler(tmp_path):
         before = [o.value for o in study.trials[:t.number] if o.state.name == "COMPLETE"
                   and not o.user_attrs.get("unsettled") and not o.user_attrs.get("invalid")]
         if len(before) < 2:
-            assert t.value is None
+            assert t.value == -optimise.INVALID / 2
         else:
             told += 1
             assert t.value < min(before)
@@ -531,9 +531,10 @@ def test_the_margin_is_to_the_nearest_line():
     assert optimise.separation_margin(row) == pytest.approx(1.0)
     row = {"elements": [el(None, 18.5, 10.0), el(10.0, 3.0, 12.0)]}  # 8.5 past stall: 0.5 left
     assert optimise.separation_margin(row) == pytest.approx(optimise.FRONT_LIFT_LIMIT - 8.5)
-    # Three elements: each flap within 25 of the one in front, the last 30 past the main.
+    # Three elements: each flap 15 past the one in front, the last 30 past the main. Past the main is only a
+    # warning since estimate v4 (frontwing#2's study scored a Cl 3.0 wing infeasible for a 1.3 target on it).
     row = {"elements": [el(None, 0.0, 10.0), el(15.0, 0.0, 10.0), el(15.0, 3.0, 12.0, past=30.0)]}
-    assert optimise.separation_margin(row) == pytest.approx(25.0 - 30.0)
+    assert optimise.separation_margin(row) == pytest.approx(25.0 - 15.0)
     assert optimise.separation_margin({"elements": [el(None, 3.0, 12.0)]}) is None  # one element: no such line
 
 
@@ -662,3 +663,26 @@ def test_car_terms_take_a_run_as_on_the_car_as_it_is():
     assert spec.car.endplate is None and spec.car.factor == 1.0
     cla, cda, _ = spec.car.wing(1.2, 0.09, type("W", (), {"elements": [type("E", (), {"chord": 0.5, "placed": lambda s: np.zeros((2, 2))})()]})())
     assert cla == pytest.approx(1.2 * 0.5) and cda == pytest.approx(0.09 * 0.5)
+
+
+
+def test_a_study_where_every_wing_separates_still_steers(tmp_path):
+    # frontwing#2 (13 Nov 2026): 21 of the first 22 trials broke the rules box, the rest separated in the
+    # estimate; separated trials were told nothing, so the sampler only saw the invalid ones and drew the
+    # same failing corner again and again. Told as halfway to invalid, they rank between.
+    spec = optimise.Spec([Variable(1, "angle", 15, 45)], trials=6, seed=3)
+    evaluate, _ = _fake()
+    out = optimise.run(_starter(), spec, lambda w, f: {**evaluate(w, f), "converged": False, "reason": "separates"},
+                       tmp_path / "s.db", "s", tmp_path / "w")
+    study = optuna.load_study(study_name="s", storage=f"sqlite:///{tmp_path / 's.db'}")
+    told = [t.value for t in study.trials if t.user_attrs.get("unsettled")]
+    assert told and all(v == -optimise.INVALID / 2 for v in told) and out["best"] is None
+
+
+def test_a_study_starts_from_the_drawn_wing_even_just_outside_a_bound(tmp_path):
+    # frontwing#2 (13 Nov 2026): its Flap 1 gap was 0.01127 m against an upper bound of 0.011 (the app's range
+    # rounds), so the study never started from the drawn wing, the one valid point it had. Brought inside.
+    spec = optimise.Spec([Variable(1, "angle", 15, 40), Variable(1, "gap", 0.006, 0.0119)], trials=2, seed=1)
+    evaluate, _ = _fake()
+    out = optimise.run(_starter(), spec, evaluate, tmp_path / "s.db", "s", tmp_path / "work")
+    assert out["trials"][0]["params"] == pytest.approx({"angle_1": 25.0, "gap_1": 0.0119}, abs=1e-6)

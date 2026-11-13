@@ -145,15 +145,16 @@ def suction_peak(cp: np.ndarray, xy: np.ndarray, inverted: bool) -> float:
 # 150 mm for +67% here) and nothing at 30 mm.
 GROUND_SHARE = 0.8
 GROUND_GAIN_KNEE = 1.6
-# The ground separates the flow under a wing once the image method's whole-wing
-# gain over free air passes this: RANS held the NACA 6212 main and flap attached
-# at 100 mm (image gain 1.45) and separated it at 60 (2.68); the NACA 4412 main
-# alone still gained lift at 50 mm (1.42) and lost some by 30 (2.78). Fitted
-# between those, so good to about +-0.6 of gain. It replaces judging a front
-# element over a ground by its angle "in place" against itself alone over the
-# ground: on a cascade the image piles the load on the main (5.5 times free
-# air at 60 mm on frontwing#1, four elements) and that read 42 degrees at 300 mm
-# and 145 at 50, so every optimiser trial separated.
+# Past this image-method whole-wing gain over free air the estimate cannot tell
+# whether the flow under the wing holds, and warns (RANS decides): RANS held the
+# NACA 6212 main and flap at 100 mm (gain 1.45) and separated it at 60 (2.68); the
+# NACA 4412 main alone gained lift at 50 mm (1.42) and lost some by 30 (2.78);
+# but Zerihan's Tyrrell 026 front wing, built for the ground, held with its
+# downforce still rising at 3.1 to 6.0 (h/c 0.134 to 0.067, docs/validation/
+# ground-3d), where the estimate's lift reads up to 47% low. (Judging a front
+# element over a ground by its angle in place against itself alone over the
+# ground read 42 degrees at 300 mm and 145 at 50 on frontwing#1 and failed every
+# optimiser trial: front elements are judged on their free-air angle.)
 GROUND_SEPARATION_GAIN = 2.0
 
 
@@ -340,7 +341,8 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
                 why.append(reason)
             els.append({"cl": cl_own * share, "cd": cd_own * share, "cm": v["cm"] * share * chords[i] / ref,
                         "cl_own": cl_own, "cd_own": cd_own, "cl_inviscid_own": inviscid[k][i],
-                        "effective_angle": float(in_place), "upwash": effective[k][i] - float(a),
+                        # Front elements: the free-air angle their verdict and the optimiser's margin go by.
+                        "effective_angle": float(in_place_free if front else in_place), "upwash": effective[k][i] - float(a),
                         "held_below_stall": front and v["alpha"] < in_place - 1e-9,
                         "transition_suction": v["transition_suction"], "transition_pressure": v["transition_pressure"],
                         "confidence": v["confidence"], "trusted": v["trusted"], "stall_angle": stall[i],
@@ -348,8 +350,9 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
                         "max_deflection": limit[i], "led": led[i], "suction_peak": peaks[k][i],
                         "role": "slat" if i < main else ("main" if i == main else "flap")})
         if image_gain[k] > GROUND_SEPARATION_GAIN:
-            why.append(f"The ground separates the flow under the wing: the image method's lift is {image_gain[k] + 1:.1f} "
-                       f"times free air, past the {GROUND_SEPARATION_GAIN + 1:.1f} at which RANS separated")
+            warnings.append(f"Near the ground the estimate cannot tell whether the flow under the wing holds: the image "
+                            f"method's lift is {image_gain[k] + 1:.1f} times free air; RANS separated two test wings past "
+                            f"{GROUND_SEPARATION_GAIN + 1:.1f}, Zerihan's front wing held to 7. Check it with RANS")
         rows.append({"alpha": float(a), "cl": sum(x["cl"] for x in els), "cd": sum(x["cd"] for x in els),
                      "trusted": all(x["trusted"] for x in els), "separating": bool(why),
                      "why": "; ".join(why) or None, "warnings": warnings, "elements": els})
