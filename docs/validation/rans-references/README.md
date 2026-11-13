@@ -21,8 +21,8 @@ The two models agree on lift to 2%. SST-LM drag is 5-13% lower at the low
 angles and 13% higher at -6°. SST-LM also reports the flap separating from
 76-80% of its chord in every attached case, the same early trailing-edge
 separation every SU2 model shows on aft-loaded sections at this Reynolds
-number (turbulent shape factor about 1.9 against XFOIL's 1.4; see
-published/README.md, "Root causes of the remaining errors"). So neither set's
+number (SST-LM's turbulent layer behind the laminar bubble: shape factor 1.7
+against XFOIL's 1.35; see ../uiuc-transition/README.md). So neither set's
 drag is good to better than about 15% here, and the estimate was not refitted
 to these: fitting its drag constants to a reference with a known model error
 would only move the error. The references in the code stay as they were. A

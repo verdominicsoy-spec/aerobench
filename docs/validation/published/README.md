@@ -377,6 +377,16 @@ setting. Starting one angle from rest on these sections can also land on an
 unsteady separated state (e423, 8 deg: Cd swings 0.026 to 0.061); a rising
 sweep converges.
 
+*Refined 13 November 2026* (../uiuc-transition/README.md, "Where the drag
+error comes from"): on s1223 at 6 deg, fully turbulent SST agrees with
+XFOIL's tripped answer within 2%, so the turbulence model is right on an
+ordinary turbulent layer. The error is SST-LM's layer behind the laminar
+bubble: shape factor 1.7 against XFOIL's 1.35 at the same momentum
+thickness. Sustained free-stream turbulence (rans_version 3) does not change
+it (s1223 drag 28.9% against 29.1%), and no SU2 transition option tried
+(Malan, Medida-Baeder, SST-1994m; LM2015 is 3D only) moves it. The app shows
+the measured drag band on RANS drag where it applies.
+
 **Why NeuralFoil lift reads high at Re 3e5** (about +8% before the 0.94 scale
 of estimate version 3). Not the network (medium to xxxlarge agree to 0.3%),
 not transition (n_crit 4 to 11 all read about +8%), not geometry (the tunnel
