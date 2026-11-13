@@ -958,3 +958,14 @@ def test_a_continued_run_measures_its_residual_from_where_the_first_began():
     case.residual_start = 0.8
     assert judge(cont, case)["residual_drop"] == pytest.approx(3.9, abs=0.01)
     assert settled(cont, start=0.8)["cl"] == pytest.approx(1.2, abs=0.002)
+
+
+def test_a_slow_oscillation_settles_over_whole_periods():
+    # Zerihan's wing at h/c 0.448: Cl -0.918 +-0.013 with a 500-iteration period (trailing-edge shedding off
+    # its 0.7%-chord base), the mean steady to 0.002 over 4,000 iterations. Means over 300 iterations, less
+    # than a period, swing by more than the 1% allowed; over whole periods they hold.
+    it = np.arange(4000)
+    h = {"rms[P]": np.full(4000, -5.0), "CL": -0.918 + 0.013 * np.sin(2 * np.pi * it / 500),
+         "CD": 0.03 + 0.002 * np.cos(2 * np.pi * it / 500)}
+    s = settled(h, start=-1.0)
+    assert s is not None and s["cl"] == pytest.approx(-0.918, abs=0.002) and s["window"] >= 1000

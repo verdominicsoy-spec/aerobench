@@ -249,8 +249,16 @@ def settled(history: dict[str, np.ndarray], start: float | None = None) -> dict 
     start: as Case.residual_start."""
     res_key = next((k for k in history if k.lower() in ("rms[p]", "rms_pressure")), None)
     cl, cd = history.get("CL"), history.get("CD")
-    w = SETTLE_WINDOW
-    if res_key is None or cl is None or cd is None or len(cl) < 2 * w:
+    if res_key is None or cl is None or cd is None or len(cl) < 2 * SETTLE_WINDOW:
+        return None
+    # Average over whole swings: a whole number of periods of Cl's oscillation (its strongest frequency
+    # over the last half), at least two and at least SETTLE_WINDOW, or a 300-iteration mean of a
+    # 500-iteration swing itself swings (Zerihan's wing, trailing-edge shedding).
+    half = np.asarray(cl[len(cl) // 2:], float)
+    spectrum = np.abs(np.fft.rfft(half - half.mean()))
+    period = len(half) / (int(np.argmax(spectrum[1:])) + 1) if len(spectrum) > 1 else float(SETTLE_WINDOW)
+    w = int(round(period * max(2, int(np.ceil(SETTLE_WINDOW / period)))))
+    if len(cl) < 2 * w:
         return None
     res = history[res_key]
     if (start if start is not None else res[: min(5, len(res))].max()) - res[-1] < SETTLE_RESIDUAL_DROP:
@@ -267,6 +275,7 @@ def settled(history: dict[str, np.ndarray], start: float | None = None) -> dict 
             return None
         out[name] = float(m[-1])
     out["cl_swing"] = float(np.ptp(np.asarray(cl[-w:], float)) / 2)
+    out["window"] = w
     return out
 
 
@@ -496,10 +505,10 @@ def _run_once(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
     verdict = judge(hist, case)
     average = settled(hist, case.residual_start) if not verdict["converged"] else None
     # A run that settled on average reports the means of its last window, not its last iteration.
-    final = (lambda v: float(np.mean(v[-SETTLE_WINDOW:]))) if average else (lambda v: float(v[-1]))
+    final = (lambda v: float(np.mean(v[-average["window"]:]))) if average else (lambda v: float(v[-1]))
     if average:
         verdict = {**verdict, "converged": True, "averaged": True,
-                   "reason": f"settled on average: Cl and Cd are the means of the last {SETTLE_WINDOW} iterations "
+                   "reason": f"settled on average: Cl and Cd are the means of the last {average['window']} iterations "
                              f"(Cl swings ±{average['cl_swing']:.3f} about it)"}
     out = {"iterations": int(len(hist["CL"])), "model": case.model, "averaged": False, **verdict,
            "stopped_early": stopped, "cl": final(hist["CL"]), "cd": final(hist["CD"]),
