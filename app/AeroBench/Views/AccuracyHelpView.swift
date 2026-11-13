@@ -20,11 +20,11 @@ struct AccuracyHelpView: View {
         Solver(name: "Live estimate", speed: "the panel method under 50 ms while dragging, NeuralFoil's lift and drag about 30 ms later; the optimiser runs a few hundred in a minute",
                goodFor: "Every element together: how the load splits, Cl and Cd against wing angle, element angles in the optimiser, and spotting a flap about to separate.",
                trust: "On the main-and-flap wing, lift within about 2% of RANS and drag about 10% high until the flap nears separation. Flags the flap within 2° of its stall angle.",
-               misses: "Gap size barely changes its answer, so gaps and overlaps need RANS. Not checked on slats. Past separation its numbers mean nothing."),
+               misses: "Gap size barely changes its answer, so gaps and overlaps need RANS. Not checked on slats. Past separation its numbers mean nothing. Close to the ground its lift can read up to 47% low (Zerihan's front wing in ground effect), so it only ranks wings there: check the finalists with RANS."),
         Solver(name: "RANS CFD (SU2)", speed: "about 1½ min on the Quick mesh, several on Medium",
                goodFor: "The real slot flow, separation and gap effects. The last check here before STAR-CCM+.",
-               trust: "NACA 0012 at Re 6 million: lift within 2% of Ladson's wind tunnel data, drag 5–15% high up to 10°. 30P30N three-element wing: within 3% up to 16°. Quick mesh within 0.3% of Medium.",
-               misses: "2D only: no tip vortices, no endplates, no car underneath. Runs that do not settle are shown as not converged, never as results."),
+               trust: "NACA 0012 at Re 6 million: lift within 2% of Ladson's wind tunnel data, drag 5–15% high up to 10°. 30P30N three-element wing: within 3% up to 16°. Quick mesh within 0.3% of Medium. As on the car (span, endplates and ground): Zerihan's front wing in ground effect within 3% of the balance, and it finds the main-element stall STAR-CCM+ found on frontwing#1. Lift at FS Reynolds numbers within about 4% of the tunnel.",
+               misses: "As on the car means one section at the angle the span and endplates leave it: no tip vortex on the section, no car around it. In free air Zerihan's wing reads 10% low (about 4 points of that are his tunnel's walls). Drag reads 5–34% high where a laminar bubble sits, and the app shows that band. Runs that do not settle are shown as not converged, never as results. Flows with no steady answer show their mean, labelled unsteady."),
     ]
 
     var body: some View {
@@ -48,7 +48,7 @@ struct AccuracyHelpView: View {
                     }
                 }
                 UIUCSection()
-                Text("Everything here is 2D. A 3D wing makes less lift than its section, so expect STAR-CCM+ on the full car to come in lower.")
+                Text("RANS runs as on the car when 3D is on; everything else is 2D. A 3D wing makes less lift than its section, so a 2D number will be above STAR-CCM+ on the full car.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
