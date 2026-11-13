@@ -4,19 +4,19 @@
   "values": null,
   "model": "sst-lm",
   "skipped": [],
-  "seconds": 2078.033452987671,
+  "seconds": 2240.914031267166,
   "rows": [
    {
     "alpha": -9.0,
-    "cl": -1.700536879,
-    "cd": 0.3058227003,
-    "cm": -0.3968060231,
+    "cl": -1.778916566,
+    "cd": 0.1938993333,
+    "cm": -0.3274476204,
     "converged": false,
-    "reason": "residual fell 2.5 orders, needs 4.0; Cl still moving (3.5e-01 over the last 200 iterations); Cd still moving (9.0e-01)",
+    "reason": "Cl still moving (3.5e-03 over the last 200 iterations); Cd still moving (6.1e-03)",
     "separated": true,
-    "separation": "Main separates in RANS: reversed flow from 31% of its chord to the trailing edge",
+    "separation": "Main separates on its lower (suction) surface from 37% of its chord to the trailing edge (RANS).",
     "iterations": 4000,
-    "seconds": 617.0,
+    "seconds": 662.0,
     "model": "sst-lm",
     "mesh_level": "fine",
     "transition": [
@@ -32,29 +32,29 @@
     "elements": [
      {
       "marker": "wall_0",
-      "cl": -1.317434332,
-      "cd": 0.06614796426,
-      "cmz": -0.1240354756
+      "cl": -1.462459499,
+      "cd": -0.007034234791,
+      "cmz": -0.1020746799
      },
      {
       "marker": "wall_1",
-      "cl": -0.3831025464,
-      "cd": 0.2396747361,
-      "cmz": -0.2727705475
+      "cl": -0.3164570673,
+      "cd": 0.2009335681,
+      "cmz": -0.2253729404
      }
     ]
    },
    {
     "alpha": -6.0,
-    "cl": -2.487663646936667,
-    "cd": 0.07257325563083333,
-    "cm": -0.39754862555133336,
+    "cl": -2.554804558,
+    "cd": 0.06255478235,
+    "cm": -0.4047859466,
     "converged": true,
-    "reason": "settled on average: Cl and Cd are the means of the last 300 iterations (Cl swings \u00b10.002 about it)",
+    "reason": null,
     "separated": false,
     "separation": null,
-    "iterations": 4000,
-    "seconds": 620.5,
+    "iterations": 3021,
+    "seconds": 424.3,
     "model": "sst-lm",
     "mesh_level": "fine",
     "transition": [
@@ -70,29 +70,29 @@
     "elements": [
      {
       "marker": "wall_0",
-      "cl": -2.1350282291033333,
-      "cd": -0.09940375404083333,
-      "cmz": -0.16362645373733334
+      "cl": -2.195616199,
+      "cd": -0.1126213863,
+      "cmz": -0.1666828933
      },
      {
       "marker": "wall_1",
-      "cl": -0.35263541782933333,
-      "cd": 0.1719770096726667,
-      "cmz": -0.23392217180833333
+      "cl": -0.3591883587,
+      "cd": 0.1751761686,
+      "cmz": -0.2381030533
      }
     ]
    },
    {
     "alpha": -3.0,
-    "cl": -2.386466186,
-    "cd": 0.04034073536,
-    "cm": -0.4033372102,
+    "cl": -2.413158455,
+    "cd": 0.03776051913,
+    "cm": -0.4084875032,
     "converged": true,
     "reason": null,
     "separated": true,
-    "separation": "Flap 1 separates in RANS: reversed flow from 80% of its chord to the trailing edge",
-    "iterations": 2421,
-    "seconds": 339.0,
+    "separation": "Flap 1 separates on its lower (suction) surface from 80% of its chord to the trailing edge (RANS).",
+    "iterations": 2521,
+    "seconds": 446.3,
     "model": "sst-lm",
     "mesh_level": "fine",
     "transition": [
@@ -108,29 +108,29 @@
     "elements": [
      {
       "marker": "wall_0",
-      "cl": -2.01578933,
-      "cd": -0.1209556846,
-      "cmz": -0.1636091585
+      "cl": -2.037490886,
+      "cd": -0.1258313639,
+      "cmz": -0.1653911784
      },
      {
       "marker": "wall_1",
-      "cl": -0.370676856,
-      "cd": 0.1612964199,
-      "cmz": -0.2397280517
+      "cl": -0.3756675687,
+      "cd": 0.1635918831,
+      "cmz": -0.2430963248
      }
     ]
    },
    {
     "alpha": 0.0,
-    "cl": -2.130701275,
-    "cd": 0.03281480817,
-    "cm": -0.3933785294,
+    "cl": -2.153458281,
+    "cd": 0.03122166358,
+    "cm": -0.3986648319,
     "converged": true,
     "reason": null,
     "separated": true,
-    "separation": "Flap 1 separates in RANS: reversed flow from 80% of its chord to the trailing edge",
-    "iterations": 3121,
-    "seconds": 501.6,
+    "separation": "Flap 1 separates on its lower (suction) surface from 80% of its chord to the trailing edge (RANS).",
+    "iterations": 3721,
+    "seconds": 708.3,
     "model": "sst-lm",
     "mesh_level": "fine",
     "transition": [
@@ -146,15 +146,15 @@
     "elements": [
      {
       "marker": "wall_0",
-      "cl": -1.758778752,
-      "cd": -0.1098698074,
-      "cmz": -0.1575469419
+      "cl": -1.776236769,
+      "cd": -0.1135661706,
+      "cmz": -0.1593048878
      },
      {
       "marker": "wall_1",
-      "cl": -0.3719225235,
-      "cd": 0.1426846156,
-      "cmz": -0.2358315875
+      "cl": -0.377221512,
+      "cd": 0.1447878342,
+      "cmz": -0.2393599441
      }
     ]
    }
@@ -170,19 +170,19 @@
   },
   "model": "sst-lm",
   "skipped": [],
-  "seconds": 1397.137344121933,
+  "seconds": 1245.319088935852,
   "rows": [
    {
     "alpha": 0.0,
-    "cl": -2.06938268,
-    "cd": 0.1253236016,
-    "cm": -0.3751328267,
-    "converged": false,
-    "reason": "residual fell 2.4 orders, needs 4.0; Cl still moving (4.1e-02 over the last 200 iterations); Cd still moving (5.6e-01)",
+    "cl": -2.437187818,
+    "cd": 0.04871975581,
+    "cm": -0.4039409624,
+    "converged": true,
+    "reason": null,
     "separated": true,
-    "separation": "Flap 1 separates in RANS: reversed flow from 9% of its chord to the trailing edge",
-    "iterations": 4000,
-    "seconds": 773.6,
+    "separation": "Flap 1 separates on its lower (suction) surface from 52% of its chord to the trailing edge (RANS).",
+    "iterations": 2921,
+    "seconds": 525.9,
     "model": "sst-lm",
     "mesh_level": "fine",
     "transition": [
@@ -198,29 +198,29 @@
     "elements": [
      {
       "marker": "wall_0",
-      "cl": -1.699789944,
-      "cd": -0.1011613717,
-      "cmz": -0.107949892
+      "cl": -2.031637825,
+      "cd": -0.1217343882,
+      "cmz": -0.143498271
      },
      {
       "marker": "wall_1",
-      "cl": -0.369592736,
-      "cd": 0.2264849733,
-      "cmz": -0.2671829347
+      "cl": -0.4055499928,
+      "cd": 0.1704541441,
+      "cmz": -0.2604426914
      }
     ]
    },
    {
     "alpha": 2.0,
-    "cl": -2.134671461,
-    "cd": 0.05287659086,
-    "cm": -0.365180618,
+    "cl": -2.2793507435165004,
+    "cd": 0.043176506502605,
+    "cm": -0.3997524830774,
     "converged": false,
-    "reason": "residual fell 3.7 orders, needs 4.0; Cl still moving (8.6e-03 over the last 200 iterations); Cd still moving (2.4e-02)",
+    "reason": "unsteady: no steady answer (residual down 5.3 orders, the flow itself moving); Cl and Cd are the means of the last 2000 iterations, Cl swinging \u00b10.008 about it",
     "separated": true,
-    "separation": "Flap 1 separates in RANS: reversed flow from 14% of its chord to the trailing edge",
+    "separation": "Flap 1 separates on its lower (suction) surface from 54% of its chord to the trailing edge (RANS).",
     "iterations": 4000,
-    "seconds": 623.5,
+    "seconds": 719.4,
     "model": "sst-lm",
     "mesh_level": "fine",
     "transition": [
@@ -236,15 +236,15 @@
     "elements": [
      {
       "marker": "wall_0",
-      "cl": -1.771260747,
-      "cd": -0.09815163136,
-      "cmz": -0.1313440288
+      "cl": -1.870815712443,
+      "cd": -0.1148183667581,
+      "cmz": -0.14074917219144997
      },
      {
       "marker": "wall_1",
-      "cl": -0.3634107137,
-      "cd": 0.1510282222,
-      "cmz": -0.2338365892
+      "cl": -0.4085350310691,
+      "cd": 0.1579948732605,
+      "cmz": -0.25900331088774997
      }
     ]
    }
@@ -255,19 +255,19 @@
   "values": null,
   "model": "sst-lm",
   "skipped": [],
-  "seconds": 944.0645689964294,
+  "seconds": 600.23273396492,
   "rows": [
    {
     "alpha": 0.0,
-    "cl": -2.770961153,
-    "cd": 0.04367494242,
-    "cm": -0.5037587313,
+    "cl": -2.802883606,
+    "cd": 0.04174871894,
+    "cm": -0.510750808,
     "converged": true,
     "reason": null,
     "separated": true,
-    "separation": "Flap 1 separates in RANS: reversed flow from 76% of its chord to the trailing edge",
-    "iterations": 3521,
-    "seconds": 944.1,
+    "separation": "Flap 1 separates on its lower (suction) surface from 77% of its chord to the trailing edge (RANS).",
+    "iterations": 4000,
+    "seconds": 600.2,
     "model": "sst-lm",
     "mesh_level": "fine",
     "transition": [
@@ -283,15 +283,15 @@
     "elements": [
      {
       "marker": "wall_0",
-      "cl": -2.307020261,
-      "cd": -0.1301303114,
-      "cmz": -0.2105230714
+      "cl": -2.332158636,
+      "cd": -0.1344338798,
+      "cmz": -0.2130834745
      },
      {
       "marker": "wall_1",
-      "cl": -0.4639408929,
-      "cd": 0.1738052538,
-      "cmz": -0.2932356599
+      "cl": -0.4707249703,
+      "cd": 0.1761825987,
+      "cmz": -0.2976673335
      }
     ]
    }
@@ -302,19 +302,19 @@
   "values": null,
   "model": "sst-lm",
   "skipped": [],
-  "seconds": 771.4586827754974,
+  "seconds": 601.0471091270447,
   "rows": [
    {
     "alpha": 0.0,
-    "cl": -3.42784360841,
-    "cd": 0.06157871065210001,
-    "cm": -0.5970306059116666,
-    "converged": true,
-    "reason": "settled on average: Cl and Cd are the means of the last 300 iterations (Cl swings \u00b10.000 about it)",
+    "cl": -3.4617044352154998,
+    "cd": 0.060732030333544997,
+    "cm": -0.60446293520205,
+    "converged": false,
+    "reason": "unsteady: no steady answer (residual down 5.2 orders, the flow itself moving); Cl and Cd are the means of the last 2000 iterations, Cl swinging \u00b10.039 about it",
     "separated": true,
-    "separation": "Flap 1 separates in RANS: reversed flow from 71% of its chord to the trailing edge",
+    "separation": "Flap 1 separates on its lower (suction) surface from 72% of its chord to the trailing edge (RANS).",
     "iterations": 4000,
-    "seconds": 771.5,
+    "seconds": 601.0,
     "model": "sst-lm",
     "mesh_level": "fine",
     "transition": [
@@ -330,15 +330,15 @@
     "elements": [
      {
       "marker": "wall_0",
-      "cl": -2.908294254336667,
-      "cd": -0.12522161329400003,
-      "cmz": -0.27054280374966666
+      "cl": -2.9352882947475,
+      "cd": -0.12832544047329997,
+      "cmz": -0.27353980045875
      },
      {
       "marker": "wall_1",
-      "cl": -0.5195493540696666,
-      "cd": 0.18680032395266666,
-      "cmz": -0.32648780215966666
+      "cl": -0.5264161404548999,
+      "cd": 0.1890574708062,
+      "cmz": -0.33092313474245
      }
     ]
    }
@@ -349,19 +349,19 @@
   "values": null,
   "model": "sst-lm",
   "skipped": [],
-  "seconds": 731.97532081604,
+  "seconds": 616.2344489097595,
   "rows": [
    {
     "alpha": 0.0,
-    "cl": -4.816080758,
-    "cd": 0.1381979783,
-    "cm": -0.7412203992,
+    "cl": -4.384279189,
+    "cd": 0.1471139389,
+    "cm": -0.6873773496,
     "converged": false,
-    "reason": "residual fell 3.1 orders, needs 4.0; Cl still moving (7.8e-02 over the last 200 iterations); Cd still moving (7.0e-02)",
-    "separated": false,
-    "separation": null,
+    "reason": "residual fell 3.8 orders, needs 4.0; Cl still moving (1.1e-02 over the last 200 iterations); Cd still moving (1.0e-02)",
+    "separated": true,
+    "separation": "Main separates on its lower (suction) surface from 87% of its chord to the trailing edge (RANS).",
     "iterations": 4000,
-    "seconds": 732.0,
+    "seconds": 616.2,
     "model": "sst-lm",
     "mesh_level": "fine",
     "transition": [
@@ -377,15 +377,15 @@
     "elements": [
      {
       "marker": "wall_0",
-      "cl": -4.248274316,
-      "cd": -0.05436294238,
-      "cmz": -0.3855336977
+      "cl": -3.848137776,
+      "cd": -0.03332548123,
+      "cmz": -0.3515081861
      },
      {
       "marker": "wall_1",
-      "cl": -0.5678064423,
-      "cd": 0.1925609207,
-      "cmz": -0.3556867014
+      "cl": -0.5361414135,
+      "cd": 0.1804394201,
+      "cmz": -0.3358691635
      }
     ]
    }
