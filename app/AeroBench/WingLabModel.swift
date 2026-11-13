@@ -977,7 +977,7 @@ final class WingLabModel {
     /// live estimate, then the inviscid preview with the typed-in Cd.
     var bestNumbers: (cl: Double, cd: Double, name: String)? {
         // CFD only of this wing: a run on an earlier shape is not its numbers.
-        if let r = ransResult, r.converged, r.matches(wing.elements.map { $0.placed() }) {
+        if let r = ransResult, r.usable, r.matches(wing.elements.map { $0.placed() }) {
             let c = r.carCoefficients(on: wing)  // a run as on the car is already 3D
             return (c.cl, c.cd, "CFD")
         }

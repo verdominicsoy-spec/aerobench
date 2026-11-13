@@ -514,6 +514,22 @@ final class WingRansResultTests: XCTestCase {
         XCTAssertEqual(r.transitionDecides, true)
     }
 
+    /// A flow with no steady answer: the run says unsteady and gives its mean; the car may use that mean.
+    func testAnUnsteadyRunGivesItsMeanAndIsUsable() throws {
+        let file = """
+        {"data": {"re": 1e6, "mesh": {"cells": 1, "triangles": 1, "quads": 0, "first_cell_height_m": 1e-5,
+          "layer_thickness_m": 0.01, "layers": 1}, "mesh_level": "fine", "transition": [], "model": "sst-lm",
+          "model_name": "M", "iterations": 4000, "converged": false, "unsteady": true, "residual_drop": 4.4,
+          "reason": "unsteady: ...", "cl": -1.28, "cd": 0.05, "cm": 0, "elements": [], "surface": []}}
+        """
+        let r = try WingRansResult.decode(resultFile: Data(file.utf8))
+        XCTAssertEqual(r.unsteady, true)
+        XCTAssertTrue(r.usable)
+        var failed = r
+        failed.unsteady = nil
+        XCTAssertFalse(failed.usable)
+    }
+
     /// RANS drag over a laminar bubble at low Reynolds number reads high (UIUC, ten sections, Re 3e5):
     /// the run says so, with the measured band, and says nothing where that validation does not apply.
     func testDragOverALaminarBubbleAtLowReCarriesItsMeasuredError() throws {

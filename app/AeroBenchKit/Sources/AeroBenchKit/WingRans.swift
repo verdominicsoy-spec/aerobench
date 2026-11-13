@@ -47,6 +47,11 @@ public struct WingRansResult: Codable, Equatable, Sendable {
     /// Converged on average: it hit the iteration cap wobbling about a steady answer, so its
     /// numbers are the means of the last window (su2.settled); `reason` says how far Cl swings.
     public var averaged: Bool?
+    /// No steady answer: the flow itself moves (separation or shedding that wanders). Not converged;
+    /// Cl and Cd are the means of the run's last half and `reason` says how far Cl swings.
+    public var unsteady: Bool?
+    /// Numbers to use: converged, or the mean of an unsteady flow.
+    public var usable: Bool { converged || unsteady == true }
     public var residualDrop: Double
     public var reason: String?
     public var cl: Double

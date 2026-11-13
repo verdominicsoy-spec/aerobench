@@ -279,6 +279,60 @@ def settled(history: dict[str, np.ndarray], start: float | None = None) -> dict 
     return out
 
 
+UNSTEADY_RESIDUAL_DROP = 3.0  # orders: the solver did its job; what is left is the flow's own motion
+UNSTEADY_TOLERANCE = 0.03  # the means of the last two quarters agree this well, relative
+
+
+def unsteady(history: dict[str, np.ndarray], start: float | None = None) -> dict | None:
+    """A run whose flow has no steady answer (separation or shedding that wanders, not a
+    clean swing settled() can average): when the residual fell UNSTEADY_RESIDUAL_DROP
+    orders and the means of the last two quarters of Cl and Cd agree within
+    UNSTEADY_TOLERANCE, the mean of the last half with how far Cl swings about it
+    (half its range there). Not converged, and said so; None when it drifts.
+    start: as Case.residual_start."""
+    res_key = next((k for k in history if k.lower() in ("rms[p]", "rms_pressure")), None)
+    cl, cd = history.get("CL"), history.get("CD")
+    if res_key is None or cl is None or cd is None or len(cl) < 4 * SETTLE_WINDOW:
+        return None
+    res = np.asarray(history[res_key], float)
+    if (start if start is not None else res[: min(5, len(res))].max()) - res[-1] < UNSTEADY_RESIDUAL_DROP:
+        return None
+    q = len(cl) // 4
+    out = {}
+    for name, v, floor in (("cl", np.asarray(cl, float), 0.1), ("cd", np.asarray(cd, float), 0.01)):
+        a, b = v[-2 * q:-q].mean(), v[-q:].mean()
+        if abs(a - b) > UNSTEADY_TOLERANCE * max(abs(b), floor):
+            return None
+        out[name] = float(v[-2 * q:].mean())
+    out["cl_swing"] = float(np.ptp(np.asarray(cl, float)[-2 * q:]) / 2)
+    return out
+
+
+def verdict(hist: dict[str, np.ndarray], case: Case):
+    """A finished run's verdict, and how its numbers are read from the history:
+    converged (the last iteration); settled on average (converged, the mean of
+    whole swings); unsteady (not converged, the mean of its last half, said so);
+    else not converged (the last iteration)."""
+    v = {**judge(hist, case), "averaged": False, "unsteady": False}
+    if v["converged"]:
+        return v, lambda x: float(x[-1])
+    average = settled(hist, case.residual_start)
+    if average:
+        return ({**v, "converged": True, "averaged": True,
+                 "reason": f"settled on average: Cl and Cd are the means of the last {average['window']} iterations "
+                           f"(Cl swings ±{average['cl_swing']:.3f} about it)"},
+                lambda x: float(np.mean(x[-average["window"]:])))
+    wander = unsteady(hist, case.residual_start)
+    if wander:
+        half = len(hist["CL"]) // 2
+        return ({**v, "unsteady": True,
+                 "reason": f"unsteady: no steady answer (residual down {v['residual_drop']:.1f} orders, the flow itself "
+                           f"moving); Cl and Cd are the means of the last {half} iterations, Cl swinging "
+                           f"±{wander['cl_swing']:.3f} about it"},
+                lambda x: float(np.mean(x[-half:])))
+    return v, lambda x: float(x[-1])
+
+
 # SU2 runs on towards a residual of 1e-12 long after lift and drag have
 # settled (on NACA 0012 at 10 degrees they held still from iteration 2,262
 # of 3,790). The engine watches the run and stops it once the convergence
@@ -502,15 +556,8 @@ def _run_once(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
     if (proc.returncode != 0 and not stopped) or not history_file.exists():
         raise EngineError(f"SU2 stopped with exit code {proc.returncode}", "\n".join(tail[-12:]))
     hist = read_history(history_file)
-    verdict = judge(hist, case)
-    average = settled(hist, case.residual_start) if not verdict["converged"] else None
-    # A run that settled on average reports the means of its last window, not its last iteration.
-    final = (lambda v: float(np.mean(v[-average["window"]:]))) if average else (lambda v: float(v[-1]))
-    if average:
-        verdict = {**verdict, "converged": True, "averaged": True,
-                   "reason": f"settled on average: Cl and Cd are the means of the last {average['window']} iterations "
-                             f"(Cl swings ±{average['cl_swing']:.3f} about it)"}
-    out = {"iterations": int(len(hist["CL"])), "model": case.model, "averaged": False, **verdict,
+    result, final = verdict(hist, case)
+    out = {"iterations": int(len(hist["CL"])), "model": case.model, **result,
            "stopped_early": stopped, "cl": final(hist["CL"]), "cd": final(hist["CD"]),
            "cm": final(hist["CMz"]) if "CMz" in hist else None, "elements": []}
     for wall in case.walls:

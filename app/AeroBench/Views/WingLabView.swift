@@ -515,7 +515,7 @@ struct WingCanvas: View {
                     Text("Live field: the wing has changed since the last RANS run.")
                         .font(.caption2).foregroundStyle(S37.C.inkSecondary)
                         .canvasPlate()
-                } else if !r.converged {
+                } else if !r.usable {
                     Text("This RANS run did not converge: the field is not a result.").font(.caption2).foregroundStyle(S37.C.clayInk)
                         .canvasPlate()
                 }
@@ -722,7 +722,7 @@ struct WingCanvas: View {
         let change = shown.rans != nil && lab.showChange ? lab.changeImage(key)?.image : nil
         if let image = change ?? (shown.rans != nil ? lab.fieldImage(key) : lab.liveFieldImage(key)) {
             var g = ctx
-            if let r = shown.rans, !r.converged { g.opacity = 0.5 }
+            if let r = shown.rans, !r.usable { g.opacity = 0.5 }
             // Image space (metres from the window's top left, y down) to the view:
             // into the run's frame, turned into the wing's, then the canvas mapping.
             let tx = m.origin.x + s * (c * f.window.x0 - sn * f.window.y1)
@@ -1012,6 +1012,9 @@ struct CFDResults: View {
                         Text(r.reason ?? "").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
                     } else if r.converged {
                         Label("Converged", systemImage: "checkmark.seal").foregroundStyle(S37.C.sageInk)
+                    } else if r.unsteady == true {
+                        Label("Unsteady: the mean of a moving flow", systemImage: "waveform.path").foregroundStyle(S37.C.clayInk)
+                        Text(r.reason ?? "").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
                     } else {
                         Label("Not converged: not a result", systemImage: "xmark.octagon").foregroundStyle(S37.C.critical)
                         Text(r.reason ?? "").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
@@ -1135,7 +1138,7 @@ struct CFDResults: View {
                         .frame(minHeight: 120)
                     }
                 }
-                .opacity(r.converged ? 1 : 0.35)
+                .opacity(r.usable ? 1 : 0.35)
             }
             .padding(8)
         } else if let job = [lab.ransJob, lab.sweepJob].compactMap({ $0 }).first(where: { !$0.status.isFinished }) {
@@ -2350,7 +2353,11 @@ struct ResultsSummary: View {
         let estimate = lab.estimate?.row(nearest: wing.alpha)
         let rans = lab.ransResult
         // On the car: CFD when it converged, else the estimate.
-        let forCar: (cl: Double, cd: Double, from: String)? = rans.flatMap { $0.converged ? ($0.cl, $0.cd, "CFD") : nil }
+        let forCar: (cl: Double, cd: Double, from: String)? = rans.flatMap { r in
+            guard r.usable else { return nil }
+            let c = r.carCoefficients(on: wing)  // a run as on the car is already 3D
+            return (c.cl, c.cd, "CFD")
+        }
             ?? estimate.map { ($0.cl, $0.cd, "estimate") }
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 0) {

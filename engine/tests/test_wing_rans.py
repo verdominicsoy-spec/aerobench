@@ -969,3 +969,50 @@ def test_a_slow_oscillation_settles_over_whole_periods():
          "CD": 0.03 + 0.002 * np.cos(2 * np.pi * it / 500)}
     s = settled(h, start=-1.0)
     assert s is not None and s["cl"] == pytest.approx(-0.918, abs=0.002) and s["window"] >= 1000
+
+
+def test_an_unsteady_run_gives_its_mean_and_swing_not_a_result_or_nothing():
+    # Zerihan's wing at h/c 0.224 as on the car: residual down 4.4 orders, Cl wandering 1.24-1.37 with
+    # 500-iteration means 1.27-1.33. No steady answer to settle on; the mean of the last half is 1.28
+    # (the balance read 1.269). Reported as unsteady, mean and swing; a drifting run still is not.
+    from aeroengine.wing.su2 import unsteady
+
+    rng = np.random.default_rng(1)
+    it = np.arange(4000)
+    cl = -1.29 + 0.03 * np.sin(2 * np.pi * it / 730) + 0.02 * np.sin(2 * np.pi * it / 310 + 1) + 0.005 * rng.standard_normal(4000)
+    h = {"rms[P]": np.linspace(-8.6, -9.3, 4000), "CL": cl, "CD": 0.05 + 0.1 * (cl + 1.29)}
+    assert settled(h, start=-4.9) is None
+    u = unsteady(h, start=-4.9)
+    assert u["cl"] == pytest.approx(-1.29, abs=0.01) and 0.03 < u["cl_swing"] < 0.07
+    assert unsteady({**h, "CL": cl + 1e-4 * it}, start=-4.9) is None  # drifting 0.2 over the run: not a mean
+    assert unsteady(h, start=-7.0) is None  # residual barely fell
+
+
+def test_a_runs_verdict_and_numbers_come_from_one_place():
+    from aeroengine.wing.su2 import verdict
+
+    case = Case(speed=10, rho=1.2, mu=1.8e-5, alpha_deg=0, ref_chord=1, ref_point=(0.25, 0), walls=["wall_0"])
+    rng = np.random.default_rng(1)
+    it = np.arange(4000)
+    wander = -1.29 + 0.03 * np.sin(2 * np.pi * it / 730) + 0.02 * np.sin(2 * np.pi * it / 310 + 1) + 0.005 * rng.standard_normal(4000)
+    h = {"rms[P]": np.linspace(-8.6, -9.3, 4000), "CL": wander, "CD": 0.05 + 0.1 * (wander + 1.29)}
+    case.residual_start = -4.9
+    v, final = verdict(h, case)
+    assert not v["converged"] and v["unsteady"] and "unsteady" in v["reason"]
+    assert final(h["CL"]) == pytest.approx(-1.29, abs=0.01)  # the mean, not the last iteration
+    swing = _oscillating()  # a clean swing still settles, and counts as converged on average
+    v, final = verdict(swing, Case(speed=10, rho=1.2, mu=1.8e-5, alpha_deg=0, ref_chord=1, ref_point=(0.25, 0), walls=["w"]))
+    assert v["converged"] and v["averaged"] and not v["unsteady"]
+
+
+def test_finite_wing_steers_by_an_unsteady_mean(monkeypatch, tmp_path):
+    from aeroengine.wing import rans
+
+    calls = []
+    fake = _fake_solver(calls, lambda a, n: -0.08 * (12 - a))
+    monkeypatch.setattr(rans, "solve", lambda *a, **k: {**fake(*a, **k), "converged": False, "unsteady": True})
+    _estimate(monkeypatch, lambda a, n: -0.09 * (13 - a))
+    r = rans.solve_finite(_finite_params(), tmp_path, tmp_path / "m.su2", None, 1, None, lambda *a: None,
+                          lambda *a, **k: None)
+    assert r["finite"]["stopped"] is None and r["finite"]["alpha_effective"] == pytest.approx(5.061, abs=0.1)
+    assert r["unsteady"] and not r["converged"]
