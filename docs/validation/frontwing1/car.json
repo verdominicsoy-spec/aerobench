@@ -1,0 +1,120 @@
+{
+ "endplate 0.25 m, free air": {
+  "cl": -1.334804744,
+  "cd": 0.29123380634172846,
+  "converged": true,
+  "separated": true,
+  "separation": "Main separates on its upper (pressure) surface from the leading edge to 92% of its chord; Main separates on its lower (suction) surface from 88% of its chord to the trailing edge (RANS).",
+  "regions": [
+   {
+    "element": 0,
+    "surface": "upper",
+    "loaded": "pressure",
+    "kind": "leading-edge stall",
+    "start": 0.008,
+    "end": 0.9219
+   },
+   {
+    "element": 0,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "trailing-edge separation",
+    "start": 0.8812,
+    "end": 1.0
+   },
+   {
+    "element": 1,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "leading-edge bubble",
+    "start": 0.0027,
+    "end": 0.0142
+   },
+   {
+    "element": 2,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "trailing-edge separation",
+    "start": 0.9737,
+    "end": 1.0
+   },
+   {
+    "element": 3,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "trailing-edge separation",
+    "start": 0.9102,
+    "end": 1.0
+   }
+  ],
+  "finite": {
+   "alpha_effective": 10.715,
+   "induced_angle": 10.715,
+   "aspect_ratio_effective": 2.163,
+   "ground_factor": 1.0,
+   "solves": 4,
+   "converged": false,
+   "cd_induced": 0.26222733704172846,
+   "span": 1.0,
+   "endplate": 0.25,
+   "two_d": {
+    "cl": -2.384576922,
+    "cd": 0.0301689627,
+    "separated": true,
+    "separation": "Flap 3 separates on its lower (suction) surface from 83% of its chord to the trailing edge (RANS).",
+    "converged": true
+   }
+  },
+  "bracket": {
+   "sst": {
+    "cl": -1.3019935923066668,
+    "cd": 0.032583876360499996,
+    "converged": true,
+    "separated": true,
+    "separation": "Main separates on its upper (pressure) surface from the leading edge to 93% of its chord; Flap 3 separates on its lower (suction) surface from 89% of its chord to the trailing edge (RANS).",
+    "regions": [
+     {
+      "element": 0,
+      "surface": "upper",
+      "loaded": "pressure",
+      "kind": "leading-edge stall",
+      "start": 0.0067,
+      "end": 0.9267
+     },
+     {
+      "element": 1,
+      "surface": "lower",
+      "loaded": "suction",
+      "kind": "leading-edge bubble",
+      "start": 0.0002,
+      "end": 0.0653
+     },
+     {
+      "element": 2,
+      "surface": "lower",
+      "loaded": "suction",
+      "kind": "trailing-edge separation",
+      "start": 0.9709,
+      "end": 1.0
+     },
+     {
+      "element": 3,
+      "surface": "lower",
+      "loaded": "suction",
+      "kind": "trailing-edge separation",
+      "start": 0.887,
+      "end": 1.0
+     }
+    ]
+   }
+  },
+  "transition_decides": false,
+  "tu_at_wing": 0.010173817134521274,
+  "elements": [
+   -0.2252,
+   -0.517,
+   -0.4071,
+   -0.1856
+  ]
+ }
+}
