@@ -501,6 +501,9 @@ def bracket(p: dict, first: dict, workdir: Path, mesh_file: Path, su2_hint: str 
         log(f"fully turbulent from the transition solution failed ({exc.msg}); from rest", level="warning")
         r = solve(q, folder, mesh_file, su2_hint, cores, env, report, log, field=False, mesh_ready=ready)
     sst = {k: r.get(k) for k in ("cl", "cd", "converged", "separated", "separation", "regions")}
+    fin = first.get("finite")
+    if fin and "aspect_ratio_effective" in fin:  # the same induced drag as first's, from this run's own lift
+        sst["cd"] = sst["cd"] + sst["cl"] ** 2 / (np.pi * fin["aspect_ratio_effective"]) * fin["ground_factor"]
     decides = bool(sst["separated"]) != bool(first.get("separated")) or \
         abs(sst["cl"] - first["cl"]) > BRACKET_LIFT * max(abs(first["cl"]), 1e-9)
     return {**first, "bracket": {"sst": sst}, "transition_decides": decides}

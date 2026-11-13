@@ -861,6 +861,10 @@ def test_bracket_reruns_fully_turbulent_from_the_transition_solution(monkeypatch
     rans.bracket({**p, "ride_height": 0.05}, {**first, "finite": {"alpha_effective": 4.2}}, tmp_path, tmp_path / "m.su2",
                  None, 1, None, lambda *a: None, lambda *a, **k: None)
     assert calls == [{"model": "sst", "alpha": 4.2, "ready": False, "restart": None}]
+    # As on the car, the turbulent Cd carries the same induced drag, from its own Cl.
+    car = rans.bracket(p, {**first, "finite": {"alpha_effective": 4.2, "aspect_ratio_effective": 2.0, "ground_factor": 0.5}},
+                       tmp_path, tmp_path / "m.su2", None, 1, None, lambda *a: None, lambda *a, **k: None)
+    assert car["bracket"]["sst"]["cd"] == pytest.approx(0.035 + 2.2**2 / (np.pi * 2.0) * 0.5)
 
 
 def test_bracket_says_when_transition_does_not_decide(monkeypatch, tmp_path):
