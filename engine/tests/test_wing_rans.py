@@ -1016,3 +1016,38 @@ def test_finite_wing_steers_by_an_unsteady_mean(monkeypatch, tmp_path):
                           lambda *a, **k: None)
     assert r["finite"]["stopped"] is None and r["finite"]["alpha_effective"] == pytest.approx(5.061, abs=0.1)
     assert r["unsteady"] and not r["converged"]
+
+
+def test_finite_wing_secant_steps_are_bounded(monkeypatch, tmp_path):
+    # Two solves with nearly the same miss (a flat stretch of Cl near the main's stall): the secant
+    # would jump tens of degrees and spend a solve there. Each step is held to FINITE_STEP.
+    from aeroengine.wing import rans
+
+    calls = []
+    monkeypatch.setattr(rans, "solve", _fake_solver(calls, lambda a, n: {1: -2.0, 2: -1.99}.get(n, -1.0)))
+    _estimate(monkeypatch, lambda a, n: -0.08 * (12 - a))
+    rans.solve_finite(_finite_params(), tmp_path, tmp_path / "m.su2", None, 1, None, lambda *a: None,
+                      lambda *a, **k: None)
+    steps = [abs(b["alpha"] - a["alpha"]) for a, b in zip(calls, calls[1:])]
+    assert len(calls) >= 3 and max(steps) <= rans.FINITE_STEP + 1e-9
+
+
+def test_finite_wing_stopped_later_reports_the_last_converged_solve(monkeypatch, tmp_path):
+    # Solve 1 converged; solve 2 (and its second go) did not. The result is solve 1's, flagged as stopped.
+    from aeroengine.wing import rans
+
+    calls = []
+    fake = _fake_solver(calls, lambda a, n: -2.0 if n == 1 else -6.3)
+
+    def second_fails(*a, **k):
+        r = fake(*a, **k)
+        return r if len(calls) == 1 else {**r, "converged": False, "reason": "residual fell 2.1 orders"}
+
+    monkeypatch.setattr(rans, "solve", second_fails)
+    _estimate(monkeypatch, lambda a, n: -0.08 * (12 - a))
+    r = rans.solve_finite(_finite_params(), tmp_path, tmp_path / "m.su2", None, 1, None, lambda *a: None,
+                          lambda *a, **k: None)
+    f = r["finite"]
+    assert r["converged"] and r["cl"] == pytest.approx(-2.0)
+    assert f["alpha_effective"] == pytest.approx(calls[0]["alpha"], abs=1e-3) and not f["converged"]
+    assert "did not converge" in f["stopped"]

@@ -56,6 +56,18 @@ public struct WingDesignResult: Decodable, Sendable {
     public var base: Base
     public var study: WingStudy
     public var finalists: [Finalist]
+    /// Span and endplate (m) when the study ran as on the car: its Cl and Cd are then already 3D.
+    public var finite: [String: Double]?
+
+    /// A finalist's Cl and Cd (on the study's reference chord `ref`) as section numbers for a card
+    /// of `wing`: moved to the wing's own chord and, when the study ran as on the car, the 3D
+    /// lift and induced drag undone so the card's carContribution does not apply them twice.
+    public func cardNumbers(cl: Double, cd: Double, ref: Double, on wing: Wing) -> (cl: Double, cd: Double) {
+        let cl = cl * ref / wing.refChord, cd = cd * ref / wing.refChord
+        guard finite != nil else { return (cl, cd) }
+        let area = wing.span * wing.refChord
+        return wing.sectionCoefficients(cla: -cl * area, cda: cd * area)
+    }
 
     public static func decode(resultFile data: Data) throws -> WingDesignResult {
         struct Wrapper: Decodable { var data: WingDesignResult }

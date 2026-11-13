@@ -58,6 +58,7 @@ extension WingRansResult {
         sameWing && model == other.model && abs((alpha ?? 0) - (other.alpha ?? 0)) < 0.05
             && abs(re - other.re) <= 0.01 * max(re, 1)
             && ((frameTurn ?? 0) != 0) == ((other.frameTurn ?? 0) != 0)
+            && (finite == nil) == (other.finite == nil)  // as on the car is a different angle and lift
     }
 
     /// The mesh verdict for this run, given this wing's runs at the same angle on other levels

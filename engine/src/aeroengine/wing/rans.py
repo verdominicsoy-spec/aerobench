@@ -401,6 +401,7 @@ def surface_cp(path: Path, placed: list[np.ndarray]) -> list[dict]:
 FINITE_SOLVES = 4  # the 2D solve and up to three at the induced angle
 FINITE_TOLERANCE = 0.1  # degrees: the induced angle has settled
 FINITE_RELAX = 0.7
+FINITE_STEP = 5.0  # degrees: the most one step moves the angle (a flat stretch of Cl sends a secant far off)
 
 
 def _estimate_polar(p: dict, alphas: list[float]) -> list[tuple[float, float]]:
@@ -431,7 +432,7 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     solve from the last in free air, until it settles within
     FINITE_TOLERANCE or FINITE_SOLVES solves, or a solve does not converge
     (stopped). cl, cd (with induced drag), regions and the field are the
-    last solve's. No car upwash, endplate vortex or spanwise variation: the
+    last solve's, or after a stop the last one that converged. No car upwash, endplate vortex or spanwise variation: the
     mid-span section on the car."""
     import shutil
 
@@ -453,9 +454,10 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     # section at its full angle may have no steady answer (frontwing#1 at 80 mm) and is not on the car.
     sweep_a = [alpha + k for k in range(-25, 26)]
     polar = _estimate_polar(q, sweep_a)
-    a = _fixed_point([(x, alpha + induced_angle(c, span, chord, endplate, ride) - x) for x, c in polar], alpha)
+    a = _fixed_point([(x, alpha + induced_angle(c, span, chord, endplate, ride) - x) for x, c in polar], alpha) \
+        if polar else alpha  # no estimate at any angle: RANS from the drawn angle
     log(f"quick estimate: the induced angle settles at {a:+.2f}°; RANS from there")
-    ready, prev, r, settled, tried, stopped = None, None, None, False, [], None
+    ready, prev, r, settled, tried, stopped, good = None, None, None, False, [], None, None
     for n in range(1, FINITE_SOLVES + 1):
         folder = workdir / f"s{n}"
         folder.mkdir(parents=True, exist_ok=True)
@@ -481,7 +483,10 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
         if not r.get("converged") and not r.get("unsteady"):  # its Cl is not a result to steer the next angle by
             stopped = f"solve {n} at {a:+.2f}° did not converge: {r.get('reason') or 'no reason given'}"
             log(stopped, level="warning")
+            if good:  # the last solve that did converge is the run's answer, not this one
+                a, r, folder = good
             break
+        good = (a, r, folder)
         target = alpha + induced_angle(r["cl"], span, chord, endplate, ride)
         log(f"solve {n} at {a:+.2f}°: Cl {r['cl']:.4f}, induced angle wants {target:+.2f}°")
         if abs(target - a) < FINITE_TOLERANCE:
@@ -496,9 +501,10 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
                 # Secant on (target - angle) over the last two: where the main stalls Cl moves
                 # fast with angle and relaxing swings about the answer (frontwing#1).
                 (a0, f0), (a1, f1) = tried[-2], tried[-1]
-                a = a1 - f1 * (a1 - a0) / (f1 - f0)
+                step = -f1 * (a1 - a0) / (f1 - f0)
             else:
-                a = a + FINITE_RELAX * (target - a)
+                step = FINITE_RELAX * (target - a)
+            a = float(np.clip(a + np.clip(step, -FINITE_STEP, FINITE_STEP), sweep_a[0], sweep_a[-1]))
     if not settled and stopped is None:
         log(f"the induced angle had not settled after {FINITE_SOLVES} solves", level="warning")
     # The last solve's files are the run's: the app reads the field and surface from the job folder.

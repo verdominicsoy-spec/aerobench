@@ -650,13 +650,14 @@ extension AppState {
     var ransPolar: [PolarCharts.Point] {
         let lab = wingLab
         let done = jobs.jobs.filter { $0.command == "wing-rans" && $0.status == .succeeded }
-        let key = "\(done.count)|\(done.last?.id ?? "")|\(lab.turbulenceModel.rawValue)|\(lab.wing.rideHeight ?? -1)"
+        let onCar = lab.onCar && lab.wing.endplateHeight != nil  // as runWingRANS sends finite
+        let key = "\(done.count)|\(done.last?.id ?? "")|\(lab.turbulenceModel.rawValue)|\(lab.wing.rideHeight ?? -1)|\(onCar)"
         if let c = lab.ransPolarCache, c.key == key, c.wing == lab.wing.elements { return c.points }
         let outlines = lab.wing.elements.map { $0.placed() }
         var byAngle: [Double: PolarCharts.Point] = [:]
         for job in done.sorted(by: { $0.created < $1.created }) {
             guard let text = job.resultText, let r = try? WingRansResult.decode(resultFile: Data(text.utf8)),
-                  r.model == lab.turbulenceModel.rawValue, r.matches(outlines) else { continue }
+                  r.model == lab.turbulenceModel.rawValue, (r.finite != nil) == onCar, r.matches(outlines) else { continue }
             let a = ((r.alpha ?? 0) * 10).rounded() / 10
             byAngle[a] = .init(alpha: a, cl: r.cl, cd: r.cd, good: r.converged)
         }

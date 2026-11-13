@@ -614,7 +614,7 @@ def wing_design(ctx: JobContext) -> dict:
     for e, b in zip(shown, base.elements):  # where the base wing sits now (moved to its ride height)
         e["leading_edge"], e["coords"] = b.leading_edge.tolist(), b.placed().tolist()
     return {"base": {"elements": shown, "ride_height": base.ride_height}, "study": out, "finalists": finalists,
-            "goal": goal, "box": list(box)}
+            "goal": goal, "box": list(box), "finite": p.get("finite")}  # finite: trial numbers are already 3D
 
 
 @command("su2-install")

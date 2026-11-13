@@ -164,7 +164,8 @@ extension AppState {
             show("Could not save the design", WingLabError("This finalist has no numbers to save."))
             return
         }
-        saveWingCard(asNew: true, numbers: (cl * ref / wing.refChord, cd * ref / wing.refChord, name))
+        let section = wingLab.designResult?.cardNumbers(cl: cl, cd: cd, ref: ref, on: wing) ?? (cl: cl, cd: cd)
+        saveWingCard(asNew: true, numbers: (section.cl, section.cd, name))
     }
 }
 

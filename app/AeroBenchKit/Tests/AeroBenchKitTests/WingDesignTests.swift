@@ -59,6 +59,26 @@ final class WingDesignTests: XCTestCase {
         XCTAssertFalse(r.finalists[0].held)
     }
 
+    func testAnOnCarFinalistIsNotScaledTo3DTwiceOnItsCard() throws {
+        let s = try XCTUnwrap(Airfoil.naca4("4412"))
+        var w = Wing(elements: [WingElement(airfoil: s, chord: 0.30), WingElement(airfoil: s, chord: 0.14)], span: 1.0)
+        w.endplateHeight = 0.25
+        let area = w.span * w.refChord
+        // As on the car: the study's Cl -2.1 and Cd 0.05 (on a 0.5 m study chord) already hold the 3D lift and induced drag.
+        let onCar = Self.sample.replacingOccurrences(of: "\"goal\": \"max_cla\",", with: "\"goal\": \"max_cla\", \"finite\": {\"span\": 1.0, \"endplate\": 0.25},")
+        let r = try WingDesignResult.decode(resultFile: Data(onCar.utf8))
+        XCTAssertEqual(r.finite?["endplate"], 0.25)
+        let n = r.cardNumbers(cl: -2.1, cd: 0.05, ref: 0.5, on: w)
+        let card = WingCard.make(wing: w, cl: n.cl, cd: n.cd, solver: "", id: "c", name: "", revision: 1)
+        XCTAssertEqual(card.cla, 2.1 * 0.5 / w.refChord * area, accuracy: 1e-12)
+        XCTAssertEqual(card.cda, 0.05 * 0.5 / w.refChord * area, accuracy: 1e-12)
+        // A 2D study: the card applies the 3D factor itself, as before.
+        let flat = try WingDesignResult.decode(resultFile: Data(Self.sample.utf8))
+        XCTAssertNil(flat.finite)
+        let m = flat.cardNumbers(cl: -2.1, cd: 0.05, ref: 0.5, on: w)
+        XCTAssertEqual(m.cl, -2.1 * 0.5 / w.refChord, accuracy: 1e-12)
+    }
+
     func testTheDesignBoxIsTheCarsBoxFromTheGround() {
         let b = CarRules.designBox(.front, setup: setup())  // front box x -402...298, z -18...302, ground -48
         XCTAssertEqual(b.minX, 0, accuracy: 1e-12)

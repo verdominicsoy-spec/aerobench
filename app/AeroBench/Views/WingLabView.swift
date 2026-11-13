@@ -1526,7 +1526,7 @@ struct WingInspector: View {
             .disabled(lab.wing.endplateHeight == nil)
         Text(lab.wing.endplateHeight == nil
              ? "Runs the 2D section at its full angle. Set the span and endplate height (Use in the Lap Sim) to run it at the angle the flow meets it on the car."
-             : "The section at the angle the flow meets it on the car: the 2D run first, then turned by the wing's induced angle (lifting line on span and endplates, less over a ground) until it settles. No car upwash, wheel wake or endplate vortex.")
+             : "The section at the angle the flow meets it on the car: started where the quick estimate puts the wing's induced angle (lifting line on span and endplates, less over a ground), then turned by RANS's own lift until it settles, usually in one to three runs. No car upwash, wheel wake or endplate vortex.")
             .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
         if lab.wing.rulesFor == .front && lab.wing.rideHeight == nil {
             Label("Free air: on the car a front wing runs over the ground. Set a ride height (Flow) to compare with a car CFD.",

@@ -370,7 +370,8 @@ struct CardRow: View {
                 if let open { Button("Open", action: open).help("Edit this card's wing") }
                 Button("Put on Car", action: put).disabled(car.selectedCombo == nil || car.setup == nil)
             }
-            Text(String(format: "2D −Cl %.3f   Cd %.4f on its chord   ", -card.section.cl, card.section.cd) + card.solver)
+            // ClA and CdA as stored: a 2D pair made back from an on-car run can read a negative Cd over a ground.
+            Text(String(format: "ClA %.3f m²   CdA %.3f m²   ", card.cla, card.cda) + card.solver)
                 .font(.caption).monospacedDigit()
             if let note = speedNote {
                 Text(note).font(.caption).foregroundStyle(S37.C.ochre)
