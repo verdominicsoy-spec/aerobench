@@ -122,10 +122,11 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
                      progress=lambda pct, msg: progress(10 + 0.88 * pct, msg), env=env)
     result.pop("history_columns", None)
     surface = surface_cp(workdir / "surface.csv", placed)
-    separated, why, wall_y_plus, tu = False, None, None, None
+    separated, why, wall_y_plus, tu, found = False, None, None, None, None
     if (workdir / "flow.vtu").exists():
         try:
-            separated, why = separation(surface_cf(workdir / "flow.vtu", placed))
+            found = regions(surface_cf(wall_points(workdir / "flow.vtu"), placed), inverted)
+            separated, why = separation(found)
         except Exception as exc:  # noqa: BLE001 - the run's numbers stand without the verdict
             log(f"no separation check: {exc}", level="warning")
         try:
@@ -158,7 +159,7 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     # by minus its angle): the surface and field are in that turned frame.
     return {"alpha": alpha, "frame_turn": -alpha if ground is not None else 0.0,
             "re": re_ref, "mesh": mesh, "mesh_level": level, "transition": zones, "model": model,
-            "model_name": su2.MODELS[model], **result, "cd_laminar": cd_laminar, "surface": surface, "separated": separated, "separation": why,
+            "model_name": su2.MODELS[model], **result, "cd_laminar": cd_laminar, "surface": surface, "separated": separated, "separation": why, "regions": found,
             "y_plus": wall_y_plus, "tu_at_wing": tu, "rans_version": su2.RANS_VERSION,
             "field": "flow.vtu" if (workdir / "flow.vtu").exists() else None, "field_view": view}
 
@@ -211,62 +212,133 @@ def tu_at_wing(vtu: Path, placed: list[np.ndarray], flow_alpha: float, ref_chord
     return float(np.sqrt(2 * k / 3) / v)
 
 
-# An element counts as separated when, on either surface, its wall skin
-# friction points upstream all the way from near its trailing edge (95% of
-# chord) forward over more than this share of the chord. Reversed flow that
-# reattaches first is a laminar bubble, not separation. Quick mesh, SA: a NACA
-# 4412 main alone at 100 mm, attached (Cd 0.023), none; the stalled study wing
-# at 30 mm (Cd 0.52), its main reversed from 33% to 97% chord, 62%. Fine mesh,
-# SST transition: the S1223 at Re 200,000, a bubble from 28% to 40% chord
-# (29% of its surface reversed in all) and attached at the trailing edge, none.
-# Converged is not attached: that stalled run converged.
-SEPARATED_SHARE = 0.15
-TRAILING_EDGE = 0.95  # where the run is measured from: the last few % read positive in the trailing-edge corner
+# Reversed flow is reported region by region. A run reaching the trailing edge
+# (TRAILING_EDGE: the last few % read positive in the trailing-edge corner) is
+# trailing-edge separation; one starting at the nose (within NOSE of the
+# stagnation point) is a leading-edge bubble, or a leading-edge stall when it
+# reaches the trailing edge or runs past STALL_LENGTH of the chord before it
+# closes; anything else that closes is a bubble. The wing counts as separated
+# on any leading-edge stall or a trailing-edge separation longer than
+# SEPARATED_SHARE. frontwing#1 (12 Nov 2026) is the case the old check (95% to
+# 15% only, the first 5% skipped) got wrong: Flap 3 reversed from 85%, and at
+# +10 deg the main reversed 1-91% on its pressure surface, both missed.
+# Converged is not attached: the stalled study wing converged.
+SEPARATED_SHARE = 0.05
+TRAILING_EDGE = 0.95
+NOSE = 0.05
+STALL_LENGTH = 0.30
+MERGE = 0.005  # reversed runs closer than this (of the chord) are one
+SHORTEST = 0.005  # runs shorter than this are the wall's noise
 
 
-def surface_cf(vtu: Path, placed: list[np.ndarray]) -> list[np.ndarray]:
-    """Each element's wall points as (distance along its chord over the chord,
-    skin friction along the flow, surface: 1 or -1), from SU2's flow.vtu (the
-    CSV surface file holds no skin friction in SU2 8.5). Each wall point goes
-    to the nearest element, and to its surface by the nearest outline point
-    (Selig order: trailing edge, one surface, leading edge, the other)."""
+def wall_points(vtu: Path) -> np.ndarray:
+    """SU2's wall points from flow.vtu as (x, y, Cf_x, Cf_y, Cp); the CSV
+    surface file holds no skin friction in SU2 8.5."""
     from .field import _read_vtu
 
     pts, _, arrays = _read_vtu(vtu)
     cf = np.asarray(arrays.get("Skin_Friction_Coefficient"))
     if cf.ndim != 2:
-        return []
+        return np.zeros((0, 5))
     wall = np.linalg.norm(cf[:, :2], axis=1) > 0  # zero away from the walls
-    p, c = pts[wall], cf[wall, 0]
+    return np.column_stack([pts[wall, :2], cf[wall, :2], np.asarray(arrays["Pressure_Coefficient"])[wall]])
+
+
+def surface_cf(points: np.ndarray, placed: list[np.ndarray]) -> list[np.ndarray]:
+    """Each element's wall points as rows (x/c along its chord, skin friction
+    along the flow, side: 1 upper / -1 lower on screen, distance from the
+    stagnation point over the chord), each side ordered from the stagnation
+    point to the trailing edge. Upper is left of the nose-to-tail line, the way
+    the flow runs. The stagnation point is the wall point of highest Cp near
+    the nose, so the strip between the nose and it belongs to the surface its
+    flow goes on to."""
+    p, cf, cp = points[:, :2], points[:, 2:4], points[:, 4]
     owner = np.argmin([np.min(np.linalg.norm(p[:, None, :] - e[None, :, :], axis=2), axis=1) for e in placed], axis=0)
     out = []
     for i, e in enumerate(placed):
         lead = int(np.argmin(e[:, 0]))
         le, te = e[lead], 0.5 * (e[0] + e[-1])
-        length = max(float(np.linalg.norm(te - le)), 1e-12)
-        q, cq = p[owner == i], c[owner == i]
-        near = np.argmin(np.linalg.norm(q[:, None, :] - e[None, :, :], axis=2), axis=1)
-        out.append(np.column_stack([(q - le) @ ((te - le) / length) / length, cq, np.where(near <= lead, 1.0, -1.0)]))
+        chord = max(float(np.linalg.norm(te - le)), 1e-12)
+        along = (te - le) / chord
+        arc = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(e, axis=0), axis=1))])  # tail, round the nose, tail
+        q, cq, pq = p[owner == i], cf[owner == i], cp[owner == i]
+        if not len(q):
+            out.append(np.zeros((0, 4)))
+            continue
+        # Each point onto its nearest outline segment: its arc length and the segment's direction.
+        seg = np.diff(e, axis=0)
+        length = np.maximum(np.linalg.norm(seg, axis=1), 1e-30)
+        t = np.clip(np.einsum("nsk,sk->ns", q[:, None, :] - e[None, :-1, :], seg) / length**2, 0.0, 1.0)
+        foot = e[None, :-1, :] + t[:, :, None] * seg[None]
+        near = np.argmin(np.linalg.norm(q[:, None, :] - foot, axis=2), axis=1)
+        s_arc = arc[near] + t[np.arange(len(q)), near] * length[near]
+        tangent = seg[near] / length[near][:, None]
+        xc = (q - le) @ along / chord
+        nose = np.abs(s_arc - arc[lead]) < 0.1 * chord
+        stag = s_arc[nose][np.argmax(pq[nose])] if nose.any() else arc[lead]
+        left = along[0] * (e[:, 1] - le[1]) - along[1] * (e[:, 0] - le[0])  # cambered sections can lie wholly to one side
+        first_half_upper = float(left[:lead + 1].mean()) > float(left[lead:].mean())
+        rows = []
+        for after in (False, True):  # the surface from the stagnation point towards index 0, then towards the end
+            m = s_arc > stag if after else s_arc <= stag
+            d = np.abs(s_arc[m] - stag) / chord
+            ct = np.sum(cq[m] * tangent[m], axis=1) * (1 if after else -1)
+            upper = first_half_upper != after
+            side = np.full(m.sum(), 1.0 if upper else -1.0)
+            o = np.argsort(d)
+            rows.append(np.column_stack([xc[m], ct, side, d])[o])
+        out.append(np.vstack(rows))
     return out
 
 
-def separation(cf_by_element: list[np.ndarray]) -> tuple[bool, str | None]:
-    """Whether any element separates in RANS, and which, from surface_cf."""
+def regions(cf_by_element: list[np.ndarray], inverted: list[bool]) -> list[dict]:
+    """Every reversed-flow region from surface_cf, in element order."""
+    found = []
+    for i, a in enumerate(cf_by_element):
+        for side, surface in ((1.0, "upper"), (-1.0, "lower")):
+            rows = a[a[:, 2] == side]
+            rows = rows[np.argsort(rows[:, 3])]
+            runs = []  # [first row, last row] of each reversed run
+            for k in np.nonzero(rows[:, 1] < 0)[0]:
+                if runs and rows[k, 3] - rows[runs[-1][1], 3] <= MERGE:
+                    runs[-1][1] = k
+                else:
+                    runs.append([k, k])
+            loaded = "suction" if (surface == "lower") == bool(inverted[i]) else "pressure"
+            for j, k in runs:
+                start, end = float(rows[j, 0]), float(rows[k, 0])
+                length = rows[k, 3] - rows[j, 3]
+                to_edge = end >= TRAILING_EDGE
+                if length < SHORTEST:  # one point, or the trailing-edge corner
+                    continue
+                at_nose = rows[j, 3] <= NOSE
+                if at_nose and (to_edge or length > STALL_LENGTH):
+                    kind = "leading-edge stall"
+                elif at_nose:
+                    kind = "leading-edge bubble"
+                elif to_edge:
+                    kind = "trailing-edge separation"
+                else:
+                    kind = "bubble"
+                found.append({"element": i, "surface": surface, "loaded": loaded, "kind": kind,
+                              "start": round(max(start, 0.0), 4), "end": round(min(1.0 if to_edge else end, 1.0), 4)})
+    return found
+
+
+def separation(found: list[dict]) -> tuple[bool, str | None]:
+    """Whether the wing separates in RANS, and where, in words, from regions."""
     from .geometry import label
 
-    for i, a in enumerate(cf_by_element):
-        for side in (1.0, -1.0):
-            run = a[(a[:, 2] == side) & (a[:, 0] <= TRAILING_EDGE) & (a[:, 0] > 0.05)]
-            run = run[np.argsort(-run[:, 0])]  # from the trailing edge forward
-            if not len(run) or run[0, 1] >= 0:
-                continue
-            ahead = np.nonzero(run[:, 1] >= 0)[0]
-            start = run[ahead[0] - 1, 0] if len(ahead) else run[-1, 0]  # the most forward point still reversed
-            share = TRAILING_EDGE - float(start)
-            if share > SEPARATED_SHARE:
-                return True, (f"{label(i)} separates in RANS: reversed flow from {start * 100:.0f}% of its chord "
-                              "to the trailing edge")
-    return False, None
+    parts = []
+    for r in found:
+        where = f"{label(r['element'])} separates on its {r['surface']} ({r['loaded']}) surface"
+        if r["kind"] == "leading-edge stall":
+            parts.append(f"{where} from the leading edge to {r['end'] * 100:.0f}% of its chord")
+        elif r["kind"] == "trailing-edge separation" and 1.0 - r["start"] > SEPARATED_SHARE:
+            parts.append(f"{where} from {r['start'] * 100:.0f}% of its chord to the trailing edge")
+    if not parts:
+        return False, None
+    return True, "; ".join(parts) + " (RANS)."
 
 
 def surface_cp(path: Path, placed: list[np.ndarray]) -> list[dict]:

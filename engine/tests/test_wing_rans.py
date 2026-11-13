@@ -363,25 +363,91 @@ def test_a_rising_sweep_climbs_without_a_time_limit(monkeypatch, tmp_path):
     assert calls == [(0.0, None), (-4.0, "a0"), (-8.0, "a-4")]
 
 
-def test_reversed_flow_reaching_the_trailing_edge_is_separation_a_bubble_is_not():
-    from aeroengine.wing.rans import SEPARATED_SHARE, separation
+def _element(cf_upper, cf_lower):
+    """Columns of surface_cf: x/c, skin friction along the flow, side (1 upper, -1 lower), distance from the
+    stagnation point over the chord; here the stagnation point sits on the nose."""
+    s = np.linspace(0.0, 1.0, 400)
+    return np.vstack([np.column_stack([s, cf_upper(s), np.ones_like(s), s]),
+                      np.column_stack([s, cf_lower(s), -np.ones_like(s), s])])
 
-    s = np.linspace(0.0, 1.0, 200)
 
-    def element(cf_upper, cf_lower):  # (distance along the chord / chord, skin friction along the flow, surface)
-        return np.vstack([np.column_stack([s, cf_upper(s), np.ones_like(s)]),
-                          np.column_stack([s, cf_lower(s), -np.ones_like(s)])])
+def _attached(x):
+    return np.full_like(x, 0.004)
 
-    attached = element(lambda x: np.full_like(x, 0.004), lambda x: np.full_like(x, 0.004))
-    # A long laminar bubble that reattaches well before the trailing edge: 29% of the S1223's whole surface
-    # reversed at Re 200,000 (SST transition), every bit of it a bubble.
-    bubble = element(lambda x: np.where((x > 0.15) & (x < 0.75), -0.001, 0.004), lambda x: np.full_like(x, 0.004))
-    # Reversed from 33% to 97% chord, positive again in the trailing-edge corner (the stalled study wing).
-    stalled = element(lambda x: np.full_like(x, 0.004), lambda x: np.where((x > 0.33) & (x < 0.97), -0.0006, 0.002))
-    assert separation([attached]) == (False, None)
-    assert separation([bubble]) == (False, None)
-    sep, why = separation([attached, stalled])
-    assert sep and why.startswith("Flap 1") and SEPARATED_SHARE < 0.6
+
+def test_a_bubble_that_closes_is_reported_not_separated():
+    from aeroengine.wing.rans import regions, separation
+
+    r = regions([_element(lambda x: np.where((x > 0.30) & (x < 0.40), -0.001, 0.004), _attached)], [False])
+    assert [(q["kind"], q["surface"], q["loaded"]) for q in r] == [("bubble", "upper", "suction")]
+    assert r[0]["start"] == pytest.approx(0.30, abs=0.01) and r[0]["end"] == pytest.approx(0.40, abs=0.01)
+    assert separation(r) == (False, None)
+
+
+def test_reversed_flow_over_the_last_15_percent_is_separation():
+    # Today's 15% bar measured up to 95% chord missed this (Flap 3 of frontwing#1).
+    from aeroengine.wing.rans import regions, separation
+
+    r = regions([_element(_attached, _attached), _element(_attached, lambda x: np.where(x > 0.85, -0.001, 0.004))],
+                [True, True])
+    assert [(q["element"], q["kind"], q["surface"], q["loaded"]) for q in r] == \
+        [(1, "trailing-edge separation", "lower", "suction")]
+    sep, why = separation(r)
+    assert sep and why.startswith("Flap 1") and "85%" in why
+
+
+def test_reversed_from_the_nose_is_a_leading_edge_stall_even_if_it_closes():
+    from aeroengine.wing.rans import regions, separation
+
+    to_edge = regions([_element(lambda x: np.where(x > 0.005, -0.001, 0.004), _attached)], [False])
+    closes = regions([_element(_attached, lambda x: np.where((x > 0.01) & (x < 0.91), -0.001, 0.004))], [False])
+    short = regions([_element(lambda x: np.where((x > 0.01) & (x < 0.04), -0.001, 0.004), _attached)], [False])
+    assert [q["kind"] for q in to_edge] == ["leading-edge stall"]
+    assert [(q["kind"], q["loaded"]) for q in closes] == [("leading-edge stall", "pressure")]
+    assert [q["kind"] for q in short] == ["leading-edge bubble"]
+    assert separation(to_edge)[0] and separation(closes)[0] and not separation(short)[0]
+    assert "leading edge" in separation(closes)[1]
+
+
+def _frontwing(run):
+    from aeroengine.wing.rans import regions, surface_cf
+
+    d = json.loads((Path(__file__).parent / "data" / "frontwing1_wall.json").read_text())
+    placed = [np.asarray(e) for e in d["elements"]]
+    return regions(surface_cf(np.asarray(d[run]), placed), d["inverted"])
+
+
+def _spans(r, element, surface):
+    return [(round(q["start"], 2), round(q["end"], 2), q["kind"]) for q in r
+            if q["element"] == element and q["surface"] == surface]
+
+
+def test_frontwing_as_run_reports_every_region():
+    from aeroengine.wing.rans import separation
+
+    r = _frontwing("as_run")
+    assert _spans(r, 0, "upper") == []  # the strip between nose and stagnation point is not reversed flow
+    assert [k for _, _, k in _spans(r, 0, "lower")] == ["leading-edge bubble"]  # a small laminar bubble at the suction peak
+    assert [k for _, _, k in _spans(r, 1, "lower")] == ["trailing-edge separation"] and _spans(r, 1, "lower")[0][0] == pytest.approx(0.74, abs=0.02)
+    f2 = _spans(r, 2, "lower")
+    assert f2[0][2] == "bubble" and f2[0][0] == pytest.approx(0.42, abs=0.02) and f2[0][1] == pytest.approx(0.68, abs=0.02)
+    f3 = _spans(r, 3, "lower")
+    assert f3[0][2] == "bubble" and f3[0][0] == pytest.approx(0.39, abs=0.02)
+    assert f3[-1][2] == "trailing-edge separation" and f3[-1][0] == pytest.approx(0.85, abs=0.02)
+    assert all(q["loaded"] == "suction" for q in r if q["surface"] == "lower")
+    sep, why = separation(r)
+    assert sep and "Flap 1" in why and "Flap 3" in why and "Main" not in why
+
+
+def test_frontwing_at_plus_10_stalls_the_main_on_its_pressure_surface():
+    # What STAR-CCM+ showed on the car: the main's upper surface separated.
+    from aeroengine.wing.rans import separation
+
+    r = _frontwing("plus10")
+    main = _spans(r, 0, "upper")
+    assert len(main) == 1 and main[0][2] == "leading-edge stall" and main[0][0] < 0.03 and main[0][1] > 0.85
+    sep, why = separation(r)
+    assert sep and why.startswith("Main") and "upper (pressure)" in why
 
 
 @su2
