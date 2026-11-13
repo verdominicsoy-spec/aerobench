@@ -917,5 +917,26 @@ def test_finite_wing_stops_at_a_solve_that_did_not_converge(monkeypatch, tmp_pat
     _estimate(monkeypatch, lambda a, n: -0.08 * (12 - a))
     r = rans.solve_finite(_finite_params(ride_height=0.08), tmp_path, tmp_path / "m.su2", None, 1, None,
                           lambda *a: None, lambda *a, **k: None)
-    assert len(calls) == 1 and not r["converged"] and not r["finite"]["converged"]
+    assert len(calls) == 2 and calls[1]["alpha"] == calls[0]["alpha"]  # one more go from itself, then stop
+    assert not r["converged"] and not r["finite"]["converged"]
     assert "did not converge" in r["finite"]["stopped"]
+
+
+def test_finite_wing_gives_an_unsettled_solve_one_more_go_from_itself(monkeypatch, tmp_path):
+    # Zerihan's wing at +1.97 deg: residual down 3.8 orders of 4.0 after 4,000 iterations from rest.
+    # SST-LM often needs longer: the same angle again from its own solution before the loop gives up.
+    from aeroengine.wing import rans
+
+    calls = []
+    fake = _fake_solver(calls, lambda a, n: -0.08 * (12 - a))
+
+    def slow(*a, **k):
+        r = fake(*a, **k)
+        return {**r, "converged": len(calls) != 1, "reason": "residual fell 3.8 orders, needs 4.0"}
+
+    monkeypatch.setattr(rans, "solve", slow)
+    _estimate(monkeypatch, lambda a, n: -0.08 * (12 - a))
+    r = rans.solve_finite(_finite_params(ride_height=0.1), tmp_path, tmp_path / "m.su2", None, 1, None,
+                          lambda *a: None, lambda *a, **k: None)
+    assert calls[1]["alpha"] == calls[0]["alpha"] and calls[1]["ready"] and calls[1]["restart"] is not None
+    assert r["finite"]["converged"] and r["finite"]["stopped"] is None

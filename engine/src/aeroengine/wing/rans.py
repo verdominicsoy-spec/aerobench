@@ -461,6 +461,16 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
         report = lambda pct, msg, n=n, a=a: progress(100 * (n - 1 + pct / 100) / FINITE_SOLVES, f"{a:+.1f}°: {msg}")
         r = solve({**q, "alpha": a}, folder, mesh_file, su2_hint, cores, env, report, log, field=field,
                   mesh_ready=ready, restart=prev)
+        if not r.get("converged") and (folder / "restart.dat").exists():
+            # SST-LM often needs more than one run's iterations: the same angle again, on the same
+            # mesh, from its own solution (Zerihan's wing: residual down 3.8 of 4 orders from rest).
+            log(f"solve {n} at {a:+.2f}° not settled ({r.get('reason')}); going on from its own solution")
+            again = folder / "again"
+            again.mkdir(exist_ok=True)
+            r = solve({**q, "alpha": a}, again, mesh_file, su2_hint, cores, env, report, log, field=field,
+                      mesh_ready={"mesh": r["mesh"], "transition": r["transition"]},
+                      restart=(folder / "restart.dat").resolve())
+            folder = again
         if not r.get("converged"):  # its Cl is not a result to steer the next angle by
             stopped = f"solve {n} at {a:+.2f}° did not converge: {r.get('reason') or 'no reason given'}"
             log(stopped, level="warning")
