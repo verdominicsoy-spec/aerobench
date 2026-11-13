@@ -112,6 +112,8 @@ public struct WingRansResult: Codable, Equatable, Sendable {
         public var span: Double
         public var endplate: Double
         public var twoD: TwoD
+        /// Why the loop stopped early: a solve that did not converge (its Cl is not a result to steer by).
+        public var stopped: String?
     }
     /// Whether RANS says the wing separates, and where in words; nil on runs from before the check was saved.
     public var separated: Bool?

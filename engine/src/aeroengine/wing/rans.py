@@ -429,13 +429,19 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     alpha = float(p.get("alpha", 0.0))
     ground = ride is not None
     q = {k: v for k, v in p.items() if k != "finite"}
-    ready, prev, a, r, two_d, settled, tried = None, None, alpha, None, None, False, []
+    ready, prev, a, r, two_d, settled, tried, stopped = None, None, alpha, None, None, False, [], None
     for n in range(1, FINITE_SOLVES + 1):
         folder = workdir / f"s{n}"
         folder.mkdir(parents=True, exist_ok=True)
         report = lambda pct, msg, n=n, a=a: progress(100 * (n - 1 + pct / 100) / FINITE_SOLVES, f"{a:+.1f}°: {msg}")
         r = solve({**q, "alpha": a}, folder, mesh_file, su2_hint, cores, env, report, log, field=field,
                   mesh_ready=ready, restart=prev)
+        if not r.get("converged"):  # its Cl is not a result to steer the next angle by
+            stopped = f"solve {n} at {a:+.2f}° did not converge: {r.get('reason') or 'no reason given'}"
+            log(stopped, level="warning")
+            if n == 1:
+                two_d = {k: r.get(k) for k in ("cl", "cd", "separated", "separation", "converged")}
+            break
         if n == 1:
             two_d = {k: r.get(k) for k in ("cl", "cd", "separated", "separation", "converged")}
             target = alpha + induced_angle(r["cl"] * ar / (ar + 2), span, chord, endplate, ride)  # linear first guess
@@ -459,7 +465,7 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
                 a = a1 - f1 * (a1 - a0) / (f1 - f0)
             else:
                 a = a + FINITE_RELAX * (target - a)
-    if not settled:
+    if not settled and stopped is None:
         log(f"the induced angle had not settled after {FINITE_SOLVES} solves", level="warning")
     # The last solve's files are the run's: the app reads the field and surface from the job folder.
     for f in folder.iterdir():
@@ -470,7 +476,7 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     r = {**r, "alpha": alpha, "cd": r["cd"] + cd_induced,
          "finite": {"alpha_effective": round(a, 3), "induced_angle": round(a - alpha, 3), "aspect_ratio_effective": round(ar, 3),
                     "ground_factor": round(gf, 4), "solves": n, "converged": settled, "cd_induced": cd_induced,
-                    "span": span, "endplate": endplate, "two_d": two_d}}
+                    "span": span, "endplate": endplate, "two_d": two_d, "stopped": stopped}}
     return r
 
 

@@ -888,3 +888,22 @@ def test_finite_wing_settles_where_lift_falls_steeply(monkeypatch, tmp_path):
     r = rans.solve_finite(_finite_params(finite={"span": 1.0, "endplate": 0.25}, ref_chord=0.682), tmp_path, tmp_path / "m.su2",
                           None, 1, None, lambda *a: None, lambda *a, **k: None)
     assert r["finite"]["converged"] and r["finite"]["solves"] <= 4
+
+
+def test_finite_wing_stops_at_a_solve_that_did_not_converge(monkeypatch, tmp_path):
+    # frontwing#1 at 80 mm: the 2D solve did not converge (Cl -6.3 and swinging), the loop steered by it
+    # to +12.5 deg and that solve failed outright. An unconverged Cl is not a result to steer by.
+    from aeroengine.wing import rans
+
+    calls = []
+    fake = _fake_solver(calls, lambda a, n: -6.3)
+
+    def unconverged(*a, **k):
+        r = fake(*a, **k)
+        return {**r, "converged": False, "reason": "residual fell 3.2 orders"}
+
+    monkeypatch.setattr(rans, "solve", unconverged)
+    r = rans.solve_finite(_finite_params(ride_height=0.08), tmp_path, tmp_path / "m.su2", None, 1, None,
+                          lambda *a: None, lambda *a, **k: None)
+    assert len(calls) == 1 and not r["converged"] and not r["finite"]["converged"]
+    assert "did not converge" in r["finite"]["stopped"]

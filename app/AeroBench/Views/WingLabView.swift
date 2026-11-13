@@ -1027,6 +1027,10 @@ struct CFDResults: View {
                                     f.converged ? "" : ", not settled", lab.wing.shownCl(f.twoD.cl), f.twoD.cd,
                                     f.twoD.separated == true ? ", separated" : ""))
                             .font(.caption2).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
+                        if let why = f.stopped {
+                            Text("Stopped before the induced angle settled: \(why).")
+                                .font(.caption2).foregroundStyle(S37.C.clayInk).fixedSize(horizontal: false, vertical: true)
+                        }
                     } else if lab.wing.endplateHeight == nil && lab.wing.factor3D == 1 {
                         let ar = lab.wing.span / max(lab.wing.refChord, 1e-9)
                         Text(String(format: "2D section at its full angle, 3D factor 1. At %.0f mm span (AR %.1f) and no endplates lifting line gives about %.0f%% of this on the car.",
