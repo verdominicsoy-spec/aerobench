@@ -872,3 +872,15 @@ def test_bracket_says_when_transition_does_not_decide(monkeypatch, tmp_path):
     r = rans.bracket({"model": "sst-lm", "alpha": 0.0}, first, tmp_path, tmp_path / "m.su2", None, 1, None,
                      lambda *a: None, lambda *a, **k: None)
     assert not r["transition_decides"]  # same verdict, lift within 5%
+
+
+def test_finite_wing_settles_where_lift_falls_steeply(monkeypatch, tmp_path):
+    # frontwing#1 as on the car: past +10 deg the main stalls and Cl moves 0.16 a degree,
+    # so relaxing towards the induced angle swings about it; a secant step lands on it.
+    from aeroengine.wing import rans
+
+    calls = []
+    monkeypatch.setattr(rans, "solve", _fake_solver(calls, lambda a, n: -2.38 if a == 0 else -1.37 + 0.161 * (a - 10.45)))
+    r = rans.solve_finite(_finite_params(finite={"span": 1.0, "endplate": 0.25}, ref_chord=0.682), tmp_path, tmp_path / "m.su2",
+                          None, 1, None, lambda *a: None, lambda *a, **k: None)
+    assert r["finite"]["converged"] and r["finite"]["solves"] <= 4

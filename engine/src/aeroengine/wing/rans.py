@@ -429,7 +429,7 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     alpha = float(p.get("alpha", 0.0))
     ground = ride is not None
     q = {k: v for k, v in p.items() if k != "finite"}
-    ready, prev, a, r, two_d, settled = None, None, alpha, None, None, False
+    ready, prev, a, r, two_d, settled, tried = None, None, alpha, None, None, False, []
     for n in range(1, FINITE_SOLVES + 1):
         folder = workdir / f"s{n}"
         folder.mkdir(parents=True, exist_ok=True)
@@ -448,8 +448,17 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
         if not ground:
             ready = {"mesh": r["mesh"], "transition": r["transition"]}
             prev = (folder / "restart.dat").resolve() if (folder / "restart.dat").exists() else None
+        tried.append((a, target - a))
         if n < FINITE_SOLVES:
-            a = target if n == 1 else a + FINITE_RELAX * (target - a)
+            if n == 1:
+                a = target
+            elif len(tried) >= 3 and tried[-1][1] != tried[-2][1]:
+                # Secant on (target - angle) over the last two at the induced angle: where the main
+                # stalls Cl moves fast with angle and relaxing swings about the answer (frontwing#1).
+                (a0, f0), (a1, f1) = tried[-2], tried[-1]
+                a = a1 - f1 * (a1 - a0) / (f1 - f0)
+            else:
+                a = a + FINITE_RELAX * (target - a)
     if not settled:
         log(f"the induced angle had not settled after {FINITE_SOLVES} solves", level="warning")
     # The last solve's files are the run's: the app reads the field and surface from the job folder.
