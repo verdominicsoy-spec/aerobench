@@ -124,6 +124,8 @@ def _surface_nodes(xy: np.ndarray, chord: float, xtr_suction: float, xtr_pressur
     return np.vstack([upper[::-1], lower[1:]])
 
 
+SUCTION_FINE = 1.0  # fraction of the suction surface meshed at surface_fine
+PRESSURE_FINE = 0.15  # and of the pressure surface, at least
 CORNER_DEG = 60.0  # a turn sharper than this between neighbouring segments is a corner
 
 
@@ -226,7 +228,10 @@ def build(elements: list[np.ndarray], s: Settings, out: Path, inverted: list[boo
             geo = gmsh.model.geo
             loops, wall_curves, te_points, surface_counts = [], [], [], []
             for e, xy in enumerate(elements):
-                suction, pressure = trans[e]
+                # Fine spacing on the whole suction surface and the pressure surface's nose,
+                # wherever the predicted transition is: it comes from each element alone, and in
+                # the slot flow a flap's bubble or separation can sit far behind it (frontwing#1).
+                suction, pressure = SUCTION_FINE, max(trans[e][1], PRESSURE_FINE)
                 if inverted[e]:  # the suction side of an inverted element is its second (lower) half
                     suction, pressure = pressure, suction
                 xy, cut = _untangle_trailing_edge(xy, chords[e])

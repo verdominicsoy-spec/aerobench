@@ -60,7 +60,8 @@ def test_mesh_has_markers_layers_and_no_degenerate_cells(tmp_path):
 def test_laminar_zones_get_finer_surfaces(tmp_path):
     turbulent = build(_two()[:1], Settings(re=1e6, ref_chord=1.0, transition=[(0.0, 0.0)]), tmp_path / "t.su2")
     laminar = build(_two()[:1], Settings(re=1e6, ref_chord=1.0, transition=[(0.6, 0.6)]), tmp_path / "l.su2")
-    assert laminar["surface_nodes"][0] > 1.4 * turbulent["surface_nodes"][0]
+    # The suction surface is fine either way; a laminar pressure surface past its nose adds more.
+    assert laminar["surface_nodes"][0] > 1.15 * turbulent["surface_nodes"][0]
 
 
 def test_rejects_a_slot_too_narrow_and_too_fast_growth(tmp_path):
@@ -722,3 +723,33 @@ def test_tu_at_wing_reads_the_set_value(tmp_path):
                    lambda *a, **k: None, field=False)
     assert 0.008 < r["tu_at_wing"] < 0.012
     assert r["rans_version"] == 3
+
+
+def _wall_edges(path, marker):
+    lines = path.read_text().splitlines()
+    npoin = next(i for i, l in enumerate(lines) if l.startswith("NPOIN"))
+    n = int(lines[npoin].split("=")[1].split()[0])
+    pts = np.array([list(map(float, l.split()[:2])) for l in lines[npoin + 1:npoin + 1 + n]])
+    at = lines.index(f"MARKER_TAG= {marker}")
+    m = int(lines[at + 1].split("=")[1])
+    edges = np.array([list(map(int, l.split()[1:3])) for l in lines[at + 2:at + 2 + m]])
+    return pts[edges[:, 0]], pts[edges[:, 1]]
+
+
+def test_suction_surface_is_fine_everywhere(tmp_path):
+    # NeuralFoil, on each flap alone at its own angle, put frontwing#1's Flap 2 transition at 3.6% of chord;
+    # its bubble sat at 42-68%, on the coarse spacing. Every suction surface is now fine to the trailing edge.
+    d = json.loads((Path(__file__).parent / "data" / "frontwing1_wall.json").read_text())
+    placed = [np.asarray(e) for e in d["elements"]]
+    zones = [(1.0, 0.013), (0.669, 1.0), (0.0357, 1.0), (0.0466, 1.0)]  # NeuralFoil's, as the run had them
+    s = Settings(re=9e5, ref_chord=0.682, transition=zones)
+    build(placed, s, tmp_path / "w.su2", d["inverted"])
+    for i, e in enumerate(placed):
+        lead = int(np.argmin(e[:, 0]))
+        chord = float(np.linalg.norm(0.5 * (e[0] + e[-1]) - e[lead]))
+        a, b = _wall_edges(tmp_path / "w.su2", f"wall_{i}")
+        mid = 0.5 * (a + b)
+        # the suction side of these inverted elements is the half of the outline after the nose (Selig order)
+        near = np.argmin(np.linalg.norm(mid[:, None] - e[None], axis=2), axis=1)
+        suction = near > lead
+        assert np.linalg.norm(b - a, axis=1)[suction].max() <= 1.05 * s.surface_fine * chord, i
