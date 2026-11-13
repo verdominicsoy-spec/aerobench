@@ -122,7 +122,7 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
                      progress=lambda pct, msg: progress(10 + 0.88 * pct, msg), env=env)
     result.pop("history_columns", None)
     surface = surface_cp(workdir / "surface.csv", placed)
-    separated, why, wall_y_plus = False, None, None
+    separated, why, wall_y_plus, tu = False, None, None, None
     if (workdir / "flow.vtu").exists():
         try:
             separated, why = separation(surface_cf(workdir / "flow.vtu", placed))
@@ -132,6 +132,13 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
             wall_y_plus = y_plus(workdir / "flow.vtu")
         except Exception as exc:  # noqa: BLE001 - the run's numbers stand without it
             log(f"no y+ check: {exc}", level="warning")
+        if model != "sa":
+            try:
+                tu = tu_at_wing(workdir / "flow.vtu", placed, flow_alpha, ref_chord)
+                if tu < 0.8 * case.turbulence_intensity:
+                    log(f"turbulence at the wing {tu:.2%}, set {case.turbulence_intensity:.2%}", level="warning")
+            except Exception as exc:  # noqa: BLE001 - the run's numbers stand without it
+                log(f"no turbulence check: {exc}", level="warning")
     if not result["converged"]:
         log(f"not converged: {result['reason']}", level="warning")
     cd_laminar = None  # a transition model has its laminar runs already
@@ -152,7 +159,7 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     return {"alpha": alpha, "frame_turn": -alpha if ground is not None else 0.0,
             "re": re_ref, "mesh": mesh, "mesh_level": level, "transition": zones, "model": model,
             "model_name": su2.MODELS[model], **result, "cd_laminar": cd_laminar, "surface": surface, "separated": separated, "separation": why,
-            "y_plus": wall_y_plus,
+            "y_plus": wall_y_plus, "tu_at_wing": tu, "rans_version": su2.RANS_VERSION,
             "field": "flow.vtu" if (workdir / "flow.vtu").exists() else None, "field_view": view}
 
 
@@ -186,6 +193,22 @@ def y_plus(vtu: Path) -> dict | None:
         return None
     return {"max": round(float(wall.max()), 3), "p95": round(float(np.percentile(wall, 95)), 3),
             "mean": round(float(wall.mean()), 3)}
+
+
+def tu_at_wing(vtu: Path, placed: list[np.ndarray], flow_alpha: float, ref_chord: float) -> float:
+    """Turbulence intensity sqrt(2k/3)/|V| half a reference chord ahead of the
+    most forward leading edge, along the flow. SU2 writes k and V nondimensional
+    (INC_NONDIM= INITIAL_VALUES), so their ratio needs no scaling."""
+    from .field import _read_vtu
+
+    pts, _, arrays = _read_vtu(vtu)
+    nose = min((e[int(np.argmin(e[:, 0]))] for e in placed), key=lambda q: q[0])
+    a = np.radians(flow_alpha)
+    at = nose - 0.5 * ref_chord * np.array([np.cos(a), np.sin(a)])
+    i = int(np.argmin(np.linalg.norm(pts[:, :2] - at, axis=1)))
+    k = float(np.asarray(arrays["Turb_Kin_Energy"])[i])
+    v = float(np.linalg.norm(np.asarray(arrays["Velocity"])[i, :2]))
+    return float(np.sqrt(2 * k / 3) / v)
 
 
 # An element counts as separated when, on either surface, its wall skin

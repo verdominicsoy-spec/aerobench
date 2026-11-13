@@ -44,6 +44,12 @@ SCHEMES = {"jst": "JST central", "fds": "FDS upwind (more dissipative: drag read
 FDS_LIMITED = ("CONV_NUM_METHOD_FLOW= FDS\nMUSCL_FLOW= YES\nSLOPE_LIMITER_FLOW= VENKATAKRISHNAN\n"
                "VENKAT_LIMITER_COEFF= 0.05")
 JST_DISSIPATION = (0.5, 0.005)  # second and fourth order coefficients
+# SST's sustaining terms hold the far field's k and omega all the way in. Without them
+# SST decays a 1% far field to 0.14% at the wing 50 chords in (frontwing#1, 12 Nov 2026),
+# so every SST-LM run was a quieter tunnel than the one asked for.
+SUSTAIN = "SST_OPTIONS= SUSTAINING\n"
+# Bumped when a change to the RANS setup changes its answers: 3 = sustained turbulence.
+RANS_VERSION = 3
 
 
 @dataclass
@@ -103,8 +109,8 @@ def config(case: Case, mesh: str) -> str:
     heatflux = ", ".join(f"{w}, 0.0" for w in case.walls)
     turb = {
         "sa": "KIND_TURB_MODEL= SA\nFREESTREAM_NU_FACTOR= 3.0",
-        "sst": f"KIND_TURB_MODEL= SST\nFREESTREAM_TURBULENCEINTENSITY= {case.turbulence_intensity}\nFREESTREAM_TURB2LAMVISCRATIO= 10.0",
-        "sst-lm": (f"KIND_TURB_MODEL= SST\nKIND_TRANS_MODEL= LM\nFREESTREAM_TURBULENCEINTENSITY= {case.turbulence_intensity}\n"
+        "sst": f"KIND_TURB_MODEL= SST\n{SUSTAIN}FREESTREAM_TURBULENCEINTENSITY= {case.turbulence_intensity}\nFREESTREAM_TURB2LAMVISCRATIO= 10.0",
+        "sst-lm": (f"KIND_TURB_MODEL= SST\n{SUSTAIN}KIND_TRANS_MODEL= LM\nFREESTREAM_TURBULENCEINTENSITY= {case.turbulence_intensity}\n"
                    "FREESTREAM_TURB2LAMVISCRATIO= 10.0"),
     }[case.model]
     if case.scheme not in SCHEMES:

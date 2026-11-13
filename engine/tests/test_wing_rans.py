@@ -630,3 +630,29 @@ def test_laminar_saving_is_the_flat_plate_friction_difference():
     # An element of half the reference chord counts half; no run, no saving.
     assert laminar_saving([(x, 0.0)], [0.15], 0.3, [re]) == pytest.approx(0.5 * one)
     assert laminar_saving([(0.0, 0.0)], [0.3], 0.3, [re]) == 0.0
+
+
+def test_config_sustains_freestream_turbulence():
+    # Without SU2's sustaining terms SST decays the far field's 1% to 0.14% by the
+    # time it reaches the wing, 50 chords in (frontwing#1, 12 Nov 2026).
+    case = Case(speed=20.0, rho=1.2, mu=1.8e-5, alpha_deg=0.0, ref_chord=0.4, ref_point=(0.1, 0), walls=["wall_0"])
+    for model in ("sst", "sst-lm"):
+        case.model = model
+        assert "SST_OPTIONS= SUSTAINING" in config(case, "m.su2")
+    case.model = "sa"
+    assert "SST_OPTIONS" not in config(case, "m.su2")
+
+
+@su2
+def test_tu_at_wing_reads_the_set_value(tmp_path):
+    """The turbulence intensity typed in is the one the wing sees."""
+    from aeroengine.wing import rans
+
+    c = naca4("0012")
+    one = [{"coords": c.tolist(), "unit": c.tolist(), "chord": 1.0, "angle": 0.0, "inverted": False}]
+    p = {"elements": one, "speed": 20.0, "rho": 1.2, "mu": 1.8e-5, "alpha": 2.0, "mesh": "quick", "model": "sst",
+         "transition": "auto", "turbulence_intensity": 0.01, "iterations": 300}
+    r = rans.solve(p, tmp_path / "s", tmp_path / "s" / "wing.su2", None, 6, None, lambda *a: None,
+                   lambda *a, **k: None, field=False)
+    assert 0.008 < r["tu_at_wing"] < 0.012
+    assert r["rans_version"] == 3
