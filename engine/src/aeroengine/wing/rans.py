@@ -117,6 +117,7 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
                     ref_point=(float(ref_point[0]), float(ref_point[1])), walls=[f"wall_{i}" for i in range(len(raw))],
                     model=model, turbulence_intensity=float(p.get("turbulence_intensity", 0.01)),
                     iterations=int(p.get("iterations", 4000)), restart=str(restart) if restart else None,
+                    residual_start=p.get("residual_start"),
                     **CONVERGENCE.get(level, {}))
     result = su2.run(case, mesh_file, workdir, su2.find_su2(su2_hint), cores=cores,
                      progress=lambda pct, msg: progress(10 + 0.88 * pct, msg), env=env)
@@ -467,7 +468,13 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
             log(f"solve {n} at {a:+.2f}° not settled ({r.get('reason')}); going on from its own solution")
             again = folder / "again"
             again.mkdir(exist_ok=True)
-            r = solve({**q, "alpha": a}, again, mesh_file, su2_hint, cores, env, report, log, field=field,
+            try:
+                first = su2.read_history(folder / "history.csv")
+            except (OSError, EngineError):  # no history to measure from: judged on its own
+                first = {}
+            res = next((v for k, v in first.items() if k.lower() in ("rms[p]", "rms_pressure")), None)
+            start = float(np.max(res[:5])) if res is not None and len(res) else None
+            r = solve({**q, "alpha": a, "residual_start": start}, again, mesh_file, su2_hint, cores, env, report, log, field=field,
                       mesh_ready={"mesh": r["mesh"], "transition": r["transition"]},
                       restart=(folder / "restart.dat").resolve())
             folder = again

@@ -760,6 +760,7 @@ def _fake_solver(calls, cl_of_alpha):
         calls.append({"alpha": p["alpha"], "ready": mesh_ready is not None, "restart": restart})
         workdir.mkdir(parents=True, exist_ok=True)
         (workdir / "restart.dat").write_text("x")
+        (workdir / "history.csv").write_text("x")
         cl = cl_of_alpha(p["alpha"], len(calls))
         return {"alpha": p["alpha"], "cl": cl, "cd": 0.03, "converged": True, "separated": False, "separation": None,
                 "regions": [], "mesh": {"cells": 1}, "transition": [[0.0, 0.0]], "elements": [{"cl": cl, "cd": 0.03}]}
@@ -934,9 +935,26 @@ def test_finite_wing_gives_an_unsettled_solve_one_more_go_from_itself(monkeypatc
         r = fake(*a, **k)
         return {**r, "converged": len(calls) != 1, "reason": "residual fell 3.8 orders, needs 4.0"}
 
-    monkeypatch.setattr(rans, "solve", slow)
+    starts = []
+    monkeypatch.setattr(rans, "solve", lambda p, *a, **k: (starts.append(p.get("residual_start")), slow(p, *a, **k))[1])
     _estimate(monkeypatch, lambda a, n: -0.08 * (12 - a))
+    real = rans.su2.read_history
+    monkeypatch.setattr(rans.su2, "read_history", lambda f: {"rms[P]": np.array([0.8, 0.5, -3.0])})
     r = rans.solve_finite(_finite_params(ride_height=0.1), tmp_path, tmp_path / "m.su2", None, 1, None,
                           lambda *a: None, lambda *a, **k: None)
     assert calls[1]["alpha"] == calls[0]["alpha"] and calls[1]["ready"] and calls[1]["restart"] is not None
+    assert starts[0] is None and starts[1] == 0.8  # judged from where the first run began
+    assert real is not None
     assert r["finite"]["converged"] and r["finite"]["stopped"] is None
+
+
+def test_a_continued_run_measures_its_residual_from_where_the_first_began():
+    # Zerihan's wing as on the car: 4,000 iterations from rest took the residual down 3.8 orders; the
+    # continuation from that solution wobbles about the same answer and fell only 0.1 more. Judged on its
+    # own it never "converged" and could not settle; from where the first run began it fell 3.9 orders.
+    cont = _oscillating(res_drop=0.1)  # starts at -3, the first run having begun at +0.8
+    case = Case(speed=10, rho=1.2, mu=1.8e-5, alpha_deg=0, ref_chord=1, ref_point=(0.25, 0), walls=["wall_0"])
+    assert settled(cont) is None
+    case.residual_start = 0.8
+    assert judge(cont, case)["residual_drop"] == pytest.approx(3.9, abs=0.01)
+    assert settled(cont, start=0.8)["cl"] == pytest.approx(1.2, abs=0.002)

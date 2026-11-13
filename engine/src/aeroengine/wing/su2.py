@@ -77,6 +77,9 @@ class Case:
     scheme: str = "jst"
     restart: str | None = None  # a solution to start from (restart.dat of a run on the same mesh)
     ground: bool = False  # the mesh has a "ground" marker: a slip wall, a ground moving with the flow
+    # log10 of the pressure residual the drop is measured from: None, this run's first iterations; a run
+    # continued from an earlier one at the same angle passes where that one began.
+    residual_start: float | None = None
 
     def cfg(self, mesh: str) -> str:
         """The config file; other cases (the car's) write their own."""
@@ -200,7 +203,8 @@ def judge(history: dict[str, np.ndarray], case: Case) -> dict:
     if res_key is None or cl is None or cd is None:
         raise EngineError("the SU2 history has no pressure residual, CL or CD column", ", ".join(history))
     res = history[res_key]
-    drop = float(res[: min(5, len(res))].max() - res[-1])
+    start = case.residual_start if case.residual_start is not None else float(res[: min(5, len(res))].max())
+    drop = float(start - res[-1])
     n = len(cl)
     if n < case.window:
         return {"converged": False, "residual_drop": drop, "cl_change": None, "cd_change": None,
@@ -234,21 +238,22 @@ SETTLE_TOLERANCE = 0.01  # how far that mean may move over the last window, rela
 SETTLE_RESIDUAL_DROP = 2.0  # orders: a run whose residual never fell is not settled, however flat
 
 
-def settled(history: dict[str, np.ndarray]) -> dict | None:
+def settled(history: dict[str, np.ndarray], start: float | None = None) -> dict | None:
     """A run that ended without converging, judged by its average: when the
     mean of the last SETTLE_WINDOW iterations of Cl and Cd moved less than
     SETTLE_TOLERANCE (relative, against 0.1 and 0.01 floors) over the last
     window, the steady solver is wobbling about a steady answer (a laminar
     bubble, flow near stall) and that mean is the result, with how far Cl
     swings about it. None when it is drifting, too short or never converging.
-    The stopping rule stays judge's: this only ever rescues the final verdict."""
+    The stopping rule stays judge's: this only ever rescues the final verdict.
+    start: as Case.residual_start."""
     res_key = next((k for k in history if k.lower() in ("rms[p]", "rms_pressure")), None)
     cl, cd = history.get("CL"), history.get("CD")
     w = SETTLE_WINDOW
     if res_key is None or cl is None or cd is None or len(cl) < 2 * w:
         return None
     res = history[res_key]
-    if res[: min(5, len(res))].max() - res[-1] < SETTLE_RESIDUAL_DROP:
+    if (start if start is not None else res[: min(5, len(res))].max()) - res[-1] < SETTLE_RESIDUAL_DROP:
         return None
 
     def running(v):
@@ -489,7 +494,7 @@ def _run_once(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
         raise EngineError(f"SU2 stopped with exit code {proc.returncode}", "\n".join(tail[-12:]))
     hist = read_history(history_file)
     verdict = judge(hist, case)
-    average = settled(hist) if not verdict["converged"] else None
+    average = settled(hist, case.residual_start) if not verdict["converged"] else None
     # A run that settled on average reports the means of its last window, not its last iteration.
     final = (lambda v: float(np.mean(v[-SETTLE_WINDOW:]))) if average else (lambda v: float(v[-1]))
     if average:
