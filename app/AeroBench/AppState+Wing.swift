@@ -352,6 +352,9 @@ extension AppState {
         params["sampler"] = .string(setup.sampler)
         params["trials"] = .int(setup.trials)
         params["parallel"] = .int(settings.parallelTrials)
+        if lab.onCar, let h = wing.endplateHeight {  // trials and RANS checks as on the car
+            params["finite"] = .object(["span": .double(wing.span), "endplate": .double(h)])
+        }
         params["solver"] = .string(setup.solver)
         params["check"] = .int(setup.solver == "estimate" && settings.su2Executable != nil ? setup.checkBest : 0)
         // Stop checking once RANS confirms a design (the next is only a fallback).

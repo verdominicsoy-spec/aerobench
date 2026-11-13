@@ -265,6 +265,46 @@ def _lap_score(raw, base):
                     start_speed=float(raw.get("start_speed", 0.0)))
 
 
+def _three_d_already(spec) -> None:
+    """Trials run as on the car hold the 3D lift and induced drag: the car and lap
+    terms take them as they are, with no 3D factor or induced drag on top."""
+    for score in (spec.car, spec.lap):
+        if score is not None:
+            score.endplate, score.factor = None, 1.0
+
+
+def _estimate_trial(elements: list[dict], p: dict, ride_height: float | None, finite: dict | None) -> dict:
+    """One study trial from the quick estimate. With finite (span and endplate,
+    m) the wing is read where the flow meets it on the car, the induced angle
+    settled on the estimate itself, and carries the induced drag: its stall and
+    separation lines are judged there, not at the 2D angle."""
+    import math
+
+    from ..wing import optimise
+    from ..wing.estimate import estimate
+    from ..wing.finite import effective_aspect_ratio, ground_factor, settle
+
+    alpha = float(p.get("alpha", 0.0))
+    rows: dict[float, dict] = {}
+
+    def row(a: float) -> dict:
+        if a not in rows:
+            rows[a] = estimate(elements, [a], float(p.get("speed", 15)), float(p.get("rho", 1.225)),
+                               float(p.get("mu", 1.81e-5)), float(p.get("n_crit", 9.0)), p.get("ref_chord"),
+                               stall_margin=float(p.get("stall_margin", 2.0)), ride_height=ride_height)["rows"][0]
+        return rows[a]
+
+    if not finite:
+        return optimise.from_estimate(row(alpha))
+    span, endplate = float(finite["span"]), float(finite["endplate"])
+    chord = float(p.get("ref_chord") or sum(float(e["chord"]) for e in elements))
+    a, cl = settle(lambda x: row(x)["cl"], alpha, span, chord, endplate, ride_height)
+    out = optimise.from_estimate(row(a))
+    out["cd"] = out["cd"] + cl**2 / (math.pi * effective_aspect_ratio(span, chord, endplate)) * ground_factor(ride_height, span)
+    out["alpha_effective"] = a
+    return out
+
+
 @command("wing-optimise")
 def wing_optimise(ctx: JobContext) -> dict:
     """Optimises angles, gaps and overlaps of a multi-element wing (Optuna),
@@ -328,6 +368,8 @@ def _study(ctx: JobContext, p: dict, base, variables, sections, car=None, span=(
                          seed=p.get("seed"), solver=str(p.get("solver", "rans")), sections=sections,
                          lap=_lap_score(p.get("lap"), base) if p.get("objective") == "min_lap_time" else None,
                          car=car)
+    if p.get("finite"):
+        _three_d_already(spec)
     checks = int(p.get("check", 0)) if spec.solver == "estimate" else 0
     if spec.solver == "estimate":
         spec.parallel = 1  # a trial takes a fraction of a second
@@ -346,15 +388,15 @@ def _study(ctx: JobContext, p: dict, base, variables, sections, car=None, span=(
                  "chord": e.chord} for e in wing.elements]
 
     def evaluate_rans(wing: Wing, folder: Path) -> dict:
-        return rans.solve({**flow, "elements": elements_of(wing), "ride_height": wing.ride_height}, folder,
-                          folder / "wing.su2", su2_hint, ctx.options.cores,
-                          ctx.thread_env(), lambda pct, msg: None, lambda *a, **k: None, field=False)
+        run = rans.solve_finite if p.get("finite") else rans.solve  # finite: each check as on the car
+        q = {**flow, "elements": elements_of(wing), "ride_height": wing.ride_height}
+        if p.get("finite"):
+            q["finite"] = p["finite"]
+        return run(q, folder, folder / "wing.su2", su2_hint, ctx.options.cores,
+                   ctx.thread_env(), lambda pct, msg: None, lambda *a, **k: None, field=False)
 
     def evaluate_estimate(wing: Wing, folder: Path) -> dict:
-        r = estimate(elements_of(wing), [float(p.get("alpha", 0.0))], float(p.get("speed", 15)), float(p.get("rho", 1.225)),
-                     float(p.get("mu", 1.81e-5)), float(p.get("n_crit", 9.0)), p.get("ref_chord"),
-                     stall_margin=float(p.get("stall_margin", 2.0)), ride_height=wing.ride_height)["rows"][0]
-        return optimise.from_estimate(r)
+        return _estimate_trial(elements_of(wing), p, wing.ride_height, p.get("finite"))
 
     evaluate = evaluate_estimate if spec.solver == "estimate" else evaluate_rans
     where = "quick estimates" if spec.solver == "estimate" else (

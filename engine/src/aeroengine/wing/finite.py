@@ -46,3 +46,25 @@ def car_contribution(cl: float, cd: float, span: float, chord: float, endplate: 
     ar = effective_aspect_ratio(span, chord, endplate)
     cl3 = cl * ar / (ar + 2)
     return -cl3 * area, (cd + cl3 * cl3 / (math.pi * ar)) * area
+
+
+def settle(cl_at, alpha: float, span: float, chord: float, endplate: float, ride_height: float | None,
+           tolerance: float = 0.05, calls: int = 6) -> tuple[float, float]:
+    """The angle the flow meets the wing at on the car, and its Cl there: where
+    alpha + induced_angle(cl_at(a)) = a. cl_at(a) is the wing's Cl with the flow
+    at a (degrees); the first step is the linear lifting-line guess, then
+    secant steps, at most `calls` calls in all."""
+    ar = effective_aspect_ratio(span, chord, endplate)
+    gap = lambda a, cl: alpha + induced_angle(cl, span, chord, endplate, ride_height) - a  # noqa: E731
+    a0, c0 = alpha, cl_at(alpha)
+    f0 = gap(a0, c0)
+    a1 = alpha + induced_angle(c0 * ar / (ar + 2), span, chord, endplate, ride_height)
+    c1 = cl_at(a1)
+    f1 = gap(a1, c1)
+    for _ in range(calls - 2):
+        if abs(f1) < tolerance or f1 == f0:
+            break
+        a0, f0, a1 = a1, f1, a1 - f1 * (a1 - a0) / (f1 - f0)
+        c1 = cl_at(a1)
+        f1 = gap(a1, c1)
+    return a1, c1

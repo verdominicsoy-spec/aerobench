@@ -41,3 +41,19 @@ def test_ground_cuts_the_induced_angle():
     # Held at the ends of the range the formula was made for.
     assert ground_factor(0.001, 1.0) == ground_factor(0.033, 1.0) and ground_factor(1.0, 1.0) == ground_factor(0.25, 1.0)
     assert induced_angle(-2.0, 2.0, 1.0, 0.0, 0.2) == pytest.approx(18.24 * ground_factor(0.2, 2.0), abs=0.01)
+
+
+def test_settle_finds_the_angle_the_flow_meets_the_wing_at():
+    import math
+
+    from aeroengine.wing.finite import settle
+
+    calls = []
+
+    def cl_at(a):  # a downforce wing losing 0.08 a degree the flow turns up, zero lift at +12 deg
+        calls.append(a)
+        return -0.08 * (12 - a)
+
+    a, cl = settle(cl_at, 0.0, 2.0, 1.0, 0.0, None)
+    k = 0.08 * 180 / math.pi / (math.pi * 2.0)  # AR 2: induced angle = k (12 - a)
+    assert a == pytest.approx(12 * k / (1 + k), abs=0.05) and cl == pytest.approx(cl_at(a)) and len(calls) <= 6

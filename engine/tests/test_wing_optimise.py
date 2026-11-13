@@ -622,3 +622,43 @@ def test_efficiency_without_endplates_counts_induced_drag():
     n = plated.numbers(2.0, 0.04, w)
     assert optimise.score(spec, 2.0, 0.04, w)[0] == pytest.approx(n["cla_cda"])
     assert "2D" in optimise.OBJECTIVES["max_ld"]
+
+
+def test_an_estimate_trial_as_on_the_car_scores_at_the_induced_angle(monkeypatch):
+    # The study used to judge every trial at the 2D angle: a wing whose main stalls on the car
+    # (frontwing#1, +10.7 deg there) scored as attached. With params.finite the estimate is read at the
+    # induced angle and carries the induced drag; the car terms then take it as it is.
+    import numpy as np
+
+    from aeroengine.commands import wing as cmd
+
+    def fake(elements, alphas, *a, **k):
+        rows = []
+        for x in alphas:
+            cl = -0.08 * (12 - x)
+            rows.append({"alpha": x, "cl": cl, "cd": 0.03, "why": None, "separating": x > 8, "trusted": True,
+                         "elements": [{"cl": cl, "cm": 0.0, "confidence": 0.99, "trusted": True}]})
+        return {"rows": rows}
+
+    monkeypatch.setattr("aeroengine.wing.estimate.estimate", fake)
+    p = {"alpha": 0.0, "speed": 20.0, "ref_chord": 1.0}
+    flat = cmd._estimate_trial([{}], p, None, None)
+    car = cmd._estimate_trial([{}], p, None, {"span": 2.0, "endplate": 0.0})
+    assert flat["cl"] == pytest.approx(-0.96) and flat["converged"]
+    assert car["alpha_effective"] == pytest.approx(5.06, abs=0.1) and car["cl"] == pytest.approx(-0.08 * (12 - car["alpha_effective"]))
+    assert car["cd"] == pytest.approx(0.03 + car["cl"] ** 2 / (np.pi * 2.0))
+    stalled = cmd._estimate_trial([{}], p, None, {"span": 0.5, "endplate": 0.0})  # AR 0.5: the flow turns past 8 deg
+    assert not stalled["converged"]
+
+
+def test_car_terms_take_a_run_as_on_the_car_as_it_is():
+    # A trial run as on the car already holds the 3D lift and induced drag: AR/(AR+2) and the
+    # induced drag must not go on top a second time.
+    from aeroengine.commands import wing as cmd
+
+    car = optimise.CarScore(span=1.0, endplate=0.25, factor=0.7, ref_chord=0.5, base=None, axles=None)
+    spec = optimise.Spec([Variable(1, "angle", 15, 45)], car=car)
+    cmd._three_d_already(spec)
+    assert spec.car.endplate is None and spec.car.factor == 1.0
+    cla, cda, _ = spec.car.wing(1.2, 0.09, type("W", (), {"elements": [type("E", (), {"chord": 0.5, "placed": lambda s: np.zeros((2, 2))})()]})())
+    assert cla == pytest.approx(1.2 * 0.5) and cda == pytest.approx(0.09 * 0.5)

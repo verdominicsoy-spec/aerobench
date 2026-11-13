@@ -57,7 +57,10 @@ extension AppState {
         p["goal"] = .string(d.goal.rawValue)
         p["span"] = .double(wing.span)
         p["factor"] = .double(wing.factor3D)
-        if let h = wing.endplateHeight { p["endplate"] = .double(h) }
+        if let h = wing.endplateHeight {
+            p["endplate"] = .double(h)
+            if lab.onCar { p["finite"] = .object(["span": .double(wing.span), "endplate": .double(h)]) }  // as on the car
+        }
         p["cda_cap"] = .double(d.cdaCap)
         p["rear_target"] = .double(d.rearTarget / 100)
         p["trials"] = .int(lab.optimise.trials)
