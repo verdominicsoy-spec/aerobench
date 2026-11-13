@@ -144,6 +144,10 @@ final class WingLabModel {
     var meshLevel = "fine"  // extra-fine moves lift and drag under 3%; coarser levels are for speed
     var predictTransition = true
     var turbulenceIntensity = 1.0  // percent
+    /// RANS runs the section at the angle the flow meets it on the car (span and endplates set): engine rans.solve_finite.
+    var onCar = true
+    /// A transition run is checked fully turbulent too (engine rans.bracket).
+    var bracket = true
     var ransJob: JobItem?
     var ransResult: WingRansResult?
     /// The CFD tab's polar from earlier RANS runs, kept until the wing, its model or the runs change.
@@ -973,7 +977,10 @@ final class WingLabModel {
     /// live estimate, then the inviscid preview with the typed-in Cd.
     var bestNumbers: (cl: Double, cd: Double, name: String)? {
         // CFD only of this wing: a run on an earlier shape is not its numbers.
-        if let r = ransResult, r.converged, r.matches(wing.elements.map { $0.placed() }) { return (r.cl, r.cd, "CFD") }
+        if let r = ransResult, r.converged, r.matches(wing.elements.map { $0.placed() }) {
+            let c = r.carCoefficients(on: wing)  // a run as on the car is already 3D
+            return (c.cl, c.cd, "CFD")
+        }
         if let e = estimate?.row(nearest: wing.alpha) { return (e.cl, e.cd, "live estimate") }
         if let p = preview { return (p.clTotal, cdEstimate, "inviscid preview") }
         return nil

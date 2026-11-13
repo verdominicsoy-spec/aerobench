@@ -473,6 +473,69 @@ final class WingRansResultTests: XCTestCase {
         let older = try WingRansResult.decode(resultFile: Data(base.replacingOccurrences(of: "AVERAGED", with: "").utf8))
         XCTAssertNil(older.averaged)  // results from before the averaged verdict still open
     }
+
+    /// rans_version 3: separation regions, the turbulence at the wing, and the run as on the car.
+    func testARunSaysWhereItSeparatesAndHowItSitsOnTheCar() throws {
+        let base = """
+        {"data": {"re": 1e6, "mesh": {"cells": 1, "triangles": 1, "quads": 0, "first_cell_height_m": 1e-5,
+          "layer_thickness_m": 0.01, "layers": 1}, "mesh_level": "fine", "transition": [], "model": "sst",
+          "model_name": "SST", "iterations": 4000, "converged": true, "residual_drop": 6, "cl": -1.4, "cd": 0.05,
+          "cm": 0, "elements": [], "surface": []EXTRA}}
+        """
+        let extra = #""separated": true, "separation": "Main separates on its upper (pressure) surface from the leading edge to 91% of its chord (RANS).", "regions": [{"element": 0, "surface": "upper", "loaded": "pressure", "kind": "leading-edge stall", "start": 0.009, "end": 0.908}, {"element": 3, "surface": "lower", "loaded": "suction", "kind": "trailing-edge separation", "start": 0.86, "end": 1.0}], "tu_at_wing": 0.0098, "rans_version": 3, "finite": {"alpha_effective": 9.6, "induced_angle": 9.6, "aspect_ratio_effective": 2.03, "ground_factor": 1.0, "solves": 3, "converged": true, "cd_induced": 0.02, "span": 1.0, "endplate": 0.2, "two_d": {"cl": -2.33, "cd": 0.034, "separated": true, "separation": "Flap 3 ...", "converged": true}}"#
+        let r = try WingRansResult.decode(resultFile: Data(base.replacingOccurrences(of: "EXTRA", with: ", " + extra).utf8))
+        XCTAssertEqual(r.separated, true)
+        XCTAssertEqual(r.regions?.map(\.kind), ["leading-edge stall", "trailing-edge separation"])
+        XCTAssertEqual(r.regionLines(), ["Main, upper (pressure) surface: leading-edge stall, 1% to 91% of chord",
+                                         "Flap 3, lower (suction) surface: trailing-edge separation, 86% to the trailing edge"])
+        XCTAssertEqual(r.finite?.alphaEffective, 9.6)
+        XCTAssertEqual(r.finite?.twoD.cl, -2.33)
+        XCTAssertFalse(r.beforeTurbulenceFix)
+        let older = try WingRansResult.decode(resultFile: Data(base.replacingOccurrences(of: "EXTRA", with: "").utf8))
+        XCTAssertNil(older.regions)
+        XCTAssertNil(older.finite)
+        XCTAssertTrue(older.beforeTurbulenceFix)  // made before the turbulence reached the wing
+    }
+
+    /// The fully turbulent check beside the transition run, and skin friction on the surface.
+    func testARunCarriesItsFullyTurbulentCheckAndSkinFriction() throws {
+        let file = """
+        {"data": {"re": 1e6, "mesh": {"cells": 1, "triangles": 1, "quads": 0, "first_cell_height_m": 1e-5,
+          "layer_thickness_m": 0.01, "layers": 1}, "mesh_level": "fine", "transition": [], "model": "sst-lm",
+          "model_name": "SST-LM", "iterations": 10, "converged": true, "residual_drop": 6, "cl": -2.37, "cd": 0.03,
+          "cm": 0, "elements": [], "surface": [{"x": [0, 0.5, 1], "y": [0, 0, 0], "cp": [1, -1, 0], "cf": [0.004, 0.002, -0.001]}],
+          "separated": false, "bracket": {"sst": {"cl": -2.21, "cd": 0.035, "converged": true, "separated": true,
+          "separation": "Flap 3 separates ...", "regions": []}}, "transition_decides": true}}
+        """
+        let r = try WingRansResult.decode(resultFile: Data(file.utf8))
+        XCTAssertEqual(r.surface[0].cf, [0.004, 0.002, -0.001])
+        XCTAssertEqual(r.bracket?.sst.cl, -2.21)
+        XCTAssertEqual(r.bracket?.sst.separated, true)
+        XCTAssertEqual(r.transitionDecides, true)
+    }
+
+    /// A run as on the car already holds the 3D lift and induced drag: the car gets it as it is, not scaled again.
+    func testARunOnTheCarGoesToTheCarAsItIs() throws {
+        var wing = Wing(elements: [WingElement(airfoil: Airfoil.naca4("4412")!, chord: 0.5, angle: 3, leadingEdge: .zero, inverted: true)])
+        wing.span = 1.0
+        wing.endplateHeight = 0.2
+        let file = """
+        {"data": {"re": 1e6, "mesh": {"cells": 1, "triangles": 1, "quads": 0, "first_cell_height_m": 1e-5,
+          "layer_thickness_m": 0.01, "layers": 1}, "mesh_level": "fine", "transition": [], "model": "sst",
+          "model_name": "SST", "iterations": 10, "converged": true, "residual_drop": 6, "cl": -1.2, "cd": 0.09,
+          "cm": 0, "elements": [], "surface": [], "finite": {"alpha_effective": 9.6, "induced_angle": 9.6,
+          "aspect_ratio_effective": 2.76, "ground_factor": 1.0, "solves": 3, "converged": true, "cd_induced": 0.02,
+          "span": 1.0, "endplate": 0.2, "two_d": {"cl": -2.3, "cd": 0.03}}}}
+        """
+        let r = try WingRansResult.decode(resultFile: Data(file.utf8))
+        let c = r.carCoefficients(on: wing)
+        let add = wing.carContribution(cl: c.cl, cd: c.cd)
+        XCTAssertEqual(add.cla, 1.2 * wing.span * wing.refChord, accuracy: 1e-9)
+        XCTAssertEqual(add.cda, 0.09 * wing.span * wing.refChord, accuracy: 1e-9)
+        var plain = r
+        plain.finite = nil
+        XCTAssertEqual(plain.carCoefficients(on: wing).cl, -1.2)  // a 2D run: the factor still applies
+    }
 }
 
 final class WingStudyTests: XCTestCase {

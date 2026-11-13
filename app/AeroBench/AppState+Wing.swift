@@ -244,6 +244,10 @@ extension AppState {
         var params = ransParams()
         params["elements"] = elementsParam()
         if let mesh { params["mesh"] = .string(mesh) }
+        if lab.bracket && lab.turbulenceModel == .sstLM { params["bracket"] = .bool(true) }
+        if lab.onCar, let h = wing.endplateHeight {
+            params["finite"] = .object(["span": .double(wing.span), "endplate": .double(h)])
+        }
         lab.ransResult = nil
         lab.ransField = nil
         lab.resultsTab = .cfd

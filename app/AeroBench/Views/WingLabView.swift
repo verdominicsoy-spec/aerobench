@@ -701,6 +701,16 @@ struct WingCanvas: View {
                 ctx.fill(Path(CGRect(x: beyond.x - 6, y: beyond.y - 6, width: 12, height: 12)), with: .color(S37.C.sage))
             }
         }
+        // Reversed flow from the RANS run of this wing: red on the outline wherever the skin friction points upstream.
+        if let r = lab.ransResult, lab.ransIsCurrent {
+            for s in r.surface {
+                guard let cf = s.cf else { continue }
+                for k in s.x.indices where k < cf.count && k < s.y.count && cf[k] < 0 {
+                    let c = m.view(r.toWing(SIMD2(s.x[k], s.y[k])))
+                    ctx.fill(Path(ellipseIn: CGRect(x: c.x - 2, y: c.y - 2, width: 4, height: 4)), with: .color(S37.C.critical))
+                }
+            }
+        }
     }
 
     /// The field behind the wing: the scalar as an image placed in the
@@ -1007,6 +1017,37 @@ struct CFDResults: View {
                         Text(r.reason ?? "").font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
                     }
                     Text("\(r.modelName), \(r.meshLevel) mesh, Re \(String(format: "%.0f", r.re))").font(.caption)
+                    if r.beforeTurbulenceFix && r.model != "sa" {
+                        Text("Run before 13 Nov 2026: the turbulence set decayed about sevenfold before the wing. Run it again.")
+                            .font(.caption2).foregroundStyle(S37.C.clayInk).fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let f = r.finite {
+                        Text(String(format: "As on the car: flow turned %+.1f° by the induced angle (AR %.1f with endplates%@), %ld solves%@. In 2D at its full angle: Cl %.3f, Cd %.4f%@.",
+                                    f.inducedAngle, f.aspectRatioEffective, f.groundFactor < 1 ? ", ground" : "", f.solves,
+                                    f.converged ? "" : ", not settled", lab.wing.shownCl(f.twoD.cl), f.twoD.cd,
+                                    f.twoD.separated == true ? ", separated" : ""))
+                            .font(.caption2).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
+                    } else if lab.wing.endplateHeight == nil && lab.wing.factor3D == 1 {
+                        let ar = lab.wing.span / max(lab.wing.refChord, 1e-9)
+                        Text(String(format: "2D section at its full angle, 3D factor 1. At %.0f mm span (AR %.1f) and no endplates lifting line gives about %.0f%% of this on the car.",
+                                    lab.wing.span * 1000, ar, 100 * ar / (ar + 2)))
+                            .font(.caption2).foregroundStyle(S37.C.clayInk).fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let b = r.bracket?.sst {
+                        Text(String(format: "Fully turbulent (SST, as car CFD usually runs): Cl %.3f, Cd %.4f, %@.",
+                                    lab.wing.shownCl(b.cl), b.cd, b.separated == true ? (b.separation ?? "separates") : "attached"))
+                            .font(.caption2).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
+                        if r.transitionDecides == true {
+                            Label("The boundary layer decides this one: with transition and fully turbulent the answers differ. On track it lies between.",
+                                  systemImage: "exclamationmark.triangle")
+                                .font(.caption2).foregroundStyle(S37.C.clayInk).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    if let sep = r.separated {
+                        Label(sep ? "Separates" : "Attached", systemImage: sep ? "exclamationmark.triangle.fill" : "checkmark.circle")
+                            .font(.caption.bold()).foregroundStyle(sep ? S37.C.critical : S37.C.sageInk)
+                        ForEach(r.regionLines(), id: \.self) { Text($0).font(.caption2).fixedSize(horizontal: false, vertical: true) }
+                    }
                     MeshAdviceView(advice: app.meshAdvice(r), level: r.meshLevel, running: lab.ransJob.map { !$0.status.isFinished } ?? false) { app.runCFDOnMesh($0) }
                     Grid(alignment: .trailing, horizontalSpacing: 10, verticalSpacing: 2) {
                         GridRow {
@@ -1071,6 +1112,22 @@ struct CFDResults: View {
                     .chartYScale(domain: CpSpikes.domain(points(r).map(\.minusCp)))
                     .chartXScale(domain: CpSpikes.domain(points(r).map(\.x)))
                     .chartForegroundStyleScale(range: S37.series)
+                    let friction = cfPoints(r)
+                    if !friction.isEmpty {
+                        Text("Skin friction along the flow (below zero: reversed flow)").font(.caption).bold()
+                        Chart {
+                            RuleMark(y: .value("zero", 0)).foregroundStyle(S37.C.inkSecondary.opacity(0.5))
+                            ForEach(friction) { p in
+                                LineMark(x: .value("x (mm)", p.x), y: .value("Cf", p.minusCp), series: .value("Series", p.element))
+                                    .foregroundStyle(by: .value("Element", p.element))
+                            }
+                        }
+                        .chartXAxisLabel("x (mm)").chartYAxisLabel("Cf")
+                        .chartYScale(domain: CpSpikes.domain(friction.map(\.minusCp)))
+                        .chartXScale(domain: CpSpikes.domain(points(r).map(\.x)))
+                        .chartForegroundStyleScale(range: S37.series)
+                        .frame(minHeight: 120)
+                    }
                 }
                 .opacity(r.converged ? 1 : 0.35)
             }
@@ -1102,6 +1159,23 @@ struct CFDResults: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    /// Skin friction per element and side, ordered along x (Point.minusCp holds Cf here).
+    private func cfPoints(_ r: WingRansResult) -> [Point] {
+        var out: [Point] = []
+        for (i, s) in r.surface.enumerated() {
+            guard let cf = s.cf else { continue }
+            let sides = s.side ?? Array(repeating: "", count: s.x.count)
+            let ks = s.x.indices.filter { $0 < cf.count }
+            for side in Set(ks.map { sides[$0] }).sorted() {
+                let series = side.isEmpty ? WingIssue.label(i) : "\(WingIssue.label(i)) \(side)"
+                for k in ks.filter({ sides[$0] == side }).sorted(by: { s.x[$0] < s.x[$1] }) {
+                    out.append(Point(id: out.count, element: series, x: s.x[k] * 1000, minusCp: cf[k], run: 0))
+                }
+            }
+        }
+        return out
     }
 
     private func points(_ r: WingRansResult) -> [Point] {
@@ -1433,6 +1507,22 @@ struct WingInspector: View {
             .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
         if lab.turbulenceModel != .sa {
             NumberField(label: "Turbulence intensity", unit: "%", value: Binding(get: { lab.turbulenceIntensity }, set: { lab.turbulenceIntensity = max($0, 0.01) }))
+        }
+        if lab.turbulenceModel == .sstLM {
+            Toggle("Check it fully turbulent too", isOn: Binding(get: { lab.bracket }, set: { lab.bracket = $0 }))
+            Text("Runs the wing again with SST, as car CFD usually does, and says when the two disagree. About half again the time.")
+                .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
+        }
+        Toggle("As on the car (3D)", isOn: Binding(get: { lab.onCar }, set: { lab.onCar = $0 }))
+            .disabled(lab.wing.endplateHeight == nil)
+        Text(lab.wing.endplateHeight == nil
+             ? "Runs the 2D section at its full angle. Set the span and endplate height (Use in the Lap Sim) to run it at the angle the flow meets it on the car."
+             : "The section at the angle the flow meets it on the car: the 2D run first, then turned by the wing's induced angle (lifting line on span and endplates, less over a ground) until it settles. No car upwash, wheel wake or endplate vortex.")
+            .font(.system(size: 12)).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
+        if lab.wing.rulesFor == .front && lab.wing.rideHeight == nil {
+            Label("Free air: on the car a front wing runs over the ground. Set a ride height (Flow) to compare with a car CFD.",
+                  systemImage: "exclamationmark.triangle")
+                .font(.system(size: 12)).foregroundStyle(S37.C.clayInk).fixedSize(horizontal: false, vertical: true)
         }
         let haveSU2 = app.settings.su2Executable != nil
         if !haveSU2 { su2Install(lab) }

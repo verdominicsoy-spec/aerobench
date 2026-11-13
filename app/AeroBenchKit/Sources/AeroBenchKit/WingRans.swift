@@ -26,6 +26,8 @@ public struct WingRansResult: Codable, Equatable, Sendable {
         public var cp: [Double]
         /// "upper" or "lower" for each point, in order around the element.
         public var side: [String]?
+        /// Skin friction along the flow at each point, negative where it is reversed (rans_version 3).
+        public var cf: [Double]?
     }
 
     public struct Attempt: Codable, Equatable, Sendable {
@@ -77,6 +79,83 @@ public struct WingRansResult: Codable, Equatable, Sendable {
         public var mean: Double
     }
     public var yPlus: YPlus?
+
+    /// One reversed-flow region (engine's rans.regions): which element and surface,
+    /// whether that surface carries the suction or the pressure, its kind
+    /// ("leading-edge bubble", "leading-edge stall", "bubble", "trailing-edge separation")
+    /// and where it runs, as fractions of the element's chord.
+    public struct Region: Codable, Equatable, Sendable {
+        public var element: Int
+        public var surface: String
+        public var loaded: String
+        public var kind: String
+        public var start: Double
+        public var end: Double
+    }
+    /// The run as the wing sits on the car (engine's rans.solve_finite): the section at the angle the
+    /// flow meets it there, from lifting line on span and endplates (cut by the ground's image over a ground).
+    public struct Finite: Codable, Equatable, Sendable {
+        public struct TwoD: Codable, Equatable, Sendable {
+            public var cl: Double
+            public var cd: Double
+            public var separated: Bool?
+            public var separation: String?
+            public var converged: Bool?
+        }
+        public var alphaEffective: Double
+        public var inducedAngle: Double
+        public var aspectRatioEffective: Double
+        public var groundFactor: Double
+        public var solves: Int
+        public var converged: Bool
+        public var cdInduced: Double
+        public var span: Double
+        public var endplate: Double
+        public var twoD: TwoD
+    }
+    /// Whether RANS says the wing separates, and where in words; nil on runs from before the check was saved.
+    public var separated: Bool?
+    public var separation: String?
+    public var regions: [Region]?
+    /// Turbulence intensity half a chord ahead of the wing (fraction), and the engine's RANS setup version.
+    public var tuAtWing: Double?
+    public var ransVersion: Int?
+    public var finite: Finite?
+    /// The same wing fully turbulent (SST) beside a transition run, and whether the two disagree
+    /// on separation or on lift by more than 5%: then the boundary layer decides the answer.
+    public struct Bracket: Codable, Equatable, Sendable {
+        public struct Run: Codable, Equatable, Sendable {
+            public var cl: Double
+            public var cd: Double
+            public var converged: Bool?
+            public var separated: Bool?
+            public var separation: String?
+            public var regions: [Region]?
+        }
+        public var sst: Run
+    }
+    public var bracket: Bracket?
+    public var transitionDecides: Bool?
+
+    /// Made before the far-field turbulence reached the wing (RANS version 3): SST decayed it about sevenfold.
+    public var beforeTurbulenceFix: Bool { (ransVersion ?? 0) < 3 }
+
+    /// The 2D-equivalent Cl and Cd for Wing.carContribution: a run as on the car already holds the 3D
+    /// lift and induced drag, so they are carContribution undone, and the car gets them as they are.
+    public func carCoefficients(on wing: Wing) -> (cl: Double, cd: Double) {
+        guard finite != nil else { return (cl, cd) }
+        let area = wing.span * wing.refChord
+        return wing.sectionCoefficients(cla: -cl * area, cda: cd * area)
+    }
+
+    /// Each region in words, for the results panel.
+    public func regionLines() -> [String] {
+        (regions ?? []).map { r in
+            let pct = { (x: Double) in "\(Int((x * 100).rounded()))%" }
+            let span = r.end >= 0.999 ? "\(pct(r.start)) to the trailing edge" : "\(pct(r.start)) to \(pct(r.end)) of chord"
+            return "\(WingIssue.label(r.element)), \(r.surface) (\(r.loaded)) surface: \(r.kind), \(span)"
+        }
+    }
 
     public static func decode(resultFile data: Data) throws -> WingRansResult {
         struct Wrapper: Decodable { var data: WingRansResult }
