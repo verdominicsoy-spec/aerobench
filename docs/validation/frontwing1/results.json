@@ -1,0 +1,98 @@
+{
+ "sst-lm": {
+  "cl": -2.3840445674499997,
+  "cd": 0.030236254898666666,
+  "converged": true,
+  "reason": "settled on average: Cl and Cd are the means of the last 300 iterations (Cl swings \u00b10.000 about it)",
+  "separated": true,
+  "separation": "Flap 3 separates on its lower (suction) surface from 83% of its chord to the trailing edge (RANS).",
+  "regions": [
+   {
+    "element": 0,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "bubble",
+    "start": 0.0043,
+    "end": 0.0164
+   },
+   {
+    "element": 1,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "bubble",
+    "start": 0.7996,
+    "end": 0.8987
+   },
+   {
+    "element": 2,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "trailing-edge separation",
+    "start": 0.9637,
+    "end": 1.0
+   },
+   {
+    "element": 3,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "bubble",
+    "start": 0.4189,
+    "end": 0.5835
+   },
+   {
+    "element": 3,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "trailing-edge separation",
+    "start": 0.8331,
+    "end": 1.0
+   }
+  ],
+  "tu_at_wing": 0.00986986898935709,
+  "rans_version": 3,
+  "residual_drop": 3.6919953569999997,
+  "elements": [
+   -1.038,
+   -0.7214,
+   -0.4466,
+   -0.1781
+  ],
+  "cells": 336174
+ },
+ "sst": {
+  "cl": -2.334272585,
+  "cd": 0.03403429653,
+  "converged": true,
+  "reason": null,
+  "separated": true,
+  "separation": "Flap 3 separates on its lower (suction) surface from 79% of its chord to the trailing edge (RANS).",
+  "regions": [
+   {
+    "element": 2,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "trailing-edge separation",
+    "start": 0.9421,
+    "end": 1.0
+   },
+   {
+    "element": 3,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "trailing-edge separation",
+    "start": 0.7877,
+    "end": 1.0
+   }
+  ],
+  "tu_at_wing": 0.009881361664115369,
+  "rans_version": 3,
+  "residual_drop": 5.855722459000001,
+  "elements": [
+   -1.0179,
+   -0.7054,
+   -0.438,
+   -0.1729
+  ],
+  "cells": 336174
+ }
+}
