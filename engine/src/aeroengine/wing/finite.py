@@ -14,6 +14,23 @@ def effective_aspect_ratio(span: float, chord: float, endplate: float) -> float:
     return span / chord * (1 + 1.9 * max(endplate, 0.0) / span)
 
 
+def ground_factor(ride_height: float | None, span: float) -> float:
+    """The share of the free-air induced angle left over a ground: 1 - sigma,
+    Wieselsberger's sigma = (1 - 1.32 h/b) / (1.05 + 7.4 h/b), h from the
+    wing's lowest point, h/b held to 0.033-0.25 where the formula was made."""
+    if ride_height is None:
+        return 1.0
+    hb = min(max(ride_height / span, 0.033), 0.25)
+    return 1.0 - (1 - 1.32 * hb) / (1.05 + 7.4 * hb)
+
+
+def induced_angle(cl: float, span: float, chord: float, endplate: float, ride_height: float | None) -> float:
+    """Degrees the trailing vortices turn the flow at the wing (lifting line,
+    Cl / (pi AR_eff)), the way that unloads it: up for a downforce wing (Cl < 0)."""
+    ar = effective_aspect_ratio(span, chord, endplate)
+    return -math.degrees(cl / (math.pi * ar)) * ground_factor(ride_height, span)
+
+
 def lift_factor(span: float, chord: float, endplate: float) -> float:
     ar = effective_aspect_ratio(span, chord, endplate)
     return ar / (ar + 2)

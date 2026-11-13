@@ -125,8 +125,10 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     separated, why, wall_y_plus, tu, found = False, None, None, None, None
     if (workdir / "flow.vtu").exists():
         try:
-            found = regions(surface_cf(wall_points(workdir / "flow.vtu"), placed), inverted)
+            cf_by_element = surface_cf(wall_points(workdir / "flow.vtu"), placed)
+            found = regions(cf_by_element, inverted)
             separated, why = separation(found)
+            surface = add_cf(surface, cf_by_element)
         except Exception as exc:  # noqa: BLE001 - the run's numbers stand without the verdict
             log(f"no separation check: {exc}", level="warning")
         try:
@@ -249,7 +251,7 @@ def wall_points(vtu: Path) -> np.ndarray:
 def surface_cf(points: np.ndarray, placed: list[np.ndarray]) -> list[np.ndarray]:
     """Each element's wall points as rows (x/c along its chord, skin friction
     along the flow, side: 1 upper / -1 lower on screen, distance from the
-    stagnation point over the chord), each side ordered from the stagnation
+    stagnation point over the chord, x, y), each side ordered from the stagnation
     point to the trailing edge. Upper is left of the nose-to-tail line, the way
     the flow runs. The stagnation point is the wall point of highest Cp near
     the nose, so the strip between the nose and it belongs to the surface its
@@ -265,7 +267,7 @@ def surface_cf(points: np.ndarray, placed: list[np.ndarray]) -> list[np.ndarray]
         arc = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(e, axis=0), axis=1))])  # tail, round the nose, tail
         q, cq, pq = p[owner == i], cf[owner == i], cp[owner == i]
         if not len(q):
-            out.append(np.zeros((0, 4)))
+            out.append(np.zeros((0, 6)))
             continue
         # Each point onto its nearest outline segment: its arc length and the segment's direction.
         seg = np.diff(e, axis=0)
@@ -288,8 +290,22 @@ def surface_cf(points: np.ndarray, placed: list[np.ndarray]) -> list[np.ndarray]
             upper = first_half_upper != after
             side = np.full(m.sum(), 1.0 if upper else -1.0)
             o = np.argsort(d)
-            rows.append(np.column_stack([xc[m], ct, side, d])[o])
+            rows.append(np.column_stack([xc[m], ct, side, d, q[m]])[o])
         out.append(np.vstack(rows))
+    return out
+
+
+def add_cf(surface: list[dict], cf_by_element: list[np.ndarray]) -> list[dict]:
+    """surface_cp's elements with "cf": the skin friction along the flow at
+    each point (negative where the flow is reversed), from the nearest wall point."""
+    out = []
+    for s, a in zip(surface, cf_by_element):
+        xy = np.column_stack([s["x"], s["y"]])
+        if not len(a) or not len(xy):
+            out.append(s)
+            continue
+        near = np.argmin(np.linalg.norm(xy[:, None, :] - a[None, :, 4:6], axis=2), axis=1)
+        out.append({**s, "cf": np.round(a[near, 1], 7).tolist()})
     return out
 
 
@@ -313,7 +329,7 @@ def regions(cf_by_element: list[np.ndarray], inverted: list[bool]) -> list[dict]
                 to_edge = end >= TRAILING_EDGE
                 if length < SHORTEST:  # one point, or the trailing-edge corner
                     continue
-                at_nose = rows[j, 3] <= NOSE
+                at_nose = rows[j, 3] <= NOSE or rows[j, 0] <= NOSE  # near the stagnation point or the nose itself
                 if at_nose and (to_edge or length > STALL_LENGTH):
                     kind = "leading-edge stall"
                 elif at_nose:
@@ -379,6 +395,106 @@ def surface_cp(path: Path, placed: list[np.ndarray]) -> list[dict]:
                     "cp": np.round(sel[:, 2], 5).tolist(),
                     "side": ["upper" if k <= half else "lower" for k in near]})
     return out
+
+
+FINITE_SOLVES = 4  # the 2D solve and up to three at the induced angle
+FINITE_TOLERANCE = 0.1  # degrees: the induced angle has settled
+FINITE_RELAX = 0.7
+
+
+def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: int, env: dict | None,
+                 progress: Callable[[float, str], None], log: Callable[..., None], field: bool = True) -> dict:
+    """The wing as it runs on the car: its section at the angle the flow meets
+    it there. p["finite"] holds span and endplate height (m). A 2D solve
+    first; then the flow is turned by the induced angle (lifting line, with
+    the ground's image cutting it over a ground) and solved again, each from
+    the last solution in free air, until that angle settles within
+    FINITE_TOLERANCE or FINITE_SOLVES solves. cl, cd (with induced drag),
+    regions and the field are the last solve's; finite holds the angles and
+    the 2D answer. No car upwash, endplate vortex or spanwise variation:
+    the mid-span section on the car."""
+    import shutil
+
+    from .finite import effective_aspect_ratio, ground_factor, induced_angle
+
+    fin = p.get("finite") or {}
+    for key in ("span", "endplate"):
+        if not isinstance(fin.get(key), (int, float)) or fin[key] < 0 or (key == "span" and fin[key] <= 0):
+            raise EngineError(f"params.finite needs the wing's {key} in metres",
+                              "set the span and endplate height under Into the Lap Sim")
+    span, endplate = float(fin["span"]), float(fin["endplate"])
+    chord = float(p.get("ref_chord") or sum(float(e["chord"]) for e in p["elements"]))
+    ride = p.get("ride_height")
+    ar = effective_aspect_ratio(span, chord, endplate)
+    alpha = float(p.get("alpha", 0.0))
+    ground = ride is not None
+    q = {k: v for k, v in p.items() if k != "finite"}
+    ready, prev, a, r, two_d, settled = None, None, alpha, None, None, False
+    for n in range(1, FINITE_SOLVES + 1):
+        folder = workdir / f"s{n}"
+        folder.mkdir(parents=True, exist_ok=True)
+        report = lambda pct, msg, n=n, a=a: progress(100 * (n - 1 + pct / 100) / FINITE_SOLVES, f"{a:+.1f}°: {msg}")
+        r = solve({**q, "alpha": a}, folder, mesh_file, su2_hint, cores, env, report, log, field=field,
+                  mesh_ready=ready, restart=prev)
+        if n == 1:
+            two_d = {k: r.get(k) for k in ("cl", "cd", "separated", "separation", "converged")}
+            target = alpha + induced_angle(r["cl"] * ar / (ar + 2), span, chord, endplate, ride)  # linear first guess
+        else:
+            target = alpha + induced_angle(r["cl"], span, chord, endplate, ride)
+            log(f"solve {n} at {a:+.2f}°: Cl {r['cl']:.4f}, induced angle wants {target:+.2f}°")
+            if abs(target - a) < FINITE_TOLERANCE:
+                settled = True
+                break
+        if not ground:
+            ready = {"mesh": r["mesh"], "transition": r["transition"]}
+            prev = (folder / "restart.dat").resolve() if (folder / "restart.dat").exists() else None
+        if n < FINITE_SOLVES:
+            a = target if n == 1 else a + FINITE_RELAX * (target - a)
+    if not settled:
+        log(f"the induced angle had not settled after {FINITE_SOLVES} solves", level="warning")
+    # The last solve's files are the run's: the app reads the field and surface from the job folder.
+    for f in folder.iterdir():
+        if f.is_file():
+            shutil.copy2(f, workdir / f.name)
+    gf = ground_factor(ride, span)
+    cd_induced = r["cl"] ** 2 / (np.pi * ar) * gf
+    r = {**r, "alpha": alpha, "cd": r["cd"] + cd_induced,
+         "finite": {"alpha_effective": round(a, 3), "induced_angle": round(a - alpha, 3), "aspect_ratio_effective": round(ar, 3),
+                    "ground_factor": round(gf, 4), "solves": n, "converged": settled, "cd_induced": cd_induced,
+                    "span": span, "endplate": endplate, "two_d": two_d}}
+    return r
+
+
+BRACKET_LIFT = 0.05  # the two models' lift this far apart (relative) also means transition decides it
+
+
+def bracket(p: dict, first: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: int, env: dict | None,
+            progress: Callable[[float, str], None], log: Callable[..., None]) -> dict:
+    """first (an SST-LM run) with the same wing again fully turbulent (SST), at
+    the angle first ran at (its induced angle when it ran as on the car), from
+    first's solution on the same mesh in free air. Car CFD is usually fully
+    turbulent; the track lies between. transition_decides: the two disagree on
+    separation, or their lift differs by more than BRACKET_LIFT."""
+    alpha = (first.get("finite") or {}).get("alpha_effective", p.get("alpha", 0.0))
+    ground = p.get("ride_height") is not None
+    ready = None if ground else {"mesh": first["mesh"], "transition": first["transition"]}
+    restart = (workdir / "restart.dat").resolve() if not ground and (workdir / "restart.dat").exists() else None
+    folder = workdir / "turbulent"
+    folder.mkdir(parents=True, exist_ok=True)
+    q = {k: v for k, v in p.items() if k != "finite"}
+    q.update(model="sst", alpha=alpha)
+    report = lambda pct, msg: progress(pct, f"fully turbulent: {msg}")
+    try:
+        r = solve(q, folder, mesh_file, su2_hint, cores, env, report, log, field=False, mesh_ready=ready, restart=restart)
+    except EngineError as exc:
+        if restart is None:
+            raise
+        log(f"fully turbulent from the transition solution failed ({exc.msg}); from rest", level="warning")
+        r = solve(q, folder, mesh_file, su2_hint, cores, env, report, log, field=False, mesh_ready=ready)
+    sst = {k: r.get(k) for k in ("cl", "cd", "converged", "separated", "separation", "regions")}
+    decides = bool(sst["separated"]) != bool(first.get("separated")) or \
+        abs(sst["cl"] - first["cl"]) > BRACKET_LIFT * max(abs(first["cl"]), 1e-9)
+    return {**first, "bracket": {"sst": sst}, "transition_decides": decides}
 
 
 def sweep(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: int, env: dict | None,

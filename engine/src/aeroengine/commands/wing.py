@@ -151,8 +151,13 @@ def wing_rans(ctx: JobContext) -> dict:
     laminar zones, wake refinement) and runs SU2 incompressible RANS on it."""
     from ..wing import rans
 
-    return rans.solve(ctx.params, ctx.workdir, ctx.mesh_dir / "wing.su2", ctx.params.get("su2") or ctx.options.su2_path,
-                      ctx.options.cores, ctx.thread_env(), ctx.emit.progress, ctx.emit.log)
+    p, su2_hint = ctx.params, ctx.params.get("su2") or ctx.options.su2_path
+    run = rans.solve_finite if p.get("finite") else rans.solve  # finite: the section as it runs on the car
+    r = run(p, ctx.workdir, ctx.mesh_dir / "wing.su2", su2_hint, ctx.options.cores, ctx.thread_env(), ctx.emit.progress, ctx.emit.log)
+    if p.get("bracket") and r.get("model") == "sst-lm" and r.get("converged"):  # the same wing fully turbulent too
+        r = rans.bracket(p, r, ctx.workdir, ctx.mesh_dir / "wing.su2", su2_hint, ctx.options.cores, ctx.thread_env(),
+                         ctx.emit.progress, ctx.emit.log)
+    return r
 
 
 @command("wing-mesh")

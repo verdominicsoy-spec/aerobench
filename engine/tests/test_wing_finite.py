@@ -22,3 +22,22 @@ def test_car_contribution():
     induced = (2.0 * k) ** 2 / (3.141592653589793 * effective_aspect_ratio(1.0, 0.44, 0.25))
     assert cda == pytest.approx((0.04 + induced) * 0.44)
     assert car_contribution(-2.0, 0.04, 1.0, 0.44, None, 0.8) == pytest.approx((2.0 * 0.44 * 0.8, 0.04 * 0.44 * 0.8))
+
+
+def test_induced_angle_unloads_the_wing():
+    from aeroengine.wing.finite import induced_angle
+
+    # AR_eff 2 (2 m span, 1 m chord, no endplates), Cl -2 (downforce): the flow turns up by Cl/(pi AR) = 18.2 deg.
+    assert induced_angle(-2.0, 2.0, 1.0, 0.0, None) == pytest.approx(18.24, abs=0.01)
+    assert induced_angle(2.0, 2.0, 1.0, 0.0, None) == pytest.approx(-18.24, abs=0.01)  # a lifting wing: downwash
+
+
+def test_ground_cuts_the_induced_angle():
+    from aeroengine.wing.finite import ground_factor, induced_angle
+
+    assert ground_factor(None, 1.0) == 1.0
+    # Wieselsberger: sigma = (1 - 1.32 h/b) / (1.05 + 7.4 h/b); at h/b 0.1, 0.868 / 1.79.
+    assert ground_factor(0.1, 1.0) == pytest.approx(1 - 0.868 / 1.79)
+    # Held at the ends of the range the formula was made for.
+    assert ground_factor(0.001, 1.0) == ground_factor(0.033, 1.0) and ground_factor(1.0, 1.0) == ground_factor(0.25, 1.0)
+    assert induced_angle(-2.0, 2.0, 1.0, 0.0, 0.2) == pytest.approx(18.24 * ground_factor(0.2, 2.0), abs=0.01)

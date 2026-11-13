@@ -753,3 +753,122 @@ def test_suction_surface_is_fine_everywhere(tmp_path):
         near = np.argmin(np.linalg.norm(mid[:, None] - e[None], axis=2), axis=1)
         suction = near > lead
         assert np.linalg.norm(b - a, axis=1)[suction].max() <= 1.05 * s.surface_fine * chord, i
+
+
+def _fake_solver(calls, cl_of_alpha):
+    def fake(p, workdir, mesh_file, su2_hint, cores, env, progress, log, field=True, mesh_ready=None, restart=None):
+        calls.append({"alpha": p["alpha"], "ready": mesh_ready is not None, "restart": restart})
+        workdir.mkdir(parents=True, exist_ok=True)
+        (workdir / "restart.dat").write_text("x")
+        cl = cl_of_alpha(p["alpha"], len(calls))
+        return {"alpha": p["alpha"], "cl": cl, "cd": 0.03, "converged": True, "separated": False, "separation": None,
+                "regions": [], "mesh": {"cells": 1}, "transition": [[0.0, 0.0]], "elements": [{"cl": cl, "cd": 0.03}]}
+    return fake
+
+
+def _finite_params(**extra):
+    e = {"coords": [[1, 0], [0, 0], [1, 0]], "unit": [[1, 0], [0, 0], [1, 0]], "angle": 0, "inverted": True, "chord": 1.0}
+    return {"elements": [e], "alpha": 0.0, "ref_chord": 1.0, "finite": {"span": 2.0, "endplate": 0.0}, **extra}
+
+
+def test_finite_wing_runs_at_the_induced_angle(monkeypatch, tmp_path):
+    from aeroengine.wing import rans
+
+    calls = []
+    # A downforce wing losing 0.08 of Cl per degree the flow turns up, zero lift at +12 deg.
+    monkeypatch.setattr(rans, "solve", _fake_solver(calls, lambda a, n: -0.08 * (12 - a)))
+    r = rans.solve_finite(_finite_params(), tmp_path, tmp_path / "m.su2", None, 1, None, lambda *a: None,
+                          lambda *a, **k: None)
+    # Fixed point a = (0.08 * 180/pi / (pi * 2)) * (12 - a): 5.061 deg.
+    f = r["finite"]
+    assert f["converged"] and f["solves"] <= 4 and f["alpha_effective"] == pytest.approx(5.061, abs=0.1)
+    assert calls[0]["alpha"] == 0.0 and f["two_d"]["cl"] == pytest.approx(-0.96)
+    assert all(c["ready"] and c["restart"] is not None for c in calls[1:])  # free air: one mesh, each from the last
+    assert r["cl"] == pytest.approx(-0.08 * (12 - calls[-1]["alpha"]))
+    assert r["cd"] == pytest.approx(0.03 + f["cd_induced"]) and f["cd_induced"] == pytest.approx(r["cl"] ** 2 / (np.pi * 2))
+
+
+def test_finite_wing_that_never_settles_stops_at_four_solves(monkeypatch, tmp_path):
+    from aeroengine.wing import rans
+
+    calls = []
+    monkeypatch.setattr(rans, "solve", _fake_solver(calls, lambda a, n: -2.0 if n % 2 else -0.5))
+    r = rans.solve_finite(_finite_params(), tmp_path, tmp_path / "m.su2", None, 1, None, lambda *a: None,
+                          lambda *a, **k: None)
+    assert len(calls) == 4 and not r["finite"]["converged"]
+
+
+def test_finite_wing_over_a_ground_meshes_each_angle(monkeypatch, tmp_path):
+    from aeroengine.wing import rans
+
+    calls = []
+    monkeypatch.setattr(rans, "solve", _fake_solver(calls, lambda a, n: -0.08 * (12 - a)))
+    r = rans.solve_finite(_finite_params(ride_height=0.1), tmp_path, tmp_path / "m.su2", None, 1, None,
+                          lambda *a: None, lambda *a, **k: None)
+    assert all(not c["ready"] and c["restart"] is None for c in calls)
+    assert r["finite"]["ground_factor"] < 1
+
+
+def test_finite_wing_needs_span_and_endplate(tmp_path):
+    from aeroengine.wing import rans
+
+    with pytest.raises(EngineError, match="span"):
+        rans.solve_finite(_finite_params(finite={"endplate": 0.1}), tmp_path, tmp_path / "m.su2", None, 1, None,
+                          lambda *a: None, lambda *a, **k: None)
+
+
+def test_surface_points_carry_skin_friction_along_the_flow():
+    from aeroengine.wing.rans import add_cf, surface_cf
+
+    d = json.loads((Path(__file__).parent / "data" / "frontwing1_wall.json").read_text())
+    placed = [np.asarray(e) for e in d["elements"]]
+    pts = np.asarray(d["as_run"])
+    cf = surface_cf(pts, placed)
+    # The surface file's points are the same wall points: here, Flap 3's.
+    flap3 = pts[np.argmin([np.min(np.linalg.norm(pts[:, None, :2] - e[None], axis=2), axis=1) for e in placed], axis=0) == 3]
+    surface = [{"x": flap3[:, 0].tolist(), "y": flap3[:, 1].tolist(), "cp": flap3[:, 4].tolist()}]
+    out = add_cf(surface, cf[3:4])
+    assert len(out[0]["cf"]) == len(out[0]["x"])
+    x = np.asarray(out[0]["x"]); c = np.asarray(out[0]["cf"])
+    lead, te = placed[3][int(np.argmin(placed[3][:, 0]))], 0.5 * (placed[3][0] + placed[3][-1])
+    xc = (np.column_stack([x, out[0]["y"]]) - lead) @ ((te - lead) / np.linalg.norm(te - lead)) / np.linalg.norm(te - lead)
+    assert (c[(xc > 0.88) & (xc < 0.94)] < 0).any()  # its trailing-edge separation from 85%
+    assert (c[(xc > 0.15) & (xc < 0.25)] > 0).all()
+
+
+def test_bracket_reruns_fully_turbulent_from_the_transition_solution(monkeypatch, tmp_path):
+    from aeroengine.wing import rans
+
+    calls = []
+
+    def fake(p, workdir, mesh_file, su2_hint, cores, env, progress, log, field=True, mesh_ready=None, restart=None):
+        calls.append({"model": p["model"], "alpha": p["alpha"], "ready": mesh_ready is not None, "restart": restart})
+        sep = p["model"] == "sst"
+        return {"cl": -2.2, "cd": 0.035, "converged": True, "separated": sep, "separation": "Flap 3 ..." if sep else None,
+                "regions": [], "mesh": {"cells": 1}, "transition": [[0, 0]]}
+
+    monkeypatch.setattr(rans, "solve", fake)
+    (tmp_path / "restart.dat").write_text("x")
+    first = {"cl": -2.37, "cd": 0.030, "converged": True, "separated": False, "separation": None, "regions": [],
+             "mesh": {"cells": 1}, "transition": [[0, 0]], "model": "sst-lm"}
+    p = {"model": "sst-lm", "alpha": 0.0, "elements": [{}]}
+    r = rans.bracket(p, first, tmp_path, tmp_path / "m.su2", None, 1, None, lambda *a: None, lambda *a, **k: None)
+    assert calls == [{"model": "sst", "alpha": 0.0, "ready": True, "restart": (tmp_path / "restart.dat").resolve()}]
+    assert r["bracket"]["sst"]["cl"] == -2.2 and r["bracket"]["sst"]["separated"]
+    assert r["transition_decides"]  # one separates, the other does not
+    # At the induced angle when the run was as on the car; over a ground, a fresh mesh and no restart.
+    calls.clear()
+    rans.bracket({**p, "ride_height": 0.05}, {**first, "finite": {"alpha_effective": 4.2}}, tmp_path, tmp_path / "m.su2",
+                 None, 1, None, lambda *a: None, lambda *a, **k: None)
+    assert calls == [{"model": "sst", "alpha": 4.2, "ready": False, "restart": None}]
+
+
+def test_bracket_says_when_transition_does_not_decide(monkeypatch, tmp_path):
+    from aeroengine.wing import rans
+
+    monkeypatch.setattr(rans, "solve", lambda p, *a, **k: {"cl": -2.30, "cd": 0.034, "converged": True, "separated": False,
+                                                            "separation": None, "regions": []})
+    first = {"cl": -2.37, "cd": 0.030, "converged": True, "separated": False, "regions": [], "mesh": {}, "transition": []}
+    r = rans.bracket({"model": "sst-lm", "alpha": 0.0}, first, tmp_path, tmp_path / "m.su2", None, 1, None,
+                     lambda *a: None, lambda *a, **k: None)
+    assert not r["transition_decides"]  # same verdict, lift within 5%
