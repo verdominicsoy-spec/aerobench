@@ -219,11 +219,13 @@ def tu_at_wing(vtu: Path, placed: list[np.ndarray], flow_alpha: float, ref_chord
 # reaches the trailing edge or runs past STALL_LENGTH of the chord before it
 # closes; anything else that closes is a bubble. The wing counts as separated
 # on any leading-edge stall or a trailing-edge separation longer than
-# SEPARATED_SHARE. frontwing#1 (12 Nov 2026) is the case the old check (95% to
+# SEPARATED_SHARE: shorter ones barely move the load (a NACA 4412 main alone,
+# SA quick mesh, 100 mm ride height: reversed from 93%, Cd 0.022) and still
+# show in the regions. frontwing#1 (12 Nov 2026) is the case the old check (95% to
 # 15% only, the first 5% skipped) got wrong: Flap 3 reversed from 85%, and at
 # +10 deg the main reversed 1-91% on its pressure surface, both missed.
 # Converged is not attached: the stalled study wing converged.
-SEPARATED_SHARE = 0.05
+SEPARATED_SHARE = 0.10
 TRAILING_EDGE = 0.95
 NOSE = 0.05
 STALL_LENGTH = 0.30
