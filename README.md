@@ -206,8 +206,10 @@ lifting line on the effective aspect ratio AR (1 + 1.9 h/b), cut by
 Wieselsberger's ground factor over a ground. The wing is solved again until
 the angle and its lift agree, usually in one to three solves. Its Cl stands
 for the whole wing, and induced drag is added. Zerihan's front wing
-(Southampton, 2001) lands within 3% of the balance in ground effect and 10%
-low in free air, about 4 points of that from his tunnel's walls
+(Southampton, 2001) lands within 3% of the balance from h/c 0.45 down to
+0.13, with separation within 0.03 chord of his oil flow at every height. It
+reads 5-10% low below 0.13 chords, where the tip vortex stops rolling up,
+and 10% low in free air, about 4 points of that from his tunnel's walls
 (docs/validation/ground-3d). On frontwing#1 it finds the main-element stall
 STAR-CCM+ found. *Check it fully turbulent too* runs the wing again with
 SST and says when transition decides the answer (lift differs by over 5%).
