@@ -122,7 +122,9 @@ def test_a_place_in_the_room_never_leaves_the_box():
 def _design(engine, tmp_path, name, timeout=300, **params):
     import json
 
-    job = {"command": "wing-design", "params": {"box": [0.0, 0.03, 0.70, 0.35], "elements": 2, "inverted": True,
+    # The box's floor 80 mm off the ground: at 30 mm RANS separated the NACA 6212 starting wing (lift gain 9%),
+    # and the estimate now says so for every starting wing there.
+    job = {"command": "wing-design", "params": {"box": [0.0, 0.08, 0.70, 0.40], "elements": 2, "inverted": True,
                                                 "goal": "max_cla", "span": 1.2, "endplate": 0.25, "speed": 15.0,
                                                 "trials": 12, "checks": 0, "storage": str(tmp_path / f"{name}.db"),
                                                 "name": name, **params}}

@@ -77,7 +77,9 @@ def test_the_ground_estimate_against_rans():
         assert r["cl_free_air"] == pytest.approx(-2.1677, rel=0.03)
         assert sum(e["cl"] for e in r["elements"]) == pytest.approx(r["cl"])
     low = estimate(els, [0.0], 15.0, ride_height=0.06)["rows"][0]
-    assert low["separating"] and low["why"].startswith("Main")
+    # RANS never settled at 60 mm: the ground separates it (image gain 2.68), where the main's own angle
+    # in free air (20 deg, stall 15) holds.
+    assert low["separating"] and "ground separates" in low["why"]
 
 
 def _els(w):
@@ -136,3 +138,40 @@ def test_a_wing_separating_in_free_air_separates_over_the_ground_too():
     # Separating, so the number means little (-2.75 now; -2.48 by the straight-line lift fit), but not
     # the image's whole gain: it was -24, 12 times free air.
     assert -2 * 1.81 < low["cl"] < 0
+
+
+def _frontwing():
+    import json
+    from pathlib import Path
+
+    w = json.loads((Path(__file__).parent / "data" / "frontwing1_study.json").read_text())
+    return w["elements"], w["ref_chord"]
+
+
+def test_a_cascade_near_the_ground_is_judged_on_sane_angles():
+    # frontwing#1 (4 elements) over a ground: the image method piles 5.5 times the free-air load on the
+    # main at 60 mm, and inverting that on the main alone read 42 deg "in place" at 300 mm and 145 at
+    # 50 mm, so every optimiser trial failed. The cascade's loading is judged on the free-air angle;
+    # the ground's own separation on the image's whole-wing gain.
+    from aeroengine.wing.estimate import estimate
+
+    els, ref = _frontwing()
+    free = estimate(els, [0.0], 20.0, 1.184, 1.81e-5, 9.0, ref)["rows"][0]
+    high = estimate(els, [0.0], 20.0, 1.184, 1.81e-5, 9.0, ref, ride_height=0.30)["rows"][0]
+    low = estimate(els, [0.0], 20.0, 1.184, 1.81e-5, 9.0, ref, ride_height=0.05)["rows"][0]
+    assert not free["separating"], free["why"]  # RANS: main attached in free air
+    assert not high["separating"], high["why"]  # image gain 0.68: well short of the ground's separation
+    assert low["separating"] and "ground" in low["why"]  # image gain 5.1
+    assert all("in place" not in w for w in (low["why"] or "").split("; ") if w.startswith("Main"))
+
+
+def test_the_ground_separates_a_wing_between_the_gains_rans_bracketed():
+    # Inviscid whole-wing gains against RANS: NACA 6212 attached at 100 mm (1.45), separated at 60 (2.68);
+    # NACA 4412 alone still gaining at 50 mm (1.42), losing by 30 (2.78).
+    from aeroengine.wing.design import layout
+    from aeroengine.wing.estimate import GROUND_SEPARATION_GAIN, estimate
+
+    assert 1.45 < GROUND_SEPARATION_GAIN < 2.68
+    els = _els(layout([naca4("6212")] * 2, 0.44, True))
+    assert not estimate(els, [0.0], 15.0, ride_height=0.10)["rows"][0]["separating"]
+    assert estimate(els, [0.0], 15.0, ride_height=0.06)["rows"][0]["separating"]

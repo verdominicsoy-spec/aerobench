@@ -258,6 +258,7 @@ def from_estimate(row: dict) -> dict:
             for i, e in enumerate(row["elements"]) if not e["trusted"]]
     return {"cl": row["cl"], "cd": row["cd"], "cm": sum(e["cm"] for e in row["elements"]),
             "converged": not row["separating"] and row["trusted"], "reason": "; ".join(why) or None,
+            "warnings": row.get("warnings") or [],
             "elements": [{"cl": e["cl"]} for e in row["elements"]], "margin": separation_margin(row)}
 
 

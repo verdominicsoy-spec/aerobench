@@ -64,7 +64,9 @@ from .viscous import polar, reynolds
 # Version 3: a single section's lift scaled to the tunnel at low Reynolds number.
 # Version 2: effective angles found on the solver (not a straight-line fit), trailing edges closed,
 # front-element limits refitted on the RANS references, slats, a flap limit that rises with Reynolds number.
-VERSION = 3
+# Version 4: flaps held to the element in front (past the main only a warning); front elements judged on
+# their free-air angle in place; over a ground, separation on the image's whole-wing gain.
+VERSION = 4
 STALL_MARGIN = 2.0  # degrees: the last element counts as separating this far short of its stall angle
 # An element with another behind it: the slot keeps it attached well past its
 # own stall angle, but not for ever. Fitted on a NACA 6212 main-and-flap wing
@@ -82,12 +84,14 @@ FRONT_LIFT_LIMIT = 9.25
 FRONT_SEPARATION = 15.0
 DRAG_GROWTH = 0.0076  # per degree squared past stall onset
 # A flap separates once it is turned more than max_deflection past the one
-# in front or past the main (degrees, chord line to chord line), whatever its
+# in front (degrees, chord line to chord line), whatever its
 # effective angle. At the Reynolds numbers RANS checked it (flaps 0.45 to 1.4
 # x 10^5 on their own chords, 15 m/s) that is MAX_DEFLECTION: the overnight
 # wing held to 25.2 and separated from 26.0, the NACA 6212 wing held at 22 and
-# separated at 42 and 46 (see above), and the same limit holds from the main
-# to any flap on three to five elements. A flap holds more at higher Reynolds
+# separated at 42 and 46 (see above). Not from the main: on a cascade each slot
+# feeds the next flap fresh air, and RANS held frontwing#1's Flap 2 attached 32.5
+# degrees past its main (13 Nov 2026), where a main-to-flap limit had failed every
+# optimiser trial. A flap holds more at higher Reynolds
 # numbers: the 30P30N flap (2.7 x 10^6) stays attached 34.8 degrees past its
 # main in the tunnel (NASA TM-112858) and in RANS here, so the limit rises
 # linearly in log Re to MAX_DEFLECTION_HIGH_RE there and stays. Nothing in
@@ -141,6 +145,16 @@ def suction_peak(cp: np.ndarray, xy: np.ndarray, inverted: bool) -> float:
 # 150 mm for +67% here) and nothing at 30 mm.
 GROUND_SHARE = 0.8
 GROUND_GAIN_KNEE = 1.6
+# The ground separates the flow under a wing once the image method's whole-wing
+# gain over free air passes this: RANS held the NACA 6212 main and flap attached
+# at 100 mm (image gain 1.45) and separated it at 60 (2.68); the NACA 4412 main
+# alone still gained lift at 50 mm (1.42) and lost some by 30 (2.78). Fitted
+# between those, so good to about +-0.6 of gain. It replaces judging a front
+# element over a ground by its angle "in place" against itself alone over the
+# ground: on a cascade the image piles the load on the main (5.5 times free
+# air at 60 mm on frontwing#1, four elements) and that read 42 degrees at 300 mm
+# and 145 at 50, so every optimiser trial separated.
+GROUND_SEPARATION_GAIN = 2.0
 
 
 def ground_share(gain: float) -> float:
@@ -209,6 +223,11 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
     lifts = []  # [row][element] lift alone here against freestream angle
     amplify = []  # [row][element] lift alone over the ground / alone in free air (1 in free air)
     peaks = []  # [row][element] suction peak over trailing-edge pressure, in place
+    # Over a ground, the free-air cascade too: front elements are judged on the angle
+    # their neighbours give them there, and the ground on the image's whole-wing gain.
+    free_multi = Solver(placed, ref) if multi is None else None
+    effective_free = []  # [row][element]: as effective in free air
+    image_gain = []  # [row]: the image method's whole-wing lift over free air, less 1 (0 in free air)
     for a in alphas:
         if multi is not None:
             r = multi.solve(float(a))
@@ -226,6 +245,14 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
             free = base if multi is not None else alone_solvers[i].solve(float(a)).cl_total
             row_amp.append(base / free if multi is None and abs(free) > 0.05 else 1.0)
         effective.append(row_eff)
+        if free_multi is None:
+            effective_free.append(row_eff)
+            image_gain.append(0.0)
+        else:
+            rf = free_multi.solve(float(a))
+            effective_free.append([_angle_for(free_lift(i), rf.cl[i] * ref / chords[i], float(a), free_lift(i)(float(a)),
+                                              alone[i][1]) for i in range(len(placed))])
+            image_gain.append(r.cl_total / rf.cl_total - 1 if abs(rf.cl_total) > 0.05 else 0.0)
         peaks.append([suction_peak(cp, xy, bool(e.get("inverted"))) for cp, xy, e in zip(r.cp, placed, elements)])
         inviscid.append(row_inv)
         lifts.append(here)
@@ -279,9 +306,6 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
         if deflection[i] is not None and deflection[i] > limit[i]:
             return (f"{name} is turned {deflection[i]:.1f}° past {label(i - 1, main).lower()}, more than the "
                     f"{limit[i]:.0f}° a flap holds at its Reynolds number: it separates")
-        if past_main[i] is not None and past_main[i] > limit[i]:
-            return (f"{name} is turned {past_main[i]:.1f}° past the main, more than the "
-                    f"{limit[i]:.0f}° a flap holds at its Reynolds number: it separates")
         if i < main and peak > SLAT_PEAK_LIMIT:
             return (f"{name}'s suction peak is {peak:.0f} below its trailing-edge pressure (Cp) in place, more than "
                     f"the {SLAT_PEAK_LIMIT:.0f} the 30P30N slat held: it separates")
@@ -297,17 +321,21 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
 
     rows = []
     for k, a in enumerate(alphas):
-        els, why = [], []
+        els, why, warnings = [], [], []
         for i in range(len(elements)):
             v = viscous[i][k]
             share = chords[i] / ref
             front = scale[i][k] is not None
             in_place = e_angle(elements[i], effective[k][i])
+            in_place_free = e_angle(elements[i], effective_free[k][i])
             cl_own = v["cl"] * amplify[k][i] if not front else inviscid[k][i] * scale[i][k]
             # Held at the separation line: past it the element counts as separating and the number means little.
             past_onset = min(max(0.0, in_place - (stall[i] - 4.0)), FRONT_SEPARATION + 4.0) if front else 0.0
             cd_own = v["cd"] * (1 + DRAG_GROWTH * (0.0 if led[i] else past_onset**2))
-            reason = separation(i, in_place, front, peaks[k][i])
+            reason = separation(i, in_place_free if front else in_place, front, peaks[k][i])
+            if past_main[i] is not None and past_main[i] > limit[i]:
+                warnings.append(f"{label(i, main)} is turned {past_main[i]:.1f}° past the main: RANS separated NACA 6212 "
+                                f"cascades from {limit[i]:.0f}° past, and held frontwing#1's Flap 2 at 32.5°; check it with RANS")
             if reason:
                 why.append(reason)
             els.append({"cl": cl_own * share, "cd": cd_own * share, "cm": v["cm"] * share * chords[i] / ref,
@@ -319,9 +347,12 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
                         "past_stall": reason is not None, "deflection": deflection[i], "past_main": past_main[i],
                         "max_deflection": limit[i], "led": led[i], "suction_peak": peaks[k][i],
                         "role": "slat" if i < main else ("main" if i == main else "flap")})
+        if image_gain[k] > GROUND_SEPARATION_GAIN:
+            why.append(f"The ground separates the flow under the wing: the image method's lift is {image_gain[k] + 1:.1f} "
+                       f"times free air, past the {GROUND_SEPARATION_GAIN + 1:.1f} at which RANS separated")
         rows.append({"alpha": float(a), "cl": sum(x["cl"] for x in els), "cd": sum(x["cd"] for x in els),
                      "trusted": all(x["trusted"] for x in els), "separating": bool(why),
-                     "why": "; ".join(why) or None, "elements": els})
+                     "why": "; ".join(why) or None, "warnings": warnings, "elements": els})
     if ride_height is not None:
         free = estimate(elements, alphas, speed, rho, mu, n_crit, ref_chord, model_size, stall_margin)["rows"]
         for row, base in zip(rows, free):

@@ -114,8 +114,23 @@ def test_flaps_separate_past_the_main_as_rans_found():
                 "inverted": e.inverted} for e in w.elements]
         return estimate(els, [0.0], 15.0)["rows"][0]["separating"]
 
-    assert not separates(3, -2, 12) and not separates(4, -2, 8)  # 24 degrees: RANS attached
-    assert separates(3, -2, 16) and separates(4, -2, 10) and separates(3, 2, 19)  # 32, 30, 38 degrees
+    # Again with the default RANS (SST-LM, fine mesh), 13 Nov 2026: 3 elements 32 degrees past the main,
+    # Flap 2 separated from 11% of its chord; 4 elements 30 degrees past, Flaps 2 and 3 from 16-21%. But
+    # frontwing#1's Flap 2 held 32.5 degrees past its main: the angle past the main depends on the
+    # sections and slots, so the estimate warns there and RANS decides, rather than failing the wing.
+    def warned(n, main, step):
+        old, D.ANGLES[n] = D.ANGLES[n], tuple([float(main)] + [main + step * i for i in range(1, n)])
+        try:
+            w = D.layout([naca4("6212")] * n, 0.44, True)
+        finally:
+            D.ANGLES[n] = old
+        els = [{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "chord": e.chord, "angle": e.angle,
+                "inverted": e.inverted} for e in w.elements]
+        return estimate(els, [0.0], 15.0)["rows"][0]["warnings"]
+
+    assert not warned(3, -2, 12) and not warned(4, -2, 8)  # 24 degrees: RANS attached
+    for case in ((3, -2, 16), (4, -2, 10), (3, 2, 19)):  # 32, 30, 38 degrees: RANS separated
+        assert any("past the main" in w for w in warned(*case))
 
 
 def test_an_element_alone_has_no_upwash_at_any_angle():
@@ -178,3 +193,16 @@ def test_a_flap_as_big_as_the_main_is_not_a_slat_case():
 
     assert main_index([0.3, 0.32]) == 0
     assert main_index([0.15, 0.83, 0.30]) == 1
+
+
+def test_a_flap_is_held_to_the_element_in_front_not_to_the_main():
+    # frontwing#1: Flap 2 is 30 deg past the main, Flap 3 42 deg, each 13-16 deg past the one in front.
+    # RANS held Flap 2 attached 32.5 deg past the main; the 25 deg limit was fitted flap to element in front.
+    import json
+    from pathlib import Path
+
+    from aeroengine.wing.estimate import estimate
+
+    w = json.loads((Path(__file__).parent / "data" / "frontwing1_study.json").read_text())
+    r = estimate(w["elements"], [0.0], 20.0, 1.184, 1.81e-5, 9.0, w["ref_chord"])["rows"][0]
+    assert "past the main" not in (r["why"] or "")
