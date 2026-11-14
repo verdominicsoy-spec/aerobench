@@ -60,11 +60,9 @@ So the 35 mm row above set the main 35 mm off the ground at the job's angle on a
 
 The loop does not settle. The section carries Cl -3 to -4.5 up to +8.25 deg and has lost it all by +10 deg. The lifting line's answer sits on that cliff, so the loop jumps from one side to the other.
 
-STAR's CL of about 0.8 on the wing's planform is -0.71 to -0.73 on AeroBench's reference (span times the 682 mm sum of the chords; the planform chord is 602-625 mm). To land there with the section attached, the model's downwash wants +5.5 deg, where RANS gives -4.5: six times STAR's number. No angle the model accepts gives STAR's lift with the main attached.
+STAR ran a half car: one side's wing, with the report's reference area 0.5 m^2. Its CL of about 0.8 is 0.4 q of downforce, which is 1.22-1.27 on that side's planform (planform chord 602-625 mm) and -1.12 on AeroBench's reference (span times the 682 mm sum of the chords). To land there, the model's downwash wants +8.5 deg. That is on the cliff: at +8.25 deg RANS still carries -3.17, nearly three times STAR's, and by +10 deg it has lost it all with the main stalled from the leading edge. STAR's main does not stall at the leading edge, so its -1.12 is an attached wing near +8.5 deg or a wing partly separated somewhere AeroBench's strip cannot show (along the span, or on the flaps).
 
 Why the method does not hold here:
 - It is checked on one wing only: Zerihan's, AR 4.9, endplates a quarter of the span (../ground-3d). This one is AR 0.77, with endplates 60% of the span. Lifting line and Hoerner's endplate rule are made for slender wings.
 - The endplates come down to 35 mm off the ground, 0.05 of the chord. On Zerihan's wing the tip vortex stops rolling up below 0.134 chords and the run reads 5-10% low there. The model knows the wing's height, not the gap under the endplates, so it keeps the full tip losses.
 - One section at mid-span stands for a wing that drops 45 mm across its span.
-
-Not settled: STAR's reference area and whether its 0.8 is for one side or both. If the report was left at STAR's default 1 m^2, the 0.8 would be about 2.5 on one side's planform, and the comparison changes completely.
