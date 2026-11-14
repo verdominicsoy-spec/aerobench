@@ -30,3 +30,20 @@ What it says:
 - Down to h/c 0.134 the 2D section at its full angle reads 2-9% above the mid-span pressures, which also carry the wing's own downwash, so the 2D number is not the one to compare with a car.
 - The 2D section at its full angle separates 0.03-0.08 chord early below 0.224 (the post-bubble turbulent layer, see ../uiuc-transition) and does not settle; the on-car runs, at the lower angle, match the oil flow.
 - Several runs here led to engine fixes: a continued run is judged from where the first began; an oscillating run settles over whole periods; a flow with no steady answer is reported as unsteady with its mean.
+
+## In spanwise strips (14 Nov, `strips.py`, no new solves)
+
+The same wing in 12 strips across the span (`finite.couple_strips` on `vlm.Lattice.strips`), each meeting the flow at its own induced angle from every strip's lift. Each height's section polar is the straight line through its two RANS points (2D at the drawn angle, on the car at its effective angle). The strips give the spanwise load, so the mid-span strip can be checked against the mid-span pressures as well as the wing against the balance.
+
+| h/c | strips: wing CL | balance | error | mid-span Cl | Figure 9b | error | tip strip's angle | mid-span strip's angle |
+|---|---|---|---|---|---|---|---|---|
+| free | 0.619 | 0.69 | -10.3% | 0.670 | 0.766 (Table 15) | -12.5% | +2.87 deg | +1.52 deg |
+| 0.448 | 0.895 | 0.941 | -4.9% | 1.008 | 1.026 | -1.8% | +2.93 deg | +0.77 deg |
+| 0.224 | 1.251 | 1.269 | -1.4% | 1.390 | 1.395 | -0.4% | +4.04 deg | +0.45 deg |
+| 0.134 | 1.570 | 1.612 | -2.6% | 1.701 | 1.684 | +1.0% | +5.15 deg | +0.22 deg |
+| 0.090, 0.067 | not run | | | | | | | |
+
+- The mid-span Cl lands within 2% of the pressures from h/c 0.448 to 0.134, so the spanwise load is right where it can be checked: the tips carry less, by an angle that grows from 2 to 5 deg as the ground comes up.
+- The wing's CL reads 1-5% under the balance, a point or two lower than the single strip. Part is the endplates' own side force: about 2% of the induced drag, a thrust no wing strip sees, which the single strip's angle counts in and the strips leave out. The tip strips also run 2-5 deg past the two RANS points the straight polar is drawn through.
+- At 0.090 and 0.067 the 2D point (not converged, separating early) has more lift than the on-car one at a smaller angle, so the straight line through them says Cl falls as the angle rises, which is a stalled section. `couple_strips` names such strips past stall and these rows are left out rather than run on a polar that is not the section's.
+

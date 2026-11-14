@@ -119,3 +119,12 @@ def test_a_strip_on_a_cliff_in_its_polar_is_flagged():
     polar = ([0.0, 4.0, 8.0, 9.0, 12.0], [-4.4, -3.8, -3.2, 0.05, 0.2])
     r = couple_strips([polar], np.array([[0.12]]), np.array([1.0]), -7.45)
     assert r["steep"] == [0] and 8.0 < r["alpha"][0] < 9.0 and r["converged"]
+
+
+def test_a_polar_falling_everywhere_is_past_stall():
+    # A section's Cl rises with its angle (an inverted wing's toward zero); one that falls is stalled.
+    from aeroengine.wing.finite import couple_strips
+
+    polar = ([-10.0, 10.0], [-0.4, -2.6])
+    r = couple_strips([polar, polar], np.array([[0.05, 0.01], [0.01, 0.05]]), np.array([1.0, 1.0]), 0.0)
+    assert r["past_stall"] == [0, 1]

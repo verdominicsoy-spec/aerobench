@@ -114,8 +114,8 @@ def couple_strips(polars, k, width, alpha: float) -> dict:
     strip i meets the flow at a_i = alpha - degrees(k @ cl)_i, cl_i its polar's Cl at a_i (straight
     lines between the polar's angles). polars: per strip (angles in degrees, Cl). Returns each strip's
     angle and Cl, the wing's Cl (width-weighted), and the strips whose angle is outside their polar
-    (out_of_range: the end value is used), past the polar's lift peak (past_stall: the slope's sign
-    flips) or on a jump in it (steep: Cl interpolated across a stall between two solves)."""
+    (out_of_range: the end value is used), past the polar's lift peak (past_stall: Cl falls as the angle
+    rises) or on a jump in it (steep: Cl interpolated across a stall between two solves)."""
     import numpy as np
     from scipy.optimize import root
 
@@ -150,10 +150,10 @@ def couple_strips(polars, k, width, alpha: float) -> dict:
             continue
         slopes = np.diff(cx) / np.diff(ax)
         s = slopes[min(int(np.searchsorted(ax, x, side="right")) - 1, len(slopes) - 1)]
-        typical = np.median(slopes)
-        if np.sign(s) != np.sign(typical):
+        rising = slopes[slopes > 0]
+        if s <= 0:  # Cl rises with angle on any attached section, an inverted one's toward zero
             past.append(i)
-        elif abs(s) > STEEP * np.median(np.abs(slopes)):
+        elif s > STEEP * np.median(rising):
             steep.append(i)
     return {"alpha": [float(x) for x in a], "cl": [float(x) for x in c],
             "cl_wing": float(np.sum(c * width) / np.sum(width)),
