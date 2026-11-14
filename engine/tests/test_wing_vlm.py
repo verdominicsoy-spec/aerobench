@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
 
 from aeroengine.wing.finite import ground_factor
@@ -63,3 +64,42 @@ def test_sealed_endplates_cut_the_induced_angle():
     open_ = Lattice(span=1.0, chord=0.5, height=0.1, endplate=0.3, endplate_bottom=0.1).solve()
     sealed = Lattice(span=1.0, chord=0.5, height=0.1, endplate=0.37, endplate_bottom=0.03).solve()
     assert sealed.k_drag < 0.8 * open_.k_drag
+
+
+def test_level_wing_is_unchanged_by_a_zero_drop():
+    a = Lattice(span=1.0, chord=0.5, height=0.1, endplate=0.3, endplate_bottom=0.03).solve()
+    b = Lattice(span=1.0, chord=0.5, height=0.1, endplate=0.3, endplate_bottom=0.03, drop=0.0).solve()
+    assert b.k_drag == a.k_drag and b.lift_slope == a.lift_slope
+
+
+@pytest.mark.parametrize("kw, rel", [({}, 0.01), ({"height": 0.1, "endplate": 0.3, "endplate_bottom": 0.03}, 0.03)])
+def test_strip_angles_carry_the_lattice_induced_drag(kw, rel):
+    # One strip per column, loaded as the lattice loads itself: the lift-weighted induced angle is Cdi.
+    # With endplates the plates' own side force carries 2% of it (a thrust), which no wing strip sees.
+    w = Lattice(span=1.0, chord=0.5, **kw)
+    r = w.solve()
+    s = w.strips(w.ny)
+    cdi = float(np.sum(r.cl * (s.k @ r.cl) * s.width)) / w.span
+    assert cdi == pytest.approx(r.k_drag * r.lift_slope ** 2, rel=rel)
+
+
+def test_strips_of_a_level_wing_are_symmetric():
+    s = Lattice(span=1.0, chord=0.5, height=0.1, endplate=0.3, endplate_bottom=0.03).strips(4)
+    assert s.k == pytest.approx(s.k[::-1, ::-1], rel=1e-6)
+    assert s.y == pytest.approx(-s.y[::-1]) and s.width.sum() == pytest.approx(1.0)
+
+
+def test_strips_on_an_endless_span_see_no_induced_angle():
+    # Loaded evenly: each strip alone trails vortices at its edges, but evenly the inner edges cancel.
+    s = Lattice(span=1000.0, chord=1.0).strips(4)
+    assert np.abs(s.k @ np.ones(4))[1:3].max() < 3e-4  # inboard strips; the outer two see the far tips
+
+
+def test_dropped_wing_sees_more_induced_angle_inboard_at_its_high_end():
+    # Endplate bottoms level over the ground, the wing 50 mm lower at +y: the low side is in more ground effect.
+    kw = dict(span=1.0, chord=0.5, height=0.1, endplate=0.3, endplate_bottom=0.03)
+    s = Lattice(**kw, drop=0.05).strips(4)
+    assert s.height[0] == pytest.approx(0.1 + 0.05 * 0.375) and s.height[-1] == pytest.approx(0.1 - 0.05 * 0.375)
+    load = s.k @ np.ones(4)
+    assert load[1] > load[2] > 0
+    assert Lattice(**kw, drop=-0.05).strips(4).k == pytest.approx(s.k[::-1, ::-1], rel=1e-6)  # the mirror image

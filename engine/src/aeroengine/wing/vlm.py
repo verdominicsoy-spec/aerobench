@@ -90,8 +90,17 @@ class Result:
 
 
 @dataclass
+class Strips:
+    y: np.ndarray  # strip centres, m
+    height: np.ndarray | None  # the wing over the ground at each centre, m (None: free air)
+    width: np.ndarray  # m
+    k: np.ndarray  # k[i, j]: induced angle (rad) at strip i per unit section Cl on strip j
+
+
+@dataclass
 class Lattice:
-    """span, chord in m; height of the wing over the ground (None: free air); endplates of height
+    """span, chord in m; height of the wing over the ground at mid-span (None: free air); drop, how much
+    higher the wing sits at y = -span/2 than at +span/2 (a straight change, m); endplates of height
     endplate whose bottom edge is endplate_bottom over the ground (relative to the wing in free air)."""
     span: float
     chord: float
@@ -101,34 +110,42 @@ class Lattice:
     nx: int = 8
     ny: int = 24
     nz: int = 8
+    drop: float = 0.0
+
+    def z(self, y):
+        """The wing's height (over the ground, or over mid-span's in free air) at spanwise station y."""
+        return (self.height or 0.0) - self.drop * np.asarray(y) / self.span
 
     def _panels(self):
         b, c = self.span, self.chord
-        z0 = self.height or 0.0
         xs = np.linspace(0.0, c, self.nx + 1)
         # Free tips: the lattice ends a quarter strip inside them (Hough), which settles the lift by 24
         # strips; plain spacing creeps down 1% each time the strips double. Endplates keep the full span.
         inset = 0.0 if self.endplate > 0 else 0.25 * b / (self.ny + 0.5)
         ys = (b - 2 * inset) * (np.linspace(0.0, 1.0, self.ny + 1) - 0.5)
         a_pts, b_pts, cols, normals, wing = [], [], [], [], []
+        zy = self.z(ys)
+        slope = -self.drop / b  # dz/dy: the strip is tilted about x, its normal with it
+        normal = np.array([0.0, -slope, 1.0]) / math.hypot(1.0, slope)
         for j in range(self.ny):
             for i in range(self.nx):
                 x0, dx = xs[i], xs[i + 1] - xs[i]
                 xq, x3 = x0 + 0.25 * dx, x0 + 0.75 * dx
-                a_pts.append((xq, ys[j], z0))
-                b_pts.append((xq, ys[j + 1], z0))
-                cols.append((x3, 0.5 * (ys[j] + ys[j + 1]), z0))
-                normals.append((0.0, 0.0, 1.0))
+                a_pts.append((xq, ys[j], zy[j]))
+                b_pts.append((xq, ys[j + 1], zy[j + 1]))
+                cols.append((x3, 0.5 * (ys[j] + ys[j + 1]), 0.5 * (zy[j] + zy[j + 1])))
+                normals.append(tuple(normal))
                 wing.append(True)
         if self.endplate > 0:
-            bottom = z0 + (self.endplate_bottom if self.height is None else self.endplate_bottom - z0) \
-                if self.endplate_bottom is not None else z0
-            top = bottom + self.endplate
-            parts = [(lo, hi) for lo, hi in ((bottom, min(z0, top)), (max(z0, bottom), top)) if hi - lo > 1e-9]
-            for lo, hi in parts:  # split at the wing so the lattices meet at the tip
-                n = max(2, round(self.nz * (hi - lo) / max(top - bottom, 1e-9)))
-                zs = lo + (hi - lo) * _cosine(n)
-                for side in (-0.5, 0.5):
+            for side in (-0.5, 0.5):
+                z0 = float(self.z(side * b))
+                bottom = z0 + (self.endplate_bottom if self.height is None else self.endplate_bottom - z0) \
+                    if self.endplate_bottom is not None else z0
+                top = bottom + self.endplate
+                parts = [(lo, hi) for lo, hi in ((bottom, min(z0, top)), (max(z0, bottom), top)) if hi - lo > 1e-9]
+                for lo, hi in parts:  # split at the wing so the lattices meet at the tip
+                    n = max(2, round(self.nz * (hi - lo) / max(top - bottom, 1e-9)))
+                    zs = lo + (hi - lo) * _cosine(n)
                     for k in range(n):
                         for i in range(self.nx):
                             x0, dx = xs[i], xs[i + 1] - xs[i]
@@ -142,13 +159,16 @@ class Lattice:
                             wing.append(False)
         return (np.array(a_pts), np.array(b_pts), np.array(cols), np.array(normals), np.array(wing), xs, ys)
 
-    def solve(self) -> Result:
+    def _system(self):
         a, b, p, n, wing, xs, ys = self._panels()
         ground = self.height is not None
         v = _influence(a, b, p, FAR * max(self.span, self.chord), ground)
         mat = np.einsum("nmk,nk->nm", v, n)
-        rhs = -np.where(wing, 1.0, 0.0)  # alpha = 1 rad, small-angle: the freestream's normal part on the wing
-        gam = np.linalg.solve(mat, rhs)
+        rhs = -np.where(wing, n[:, 2], 0.0)  # alpha = 1 rad, small-angle: the freestream's normal part on the wing
+        return a, b, n, wing, ys, ground, mat, np.linalg.solve(mat, rhs)
+
+    def solve(self) -> Result:
+        a, b, n, wing, ys, ground, mat, gam = self._system()
         g = gam[wing].reshape(self.ny, self.nx).sum(axis=1)
         cl = 2 * g / self.chord
         cl_wing = float(np.sum(g * np.diff(ys))) * 2 / (self.span * self.chord)
@@ -158,19 +178,53 @@ class Lattice:
                       k_lift=1 / cl_wing - 1 / a2d, k_drag=cdi / cl_wing ** 2)
 
 
-def _trefftz_drag(a: np.ndarray, b: np.ndarray, gam: np.ndarray, ground: bool) -> float:
-    """Induced drag over q (m^2) from the wake far downstream: every trailing leg a 2D vortex in the
-    (y, z) plane (with its image), Di = -(rho/2) sum gamma (x cross t) . u ds over every strip."""
+    def strips(self, count: int) -> Strips:
+        """The induced angle on count equal spanwise strips per unit section Cl on each, for a strip
+        model (finite.couple_strips): each strip's circulation held in its chordwise shape (the
+        lattice's own at a uniform angle), the endplates solved to let no flow through, then the
+        trailing vortices' downwash far behind (Trefftz plane) over 2, the mean over the strip, as
+        lifting line. Loaded as the lattice loads itself, sum Cl_i (k Cl)_i width_i / span is its Cdi."""
+        if self.ny % count:
+            raise ValueError(f"{self.ny} lattice strips do not split into {count}")
+        a, b, n, wing, ys, ground, mat, gam = self._system()
+        shape = gam[wing].reshape(self.ny, self.nx)
+        shape = shape / shape.sum(axis=1, keepdims=True)
+        plate = ~wing
+        wa, wb = a[wing].reshape(self.ny, self.nx, 3)[:, 0, 1:], b[wing].reshape(self.ny, self.nx, 3)[:, 0, 1:]
+        mid, up = 0.5 * (wa + wb), n[wing].reshape(self.ny, self.nx, 3)[:, 0, 1:]  # column centres, normals (y, z)
+        per = self.ny // count
+        k = np.zeros((count, count))
+        for j in range(count):
+            g = np.zeros_like(gam)
+            col = np.zeros((self.ny, self.nx))
+            col[j * per:(j + 1) * per] = 0.5 * self.chord * shape[j * per:(j + 1) * per]  # Cl 1 = circulation c / 2
+            g[wing] = col.ravel()
+            if plate.any():
+                g[plate] = np.linalg.solve(mat[np.ix_(plate, plate)], -mat[np.ix_(plate, wing)] @ g[wing])
+            angle = -0.5 * np.einsum("nk,nk->n", _wake_velocity(a, b, g, ground, mid), up)
+            k[:, j] = angle.reshape(count, per).mean(axis=1)
+        y = 0.5 * (ys[:-1] + ys[1:]).reshape(count, per).mean(axis=1)
+        return Strips(y=y, height=self.z(y) if self.height is not None else None,
+                      width=np.diff(ys).reshape(count, per).sum(axis=1), k=k)
+
+
+def _wake_velocity(a: np.ndarray, b: np.ndarray, gam: np.ndarray, ground: bool, at: np.ndarray) -> np.ndarray:
+    """Velocity (y, z) far downstream at points at (n, 2), every trailing leg a 2D vortex with its image."""
     pts = np.concatenate([a[:, 1:], b[:, 1:]])  # the leg at a runs upstream (-gamma along x), at b downstream
     strength = np.concatenate([-gam, gam])
     if ground:
         pts = np.concatenate([pts, pts * [1.0, -1.0]])
         strength = np.concatenate([strength, -strength])
-    mid = 0.5 * (a[:, 1:] + b[:, 1:])
-    r = mid[:, None, :] - pts[None, :, :]
+    r = at[:, None, :] - pts[None, :, :]
     r2 = np.einsum("nmk,nmk->nm", r, r)
     w = np.where(r2 > CORE, strength / (2 * math.pi * np.maximum(r2, 1e-300)), 0.0)
-    u = np.stack([-(w * r[..., 1]).sum(1), (w * r[..., 0]).sum(1)], axis=1)  # x cross r, in (y, z)
+    return np.stack([-(w * r[..., 1]).sum(1), (w * r[..., 0]).sum(1)], axis=1)  # x cross r, in (y, z)
+
+
+def _trefftz_drag(a: np.ndarray, b: np.ndarray, gam: np.ndarray, ground: bool) -> float:
+    """Induced drag over q (m^2) from the wake far downstream: every trailing leg a 2D vortex in the
+    (y, z) plane (with its image), Di = -(rho/2) sum gamma (x cross t) . u ds over every strip."""
+    u = _wake_velocity(a, b, gam, ground, 0.5 * (a[:, 1:] + b[:, 1:]))
     t = b[:, 1:] - a[:, 1:]  # the bound vortex, its length the strip's width
     normal = np.stack([-t[:, 1], t[:, 0]], axis=1)  # x cross t, in (y, z)
     return float(-np.sum(gam * np.einsum("nk,nk->n", normal, u)))  # (rho/2) / q = 1
