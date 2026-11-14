@@ -76,3 +76,25 @@ It does not change the answer here. The estimate starts the loop at +9.58 deg, p
 STAR's half car includes the body (user, 14 Nov). So the nose sits between the two inner endplates (410 mm apart if CATIA y = 0 is the centreline) and changes the flow the wing sees: blockage and upwash ahead of the body, and the inner tip half sealed. AeroBench's strip has none of that. STAR's 0.8 is the whole car's CL, body and wing together (user, 14 Nov): the half car's force on half the reference, so the same coefficient as the full car on 1.0 m^2. So the -1.12 above is not the wing's number, and the lift targets in the two paragraphs above are void; the wing's own share is unknown until STAR reports a force on the wing's surfaces alone.
 
 What still compares is the separation: STAR's frontwing#1.02 keeps its main attached at the leading edge, and AeroBench's loop on this wing ends with the main stalled from its leading edge on the pressure side. That holds whatever the wing's share of the 0.8 is.
+
+### In spanwise strips (14 Nov, `run_polars.py`, `run_strips.py`)
+
+Section polars at the three heights the wing's main sits at across the span (74.1 mm inboard, 96.6 mm mid-span, 119.1 mm outboard), fully turbulent SST on the fine mesh, 2 to 10.5 deg in the section's own angle (`polars.json`, about 14 min a solve). Then 6 strips between the 315 mm endplates, each on the polar at its own height (straight between the two run heights about it), the lattice with the 45 mm drop and the 35 mm gap coupling them (`finite.couple_strips`, `strips.json`).
+
+What the polars say, Cl on the 682 mm sum of the chords:
+
+| Height | Last settled point | Then | Main stalls from its leading edge |
+|---|---|---|---|
+| 74.1 mm | +7 deg, -3.68 | +8 deg, -0.38, not settling (Cl swings 0.7) | from +7 deg |
+| 96.6 mm | +8.75 deg, -2.75 | +9.5 deg, +0.01, not settling | from +8 deg |
+| 119.1 mm | +9.5 deg, -2.38 | +10.5 deg, +0.06, settled on average | from +8 deg |
+
+- Of 24 solves, 11 converged and 1 ran unsteady (6 deg at 96.6 mm, the mean used). 7 more stopped at the iteration cap with Cl still moving less than 0.005 over the last 200 iterations; `run_strips.py` uses those (its `drift` limit, 0.01). The 5 left out are all past the cliff, Cl swinging 0.09 to 2.5.
+- The two lower flaps separate at the trailing edge (the last 10-23% of their chord) at every angle and every height.
+- The cliff moves 2 to 3 deg with the 45 mm of height: the low end of the wing loses its lift first.
+
+The strips on the settled points: the three outboard strips settle at +7.3 to +8.1 deg (Cl -3.38 to -2.90), attached at the leading edge only at the first of those. The three inboard strips run past their polars' last settled angle (+7 deg, since the polars between 74 and 97 mm stop where the 74 mm one does), so the wing's Cl from that run, -3.39, is not an answer. The single strip at mid-span runs past its polar too, at +11.3 deg.
+
+With the 5 unsettled stalled points put in as well (`run_strips.py 99`, only a look at where they land, since those Cl are not converged): every strip lands on the cliff, +7.6 deg at the low end to +9.3 deg at the high end, wing Cl -2.26 on the summed chord (-2.47 on the planform chord). The single strip at mid-span lands at +8.85 deg, Cl -2.39, also on the cliff. Between two run heights the strip's polar is a blend of a stalled and an attached section, which no real section is, so these numbers say where the cliff is, not what the wing carries on it.
+
+So the strips do not change the single strip's answer: at STAR's setup the lattice puts the section's angle where SST stalls the main from its leading edge, across the whole span, the low end first. STAR's main stays attached there. Either the induced angle is too large (the body between the inner endplates, which neither the strips nor the lattice have) or SST stalls this section 1 to 2 deg early. Telling those apart needs STAR's wing-surface force or its sectional pressures at one span station.
