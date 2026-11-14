@@ -104,3 +104,57 @@ def settle(cl_at, alpha: float, span: float, chord: float, endplate: float, ride
         c1 = cl_at(a1)
         f1 = gap(a1, c1)
     return a1, c1
+
+
+STEEP = 2.0  # a polar segment this many times steeper than the polar's typical slope is a jump: a stall
+
+
+def couple_strips(polars, k, width, alpha: float) -> dict:
+    """Spanwise strips on their own section polars, coupled by the vortex lattice (vlm.Lattice.strips):
+    strip i meets the flow at a_i = alpha - degrees(k @ cl)_i, cl_i its polar's Cl at a_i (straight
+    lines between the polar's angles). polars: per strip (angles in degrees, Cl). Returns each strip's
+    angle and Cl, the wing's Cl (width-weighted), and the strips whose angle is outside their polar
+    (out_of_range: the end value is used), past the polar's lift peak (past_stall: the slope's sign
+    flips) or on a jump in it (steep: Cl interpolated across a stall between two solves)."""
+    import numpy as np
+    from scipy.optimize import root
+
+    k, width = np.asarray(k, float), np.asarray(width, float)
+    pa = [np.asarray(p[0], float) for p in polars]
+    pc = [np.asarray(p[1], float) for p in polars]
+    order = [np.argsort(a) for a in pa]
+    pa, pc = [a[o] for a, o in zip(pa, order)], [c[o] for c, o in zip(pc, order)]
+
+    def cl(a):
+        return np.array([np.interp(x, ax, cx) for x, ax, cx in zip(a, pa, pc)])
+
+    def gap(a):
+        return alpha - np.degrees(k @ cl(a)) - a
+
+    start = np.full(len(polars), float(alpha))
+    sol = root(gap, start, method="hybr")
+    if not sol.success or np.abs(gap(sol.x)).max() > 1e-6:
+        # Continuation: from the polars' least loaded angle up to alpha, each step from the last.
+        a = np.array([ax[np.argmin(np.abs(cx))] for ax, cx in zip(pa, pc)])
+        a0 = float(np.mean(a))
+        for t in np.linspace(0.1, 1.0, 10):
+            step = a0 + t * (alpha - a0)
+            sol = root(lambda x, s=step: s - np.degrees(k @ cl(x)) - x, a, method="hybr")
+            a = sol.x
+    a = sol.x
+    c = cl(a)
+    out, past, steep = [], [], []
+    for i, (x, ax, cx) in enumerate(zip(a, pa, pc)):
+        if x < ax[0] or x > ax[-1]:
+            out.append(i)
+            continue
+        slopes = np.diff(cx) / np.diff(ax)
+        s = slopes[min(int(np.searchsorted(ax, x, side="right")) - 1, len(slopes) - 1)]
+        typical = np.median(slopes)
+        if np.sign(s) != np.sign(typical):
+            past.append(i)
+        elif abs(s) > STEEP * np.median(np.abs(slopes)):
+            steep.append(i)
+    return {"alpha": [float(x) for x in a], "cl": [float(x) for x in c],
+            "cl_wing": float(np.sum(c * width) / np.sum(width)),
+            "converged": bool(np.abs(gap(a)).max() < 1e-6), "out_of_range": out, "past_stall": past, "steep": steep}

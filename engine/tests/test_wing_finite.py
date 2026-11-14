@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from aeroengine.wing.finite import car_contribution, effective_aspect_ratio, lift_factor
@@ -67,3 +68,54 @@ def test_settle_finds_the_angle_the_flow_meets_the_wing_at():
     a, cl = settle(cl_at, 0.0, 2.0, 1.0, 0.0, None)
     k = 0.08 * 180 / math.pi / (math.pi * 2.0)  # AR 2: induced angle = k (12 - a)
     assert a == pytest.approx(12 * k / (1 + k), abs=0.05) and cl == pytest.approx(cl_at(a)) and len(calls) <= 6
+
+
+def _linear_polar(lo=-10.0, hi=20.0):
+    a = np.arange(lo, hi + 0.5, 1.0)
+    return list(a), list(2 * np.pi * np.radians(a))
+
+
+def test_one_strip_on_a_linear_polar_is_lifting_line():
+    from aeroengine.wing.finite import couple_strips
+
+    kappa = 0.08
+    r = couple_strips([_linear_polar()], np.array([[kappa]]), np.array([1.0]), 5.0)
+    want = 2 * np.pi * np.radians(5.0) / (1 + 2 * np.pi * kappa)
+    assert r["converged"] and r["cl_wing"] == pytest.approx(want, rel=1e-3)
+    assert r["alpha"][0] == pytest.approx(5.0 - np.degrees(kappa * want), abs=1e-3)
+    assert r["out_of_range"] == [] and r["past_stall"] == [] and r["steep"] == []
+
+
+def test_strips_weight_by_width_and_feel_each_other():
+    from aeroengine.wing.finite import couple_strips
+
+    k = np.array([[0.10, 0.02], [0.02, 0.05]])
+    r = couple_strips([_linear_polar(), _linear_polar()], k, np.array([0.3, 0.1]), 5.0)
+    cl = np.asarray(r["cl"])
+    assert np.asarray(r["alpha"]) == pytest.approx(5.0 - np.degrees(k @ cl), abs=1e-3)
+    assert r["cl_wing"] == pytest.approx((0.3 * cl[0] + 0.1 * cl[1]) / 0.4)
+    assert cl[0] < cl[1]  # more downwash on the first
+
+
+def test_a_strip_past_its_polar_is_flagged():
+    from aeroengine.wing.finite import couple_strips
+
+    r = couple_strips([_linear_polar(0.0, 5.0)], np.array([[0.01]]), np.array([1.0]), 8.0)
+    assert r["out_of_range"] == [0]
+
+
+def test_a_strip_past_the_lift_peak_is_flagged():
+    from aeroengine.wing.finite import couple_strips
+
+    polar = ([0.0, 4.0, 8.0, 12.0, 16.0], [0.0, 0.44, 0.88, 1.0, 0.6])
+    r = couple_strips([polar], np.array([[0.005]]), np.array([1.0]), 15.0)
+    assert r["past_stall"] == [0] and r["out_of_range"] == []
+
+
+def test_a_strip_on_a_cliff_in_its_polar_is_flagged():
+    # frontwing#1.02's section: Cl -3.2 at +8 deg, all of it gone by +9 (the main stalls on its pressure side).
+    from aeroengine.wing.finite import couple_strips
+
+    polar = ([0.0, 4.0, 8.0, 9.0, 12.0], [-4.4, -3.8, -3.2, 0.05, 0.2])
+    r = couple_strips([polar], np.array([[0.12]]), np.array([1.0]), -7.45)
+    assert r["steep"] == [0] and 8.0 < r["alpha"][0] < 9.0 and r["converged"]
