@@ -6,9 +6,9 @@ The one published case found with a front wing's own geometry, endplates, a movi
 - Tunnel: 30 m/s, Re 0.43-0.46e6, moving belt, freestream turbulence 0.2%, transition free. Height h: ground to the wing's lowest point.
 - Measured: the whole wing's CL from the balance and the mid-span sectional Cl from the chordwise pressures (Figure 9b, digitised to about +-0.01; the freestream CL of 0.69 from the text), and where the suction-surface boundary layer detaches at the semispan (Table 9, oil flow). Table 15's "experimental" column matches Figure 9b at h/c 0.671 but reads lower nearer the ground; the author calls it an estimate, so Figure 9b is used.
 
-## Results (13 Nov 2026, SST-LM, fine mesh, current engine)
+## Results (13-14 Nov 2026, SST-LM, fine mesh, current engine)
 
-"2D" is the section at its full angle; "on the car" is `rans.solve_finite` (lifting-line induced angle on span and endplates, cut by the ground factor), whose Cl stands for the whole wing. "Unsteady" means the flow has no steady answer and the number is its mean.
+"2D" is the section at its full angle; "on the car" is `rans.solve_finite`, whose Cl stands for the whole wing. Its induced angle came from lifting line (Hoerner endplates, Wieselsberger ground factor) on 13 Nov, and from the vortex lattice (`wing/vlm.py`: wing, endplates and the gap under them, the ground as a mirror) from 14 Nov. Down to h/c 0.134 the lattice angle is within 3% of lifting line's, which moves the lift under 0.6%, so those rows were not rerun; 0.090 and 0.067 are the lattice runs. "Unsteady" means the flow has no steady answer and the number is its mean.
 
 | h/c | 2D Cl | measured mid-span Cl | 2D separates from | On-car separates from | measured | Induced angle | On-car Cl | measured wing CL | on car vs measured |
 |---|---|---|---|---|---|---|---|---|---|
@@ -16,12 +16,13 @@ The one published case found with a front wing's own geometry, endplates, a movi
 | 0.448 | 1.122 | 1.026 | attached | attached | - | +1.39 deg | 0.916 | 0.941 | -2.7% |
 | 0.224 | 1.444 | 1.395 | 0.988 | attached | 0.99 | +1.31 deg | 1.291 (unsteady) | 1.269 | +1.7% |
 | 0.134 | 1.721 (unsteady) | 1.684 | 0.866 | 0.931 | 0.91 | +1.33 deg | 1.608 (unsteady) | 1.612 | -0.2% |
-| 0.090 | 1.579 (not converged) | 1.759 | 0.719 | 0.819 | 0.80 | +1.36 deg | 1.634 | 1.72 | -5.0% |
-| 0.067 | 1.669 (not converged) | 1.765 | 0.677 | 0.738 | 0.71 | +1.27 deg | 1.535 | 1.71 | -10.2% |
+| 0.090 | 1.579 (not converged) | 1.759 | 0.719 | 0.786 | 0.80 | +0.84 deg (lifting line +1.36: 1.634, -5.0%) | 1.673 | 1.72 | -2.7% |
+| 0.067 | 1.669 (not converged) | 1.765 | 0.677 | 0.696 | 0.71 | +0.34 deg (lifting line +1.27: 1.535, -10.2%) | 1.698 (not converged) | 1.71 | -0.7% |
 
 What it says:
 - From h/c 0.448 down to 0.134 the run as on the car lands within 3% of the balance, and where the wing separates within about 0.02 chord of the oil flow.
-- Below 0.134 it reads low: -5% at 0.090, -10% at 0.067. Separation still lands within 0.03 chord of the oil flow, so the stall is right. The induced angle is what is wrong. The thesis's PIV shows the tip vortex weakening suddenly below h/c 0.134, as the gap under the endplate is too small for it to roll up (section 4.7), so the tip losses shrink. The balance agrees: the whole wing's CL sits 8-9% under the mid-span Cl at 0.448 and 0.224 but only 2-3% under it at 0.090 and 0.067. Lifting line with the Wieselsberger factor keeps the induced angle near 1.3 deg all the way down. Not fixed: one wing's data is not enough to fit a vortex-collapse model, and the app says the run reads low this close to the ground.
+- Below 0.134 lifting line read low: -5% at 0.090, -10% at 0.067, with separation still within 0.03 chord of the oil flow, so the stall was right and the induced angle wrong. The thesis's PIV shows the tip vortex weakening suddenly below h/c 0.134, as the gap under the endplate is too small for it to roll up (section 4.7), so the tip losses shrink. The balance agrees: the whole wing's CL sits 8-9% under the mid-span Cl at 0.448 and 0.224 but only 2-3% under it at 0.090 and 0.067. Lifting line with the Wieselsberger factor keeps the induced angle near 1.3 deg all the way down.
+- The vortex lattice sees the gap close: its angle falls to +0.84 deg at 0.090 and +0.34 deg at 0.067, and the runs land at -2.7% and -0.7%, separation within 0.015 chord of the oil flow. Nothing is fitted to this wing. The 0.067 run is not converged (residual down 1.6 orders, one solve of the angle loop), so its -0.7% is a moving number; 0.090 settled in three solves. A linear lattice cannot roll a vortex up or let it collapse, so the agreement comes from the mirror closing the gap, not from the vortex physics.
 - In free air it reads 10% low. Why, as far as it goes:
   - Not the downwash model. The measured 3D lift slope is 4.57 /rad (thesis section 3.2). Lifting line with AR_eff 5.77 on NeuralFoil's 2D slope at the reference (6.36 /rad) gives 4.71 /rad, 3% steeper than the tunnel. So the downwash is not too strong.
   - About 4 points are the tunnel. Every force test ran in the closed 2.1 x 1.7 m tunnel (section 2.5), and the thesis applies no wall corrections. The free-air test sat at its centre. For a closed rectangular section (Rae & Pope, delta about 0.125, S/C 0.069), the walls cut the wing's downwash by about 0.34 deg at CL 0.69. That is CL +0.027, so the free-air CL corrected to open air is about 0.663. Blockage is under 0.2% of q. Near the moving ground, the vortices and their images act as a pair, and the walls do much less.

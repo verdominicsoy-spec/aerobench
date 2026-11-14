@@ -348,66 +348,77 @@
    "tu_at_wing": 0.002031629935442418
   },
   "on_car": {
-   "cl": 1.6344539576758241,
-   "cd": 0.07384187635955777,
+   "cl": 1.6732280060472442,
+   "cd": 0.06343523445608709,
    "converged": true,
-   "reason": "settled on average: Cl and Cd are the means of the last 364 iterations (Cl swings \u00b10.003 about it)",
-   "x_sep": 0.8186,
+   "reason": "settled on average: Cl and Cd are the means of the last 381 iterations (Cl swings \u00b10.004 about it)",
+   "x_sep": 0.7855,
    "regions": [
     {
      "element": 0,
      "surface": "upper",
      "loaded": "suction",
      "kind": "leading-edge bubble",
-     "start": 0.026,
-     "end": 0.0827
+     "start": 0.0319,
+     "end": 0.0498
     },
     {
      "element": 0,
      "surface": "upper",
      "loaded": "suction",
      "kind": "bubble",
-     "start": 0.6563,
-     "end": 0.81
+     "start": 0.6697,
+     "end": 0.8189
     },
     {
      "element": 0,
      "surface": "lower",
      "loaded": "pressure",
      "kind": "bubble",
-     "start": 0.3442,
-     "end": 0.4046
+     "start": 0.3189,
+     "end": 0.3662
     },
     {
      "element": 0,
      "surface": "lower",
      "loaded": "pressure",
      "kind": "bubble",
-     "start": 0.4189,
-     "end": 0.4572
+     "start": 0.3806,
+     "end": 0.3949
+    },
+    {
+     "element": 0,
+     "surface": "lower",
+     "loaded": "pressure",
+     "kind": "bubble",
+     "start": 0.4093,
+     "end": 0.4285
     },
     {
      "element": 0,
      "surface": "lower",
      "loaded": "pressure",
      "kind": "trailing-edge separation",
-     "start": 0.8186,
+     "start": 0.7855,
      "end": 1.0
     }
    ],
    "finite": {
-    "alpha_effective": 1.357,
-    "induced_angle": 1.357,
-    "aspect_ratio_effective": 5.774,
-    "ground_factor": 0.261,
+    "alpha_effective": 0.836,
+    "induced_angle": 0.836,
+    "aspect_ratio_effective": 6.055,
+    "ground_factor": 0.1646,
     "solves": 3,
     "converged": true,
-    "cd_induced": 0.03843224801969514,
+    "cd_induced": 0.02422212329096899,
     "span": 1.1,
     "endplate": 0.1,
+    "endplate_bottom": null,
+    "planform": 0.2234,
+    "model": "vortex lattice",
     "stopped": null
    },
-   "tu_at_wing": 0.002030652785948059
+   "tu_at_wing": 0.002027117967751828
   },
   "measured": {
    "cl_centre": 1.759,
@@ -460,11 +471,11 @@
    "tu_at_wing": 0.002051163827943672
   },
   "on_car": {
-   "cl": 1.5352632004984985,
-   "cd": 0.08108107061132788,
-   "converged": true,
-   "reason": "settled on average: Cl and Cd are the means of the last 333 iterations (Cl swings \u00b10.004 about it)",
-   "x_sep": 0.7379,
+   "cl": 1.69786819,
+   "cd": 0.08883887158080934,
+   "converged": false,
+   "reason": "residual fell 1.6 orders, needs 4.0; Cl still moving (7.1e-02 over the last 200 iterations); Cd still moving (4.5e-01)",
+   "x_sep": 0.6955,
    "regions": [
     {
      "element": 0,
@@ -472,54 +483,57 @@
      "loaded": "suction",
      "kind": "leading-edge bubble",
      "start": 0.0245,
-     "end": 0.0737
+     "end": 0.1007
+    },
+    {
+     "element": 0,
+     "surface": "upper",
+     "loaded": "suction",
+     "kind": "bubble",
+     "start": 0.6727,
+     "end": 0.8174
     },
     {
      "element": 0,
      "surface": "lower",
      "loaded": "pressure",
      "kind": "bubble",
-     "start": 0.3269,
-     "end": 0.3702
+     "start": 0.292,
+     "end": 0.3376
     },
     {
      "element": 0,
      "surface": "lower",
      "loaded": "pressure",
      "kind": "bubble",
-     "start": 0.3798,
-     "end": 0.3941
-    },
-    {
-     "element": 0,
-     "surface": "lower",
-     "loaded": "pressure",
-     "kind": "bubble",
-     "start": 0.4037,
-     "end": 0.4229
+     "start": 0.347,
+     "end": 0.3805
     },
     {
      "element": 0,
      "surface": "lower",
      "loaded": "pressure",
      "kind": "trailing-edge separation",
-     "start": 0.7379,
+     "start": 0.6955,
      "end": 1.0
     }
    ],
    "finite": {
-    "alpha_effective": 1.266,
-    "induced_angle": 1.266,
-    "aspect_ratio_effective": 5.774,
-    "ground_factor": 0.261,
-    "solves": 3,
-    "converged": true,
-    "cd_induced": 0.03390908622862518,
+    "alpha_effective": 0.342,
+    "induced_angle": 0.342,
+    "aspect_ratio_effective": 6.055,
+    "ground_factor": 0.1265,
+    "solves": 1,
+    "converged": false,
+    "cd_induced": 0.019170606530809348,
     "span": 1.1,
     "endplate": 0.1,
-    "stopped": null
+    "endplate_bottom": null,
+    "planform": 0.2234,
+    "model": "vortex lattice",
+    "stopped": "solve 1 at +0.34\u00b0 did not converge: residual fell 1.6 orders, needs 4.0; Cl still moving (7.1e-02 over the last 200 iterations); Cd still moving (4.5e-01)"
    },
-   "tu_at_wing": 0.00206103001167801
+   "tu_at_wing": 0.0020623969994107657
   },
   "measured": {
    "cl_centre": 1.765,

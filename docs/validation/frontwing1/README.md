@@ -64,5 +64,11 @@ STAR ran a half car: one side's wing, with the report's reference area 0.5 m^2. 
 
 Why the method does not hold here:
 - It is checked on one wing only: Zerihan's, AR 4.9, endplates a quarter of the span (../ground-3d). This one is AR 0.77, with endplates 60% of the span. Lifting line and Hoerner's endplate rule are made for slender wings.
-- The endplates come down to 35 mm off the ground, 0.05 of the chord. On Zerihan's wing the tip vortex stops rolling up below 0.134 chords and the run reads 5-10% low there. The model knows the wing's height, not the gap under the endplates, so it keeps the full tip losses.
+- The endplates come down to 35 mm off the ground, 0.05 of the chord. Lifting line knew the wing's height, not the gap under the endplates, so it kept the full tip losses (on Zerihan's wing that read 5-10% low below 0.134 chords).
 - One section at mid-span stands for a wing that drops 45 mm across its span.
+
+### With the vortex lattice (14 Nov)
+
+`run_car.py 0.315 0.0966 0.5245 -7.45 0.035`: the lattice has the wing, both 315 mm endplates and the 35 mm gap under them, and the ground as a mirror. Its angle is 6.83 deg per unit of Cl (AR_eff 1.58, ground factor 0.59), against lifting line's 7.6. The same lattice put Zerihan's two lowest heights at -2.7% and -0.7% of the balance, where lifting line read -5% and -10% (../ground-3d).
+
+It does not change the answer here. The estimate starts the loop at +9.58 deg, past the cliff: SST-LM does not converge there (residual down 1.1 orders), and the SST fallback gives Cl +0.10, Cd 0.052, main stalled on its pressure side from the leading edge to 52%, every flap stalled. With the lattice, STAR's -1.12 wants the section at +7.6 deg (6.83 x 1.12), where RANS still carries Cl -3 to -4.5, attached. The loop's own answer, where the lattice's angle and the section's Cl agree, is still on the cliff between +8.25 and +10 deg. A better downwash does not move the cliff, so one strip cannot match STAR on this wing; what is left is the span (the 45 mm drop, the nose between the inner endplates) or the flaps, which this method cannot show.
