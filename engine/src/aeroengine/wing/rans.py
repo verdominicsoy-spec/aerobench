@@ -399,10 +399,11 @@ def surface_cp(path: Path, placed: list[np.ndarray]) -> list[dict]:
     return out
 
 
-FINITE_SOLVES = 4  # the 2D solve and up to three at the induced angle
+FINITE_SOLVES = 6  # solves at most: room to bisect a bracket down to FINITE_CLIFF
 FINITE_TOLERANCE = 0.1  # degrees: the induced angle has settled
 FINITE_RELAX = 0.7
 FINITE_STEP = 5.0  # degrees: the most one step moves the angle (a flat stretch of Cl sends a secant far off)
+FINITE_CLIFF = 0.25  # degrees: a bracket this narrow that still has not settled is a jump in the section's Cl
 
 
 def _estimate_polar(p: dict, alphas: list[float]) -> list[tuple[float, float]]:
@@ -423,6 +424,13 @@ def _fixed_point(f: list[tuple[float, float]], start: float) -> float:
     return min(f, key=lambda q: abs(q[1]))[0]
 
 
+def _bracket(tried: list) -> tuple | None:
+    """The closest pair of solves (angle, gap, ...) whose gaps (wanted - angle) have opposite signs,
+    lower angle first; None when every gap has the same sign."""
+    pairs = [(x, y) for x in tried for y in tried if x[0] < y[0] and x[1] * y[1] < 0]
+    return min(pairs, key=lambda q: q[1][0] - q[0][0]) if pairs else None
+
+
 def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: int, env: dict | None,
                  progress: Callable[[float, str], None], log: Callable[..., None], field: bool = True) -> dict:
     """The wing as it runs on the car: its section at the angle the flow meets
@@ -430,10 +438,12 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     endplate_bottom, the endplates' lower edge over the ground. The induced
     angle (the vortex lattice's downwash on wing, endplates and the ground's
     image, finite.lattice_factors) is first settled on the quick estimate's polar; RANS starts
-    there and the angle is moved by its own Cl (relaxed, then secant), each
-    solve from the last in free air, until it settles within
-    FINITE_TOLERANCE or FINITE_SOLVES solves, or a solve does not converge
-    (stopped). cl, cd (with induced drag), regions and the field are the
+    there and the angle is moved by its own Cl (relaxed, then secant; once two
+    solves bracket the answer, inside the bracket), each solve from the last
+    in free air, until it settles within FINITE_TOLERANCE, FINITE_SOLVES
+    solves, a solve does not converge (stopped), or the bracket closes to
+    FINITE_CLIFF without settling (cliff: the section's Cl jumps there, a
+    stall, and no single angle is the answer). cl, cd (with induced drag), regions and the field are the
     last solve's, or after a stop the last one that converged. No car upwash, endplate vortex or spanwise variation: the
     mid-span section on the car."""
     import shutil
@@ -463,7 +473,7 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     a = _fixed_point([(x, alpha + induced_angle(c, span, chord, endplate, ride) - x) for x, c in polar], alpha) \
         if polar else alpha  # no estimate at any angle: RANS from the drawn angle
     log(f"quick estimate: the induced angle settles at {a:+.2f}°; RANS from there")
-    ready, prev, r, settled, tried, stopped, good = None, None, None, False, [], None, None
+    ready, prev, r, settled, tried, stopped, good, cliff = None, None, None, False, [], None, None, None
     for n in range(1, FINITE_SOLVES + 1):
         folder = workdir / f"s{n}"
         folder.mkdir(parents=True, exist_ok=True)
@@ -498,20 +508,39 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
         if abs(target - a) < FINITE_TOLERANCE:
             settled = True
             break
+        tried.append((a, target - a, r, folder))
+        pair = _bracket(tried)
+        if pair and pair[1][0] - pair[0][0] <= FINITE_CLIFF:
+            # Bracketed this tightly and still not settled: the section's Cl jumps between the two (a stall
+            # cliff), so no angle settles. The run's answer is the side nearer settling, said as a cliff.
+            (lo, _, r_lo, _), (hi, _, r_hi, _) = pair
+            cliff = {"low": round(lo, 3), "high": round(hi, 3), "cl_low": r_lo["cl"], "cl_high": r_hi["cl"]}
+            a, _, r, folder = min(pair, key=lambda t: abs(t[1]))
+            log(f"stall cliff: Cl {r_lo['cl']:.3f} at {lo:+.2f}°, {r_hi['cl']:.3f} at {hi:+.2f}°; no angle between settles",
+                level="warning")
+            break
         if not ground:
             ready = {"mesh": r["mesh"], "transition": r["transition"]}
-            prev = (folder / "restart.dat").resolve() if (folder / "restart.dat").exists() else None
-        tried.append((a, target - a))
+            # Each from the last; once bracketed, from the more loaded end (the attached side of a stall).
+            src = max(pair, key=lambda t: abs(t[2]["cl"]))[3] if pair else folder
+            prev = (src / "restart.dat").resolve() if (src / "restart.dat").exists() else None
         if n < FINITE_SOLVES:
+            if pair:
+                # Bracketed: secant between the two ends, or halfway when that lands near an end
+                # (a jump in Cl puts it there and the bracket would barely shrink).
+                (a0, f0, *_), (a1, f1, *_) = pair
+                x = a0 - f0 * (a1 - a0) / (f1 - f0)
+                a = x if a0 + 0.25 * (a1 - a0) <= x <= a0 + 0.75 * (a1 - a0) else 0.5 * (a0 + a1)
+                continue
             if len(tried) >= 2 and tried[-1][1] != tried[-2][1]:
                 # Secant on (target - angle) over the last two: where the main stalls Cl moves
                 # fast with angle and relaxing swings about the answer (frontwing#1).
-                (a0, f0), (a1, f1) = tried[-2], tried[-1]
+                (a0, f0, *_), (a1, f1, *_) = tried[-2], tried[-1]
                 step = -f1 * (a1 - a0) / (f1 - f0)
             else:
                 step = FINITE_RELAX * (target - a)
             a = float(np.clip(a + np.clip(step, -FINITE_STEP, FINITE_STEP), sweep_a[0], sweep_a[-1]))
-    if not settled and stopped is None:
+    if not settled and stopped is None and cliff is None:
         log(f"the induced angle had not settled after {FINITE_SOLVES} solves", level="warning")
     # The last solve's files are the run's: the app reads the field and surface from the job folder.
     for f in folder.iterdir():
@@ -522,7 +551,7 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
          "finite": {"alpha_effective": round(a, 3), "induced_angle": round(a - alpha, 3), "aspect_ratio_effective": round(ar, 3),
                     "ground_factor": round(gf, 4), "solves": n, "converged": settled, "cd_induced": cd_induced,
                     "span": span, "endplate": endplate, "endplate_bottom": bottom, "planform": round(planform, 4),
-                    "model": "vortex lattice", "stopped": stopped}}
+                    "model": "vortex lattice", "stopped": stopped, "cliff": cliff}}
     return r
 
 

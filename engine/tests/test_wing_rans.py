@@ -797,7 +797,7 @@ def test_finite_wing_runs_at_the_induced_angle(monkeypatch, tmp_path):
     assert r["cd"] == pytest.approx(0.03 + f["cd_induced"]) and f["cd_induced"] == pytest.approx(r["cl"] ** 2 / (np.pi * 2), rel=0.005)  # the lattice: AR 2 at e 0.999
 
 
-def test_finite_wing_that_never_settles_stops_at_four_solves(monkeypatch, tmp_path):
+def test_finite_wing_that_never_settles_stops_at_six_solves(monkeypatch, tmp_path):
     from aeroengine.wing import rans
 
     calls = []
@@ -805,7 +805,7 @@ def test_finite_wing_that_never_settles_stops_at_four_solves(monkeypatch, tmp_pa
     _estimate(monkeypatch, lambda a, n: -0.08 * (12 - a))
     r = rans.solve_finite(_finite_params(), tmp_path, tmp_path / "m.su2", None, 1, None, lambda *a: None,
                           lambda *a, **k: None)
-    assert len(calls) == 4 and not r["finite"]["converged"]
+    assert len(calls) == 6 and not r["finite"]["converged"]
 
 
 def test_finite_wing_over_a_ground_meshes_each_angle(monkeypatch, tmp_path):
@@ -1051,3 +1051,31 @@ def test_finite_wing_stopped_later_reports_the_last_converged_solve(monkeypatch,
     assert r["converged"] and r["cl"] == pytest.approx(-2.0)
     assert f["alpha_effective"] == pytest.approx(calls[0]["alpha"], abs=1e-3) and not f["converged"]
     assert "did not converge" in f["stopped"]
+
+
+def test_finite_wing_on_a_stall_cliff_reports_the_cliff(monkeypatch, tmp_path):
+    # frontwing#1.02 as STAR ran it: the section holds Cl -3.2 to +8.6 deg and has lost it all past there, so
+    # the induced angle's answer is on the cliff and no angle settles. The loop narrows it and says so.
+    from aeroengine.wing import rans
+
+    calls = []
+    section = lambda a, n: -3.2 if a < 8.6 else 0.05  # noqa: E731
+    monkeypatch.setattr(rans, "solve", _fake_solver(calls, section))
+    _estimate(monkeypatch, section)
+    r = rans.solve_finite(_finite_params(), tmp_path, tmp_path / "m.su2", None, 1, None, lambda *a: None,
+                          lambda *a, **k: None)
+    f = r["finite"]
+    assert not f["converged"] and f["solves"] <= 6
+    c = f["cliff"]
+    assert c["low"] < 8.6 < c["high"] and c["high"] - c["low"] <= 0.25
+    assert c["cl_low"] == -3.2 and c["cl_high"] == 0.05
+
+
+def test_finite_wing_that_settles_has_no_cliff(monkeypatch, tmp_path):
+    from aeroengine.wing import rans
+
+    monkeypatch.setattr(rans, "solve", _fake_solver([], lambda a, n: -0.08 * (12 - a)))
+    _estimate(monkeypatch, lambda a, n: -0.09 * (13 - a))
+    r = rans.solve_finite(_finite_params(), tmp_path, tmp_path / "m.su2", None, 1, None, lambda *a: None,
+                          lambda *a, **k: None)
+    assert r["finite"]["converged"] and r["finite"]["cliff"] is None
