@@ -116,5 +116,205 @@
    -0.4071,
    -0.1856
   ]
+ },
+ "endplate 0.315 m, ride height 0.035 m": {
+  "cl": -0.04749302509,
+  "cd": 0.11776972288061631,
+  "converged": true,
+  "separated": true,
+  "separation": "Main separates on its upper (pressure) surface from the leading edge to 88% of its chord; Flap 1 separates on its upper (pressure) surface from the leading edge to 76% of its chord; Flap 1 separates on its upper (pressure) surface from 85% of its chord to the trailing edge; Flap 2 separates on its upper (pressure) surface from the leading edge to 85% of its chord; Flap 2 separates on its lower (suction) surface from the leading edge to 84% of its chord; Flap 3 separates on its upper (pressure) surface from the leading edge to 62% of its chord (RANS).",
+  "regions": [
+   {
+    "element": 0,
+    "surface": "upper",
+    "loaded": "pressure",
+    "kind": "leading-edge stall",
+    "start": 0.0001,
+    "end": 0.8764
+   },
+   {
+    "element": 1,
+    "surface": "upper",
+    "loaded": "pressure",
+    "kind": "leading-edge bubble",
+    "start": 0.0791,
+    "end": 0.0735
+   },
+   {
+    "element": 1,
+    "surface": "upper",
+    "loaded": "pressure",
+    "kind": "leading-edge bubble",
+    "start": 0.002,
+    "end": 0.0
+   },
+   {
+    "element": 1,
+    "surface": "upper",
+    "loaded": "pressure",
+    "kind": "leading-edge stall",
+    "start": 0.0068,
+    "end": 0.7617
+   },
+   {
+    "element": 1,
+    "surface": "upper",
+    "loaded": "pressure",
+    "kind": "trailing-edge separation",
+    "start": 0.8455,
+    "end": 1.0
+   },
+   {
+    "element": 1,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "trailing-edge separation",
+    "start": 0.9435,
+    "end": 1.0
+   },
+   {
+    "element": 2,
+    "surface": "upper",
+    "loaded": "pressure",
+    "kind": "leading-edge stall",
+    "start": 0.0181,
+    "end": 0.8515
+   },
+   {
+    "element": 2,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "leading-edge stall",
+    "start": 0.0009,
+    "end": 0.8406
+   },
+   {
+    "element": 3,
+    "surface": "upper",
+    "loaded": "pressure",
+    "kind": "leading-edge stall",
+    "start": 0.0968,
+    "end": 0.6222
+   },
+   {
+    "element": 3,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "leading-edge bubble",
+    "start": 0.0036,
+    "end": 0.127
+   },
+   {
+    "element": 3,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "bubble",
+    "start": 0.2534,
+    "end": 0.8987
+   }
+  ],
+  "finite": {
+   "alpha_effective": 6.539,
+   "induced_angle": 6.539,
+   "aspect_ratio_effective": 2.344,
+   "ground_factor": 0.2714,
+   "solves": 2,
+   "converged": false,
+   "cd_induced": 8.312178061631801e-05,
+   "span": 1.0,
+   "endplate": 0.315,
+   "stopped": "solve 2 at +2.03\u00b0 did not converge: residual fell 2.6 orders, needs 4.0; Cl still moving (1.7e-02 over the last 200 iterations); Cd still moving (4.5e-03)"
+  },
+  "bracket": {
+   "sst": {
+    "cl": -0.03395429097,
+    "cd": 0.1170401291856848,
+    "converged": false,
+    "separated": true,
+    "separation": "Main separates on its upper (pressure) surface from the leading edge to 87% of its chord; Flap 1 separates on its upper (pressure) surface from the leading edge to 100% of its chord; Flap 2 separates on its upper (pressure) surface from the leading edge to 83% of its chord; Flap 2 separates on its lower (suction) surface from the leading edge to 88% of its chord; Flap 3 separates on its upper (pressure) surface from the leading edge to 64% of its chord (RANS).",
+    "regions": [
+     {
+      "element": 0,
+      "surface": "upper",
+      "loaded": "pressure",
+      "kind": "leading-edge stall",
+      "start": 0.0001,
+      "end": 0.8693
+     },
+     {
+      "element": 1,
+      "surface": "upper",
+      "loaded": "pressure",
+      "kind": "leading-edge bubble",
+      "start": 0.0027,
+      "end": 0.0001
+     },
+     {
+      "element": 1,
+      "surface": "upper",
+      "loaded": "pressure",
+      "kind": "leading-edge stall",
+      "start": 0.0081,
+      "end": 1.0
+     },
+     {
+      "element": 1,
+      "surface": "lower",
+      "loaded": "suction",
+      "kind": "trailing-edge separation",
+      "start": 0.9305,
+      "end": 1.0
+     },
+     {
+      "element": 2,
+      "surface": "upper",
+      "loaded": "pressure",
+      "kind": "leading-edge stall",
+      "start": 0.0211,
+      "end": 0.8276
+     },
+     {
+      "element": 2,
+      "surface": "lower",
+      "loaded": "suction",
+      "kind": "leading-edge stall",
+      "start": 0.0034,
+      "end": 0.8799
+     },
+     {
+      "element": 3,
+      "surface": "upper",
+      "loaded": "pressure",
+      "kind": "leading-edge stall",
+      "start": 0.0968,
+      "end": 0.6386
+     },
+     {
+      "element": 3,
+      "surface": "lower",
+      "loaded": "suction",
+      "kind": "leading-edge bubble",
+      "start": 0.0048,
+      "end": 0.0731
+     },
+     {
+      "element": 3,
+      "surface": "lower",
+      "loaded": "suction",
+      "kind": "bubble",
+      "start": 0.2074,
+      "end": 0.8987
+     }
+    ]
+   }
+  },
+  "transition_decides": true,
+  "tu_at_wing": 0.011113476263690405,
+  "elements": [
+   0.1539,
+   -0.142,
+   -0.0058,
+   -0.0536
+  ]
  }
 }
