@@ -497,6 +497,36 @@ final class WingRansResultTests: XCTestCase {
         XCTAssertTrue(older.beforeTurbulenceFix)  // made before the turbulence reached the wing
     }
 
+    /// The vortex lattice's run on the car: where the endplates end, and a stall cliff when no angle settles.
+    func testARunOnAStallCliffSaysSo() throws {
+        let json = """
+        {"data": {"re": 1e6, "mesh": {"cells": 1, "triangles": 1, "quads": 0, "first_cell_height_m": 1e-5,
+          "layer_thickness_m": 0.01, "layers": 1}, "mesh_level": "fine", "transition": [], "model": "sst",
+          "model_name": "SST", "iterations": 4000, "converged": true, "residual_drop": 6, "cl": -3.2, "cd": 0.05,
+          "cm": 0, "elements": [], "surface": [], "finite": {"alpha_effective": 8.5, "induced_angle": 15.95,
+          "aspect_ratio_effective": 1.58, "ground_factor": 0.59, "solves": 6, "converged": false, "cd_induced": 0.02,
+          "span": 0.5245, "endplate": 0.315, "endplate_bottom": 0.035, "model": "vortex lattice", "stopped": null,
+          "cliff": {"low": 8.5, "high": 8.7, "cl_low": -3.2, "cl_high": 0.05}}}}
+        """
+        let f = try XCTUnwrap(try WingRansResult.decode(resultFile: Data(json.utf8)).finite)
+        XCTAssertEqual(f.endplateBottom, 0.035)
+        XCTAssertEqual(f.cliff, .init(low: 8.5, high: 8.7, clLow: -3.2, clHigh: 0.05))
+    }
+
+    /// The endplates' gap to the ground goes with the span and endplate height, only over a ground.
+    func testFiniteParamsCarryTheEndplateGapOverAGround() throws {
+        var w = Wing(span: 0.5245, endplateHeight: 0.315)
+        XCTAssertEqual(w.finiteParams(endplate: 0.315), ["span": 0.5245, "endplate": 0.315])
+        w.endplateGap = 0.035
+        XCTAssertEqual(w.finiteParams(endplate: 0.315), ["span": 0.5245, "endplate": 0.315])  // free air: no ground
+        w.rideHeight = 0.0966
+        XCTAssertEqual(w.finiteParams(endplate: 0.315), ["span": 0.5245, "endplate": 0.315, "endplate_bottom": 0.035])
+        let old = try JSONDecoder().decode(Wing.self, from: Data(#"{"span": 1.0, "endplateHeight": 0.2}"#.utf8))
+        XCTAssertNil(old.endplateGap)
+        let again = try JSONDecoder().decode(Wing.self, from: JSONEncoder().encode(w))
+        XCTAssertEqual(again.endplateGap, 0.035)
+    }
+
     /// The fully turbulent check beside the transition run, and skin friction on the surface.
     func testARunCarriesItsFullyTurbulentCheckAndSkinFriction() throws {
         let file = """

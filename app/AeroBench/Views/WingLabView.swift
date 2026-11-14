@@ -1025,10 +1025,15 @@ struct CFDResults: View {
                             .font(.caption2).foregroundStyle(S37.C.clayInk).fixedSize(horizontal: false, vertical: true)
                     }
                     if let f = r.finite {
-                        Text(String(format: "As on the car: flow turned %+.1f° by the induced angle (AR %.1f with endplates%@), %ld solves%@. Cd includes %.4f induced drag.",
-                                    f.inducedAngle, f.aspectRatioEffective, f.groundFactor < 1 ? ", ground" : "", f.solves,
+                        Text(String(format: "As on the car: flow turned %+.1f° by the induced angle (%@: AR %.1f with endplates%@), %ld solves%@. Cd includes %.4f induced drag.",
+                                    f.inducedAngle, f.model ?? "lifting line", f.aspectRatioEffective, f.groundFactor < 1 ? ", ground" : "", f.solves,
                                     f.converged ? "" : ", not settled", f.cdInduced))
                             .font(.caption2).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
+                        if let c = f.cliff {
+                            Text(String(format: "On a stall cliff: Cl %.2f at %+.2f°, %.2f at %+.2f°, and no angle between settles. On the car this wing sits at its stall, and which part of the span stalls is not shown by one section.",
+                                        lab.wing.shownCl(c.clLow), c.low, lab.wing.shownCl(c.clHigh), c.high))
+                                .font(.caption2).foregroundStyle(S37.C.clayInk).fixedSize(horizontal: false, vertical: true)
+                        }
                         if let why = f.stopped {
                             Text("Stopped before the induced angle settled: \(why).")
                                 .font(.caption2).foregroundStyle(S37.C.clayInk).fixedSize(horizontal: false, vertical: true)
@@ -1824,6 +1829,11 @@ struct WingInspector: View {
                 get: { wing.endplateHeight != nil }, set: { on in lab.edit { $0.endplateHeight = on ? 0.25 : nil } }))
             if let f = wing.finite3D {
                 NumberField(label: "Endplate height", unit: "mm", value: mm({ wing.endplateHeight ?? 0 }, { v in lab.edit("Change Endplate Height") { $0.endplateHeight = max(v, 0) } }))
+                if let ride = wing.rideHeight {
+                    // Unset, the endplates end level with the wing's lowest point; a front wing's usually reach lower.
+                    NumberField(label: "Endplate gap to the ground", unit: "mm", value: mm({ wing.endplateGap ?? ride }, { v in lab.edit("Change Endplate Gap") { $0.endplateGap = max(v, 0) } }))
+                        .help("From the ground up to the endplates' lower edge. The on-car run's vortex lattice uses it: a small gap stops the tip vortex and cuts the induced angle.")
+                }
                 LabeledContent("3D lift factor", value: String(format: "%.2f", f.liftFactor))
                 LabeledContent("Aspect ratio", value: String(format: "%.1f, %.1f with endplates", f.aspectRatio, f.effectiveAspectRatio))
             } else {

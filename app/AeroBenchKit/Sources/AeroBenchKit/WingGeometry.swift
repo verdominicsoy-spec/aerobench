@@ -183,6 +183,9 @@ public struct Wing: Codable, Equatable, Sendable {
     /// From the wing's lowest point to the ground (m), for a front wing in
     /// ground effect; nil is free air.
     public var rideHeight: Double?
+    /// From the ground up to the endplates' lower edge (m), for the vortex lattice on the car; nil is
+    /// level with the wing's lowest point. Only sent over a ground.
+    public var endplateGap: Double?
     public var speed: Double  // m/s, for the viscous solvers' Reynolds number
     public var rho: Double  // kg/m^3
     public var mu: Double  // Pa s
@@ -219,9 +222,17 @@ public struct Wing: Codable, Equatable, Sendable {
         factor3D = try c.decodeIfPresent(Double.self, forKey: .factor3D) ?? 1.0
         endplateHeight = try c.decodeIfPresent(Double.self, forKey: .endplateHeight)
         rideHeight = try c.decodeIfPresent(Double.self, forKey: .rideHeight)
+        endplateGap = try c.decodeIfPresent(Double.self, forKey: .endplateGap)
         speed = try c.decodeIfPresent(Double.self, forKey: .speed) ?? 15
         rho = try c.decodeIfPresent(Double.self, forKey: .rho) ?? 1.225
         mu = try c.decodeIfPresent(Double.self, forKey: .mu) ?? 1.81e-5
+    }
+
+    /// params.finite for a run as on the car with endplates of height endplate (engine rans.solve_finite).
+    public func finiteParams(endplate: Double) -> [String: Double] {
+        var p = ["span": span, "endplate": endplate]
+        if rideHeight != nil, let g = endplateGap { p["endplate_bottom"] = g }
+        return p
     }
 
     /// The rules box less its clearance: where the wing must fit.

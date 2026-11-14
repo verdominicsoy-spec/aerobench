@@ -98,7 +98,7 @@ public struct WingRansResult: Codable, Equatable, Sendable {
         public var end: Double
     }
     /// The run as the wing sits on the car (engine's rans.solve_finite): the section at the angle the
-    /// flow meets it there, from lifting line on span and endplates (cut by the ground's image over a ground).
+    /// flow meets it there, from a vortex lattice on span, endplates and the ground (lifting line before 14 Nov 2026).
     public struct Finite: Codable, Equatable, Sendable {
         public struct TwoD: Codable, Equatable, Sendable {
             public var cl: Double
@@ -120,6 +120,22 @@ public struct WingRansResult: Codable, Equatable, Sendable {
         public var twoD: TwoD?
         /// Why the loop stopped early: a solve that did not converge (its Cl is not a result to steer by).
         public var stopped: String?
+        /// The endplates' lower edge over the ground (m), as sent; nil, level with the wing's lowest point.
+        public var endplateBottom: Double?
+        /// What set the induced angle: "vortex lattice"; nil on runs before 14 Nov 2026 (lifting line).
+        public var model: String?
+        /// Two solves either side of the answer, 0.25° or less apart, that never settled: the section's
+        /// Cl jumps between them (a stall), so no single angle is the answer on the car.
+        public struct Cliff: Codable, Equatable, Sendable {
+            public var low: Double
+            public var high: Double
+            public var clLow: Double
+            public var clHigh: Double
+            public init(low: Double, high: Double, clLow: Double, clHigh: Double) {
+                self.low = low; self.high = high; self.clLow = clLow; self.clHigh = clHigh
+            }
+        }
+        public var cliff: Cliff?
     }
     /// Whether RANS says the wing separates, and where in words; nil on runs from before the check was saved.
     public var separated: Bool?

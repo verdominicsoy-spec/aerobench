@@ -246,7 +246,7 @@ extension AppState {
         if let mesh { params["mesh"] = .string(mesh) }
         if lab.bracket && lab.turbulenceModel == .sstLM { params["bracket"] = .bool(true) }
         if lab.onCar, let h = wing.endplateHeight {
-            params["finite"] = .object(["span": .double(wing.span), "endplate": .double(h)])
+            params["finite"] = .object(wing.finiteParams(endplate: h).mapValues { .double($0) })
         }
         lab.ransResult = nil
         lab.ransField = nil
@@ -353,7 +353,7 @@ extension AppState {
         params["trials"] = .int(setup.trials)
         params["parallel"] = .int(settings.parallelTrials)
         if lab.onCar, let h = wing.endplateHeight {  // trials and RANS checks as on the car
-            params["finite"] = .object(["span": .double(wing.span), "endplate": .double(h)])
+            params["finite"] = .object(wing.finiteParams(endplate: h).mapValues { .double($0) })
         }
         params["solver"] = .string(setup.solver)
         params["check"] = .int(setup.solver == "estimate" && settings.su2Executable != nil ? setup.checkBest : 0)
