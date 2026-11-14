@@ -117,8 +117,6 @@ def couple_strips(polars, k, width, alpha: float) -> dict:
     (out_of_range: the end value is used), past the polar's lift peak (past_stall: Cl falls as the angle
     rises) or on a jump in it (steep: Cl interpolated across a stall between two solves)."""
     import numpy as np
-    from scipy.optimize import root
-
     k, width = np.asarray(k, float), np.asarray(width, float)
     pa = [np.asarray(p[0], float) for p in polars]
     pc = [np.asarray(p[1], float) for p in polars]
@@ -131,17 +129,23 @@ def couple_strips(polars, k, width, alpha: float) -> dict:
     def gap(a):
         return alpha - np.degrees(k @ cl(a)) - a
 
-    start = np.full(len(polars), float(alpha))
-    sol = root(gap, start, method="hybr")
-    if not sol.success or np.abs(gap(sol.x)).max() > 1e-6:
-        # Continuation: from the polars' least loaded angle up to alpha, each step from the last.
-        a = np.array([ax[np.argmin(np.abs(cx))] for ax, cx in zip(pa, pc)])
-        a0 = float(np.mean(a))
-        for t in np.linspace(0.1, 1.0, 10):
-            step = a0 + t * (alpha - a0)
-            sol = root(lambda x, s=step: s - np.degrees(k @ cl(x)) - x, a, method="hybr")
-            a = sol.x
-    a = sol.x
+    # Strip by strip, the others held: each strip's own equation falls as its angle rises wherever its
+    # Cl does not fall (a jump in Cl included), so a bracketed root always exists. Newton across the
+    # polar's kinks loses the answer on a stall cliff (frontwing#1.02). Sweeps until nothing moves.
+    from scipy.optimize import brentq
+
+    a = np.full(len(polars), float(alpha))
+    c = cl(a)
+    span = max(float(np.ptp(np.concatenate(pa))), 1.0) + 90.0
+    for _ in range(500):
+        before = a.copy()
+        for i in range(len(a)):
+            rest = k[i] @ c - k[i, i] * c[i]
+            g = lambda x, i=i, rest=rest: alpha - np.degrees(k[i, i] * np.interp(x, pa[i], pc[i]) + rest) - x  # noqa: E731
+            a[i] = 0.5 * a[i] + 0.5 * brentq(g, pa[i][0] - span, pa[i][-1] + span, xtol=1e-10)
+            c[i] = np.interp(a[i], pa[i], pc[i])
+        if np.abs(a - before).max() < 1e-9:
+            break
     c = cl(a)
     out, past, steep = [], [], []
     for i, (x, ax, cx) in enumerate(zip(a, pa, pc)):

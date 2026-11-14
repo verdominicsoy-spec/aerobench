@@ -128,3 +128,19 @@ def test_a_polar_falling_everywhere_is_past_stall():
     polar = ([-10.0, 10.0], [-0.4, -2.6])
     r = couple_strips([polar, polar], np.array([[0.05, 0.01], [0.01, 0.05]]), np.array([1.0, 1.0]), 0.0)
     assert r["past_stall"] == [0, 1]
+
+
+def test_strips_settle_on_a_polar_with_a_cliff():
+    # frontwing#1.02's strips: Cl holds to +8.6 deg and is gone past it. Every strip's own equation is
+    # still one-signed, so the coupled answer exists; a Newton step across the kink loses it.
+    from aeroengine.wing.finite import couple_strips
+    from aeroengine.wing.vlm import Lattice
+
+    a = [2.0, 4.0, 6.0, 7.0, 8.0, 8.75, 9.5, 10.5]
+    s = Lattice(span=0.5245, chord=0.6245, height=0.0966, endplate=0.315, endplate_bottom=0.035, drop=0.045).strips(6)
+    # the cliff 0.1 deg later per mm higher off the ground
+    polars = [(a, [-4.6 + 0.17 * x if x < 8.6 + 100 * (h - 0.0966) else 0.05 for x in a]) for h in s.height]
+    r = couple_strips(polars, s.k * 0.682 / 0.6245, s.width, -7.45)
+    assert r["converged"]
+    gap = -7.45 - np.degrees(s.k * 0.682 / 0.6245 @ np.asarray(r["cl"])) - np.asarray(r["alpha"])
+    assert np.abs(gap).max() < 1e-4

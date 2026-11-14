@@ -45,5 +45,5 @@ The same wing in 12 strips across the span (`finite.couple_strips` on `vlm.Latti
 
 - The mid-span Cl lands within 2% of the pressures from h/c 0.448 to 0.134, so the spanwise load is right where it can be checked: the tips carry less, by an angle that grows from 2 to 5 deg as the ground comes up.
 - The wing's CL reads 1-5% under the balance, a point or two lower than the single strip. Part is the endplates' own side force: about 2% of the induced drag, a thrust no wing strip sees, which the single strip's angle counts in and the strips leave out. The tip strips also run 2-5 deg past the two RANS points the straight polar is drawn through.
-- At 0.090 and 0.067 the 2D point (not converged, separating early) has more lift than the on-car one at a smaller angle, so the straight line through them says Cl falls as the angle rises, which is a stalled section. `couple_strips` names such strips past stall and these rows are left out rather than run on a polar that is not the section's.
+- At 0.090 and 0.067 the 2D point (not converged, separating early) has more lift than the on-car one at a smaller angle, so the straight line through them says Cl falls as the angle rises, which is a stalled section; these rows are left out rather than run on a polar that is not the section's (the coupled strips swing ±40 deg on it).
 

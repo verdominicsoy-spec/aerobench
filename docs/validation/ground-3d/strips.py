@@ -30,12 +30,12 @@ for case, r in res.items():
     polar = (list(angles), list(y[0] + slope * angles))
     ride = None if case == "free" else float(case) * CHORD
     s = Lattice(span=SPAN, chord=CHORD, height=ride, endplate=ENDPLATE, endplate_bottom=ride).strips(STRIPS)
-    c = couple_strips([polar] * STRIPS, s.k, s.width, 0.0)
-    if c["past_stall"]:  # the two points say Cl falls with angle: the 2D solve stalled early, no polar to run on
+    if slope <= 0:  # the two points say Cl falls with angle: the 2D solve stalled early, no polar to run on
         print(f"{case:5} no strips: the 2D point ({'converged' if two['converged'] else 'not converged'}) "
               f"puts the polar past stall")
         out[case] = {"past_stall": True}
         continue
+    c = couple_strips([polar] * STRIPS, s.k, s.width, 0.0)
     cl, mid = -c["cl_wing"], -0.5 * (c["cl"][STRIPS // 2 - 1] + c["cl"][STRIPS // 2])
     w, ctr = m.get("cl_wing"), m.get("cl_centre")
     pct = lambda a, b: f"{100 * (a / b - 1):+5.1f}%" if b else "   -  "  # noqa: E731
