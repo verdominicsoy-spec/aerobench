@@ -794,7 +794,7 @@ def test_finite_wing_runs_at_the_induced_angle(monkeypatch, tmp_path):
     assert calls[0]["alpha"] == pytest.approx(5.86, abs=0.02) and len(calls) >= 2
     assert all(c["ready"] and c["restart"] is not None for c in calls[1:])  # free air: one mesh, each from the last
     assert r["cl"] == pytest.approx(-0.08 * (12 - calls[-1]["alpha"]))
-    assert r["cd"] == pytest.approx(0.03 + f["cd_induced"]) and f["cd_induced"] == pytest.approx(r["cl"] ** 2 / (np.pi * 2))
+    assert r["cd"] == pytest.approx(0.03 + f["cd_induced"]) and f["cd_induced"] == pytest.approx(r["cl"] ** 2 / (np.pi * 2), rel=0.005)  # the lattice: AR 2 at e 0.999
 
 
 def test_finite_wing_that_never_settles_stops_at_four_solves(monkeypatch, tmp_path):

@@ -27,9 +27,10 @@ def test_car_contribution():
 def test_induced_angle_unloads_the_wing():
     from aeroengine.wing.finite import induced_angle
 
-    # AR_eff 2 (2 m span, 1 m chord, no endplates), Cl -2 (downforce): the flow turns up by Cl/(pi AR) = 18.2 deg.
-    assert induced_angle(-2.0, 2.0, 1.0, 0.0, None) == pytest.approx(18.24, abs=0.01)
-    assert induced_angle(2.0, 2.0, 1.0, 0.0, None) == pytest.approx(-18.24, abs=0.01)  # a lifting wing: downwash
+    # AR 2 (2 m span, 1 m chord, no endplates), Cl -2 (downforce): the flow turns up by about Cl/(pi AR) = 18.2 deg
+    # (the lattice's span efficiency on so short a wing is 0.999).
+    assert induced_angle(-2.0, 2.0, 1.0, 0.0, None) == pytest.approx(18.24, rel=0.005)
+    assert induced_angle(2.0, 2.0, 1.0, 0.0, None) == pytest.approx(-18.24, rel=0.005)  # a lifting wing: downwash
 
 
 def test_ground_cuts_the_induced_angle():
@@ -40,7 +41,16 @@ def test_ground_cuts_the_induced_angle():
     assert ground_factor(0.1, 1.0) == pytest.approx(1 - 0.868 / 1.79)
     # Held at the ends of the range the formula was made for.
     assert ground_factor(0.001, 1.0) == ground_factor(0.033, 1.0) and ground_factor(1.0, 1.0) == ground_factor(0.25, 1.0)
-    assert induced_angle(-2.0, 2.0, 1.0, 0.0, 0.2) == pytest.approx(18.24 * ground_factor(0.2, 2.0), abs=0.01)
+    # The lattice's ground (the induced angle on AR 2 at h/b 0.1) lands on Wieselsberger's.
+    assert induced_angle(-2.0, 2.0, 1.0, 0.0, 0.2) == pytest.approx(18.24 * ground_factor(0.2, 2.0), rel=0.03)
+
+
+def test_endplates_down_to_the_ground_cut_the_induced_angle():
+    from aeroengine.wing.finite import induced_angle
+
+    flush = induced_angle(-1.0, 0.5245, 0.682, 0.315, 0.0966, planform=0.61)
+    low = induced_angle(-1.0, 0.5245, 0.682, 0.315, 0.0966, planform=0.61, endplate_bottom=0.035)
+    assert 0 < low < flush
 
 
 def test_settle_finds_the_angle_the_flow_meets_the_wing_at():

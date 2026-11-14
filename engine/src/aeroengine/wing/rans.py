@@ -4,6 +4,7 @@ Used by the wing-rans command and by every optimiser trial."""
 from __future__ import annotations
 
 import csv
+import math
 from pathlib import Path
 from typing import Callable
 
@@ -425,9 +426,10 @@ def _fixed_point(f: list[tuple[float, float]], start: float) -> float:
 def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: int, env: dict | None,
                  progress: Callable[[float, str], None], log: Callable[..., None], field: bool = True) -> dict:
     """The wing as it runs on the car: its section at the angle the flow meets
-    it there. p["finite"] holds span and endplate height (m). The induced
-    angle (lifting line, Cl / (pi AR_eff), cut by the ground's image over a
-    ground) is first settled on the quick estimate's polar; RANS starts
+    it there. p["finite"] holds span and endplate height (m), and optionally
+    endplate_bottom, the endplates' lower edge over the ground. The induced
+    angle (the vortex lattice's downwash on wing, endplates and the ground's
+    image, finite.lattice_factors) is first settled on the quick estimate's polar; RANS starts
     there and the angle is moved by its own Cl (relaxed, then secant), each
     solve from the last in free air, until it settles within
     FINITE_TOLERANCE or FINITE_SOLVES solves, or a solve does not converge
@@ -436,7 +438,7 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     mid-span section on the car."""
     import shutil
 
-    from .finite import effective_aspect_ratio, ground_factor, induced_angle
+    from .finite import lattice_factors
 
     fin = p.get("finite") or {}
     for key in ("span", "endplate"):
@@ -446,7 +448,11 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     span, endplate = float(fin["span"]), float(fin["endplate"])
     chord = float(p.get("ref_chord") or sum(float(e["chord"]) for e in p["elements"]))
     ride = p.get("ride_height")
-    ar = effective_aspect_ratio(span, chord, endplate)
+    xs = [float(c[0]) for e in p["elements"] for c in e.get("coords") or []]
+    planform = max(xs) - min(xs) if xs else chord  # front to back, as drawn
+    bottom = fin.get("endplate_bottom")  # the endplates' lower edge over the ground; None: level with the wing
+    ar, gf = lattice_factors(span, chord, endplate, ride, planform, bottom)
+    induced_angle = lambda cl, *_: -math.degrees(cl / (math.pi * ar)) * gf  # noqa: E731
     alpha = float(p.get("alpha", 0.0))
     ground = ride is not None
     q = {k: v for k, v in p.items() if k != "finite"}
@@ -511,12 +517,12 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     for f in folder.iterdir():
         if f.is_file():
             shutil.copy2(f, workdir / f.name)
-    gf = ground_factor(ride, span)
     cd_induced = r["cl"] ** 2 / (np.pi * ar) * gf
     r = {**r, "alpha": alpha, "cd": r["cd"] + cd_induced,
          "finite": {"alpha_effective": round(a, 3), "induced_angle": round(a - alpha, 3), "aspect_ratio_effective": round(ar, 3),
                     "ground_factor": round(gf, 4), "solves": n, "converged": settled, "cd_induced": cd_induced,
-                    "span": span, "endplate": endplate, "stopped": stopped}}
+                    "span": span, "endplate": endplate, "endplate_bottom": bottom, "planform": round(planform, 4),
+                    "model": "vortex lattice", "stopped": stopped}}
     return r
 
 

@@ -1,13 +1,20 @@
-"""The finite wing from span, total chord and endplates: the same formulas
-as the app's Wing.finite3D. Endplates raise the effective aspect ratio,
+"""The finite wing from span, total chord and endplates.
+
+effective_aspect_ratio, lift_factor and car_contribution are the app's
+Wing.finite3D formulas, for the estimate: endplates raise the aspect ratio,
 AR (1 + 1.9 h / b) (Hoerner, Fluid-Dynamic Drag); lifting-line theory then
 scales the 2D lift by AR_eff / (AR_eff + 2) and adds induced drag
 CL^2 / (pi AR_eff). A first number for a finite wing, not a 3D solution:
-no tip vortex roll-up, no endplate drag, no interaction with the car."""
+no tip vortex roll-up, no endplate drag, no interaction with the car.
+
+induced_angle, for RANS as on the car, comes from the vortex lattice
+(vlm.py), which holds where those formulas do not: short wings, tall
+endplates, endplates close to the ground."""
 
 from __future__ import annotations
 
 import math
+from functools import lru_cache
 
 
 def effective_aspect_ratio(span: float, chord: float, endplate: float) -> float:
@@ -24,11 +31,40 @@ def ground_factor(ride_height: float | None, span: float) -> float:
     return 1.0 - (1 - 1.32 * hb) / (1.05 + 7.4 * hb)
 
 
-def induced_angle(cl: float, span: float, chord: float, endplate: float, ride_height: float | None) -> float:
-    """Degrees the trailing vortices turn the flow at the wing (lifting line,
-    Cl / (pi AR_eff)), the way that unloads it: up for a downforce wing (Cl < 0)."""
-    ar = effective_aspect_ratio(span, chord, endplate)
-    return -math.degrees(cl / (math.pi * ar)) * ground_factor(ride_height, span)
+@lru_cache(maxsize=128)
+def _lattice(span: float, chord: float, planform: float, endplate: float, ride_height: float | None,
+             endplate_bottom: float | None) -> tuple[float, float]:
+    from .vlm import Lattice
+
+    def k(height: float | None, bottom: float | None) -> float:  # radians of downwash per unit Cl on chord
+        w = Lattice(span=span, chord=planform, height=height, endplate=endplate, endplate_bottom=bottom).solve()
+        return w.k_drag * chord / planform
+
+    # shortcut: a flat plate at the wing's lowest point; the 2D RANS section carries the rest of the ground effect.
+    rel = None if endplate_bottom is None or ride_height is None else endplate_bottom - ride_height
+    free = k(None, rel)
+    near = free if ride_height is None else k(ride_height, ride_height if endplate_bottom is None else endplate_bottom)
+    return 1 / (math.pi * free), near / free
+
+
+def lattice_factors(span: float, chord: float, endplate: float, ride_height: float | None,
+                    planform: float | None = None, endplate_bottom: float | None = None) -> tuple[float, float]:
+    """The induced angle's free-air effective aspect ratio and its share left over a ground, from the
+    vortex lattice (vlm.py: wing, endplates and their gap to the ground, the ground's image). The angle
+    is the trailing vortices' downwash at the wing, Cdi / Cl from the wake far behind: the one lifting
+    line uses, without its slender-wing and small-endplate limits. chord is the one Cl is on (the sum of
+    the elements'); planform the wing's length front to back (default chord). endplate_bottom: the
+    endplates' lower edge over the ground (default level with the wing's lowest point, as Zerihan's)."""
+    r = lambda v: None if v is None else round(float(v), 5)  # noqa: E731
+    return _lattice(r(span), r(chord), r(planform or chord), r(max(endplate, 0.0)), r(ride_height), r(endplate_bottom))
+
+
+def induced_angle(cl: float, span: float, chord: float, endplate: float, ride_height: float | None,
+                  planform: float | None = None, endplate_bottom: float | None = None) -> float:
+    """Degrees the trailing vortices turn the flow at the wing, the way that unloads it: up for a
+    downforce wing (Cl < 0). From the vortex lattice (lattice_factors)."""
+    ar, gf = lattice_factors(span, chord, endplate, ride_height, planform, endplate_bottom)
+    return -math.degrees(cl / (math.pi * ar)) * gf
 
 
 def lift_factor(span: float, chord: float, endplate: float) -> float:
