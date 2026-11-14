@@ -21,7 +21,7 @@ None of these runs separates the main: the 2D section at its full angle does not
 
 ## As on the car (`run_car.py`, results in `car.json`)
 
-Span 1 m (the project's), endplate 250 mm and ride height 80 mm assumed: STAR's model's are not known yet, so rerun `run_car.py <endplate> [<ride height>]` with them. Fine mesh, SST-LM, then the fully turbulent check at the same angle.
+The first four rows assume span 1 m (the project's), the job's own angle (alpha 0) and the ride height to the main. STAR's CATIA wings turned out to differ on all three (see "STAR's wings from the CAD" below), so those rows are not STAR's case. Fine mesh, SST-LM, then the fully turbulent check at the same angle.
 
 | Case | Induced angle | Cl (3D) | Cd (with induced) | Main | Flaps |
 |---|---|---|---|---|---|
@@ -36,3 +36,35 @@ Over the ground the 2D section at its full angle has no steady answer at 80 mm (
 
 At STAR's 35 mm and 315 mm endplate (14 Nov) the loop does not settle. The quick estimate puts the induced angle at +6.5° (Cl about −3, AR_eff 2.34, ground factor 0.27). RANS there stalls the main and every flap on the pressure surface (Cl −0.05, wanting +0.1°), and at +2.0° it does not converge. The main's pressure-side stall agrees with STAR; the downforce does not stand. Over a ground the loop pitches the wing by the induced angle, with its lowest point held at the ride height. That also lifts the flaps away from the ground: 6.5° over 0.68 m of chord is tens of millimetres at a 35 mm ride height. On Zerihan's wing (AR_eff 5.8) the angle is 1.3° and the pitch barely moves it (within 3%, ../ground-3d). On a low-aspect-ratio wing this close to the ground it is not checked. STAR's downforce is what decides it.
 
+
+## STAR's wings from the CAD (14 Nov)
+
+`cad_sections.py` cuts the STEP files at chosen spanwise stations (OpenCascade, every face spanning over 100 mm, each element's cut joined into one outline). Both wings are prismatic: chords and angles hold at six stations; only the height changes.
+
+- frontwing#1.02 (the one STAR ran without leading-edge separation) is this job's wing, every element within 0.3 mm, pitched 7.45 deg toward more downforce: `alpha -7.45` here. The main's trailing edge is 2.83 deg below its leading edge, against 10.27 deg in the job.
+- frontwing#1.01 is pitched 4.9 deg, with the main and Flap 1 at 232.9 and 180.9 mm.
+- Each side is one 524.5 mm wing between two 315 mm endplates. The wing drops about 45 mm toward the inner endplate. With the ground 35 mm under the endplate bottoms (CATIA z -49), the main's lowest point at mid-span is 96.6 mm up.
+
+So the 35 mm row above set the main 35 mm off the ground at the job's angle on a 1 m span: not STAR's case.
+
+### frontwing#1.02 as STAR ran it
+
+`run_car.py 0.315 0.0966 0.5245 -7.45`: AR_eff 1.65, ground factor 0.69, so the model's induced angle is 7.6 deg per unit of Cl.
+
+| Solve | Induced angle | Cl | Wants | State |
+|---|---|---|---|---|
+| 1 (from the estimate) | +10.60 deg | +0.10 | -8.2 deg | main stalled on its pressure side |
+| 2 | +5.60 deg | -4.50 | +26.8 deg | not converged |
+| 3 | +8.25 deg | -3.17 | +16.6 deg | not converged |
+| 4 | +9.98 deg | +0.05, Cd 0.089 | -7.8 deg | unsteady; main pressure side stalled from the leading edge to 33%, every flap stalled |
+
+The loop does not settle. The section carries Cl -3 to -4.5 up to +8.25 deg and has lost it all by +10 deg. The lifting line's answer sits on that cliff, so the loop jumps from one side to the other.
+
+STAR's CL of about 0.8 on the wing's planform is -0.71 to -0.73 on AeroBench's reference (span times the 682 mm sum of the chords; the planform chord is 602-625 mm). To land there with the section attached, the model's downwash wants +5.5 deg, where RANS gives -4.5: six times STAR's number. No angle the model accepts gives STAR's lift with the main attached.
+
+Why the method does not hold here:
+- It is checked on one wing only: Zerihan's, AR 4.9, endplates a quarter of the span (../ground-3d). This one is AR 0.77, with endplates 60% of the span. Lifting line and Hoerner's endplate rule are made for slender wings.
+- The endplates come down to 35 mm off the ground, 0.05 of the chord. On Zerihan's wing the tip vortex stops rolling up below 0.134 chords and the run reads 5-10% low there. The model knows the wing's height, not the gap under the endplates, so it keeps the full tip losses.
+- One section at mid-span stands for a wing that drops 45 mm across its span.
+
+Not settled: STAR's reference area and whether its 0.8 is for one side or both. If the report was left at STAR's default 1 m^2, the 0.8 would be about 2.5 on one side's planform, and the comparison changes completely.
