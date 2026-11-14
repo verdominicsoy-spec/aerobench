@@ -144,3 +144,11 @@ def test_strips_settle_on_a_polar_with_a_cliff():
     assert r["converged"]
     gap = -7.45 - np.degrees(s.k * 0.682 / 0.6245 @ np.asarray(r["cl"])) - np.asarray(r["alpha"])
     assert np.abs(gap).max() < 1e-4
+
+
+def test_a_polar_needs_two_angles():
+    # A height whose solves mostly did not converge can leave one point: no slope, no polar.
+    from aeroengine.wing.finite import couple_strips
+
+    with pytest.raises(ValueError, match="two angles"):
+        couple_strips([([6.0], [-3.9])], np.array([[0.1]]), np.array([1.0]), -7.45)

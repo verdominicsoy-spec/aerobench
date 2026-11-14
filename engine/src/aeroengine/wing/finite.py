@@ -122,6 +122,8 @@ def couple_strips(polars, k, width, alpha: float) -> dict:
     pc = [np.asarray(p[1], float) for p in polars]
     order = [np.argsort(a) for a in pa]
     pa, pc = [a[o] for a, o in zip(pa, order)], [c[o] for c, o in zip(pc, order)]
+    if any(len(np.unique(a)) < 2 for a in pa):
+        raise ValueError("each strip's polar needs at least two angles")
 
     def cl(a):
         return np.array([np.interp(x, ax, cx) for x, ax, cx in zip(a, pa, pc)])
