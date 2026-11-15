@@ -134,3 +134,21 @@ STAR's main carries what the 2D main carries at about +7.4 deg. SST keeps it att
 The wing's chord is longer than its span (aspect ratio 0.77). On a wing like that the downwash grows along the chord, so the flaps meet the flow at a larger angle than the main. One angle per strip turns every element by the same amount. To shed the flaps' load, the coupling has to turn the whole section to +8 or +9 deg, past where the main stalls at its leading edge. The lattice already has chordwise panels, but `couple_strips` uses only each strip's mean far-field downwash.
 
 Next, the fix at the cause: each element's own induced angle from the lattice's downwash at that element, and the 2D section solved with each element turned by its own angle. Not done. The SU2 polars' surface files are in temp folders and will not last: the element table above is what is kept.
+
+### Each element at its own induced angle (15 Nov, plan `2026-11-15-element-induced-angles`)
+
+The fix at the cause found above: the vortex lattice now gives the induced angle along the chord (`Lattice.chordwise`), and `rans.solve_finite` bends the 2D section along its chord by each point's angle about the mean (`finite.element_turns`, `rans.bend_section`). The mean stays the validated lifting-line angle, and a single element gets no turn, so Zerihan's wing is unchanged. Turning each element rigidly about its own quarter chord was tried first: it shut the main-to-flap slot to 0.09 mm and the mesher refused it. Bending moves points at the same x together, so the slots keep their gaps (12.5, 11.1 and 9.9 mm become 12.7, 11.0 and 9.9 at Cl -2).
+
+On frontwing#1.02 at STAR's setup (`run_car.py 0.315 0.0966 0.5245 -7.45 0.035 sst`), the lattice turns the main -7 deg and the flaps +0.8, +4.0 and +5.6 deg about the mean. The run was stopped after 3 solves, before the loop settled: it wanted +10.7 deg and sat at +9.5. Mid-span Cl on the 682 mm chord:
+
+| | main | flap 1 | flap 2 | flap 3 | Cl |
+|---|---|---|---|---|---|
+| STAR, strip 3 (main 96.7 mm up) | -0.77 | -0.61 | -0.41 | -0.21 | -2.00 |
+| Before: 2D at +8.75 deg, the last angle before the main stalls | -0.43 | -1.24 | -0.79 | -0.28 | -2.74 |
+| Bent, solve 3 at +9.54 deg (not settled) | -0.72 | -0.97 | -0.71 | -0.26 | -2.65 |
+
+- The main now carries what STAR's does, within 7%, at an angle where the unbent section had stalled (+9.5 deg: Cl +0.01).
+- The flaps still carry 25-73% more than STAR's. They turn too little: the lattice's chordwise loading is a flat plate's, heaviest at the front, while the real one is spread over four elements.
+- The loop moved the angle the wrong way between solves 2 and 3. Each solve changes the turns as well as the angle, so the secant on the angle alone mis-steers.
+
+Next: build the lattice's chordwise loading from the RANS element loads instead of the flat plate's, steer the loop on the angle with the turns held for each step, then run to the end.
