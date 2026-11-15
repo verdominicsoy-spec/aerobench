@@ -177,14 +177,26 @@ class Lattice:
         return Result(y=0.5 * (ys[:-1] + ys[1:]), cl=cl, induced=1.0 - cl / a2d, lift_slope=cl_wing,
                       k_lift=1 / cl_wing - 1 / a2d, k_drag=cdi / cl_wing ** 2)
 
-    def chordwise(self, stations: list[float]) -> np.ndarray:
+    def chordwise(self, stations: list[float], loading=None) -> np.ndarray:
         """The induced angle (rad) along the chord at mid-span per unit section Cl on the chord, at
         stations (fractions of the chord from the leading edge; straight between the control points,
         held at the ends). The lattice's downwash beyond what the same chordwise loading would make
         on an endless span at the same height: on a slender wing nearly level along the chord, on one
-        shorter than its chord growing aft, so the elements behind meet a steeper flow."""
-        _, _, _, wing, ys, ground, _, gam = self._system()
-        g = gam[wing].reshape(self.ny, self.nx)  # alpha 1 rad
+        shorter than its chord growing aft, so the elements behind meet a steeper flow.
+        loading: each chordwise panel's share of every strip's circulation (the strips keep the
+        lattice's own totals, the endplates are solved with the wing held); default the flat plate's
+        own, heaviest at the front, where a multi-element wing spreads its load along the chord."""
+        _, _, _, wing, ys, ground, mat, gam = self._system()
+        g = gam.copy()  # alpha 1 rad
+        if loading is not None:
+            shape = np.asarray(loading, float)
+            total = gam[wing].reshape(self.ny, self.nx).sum(axis=1)
+            g[wing] = (total[:, None] * (shape / shape.sum())[None, :]).ravel()
+            plate = ~wing
+            if plate.any():
+                g[plate] = np.linalg.solve(mat[np.ix_(plate, plate)], -mat[np.ix_(plate, wing)] @ g[wing])
+        w3 = (mat @ g)[wing].reshape(self.ny, self.nx)  # every vortex's normal velocity at the control points
+        gw = g[wing].reshape(self.ny, self.nx)
         xs = np.linspace(0.0, self.chord, self.nx + 1)
         xv, xc = xs[:-1] + 0.25 * np.diff(xs), xs[:-1] + 0.75 * np.diff(xs)
         dx = xc[:, None] - xv[None, :]
@@ -194,9 +206,8 @@ class Lattice:
             if ground:
                 dz = 2 * float(self.z(0.5 * (ys[j] + ys[j + 1])))
                 a = a + dx / (2 * math.pi * (dx * dx + dz * dz))
-            # The 3D lattice lets no flow through: its vortices' normal velocity is -1 at every control point.
-            induced = 1.0 + a @ g[j]
-            angles.append(induced / (2 * g[j].sum() / self.chord))
+            induced = -(w3[j] - a @ gw[j])  # the 3D flow less what the same loading makes in 2D
+            angles.append(induced / (2 * gw[j].sum() / self.chord))
         return np.interp(np.asarray(stations, float) * self.chord, xc, np.mean(angles, axis=0))
 
 

@@ -16,6 +16,8 @@ from __future__ import annotations
 import math
 from functools import lru_cache
 
+import numpy as np
+
 
 def effective_aspect_ratio(span: float, chord: float, endplate: float) -> float:
     return span / chord * (1 + 1.9 * max(endplate, 0.0) / span)
@@ -168,29 +170,53 @@ def couple_strips(polars, k, width, alpha: float) -> dict:
 
 @lru_cache(maxsize=128)
 def _chordwise(span: float, planform: float, endplate: float, ride_height: float | None,
-               endplate_bottom: float | None, stations: tuple[float, ...]) -> tuple[float, ...]:
+               endplate_bottom: float | None, stations: tuple[float, ...],
+               loading: tuple[float, ...] | None = None) -> tuple[float, ...]:
     from .vlm import Lattice
 
     bottom = None if ride_height is None else ride_height if endplate_bottom is None else endplate_bottom
-    lat = Lattice(span=span, chord=planform, height=ride_height, endplate=endplate, endplate_bottom=bottom)
-    return tuple(float(a) for a in lat.chordwise(list(stations)))
+    lat = Lattice(span=span, chord=planform, height=ride_height, endplate=endplate, endplate_bottom=bottom,
+                  nx=len(loading) if loading else 8)
+    return tuple(float(a) for a in lat.chordwise(list(stations), loading))
+
+
+LOADING_PANELS = 24  # chordwise lattice panels when the loading follows the elements
+
+
+def thin_airfoil_loading(extents: list[tuple[float, float]], shares: list[float], panels: int = LOADING_PANELS) -> np.ndarray:
+    """Each chordwise panel's share of the circulation: each element's share spread over its own extent
+    (nose and trailing edge as fractions of the planform) as a thin airfoil carries it, density
+    sqrt((1 - xi) / xi), whose integral from 0 to t is sqrt(t (1 - t)) + asin(sqrt(t))."""
+    edges = np.linspace(0.0, 1.0, panels + 1)
+    run = lambda t: np.sqrt(t * (1 - t)) + np.arcsin(np.sqrt(t))  # noqa: E731
+    load = np.zeros(panels)
+    for (lo, hi), share in zip(extents, shares):
+        if hi <= lo:
+            continue
+        t0, t1 = np.clip((edges[:-1] - lo) / (hi - lo), 0, 1), np.clip((edges[1:] - lo) / (hi - lo), 0, 1)
+        load += share * (run(t1) - run(t0)) / (math.pi / 2)
+    return load
 
 
 def element_turns(cl: float, stations: list[float], shares: list[float], span: float, chord: float,
                   endplate: float, ride_height: float | None, planform: float | None = None,
-                  endplate_bottom: float | None = None, at: list[float] | None = None) -> list[float]:
+                  endplate_bottom: float | None = None, at: list[float] | None = None,
+                  extents: list[tuple[float, float]] | None = None) -> list[float]:
     """Degrees each element turns on top of the wing's mean induced angle, alpha's sense (positive unloads
     a downforce wing at Cl < 0): the vortex lattice's induced angle at the element's station (fraction of
     the planform from the leading edge) less its load-weighted mean over the elements (shares, summing
     to 1). On a wing shorter than its chord the flow behind meets a steeper angle (Lattice.chordwise), so
     the flaps unload against the main; one element turns by nothing, keeping lattice_factors' angle.
-    at: the turn at these stations instead (on the same mean), to bend the section along its chord."""
+    at: the turn at these stations instead (on the same mean), to bend the section along its chord.
+    extents: each element's nose and trailing edge (planform fractions): the lattice then carries the
+    elements' own loads (shares) along the chord, not a flat plate's (thin_airfoil_loading)."""
     if len(stations) < 2:
         return [0.0] * len(stations if at is None else at)
     planform = planform or chord
     r = lambda v: None if v is None else round(float(v), 5)  # noqa: E731
     points = list(stations) + list(at or [])
+    loading = None if extents is None else tuple(round(float(x), 4) for x in thin_airfoil_loading(extents, shares))
     a = _chordwise(r(span), r(planform), r(max(endplate, 0.0)), r(ride_height), r(endplate_bottom),
-                   tuple(round(float(s), 4) for s in points))
+                   tuple(round(float(s), 4) for s in points), loading)
     mean = sum(w * x for w, x in zip(shares, a[:len(stations)]))
     return [-math.degrees(x - mean) * cl * chord / planform for x in (a[:len(stations)] if at is None else a[len(stations):])]

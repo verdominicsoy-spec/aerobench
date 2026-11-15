@@ -176,3 +176,14 @@ def test_flaps_of_a_short_downforce_wing_turn_the_unloading_way():
 
     main, f1, f2, f3 = element_turns(-2.0, STATIONS, SHARES, 0.5245, 0.682, 0.315, 0.0966, 0.6245, 0.035)
     assert main < 0 < f1 < f2 < f3
+
+
+EXTENTS = [(0.0, 0.39), (0.39, 0.68), (0.66, 0.86), (0.84, 1.0)]  # frontwing#1.02's elements along its planform
+
+
+def test_element_turns_on_the_rans_loading_still_average_out():
+    from aeroengine.wing.finite import element_turns
+
+    t = element_turns(-2.0, STATIONS, SHARES, 0.5245, 0.682, 0.315, 0.0966, 0.6245, 0.035, extents=EXTENTS)
+    assert sum(s * x for s, x in zip(SHARES, t)) == pytest.approx(0.0, abs=1e-9) and t[0] < 0 < t[-1]
+    assert element_turns(-2.0, [0.75], [1.0], 1.0, 0.25, 0.2, 0.05, extents=[(0.0, 1.0)]) == [0.0]

@@ -122,3 +122,18 @@ def test_chordwise_angle_on_a_short_wing_by_the_ground_grows_aft():
     # frontwing#1.02 (aspect ratio 0.77): the flaps meet a steeper flow than the main (STAR, 15 Nov)
     a = Lattice(**FRONTWING).chordwise([0.1, 0.5, 0.9])
     assert a[0] < a[1] < a[2] and a[2] > 2 * a[0]
+
+
+def test_chordwise_angle_with_the_flat_plates_own_loading_is_unchanged():
+    lat = Lattice(**FRONTWING)
+    _, _, _, wing, _, _, _, gam = lat._system()
+    g = gam[wing].reshape(lat.ny, lat.nx)[lat.ny // 2]
+    own = lat.chordwise([0.1, 0.5, 0.9], loading=g / g.sum())
+    # every strip gets mid-span's shape, where the flat plate keeps each strip's own: 4% at the nose
+    assert own == pytest.approx(lat.chordwise([0.1, 0.5, 0.9]), rel=5e-2)
+
+
+def test_chordwise_angle_of_any_loading_vanishes_on_an_endless_span():
+    lat = Lattice(span=1000.0, chord=1.0, nx=8)
+    aft = np.linspace(1.0, 3.0, 8)
+    assert np.all(np.abs(lat.chordwise([0.1, 0.5, 0.9], loading=aft / aft.sum())) < 1e-3)
