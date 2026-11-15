@@ -1146,3 +1146,32 @@ def test_finite_wing_turns_each_element_by_its_own_induced_angle(monkeypatch, tm
     # the section is bent, not its elements turned: the turn along the chord grows aft, from the wing's nose
     assert all(c["camber"]["x"][0] == 0.0 and c["camber"]["turns"][0] < c["camber"]["turns"][-1] for c in calls)
     assert r["finite"]["element_turns"] == pytest.approx(calls[-1]["turns"], abs=1e-3)
+
+
+def test_finite_wing_ties_each_solves_turns_to_its_angle(monkeypatch, tmp_path):
+    # The turns for the Cl the fixed point needs at that angle, so the loop steers on the angle alone.
+    from aeroengine.wing import rans
+    from aeroengine.wing.finite import element_turns, induced_angle
+
+    calls = []
+
+    def fake(p, workdir, mesh_file, su2_hint, cores, env, progress, log, field=True, mesh_ready=None, restart=None):
+        calls.append({"alpha": p["alpha"], "turns": list(p["element_turns"])})
+        workdir.mkdir(parents=True, exist_ok=True)
+        cl = -0.08 * (12 - p["alpha"])
+        return {"alpha": p["alpha"], "cl": cl, "cd": 0.03, "converged": True, "separated": False, "separation": None,
+                "regions": [], "mesh": {"cells": 1}, "transition": [[0.0, 0.0]] * 2,
+                "elements": [{"cl": 0.6 * cl, "cd": 0.02}, {"cl": 0.4 * cl, "cd": 0.01}]}
+
+    monkeypatch.setattr(rans, "solve", fake)
+    _estimate(monkeypatch, lambda a, n: -0.09 * (13 - a))
+    front = {"coords": [[0.5, 0], [0, 0], [0.5, 0]], "unit": [[1, 0], [0, 0], [1, 0]], "angle": 0, "inverted": True, "chord": 0.5}
+    back = {**front, "coords": [[1.0, 0], [0.5, 0], [1.0, 0]]}
+    rans.solve_finite(_finite_params(elements=[front, back]), tmp_path, tmp_path / "m.su2", None, 1, None,
+                      lambda *a: None, lambda *a, **k: None)
+    per_cl = induced_angle(1.0, 2.0, 1.0, 0.0, None, 1.0, None)
+    assert len(calls) >= 2
+    for c in calls[1:]:
+        want = element_turns(c["alpha"] / per_cl, [0.375, 0.875], [0.6, 0.4], 2.0, 1.0, 0.0, None, 1.0, None,
+                             extents=[(0.0, 0.5), (0.5, 1.0)])
+        assert c["turns"] == pytest.approx(want, abs=1e-9)

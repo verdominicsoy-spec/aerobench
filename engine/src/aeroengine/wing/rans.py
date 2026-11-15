@@ -469,8 +469,8 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     FINITE_CLIFF without settling (cliff: the section's Cl jumps there, a
     stall, and no single angle is the answer). A wing of several elements is also bent along its
     chord about the mean induced angle (finite.element_turns, bend_section: the lattice's downwash grows
-    along a short wing's chord, so the flaps meet a steeper flow than the main), from the last solve's Cl
-    and element loads; settled means each element's turn has stopped moving too. cl, cd (with induced drag), regions and the field are the
+    along a short wing's chord, so the flaps meet a steeper flow than the main): the lattice loaded as the
+    last solve loaded the elements, each solve's turns those for the Cl its angle needs at the fixed point. cl, cd (with induced drag), regions and the field are the
     last solve's, or after a stop the last one that converged. No car upwash, endplate vortex or spanwise variation: the
     mid-span section on the car."""
     import shutil
@@ -501,14 +501,18 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
         if polar else alpha  # no estimate at any angle: RANS from the drawn angle
     log(f"quick estimate: the induced angle settles at {a:+.2f}°; RANS from there")
     # Each element at its own induced angle about the mean (finite.element_turns): its three-quarter chord
-    # along the wing as drawn, loads shared as the last solve carried them (the chords' shares at first).
+    # along the wing as drawn, the lattice loaded as the elements are (their extents, and their shares as the
+    # last solve carried them; the chords' shares at first). The turns at an angle are those for the Cl the
+    # fixed point needs there, so every solve's turns follow from its angle and the loop steers on it alone.
     els = p["elements"]
-    stations, chord_shares = [], [float(e["chord"]) / sum(float(x["chord"]) for x in els) for e in els]
+    stations, extents, chord_shares = [], [], [float(e["chord"]) / sum(float(x["chord"]) for x in els) for e in els]
     for e in els:
         c = np.asarray(e["coords"], float)
         te = 0.5 * (c[0] + c[-1])
         nose = c[int(np.argmax(np.linalg.norm(c - te, axis=1)))]
         stations.append(float((nose[0] + 0.75 * (te[0] - nose[0]) - min(xs)) / planform))
+        extents.append((float((nose[0] - min(xs)) / planform), float((te[0] - min(xs)) / planform)))
+    per_cl = induced_angle(1.0)  # degrees per unit Cl
 
     def shares(res: dict) -> list[float]:
         cls = [float(e.get("cl", 0.0)) for e in res.get("elements") or []]
@@ -521,17 +525,17 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     def turned(cl: float, res: dict | None) -> tuple[list[float], dict]:
         """Each element's turn, and the section's bend along its whole chord on the same mean."""
         sh = shares(res) if res else chord_shares
-        bent = element_turns(cl, stations, sh, span, chord, endplate, ride, planform, bottom, at=grid)
-        return (element_turns(cl, stations, sh, span, chord, endplate, ride, planform, bottom),
+        bent = element_turns(cl, stations, sh, span, chord, endplate, ride, planform, bottom, at=grid, extents=extents)
+        return (element_turns(cl, stations, sh, span, chord, endplate, ride, planform, bottom, extents=extents),
                 {"x": [min(xs) + g * planform for g in grid], "turns": bent})
 
-    turns, camber = turned(float(np.interp(a, *zip(*polar))) if polar else 0.0, None)
-    used = {}
+    used, last = {}, None
     ready, prev, r, settled, tried, stopped, good, cliff = None, None, None, False, [], None, None, None
     for n in range(1, FINITE_SOLVES + 1):
         folder = workdir / f"s{n}"
         folder.mkdir(parents=True, exist_ok=True)
         report = lambda pct, msg, n=n, a=a: progress(100 * (n - 1 + pct / 100) / FINITE_SOLVES, f"{a:+.1f}°: {msg}")
+        turns, camber = turned((a - alpha) / per_cl if per_cl else 0.0, last)
         r = solve({**q, "alpha": a, "element_turns": turns, "camber": camber}, folder, mesh_file, su2_hint, cores, env, report, log,
                   field=field, mesh_ready=ready, restart=prev)
         used[folder] = turns
@@ -558,13 +562,11 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
             if good:  # the last solve that did converge is the run's answer, not this one
                 a, r, folder = good
             break
-        good = (a, r, folder)
+        good, last = (a, r, folder), r
         target = alpha + induced_angle(r["cl"], span, chord, endplate, ride)
-        new, new_camber = turned(r["cl"], r)
-        moved = max((abs(x - y) for x, y in zip(new, turns)), default=0.0)
         log(f"solve {n} at {a:+.2f}°: Cl {r['cl']:.4f}, induced angle wants {target:+.2f}°"
-            + (f", the elements turned {', '.join(f'{t:+.2f}' for t in new)}°" if len(els) > 1 else ""))
-        if abs(target - a) < FINITE_TOLERANCE and moved < FINITE_TOLERANCE:
+            + (f"; the elements turned {', '.join(f'{t:+.2f}' for t in turns)}°" if len(els) > 1 else ""))
+        if abs(target - a) < FINITE_TOLERANCE:
             settled = True
             break
         tried.append((a, target - a, r, folder))
@@ -578,8 +580,7 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
             log(f"stall cliff: Cl {r_lo['cl']:.3f} at {lo:+.2f}°, {r_hi['cl']:.3f} at {hi:+.2f}°; no angle between settles",
                 level="warning")
             break
-        turns, camber = new, new_camber
-        if not ground and moved < FINITE_TOLERANCE:  # turned elements are a new outline: a new mesh, from rest
+        if not ground and len(els) == 1:  # several elements are bent anew at each angle: a new mesh, from rest
             # Each from the last; once bracketed, from the more loaded end (the attached side of a stall).
             ready = {"mesh": r["mesh"], "transition": r["transition"]}
             src = max(pair, key=lambda t: abs(t[2]["cl"]))[3] if pair else folder
