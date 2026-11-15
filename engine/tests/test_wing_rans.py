@@ -1175,3 +1175,18 @@ def test_finite_wing_ties_each_solves_turns_to_its_angle(monkeypatch, tmp_path):
         want = element_turns(c["alpha"] / per_cl, [0.375, 0.875], [0.6, 0.4], 2.0, 1.0, 0.0, None, 1.0, None,
                              extents=[(0.0, 0.5), (0.5, 1.0)])
         assert c["turns"] == pytest.approx(want, abs=1e-9)
+
+
+def test_finite_wing_on_a_small_step_settles_without_a_cliff(monkeypatch, tmp_path):
+    # frontwing#1.02 bent on the car (15 Nov): Cl -2.57 at +9.26 deg, -2.41 at +9.46, the answer between. A step
+    # of 6% in Cl is a steep section, not a stall: the loop settles there and reports no cliff.
+    from aeroengine.wing import rans
+
+    calls = []
+    section = lambda a, n: -2.6 if a < 9.4 else -2.45  # noqa: E731
+    monkeypatch.setattr(rans, "solve", _fake_solver(calls, section))
+    _estimate(monkeypatch, section)
+    r = rans.solve_finite(_finite_params(alpha=-13.6), tmp_path, tmp_path / "m.su2", None, 1, None,
+                          lambda *a: None, lambda *a, **k: None)
+    f = r["finite"]
+    assert f["converged"] and f["cliff"] is None and abs(f["alpha_effective"] - 9.4) <= 0.25

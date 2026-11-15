@@ -428,6 +428,7 @@ FINITE_TOLERANCE = 0.1  # degrees: the induced angle has settled
 FINITE_RELAX = 0.7
 FINITE_STEP = 5.0  # degrees: the most one step moves the angle (a flat stretch of Cl sends a secant far off)
 FINITE_CLIFF = 0.25  # degrees: a bracket this narrow that still has not settled is a jump in the section's Cl
+FINITE_JUMP = 0.1  # across such a bracket, a Cl change under this share is a steep section, settled; over it a stall
 
 
 def _estimate_polar(p: dict, alphas: list[float]) -> list[tuple[float, float]]:
@@ -572,9 +573,16 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
         tried.append((a, target - a, r, folder))
         pair = _bracket(tried)
         if pair and pair[1][0] - pair[0][0] <= FINITE_CLIFF:
-            # Bracketed this tightly and still not settled: the section's Cl jumps between the two (a stall
-            # cliff), so no angle settles. The run's answer is the side nearer settling, said as a cliff.
             (lo, _, r_lo, _), (hi, _, r_hi, _) = pair
+            if abs(r_hi["cl"] - r_lo["cl"]) <= FINITE_JUMP * max(abs(r_lo["cl"]), abs(r_hi["cl"])):
+                # Bracketed this tightly with Cl barely moving across it: a steep section (several elements
+                # bent with the angle), not a stall. Settled on the side nearer the answer.
+                a, _, r, folder = min(pair, key=lambda t: abs(t[1]))
+                settled = True
+                log(f"settled between {lo:+.2f}° (Cl {r_lo['cl']:.3f}) and {hi:+.2f}° (Cl {r_hi['cl']:.3f})")
+                break
+            # Bracketed this tightly and Cl jumps between the two (a stall cliff): no angle settles. The run's
+            # answer is the side nearer settling, said as a cliff.
             cliff = {"low": round(lo, 3), "high": round(hi, 3), "cl_low": r_lo["cl"], "cl_high": r_hi["cl"]}
             a, _, r, folder = min(pair, key=lambda t: abs(t[1]))
             log(f"stall cliff: Cl {r_lo['cl']:.3f} at {lo:+.2f}°, {r_hi['cl']:.3f} at {hi:+.2f}°; no angle between settles",
