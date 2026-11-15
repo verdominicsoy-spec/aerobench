@@ -98,3 +98,39 @@ The strips on the settled points: the three outboard strips settle at +7.3 to +8
 With the 6 unsettled stalled points put in as well (`run_strips.py 99`, only a look at where they land, since those Cl are not converged): every strip lands on the cliff, +7.6 deg at the low end to +9.3 deg at the high end, wing Cl -2.26 on the summed chord (-2.47 on the planform chord). The single strip at mid-span lands at +8.85 deg, Cl -2.39, also on the cliff. Between two run heights the strip's polar is a blend of a stalled and an attached section, which no real section is, so these numbers say where the cliff is, not what the wing carries on it.
 
 So the strips do not change the single strip's answer: at STAR's setup the lattice puts the section's angle where SST stalls the main from its leading edge, across the whole span, the low end first. STAR's main stays attached there. Either the induced angle is too large (the body between the inner endplates, which neither the strips nor the lattice have) or SST stalls this section 1 to 2 deg early. Telling those apart needs STAR's wing-surface force or its sectional pressures at one span station.
+
+### STAR's wing alone (15 Nov, `star_wing.py`, `su2_elements.py`)
+
+STAR ran frontwing#1.02 alone: wing and both endplates, half model, moving ground, 20 m/s, fully turbulent SST, the endplate bottoms 35 mm off the ground. It stopped at 368 iterations on the aero lead's criteria; over the last 100 its CL moved 0.0016 and its CD 0.0010. `WingNumbers.java` (in OneDrive `AERO/starccm macros`) wrote the forces, the whole wetted surface (154 273 faces) and three cuts. The surface table adds up to STAR's own force to 0.01 N. Wing y+ is 1.6 median and 2.8 at the 95th percentile.
+
+On AeroBench's reference (the 524.5 mm span times the 682 mm sum of the chords):
+
+| | Fz (N) | Fx (N) | Cl | Share of the downforce |
+|---|---|---|---|---|
+| main | -60.5 | +0.2 | -0.714 | 37% |
+| flap 1 | -50.8 | -10.4 | -0.600 | 31% |
+| flap 2 | -32.3 | -18.0 | -0.382 | 20% |
+| flap 3 | -17.0 | -15.5 | -0.201 | 10.5% |
+| endplates | -1.9 | -2.0 | | 1% |
+| wing between the endplates | | | **-1.902**, Cd 0.517 | |
+| whole part | -162.9 | -45.8 | -1.924 | |
+
+- **Nothing separates.** The wall shear runs against the stream on 0.2% of the main's wetted area, 0.4% of flap 1's, 1.6% of flap 2's and 3.0% of flap 3's (small patches at the trailing edges and the endplate corners). STAR does not stall the main at its leading edge.
+- **The spanwise loading is nearly flat.** The 6 strips carry Cl -1.83 to -2.00, outer end to inner end.
+- **The drop is not straight.** The section moves down without twisting (its leading edge and flap 3's trailing edge both drop 43 mm), but the main is level outboard, 98-102 mm above the ground, and drops only across the inner half: 97 mm at mid-span, 87 mm, 72 mm, then 53 mm in the innermost strip. The strip run took a straight 45 mm drop, 119 mm down to 74 mm, so its outboard strips sat about 20 mm too high and its inboard strips up to 20 mm too low at the far end.
+
+AeroBench against it: the strips with every polar point (`run_strips.py 99`) gave Cl -2.26, **+19%** on the wing between the endplates, every strip on the cliff, with the main's leading edge stalled. The single strip gave -2.39, +26%. The separation call is wrong.
+
+Element by element, at mid-span (STAR's strip 3, the main 96.7 mm up, against the 2D polar at 96.6 mm), Cl on the 682 mm chord:
+
+| | main | flap 1 | flap 2 | flap 3 | Cl |
+|---|---|---|---|---|---|
+| STAR, 3D | -0.77 | -0.61 | -0.41 | -0.21 | -2.00 |
+| SU2 2D, +7 deg | -0.90 | -1.51 | -0.89 | -0.29 | -3.59 |
+| SU2 2D, +8 deg | -0.60 | -1.36 | -0.83 | -0.28 | -3.07 |
+
+STAR's main carries what the 2D main carries at about +7.4 deg. SST keeps it attached at that angle too: the 96.6 mm polar's main first stalls at its leading edge at +8 deg. The flaps behind it carry 40-70% of what they carry in 2D at that angle. So SST is not stalling the section early. What fails is the single induced angle per strip.
+
+The wing's chord is longer than its span (aspect ratio 0.77). On a wing like that the downwash grows along the chord, so the flaps meet the flow at a larger angle than the main. One angle per strip turns every element by the same amount. To shed the flaps' load, the coupling has to turn the whole section to +8 or +9 deg, past where the main stalls at its leading edge. The lattice already has chordwise panels, but `couple_strips` uses only each strip's mean far-field downwash.
+
+Next, the fix at the cause: each element's own induced angle from the lattice's downwash at that element, and the 2D section solved with each element turned by its own angle. Not done. The SU2 polars' surface files are in temp folders and will not last: the element table above is what is kept.
