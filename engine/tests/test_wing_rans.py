@@ -1115,3 +1115,28 @@ def test_element_turns_need_one_per_drawn_element():
 
     with pytest.raises(EngineError, match="one turn per element"):
         turn_elements([_drawn_element(), _drawn_element()], [1.0])
+
+
+def test_finite_wing_turns_each_element_by_its_own_induced_angle(monkeypatch, tmp_path):
+    from aeroengine.wing import rans
+
+    calls = []
+
+    def fake(p, workdir, mesh_file, su2_hint, cores, env, progress, log, field=True, mesh_ready=None, restart=None):
+        calls.append({"alpha": p["alpha"], "turns": list(p.get("element_turns") or []), "ready": mesh_ready is not None})
+        workdir.mkdir(parents=True, exist_ok=True)
+        (workdir / "restart.dat").write_text("x")
+        cl = -0.08 * (12 - p["alpha"])
+        return {"alpha": p["alpha"], "cl": cl, "cd": 0.03, "converged": True, "separated": False, "separation": None,
+                "regions": [], "mesh": {"cells": 1}, "transition": [[0.0, 0.0]] * 2,
+                "elements": [{"cl": 0.6 * cl, "cd": 0.02}, {"cl": 0.4 * cl, "cd": 0.01}]}
+
+    monkeypatch.setattr(rans, "solve", fake)
+    _estimate(monkeypatch, lambda a, n: -0.09 * (13 - a))
+    front = {"coords": [[0.5, 0], [0, 0], [0.5, 0]], "unit": [[1, 0], [0, 0], [1, 0]], "angle": 0, "inverted": True, "chord": 0.5}
+    back = {**front, "coords": [[1.0, 0], [0.5, 0], [1.0, 0]]}
+    r = rans.solve_finite(_finite_params(elements=[front, back]), tmp_path, tmp_path / "m.su2", None, 1, None,
+                          lambda *a: None, lambda *a, **k: None)
+    # a downforce wing: the element behind meets a steeper flow, turned the unloading way (alpha's sense)
+    assert all(len(c["turns"]) == 2 and c["turns"][0] < 0 < c["turns"][1] for c in calls)
+    assert r["finite"]["element_turns"] == pytest.approx(calls[-1]["turns"], abs=1e-3)

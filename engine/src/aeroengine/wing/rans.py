@@ -464,12 +464,15 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     in free air, until it settles within FINITE_TOLERANCE, FINITE_SOLVES
     solves, a solve does not converge (stopped), or the bracket closes to
     FINITE_CLIFF without settling (cliff: the section's Cl jumps there, a
-    stall, and no single angle is the answer). cl, cd (with induced drag), regions and the field are the
+    stall, and no single angle is the answer). A wing of several elements also turns each element
+    about the mean by its own induced angle (finite.element_turns: the lattice's downwash grows along
+    a short wing's chord, so the flaps meet a steeper flow than the main), from the last solve's Cl and
+    element loads; settled means those turns have stopped moving too. cl, cd (with induced drag), regions and the field are the
     last solve's, or after a stop the last one that converged. No car upwash, endplate vortex or spanwise variation: the
     mid-span section on the car."""
     import shutil
 
-    from .finite import lattice_factors
+    from .finite import element_turns, lattice_factors
 
     fin = p.get("finite") or {}
     for key in ("span", "endplate"):
@@ -494,13 +497,36 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     a = _fixed_point([(x, alpha + induced_angle(c, span, chord, endplate, ride) - x) for x, c in polar], alpha) \
         if polar else alpha  # no estimate at any angle: RANS from the drawn angle
     log(f"quick estimate: the induced angle settles at {a:+.2f}°; RANS from there")
+    # Each element at its own induced angle about the mean (finite.element_turns): its three-quarter chord
+    # along the wing as drawn, loads shared as the last solve carried them (the chords' shares at first).
+    els = p["elements"]
+    stations, chord_shares = [], [float(e["chord"]) / sum(float(x["chord"]) for x in els) for e in els]
+    for e in els:
+        c = np.asarray(e["coords"], float)
+        te = 0.5 * (c[0] + c[-1])
+        nose = c[int(np.argmax(np.linalg.norm(c - te, axis=1)))]
+        stations.append(float((nose[0] + 0.75 * (te[0] - nose[0]) - min(xs)) / planform))
+
+    def shares(res: dict) -> list[float]:
+        cls = [float(e.get("cl", 0.0)) for e in res.get("elements") or []]
+        total = sum(cls)
+        out = [c / total for c in cls] if len(cls) == len(els) and abs(total) > 1e-9 else []
+        return out if out and all(0.0 <= x <= 1.0 for x in out) else chord_shares
+
+    def turned(cl: float, res: dict | None) -> list[float]:
+        return element_turns(cl, stations, shares(res) if res else chord_shares, span, chord, endplate, ride,
+                             planform, bottom)
+
+    turns = turned(float(np.interp(a, *zip(*polar))) if polar else 0.0, None)
+    used = {}
     ready, prev, r, settled, tried, stopped, good, cliff = None, None, None, False, [], None, None, None
     for n in range(1, FINITE_SOLVES + 1):
         folder = workdir / f"s{n}"
         folder.mkdir(parents=True, exist_ok=True)
         report = lambda pct, msg, n=n, a=a: progress(100 * (n - 1 + pct / 100) / FINITE_SOLVES, f"{a:+.1f}°: {msg}")
-        r = solve({**q, "alpha": a}, folder, mesh_file, su2_hint, cores, env, report, log, field=field,
-                  mesh_ready=ready, restart=prev)
+        r = solve({**q, "alpha": a, "element_turns": turns}, folder, mesh_file, su2_hint, cores, env, report, log,
+                  field=field, mesh_ready=ready, restart=prev)
+        used[folder] = turns
         if not r.get("converged") and not r.get("unsteady") and (folder / "restart.dat").exists():
             # SST-LM often needs more than one run's iterations: the same angle again, on the same
             # mesh, from its own solution (Zerihan's wing: residual down 3.8 of 4 orders from rest).
@@ -513,10 +539,11 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
                 first = {}
             res = next((v for k, v in first.items() if k.lower() in ("rms[p]", "rms_pressure")), None)
             start = float(np.max(res[:5])) if res is not None and len(res) else None
-            r = solve({**q, "alpha": a, "residual_start": start}, again, mesh_file, su2_hint, cores, env, report, log, field=field,
-                      mesh_ready={"mesh": r["mesh"], "transition": r["transition"]},
+            r = solve({**q, "alpha": a, "residual_start": start, "element_turns": turns}, again, mesh_file, su2_hint, cores,
+                      env, report, log, field=field, mesh_ready={"mesh": r["mesh"], "transition": r["transition"]},
                       restart=(folder / "restart.dat").resolve())
             folder = again
+            used[folder] = turns
         if not r.get("converged") and not r.get("unsteady"):  # its Cl is not a result to steer the next angle by
             stopped = f"solve {n} at {a:+.2f}° did not converge: {r.get('reason') or 'no reason given'}"
             log(stopped, level="warning")
@@ -525,8 +552,11 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
             break
         good = (a, r, folder)
         target = alpha + induced_angle(r["cl"], span, chord, endplate, ride)
-        log(f"solve {n} at {a:+.2f}°: Cl {r['cl']:.4f}, induced angle wants {target:+.2f}°")
-        if abs(target - a) < FINITE_TOLERANCE:
+        new = turned(r["cl"], r)
+        moved = max((abs(x - y) for x, y in zip(new, turns)), default=0.0)
+        log(f"solve {n} at {a:+.2f}°: Cl {r['cl']:.4f}, induced angle wants {target:+.2f}°"
+            + (f", the elements turned {', '.join(f'{t:+.2f}' for t in new)}°" if len(els) > 1 else ""))
+        if abs(target - a) < FINITE_TOLERANCE and moved < FINITE_TOLERANCE:
             settled = True
             break
         tried.append((a, target - a, r, folder))
@@ -540,11 +570,14 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
             log(f"stall cliff: Cl {r_lo['cl']:.3f} at {lo:+.2f}°, {r_hi['cl']:.3f} at {hi:+.2f}°; no angle between settles",
                 level="warning")
             break
-        if not ground:
-            ready = {"mesh": r["mesh"], "transition": r["transition"]}
+        turns = new
+        if not ground and moved < FINITE_TOLERANCE:  # turned elements are a new outline: a new mesh, from rest
             # Each from the last; once bracketed, from the more loaded end (the attached side of a stall).
+            ready = {"mesh": r["mesh"], "transition": r["transition"]}
             src = max(pair, key=lambda t: abs(t[2]["cl"]))[3] if pair else folder
             prev = (src / "restart.dat").resolve() if (src / "restart.dat").exists() else None
+        else:
+            ready, prev = None, None
         if n < FINITE_SOLVES:
             if pair:
                 # Bracketed: secant between the two ends, or halfway when that lands near an end
@@ -572,7 +605,8 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
          "finite": {"alpha_effective": round(a, 3), "induced_angle": round(a - alpha, 3), "aspect_ratio_effective": round(ar, 3),
                     "ground_factor": round(gf, 4), "solves": n, "converged": settled, "cd_induced": cd_induced,
                     "span": span, "endplate": endplate, "endplate_bottom": bottom, "planform": round(planform, 4),
-                    "model": "vortex lattice", "stopped": stopped, "cliff": cliff}}
+                    "model": "vortex lattice", "stopped": stopped, "cliff": cliff,
+                    "element_turns": [round(t, 3) for t in used.get(folder, [])]}}
     return r
 
 
