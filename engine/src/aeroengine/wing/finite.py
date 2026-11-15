@@ -164,3 +164,31 @@ def couple_strips(polars, k, width, alpha: float) -> dict:
     return {"alpha": [float(x) for x in a], "cl": [float(x) for x in c],
             "cl_wing": float(np.sum(c * width) / np.sum(width)),
             "converged": bool(np.abs(gap(a)).max() < 1e-6), "out_of_range": out, "past_stall": past, "steep": steep}
+
+
+@lru_cache(maxsize=128)
+def _chordwise(span: float, planform: float, endplate: float, ride_height: float | None,
+               endplate_bottom: float | None, stations: tuple[float, ...]) -> tuple[float, ...]:
+    from .vlm import Lattice
+
+    bottom = None if ride_height is None else ride_height if endplate_bottom is None else endplate_bottom
+    lat = Lattice(span=span, chord=planform, height=ride_height, endplate=endplate, endplate_bottom=bottom)
+    return tuple(float(a) for a in lat.chordwise(list(stations)))
+
+
+def element_turns(cl: float, stations: list[float], shares: list[float], span: float, chord: float,
+                  endplate: float, ride_height: float | None, planform: float | None = None,
+                  endplate_bottom: float | None = None) -> list[float]:
+    """Degrees each element turns on top of the wing's mean induced angle, alpha's sense (positive unloads
+    a downforce wing at Cl < 0): the vortex lattice's induced angle at the element's station (fraction of
+    the planform from the leading edge) less its load-weighted mean over the elements (shares, summing
+    to 1). On a wing shorter than its chord the flow behind meets a steeper angle (Lattice.chordwise), so
+    the flaps unload against the main; one element turns by nothing, keeping lattice_factors' angle."""
+    if len(stations) < 2:
+        return [0.0] * len(stations)
+    planform = planform or chord
+    r = lambda v: None if v is None else round(float(v), 5)  # noqa: E731
+    a = _chordwise(r(span), r(planform), r(max(endplate, 0.0)), r(ride_height), r(endplate_bottom),
+                   tuple(round(float(s), 4) for s in stations))
+    mean = sum(w * x for w, x in zip(shares, a))
+    return [-math.degrees(x - mean) * cl * chord / planform for x in a]

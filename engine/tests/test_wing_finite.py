@@ -152,3 +152,27 @@ def test_a_polar_needs_two_angles():
 
     with pytest.raises(ValueError, match="two angles"):
         couple_strips([([6.0], [-3.9])], np.array([[0.1]]), np.array([1.0]), -7.45)
+
+
+def test_one_element_keeps_the_mean_induced_angle():
+    from aeroengine.wing.finite import element_turns
+
+    assert element_turns(-2.0, [0.75], [1.0], 1.0, 0.25, 0.2, 0.05) == [0.0]
+
+
+STATIONS, SHARES = [0.2, 0.55, 0.73, 0.89], [0.37, 0.31, 0.2, 0.12]
+
+
+def test_element_turns_average_out_over_the_load():
+    from aeroengine.wing.finite import element_turns
+
+    t = element_turns(-2.0, STATIONS, SHARES, 0.5245, 0.682, 0.315, 0.0966, 0.6245, 0.035)
+    assert sum(s * x for s, x in zip(SHARES, t)) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_flaps_of_a_short_downforce_wing_turn_the_unloading_way():
+    # frontwing#1.02 at STAR's Cl: the flaps meet a steeper flow than the main (alpha's sense: positive unloads)
+    from aeroengine.wing.finite import element_turns
+
+    main, f1, f2, f3 = element_turns(-2.0, STATIONS, SHARES, 0.5245, 0.682, 0.315, 0.0966, 0.6245, 0.035)
+    assert main < 0 < f1 < f2 < f3
