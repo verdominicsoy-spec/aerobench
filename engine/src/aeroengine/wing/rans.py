@@ -29,23 +29,24 @@ MESH_LEVELS = {  # surface and wake spacing scale, wall layer growth
 CONVERGENCE = {"quick": {"tolerance": 1e-3, "window": 100, "residual_drop": 3.0}}
 
 
-def turn_elements(placed: list[np.ndarray], turns: list[float]) -> list[np.ndarray]:
-    """Each element turned by its own angle (degrees, alpha's sense: the points as in_ground_effect
-    turns the wing) about its quarter chord, the nose being the point farthest from the trailing edge."""
-    if len(turns) != len(placed):
-        raise EngineError(f"element_turns needs one turn per element: {len(turns)} for {len(placed)}")
-    out = []
-    for e, turn in zip(placed, turns):
-        if turn == 0:
-            out.append(e)
-            continue
-        te = 0.5 * (e[0] + e[-1])
-        nose = e[int(np.argmax(np.linalg.norm(e - te, axis=1)))]
-        pivot = nose + 0.25 * (te - nose)
-        a = math.radians(turn)
-        rot = np.array([[math.cos(a), -math.sin(a)], [math.sin(a), math.cos(a)]])
-        out.append((e - pivot) @ rot + pivot)
-    return out
+def bend_section(placed: list[np.ndarray], x: list[float], turns: list[float]) -> list[np.ndarray]:
+    """The section bent by a turn that varies along it (degrees at x in m, alpha's sense, as in_ground_effect
+    turns the wing; straight between, held past the ends): each point moved across the flow by the
+    integral of the turn's tangent from x[0]. Each element turns by the turn where it sits, and points at
+    the same x move together, so the slots between elements keep their gaps (turning each element about
+    its own pivot shuts them: frontwing#1.02's main trailing edge into flap 1)."""
+    if not any(turns):
+        return placed
+    x, t = np.asarray(x, float), np.tan(np.radians(np.asarray(turns, float)))
+    run = np.concatenate([[0.0], np.cumsum(0.5 * (t[1:] + t[:-1]) * np.diff(x))])
+
+    def drop(px: np.ndarray) -> np.ndarray:  # exact for a turn's tangent straight between the x
+        k = np.clip(np.searchsorted(x, px, side="right") - 1, 0, len(x) - 2)
+        inside = np.clip(px, x[0], x[-1])
+        within = run[k] + (inside - x[k]) * 0.5 * (t[k] + np.interp(inside, x, t))
+        return within + np.minimum(px - x[0], 0.0) * t[0] + np.maximum(px - x[-1], 0.0) * t[-1]
+
+    return [np.column_stack([e[:, 0], e[:, 1] - drop(e[:, 0])]) for e in placed]
 
 
 def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: int, env: dict | None,
@@ -61,8 +62,10 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     if not isinstance(raw, list) or not raw:
         raise EngineError("params.elements must list the elements: coords (placed, m), unit, angle, inverted, chord")
     placed = [np.asarray(e["coords"], float) for e in raw]
-    turns = [float(t) for t in p.get("element_turns") or [0.0] * len(raw)]
-    placed = turn_elements(placed, turns)
+    camber = p.get("camber")  # {"x": m, "turns": deg}: the section bent along its chord (solve_finite)
+    if camber:
+        placed = bend_section(placed, camber["x"], camber["turns"])
+    turns = [float(t) for t in p.get("element_turns") or [0.0] * len(raw)]  # each element's share of it
     inverted = [bool(e.get("inverted", False)) for e in raw]
     chords = [float(e["chord"]) for e in raw]
     speed, rho, mu = float(p.get("speed", 15)), float(p.get("rho", 1.225)), float(p.get("mu", 1.81e-5))
@@ -513,18 +516,23 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
         out = [c / total for c in cls] if len(cls) == len(els) and abs(total) > 1e-9 else []
         return out if out and all(0.0 <= x <= 1.0 for x in out) else chord_shares
 
-    def turned(cl: float, res: dict | None) -> list[float]:
-        return element_turns(cl, stations, shares(res) if res else chord_shares, span, chord, endplate, ride,
-                             planform, bottom)
+    grid = [i / 40 for i in range(41)]
 
-    turns = turned(float(np.interp(a, *zip(*polar))) if polar else 0.0, None)
+    def turned(cl: float, res: dict | None) -> tuple[list[float], dict]:
+        """Each element's turn, and the section's bend along its whole chord on the same mean."""
+        sh = shares(res) if res else chord_shares
+        bent = element_turns(cl, stations, sh, span, chord, endplate, ride, planform, bottom, at=grid)
+        return (element_turns(cl, stations, sh, span, chord, endplate, ride, planform, bottom),
+                {"x": [min(xs) + g * planform for g in grid], "turns": bent})
+
+    turns, camber = turned(float(np.interp(a, *zip(*polar))) if polar else 0.0, None)
     used = {}
     ready, prev, r, settled, tried, stopped, good, cliff = None, None, None, False, [], None, None, None
     for n in range(1, FINITE_SOLVES + 1):
         folder = workdir / f"s{n}"
         folder.mkdir(parents=True, exist_ok=True)
         report = lambda pct, msg, n=n, a=a: progress(100 * (n - 1 + pct / 100) / FINITE_SOLVES, f"{a:+.1f}°: {msg}")
-        r = solve({**q, "alpha": a, "element_turns": turns}, folder, mesh_file, su2_hint, cores, env, report, log,
+        r = solve({**q, "alpha": a, "element_turns": turns, "camber": camber}, folder, mesh_file, su2_hint, cores, env, report, log,
                   field=field, mesh_ready=ready, restart=prev)
         used[folder] = turns
         if not r.get("converged") and not r.get("unsteady") and (folder / "restart.dat").exists():
@@ -539,7 +547,7 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
                 first = {}
             res = next((v for k, v in first.items() if k.lower() in ("rms[p]", "rms_pressure")), None)
             start = float(np.max(res[:5])) if res is not None and len(res) else None
-            r = solve({**q, "alpha": a, "residual_start": start, "element_turns": turns}, again, mesh_file, su2_hint, cores,
+            r = solve({**q, "alpha": a, "residual_start": start, "element_turns": turns, "camber": camber}, again, mesh_file, su2_hint, cores,
                       env, report, log, field=field, mesh_ready={"mesh": r["mesh"], "transition": r["transition"]},
                       restart=(folder / "restart.dat").resolve())
             folder = again
@@ -552,7 +560,7 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
             break
         good = (a, r, folder)
         target = alpha + induced_angle(r["cl"], span, chord, endplate, ride)
-        new = turned(r["cl"], r)
+        new, new_camber = turned(r["cl"], r)
         moved = max((abs(x - y) for x, y in zip(new, turns)), default=0.0)
         log(f"solve {n} at {a:+.2f}°: Cl {r['cl']:.4f}, induced angle wants {target:+.2f}°"
             + (f", the elements turned {', '.join(f'{t:+.2f}' for t in new)}°" if len(els) > 1 else ""))
@@ -570,7 +578,7 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
             log(f"stall cliff: Cl {r_lo['cl']:.3f} at {lo:+.2f}°, {r_hi['cl']:.3f} at {hi:+.2f}°; no angle between settles",
                 level="warning")
             break
-        turns = new
+        turns, camber = new, new_camber
         if not ground and moved < FINITE_TOLERANCE:  # turned elements are a new outline: a new mesh, from rest
             # Each from the last; once bracketed, from the more loaded end (the attached side of a stall).
             ready = {"mesh": r["mesh"], "transition": r["transition"]}

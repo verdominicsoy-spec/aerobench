@@ -178,17 +178,19 @@ def _chordwise(span: float, planform: float, endplate: float, ride_height: float
 
 def element_turns(cl: float, stations: list[float], shares: list[float], span: float, chord: float,
                   endplate: float, ride_height: float | None, planform: float | None = None,
-                  endplate_bottom: float | None = None) -> list[float]:
+                  endplate_bottom: float | None = None, at: list[float] | None = None) -> list[float]:
     """Degrees each element turns on top of the wing's mean induced angle, alpha's sense (positive unloads
     a downforce wing at Cl < 0): the vortex lattice's induced angle at the element's station (fraction of
     the planform from the leading edge) less its load-weighted mean over the elements (shares, summing
     to 1). On a wing shorter than its chord the flow behind meets a steeper angle (Lattice.chordwise), so
-    the flaps unload against the main; one element turns by nothing, keeping lattice_factors' angle."""
+    the flaps unload against the main; one element turns by nothing, keeping lattice_factors' angle.
+    at: the turn at these stations instead (on the same mean), to bend the section along its chord."""
     if len(stations) < 2:
-        return [0.0] * len(stations)
+        return [0.0] * len(stations if at is None else at)
     planform = planform or chord
     r = lambda v: None if v is None else round(float(v), 5)  # noqa: E731
+    points = list(stations) + list(at or [])
     a = _chordwise(r(span), r(planform), r(max(endplate, 0.0)), r(ride_height), r(endplate_bottom),
-                   tuple(round(float(s), 4) for s in stations))
-    mean = sum(w * x for w, x in zip(shares, a))
-    return [-math.degrees(x - mean) * cl * chord / planform for x in a]
+                   tuple(round(float(s), 4) for s in points))
+    mean = sum(w * x for w, x in zip(shares, a[:len(stations)]))
+    return [-math.degrees(x - mean) * cl * chord / planform for x in (a[:len(stations)] if at is None else a[len(stations):])]

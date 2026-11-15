@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 import json
+import math
 import os
 import shutil
 from dataclasses import replace
@@ -1081,40 +1082,42 @@ def test_finite_wing_that_settles_has_no_cliff(monkeypatch, tmp_path):
     assert r["finite"]["converged"] and r["finite"]["cliff"] is None
 
 
-def _drawn_element():
-    return naca4("4412", 41) * 0.2 + np.array([0.3, 0.05])  # Selig order: trailing edge, upper, nose, lower
+
+def _main_and_flap():
+    main = naca4("4412", 41) * 0.3  # Selig order, nose at x 0, flat chord line
+    flap = naca4("4412", 41) * 0.15 + np.array([0.28, -0.03])  # under the main's trailing edge
+    return [main, flap]
 
 
-def test_zero_turns_leave_the_elements_as_drawn():
-    from aeroengine.wing.rans import turn_elements
-
-    e = _drawn_element()
-    assert np.array_equal(turn_elements([e], [0.0])[0], e)
-
-
-def test_an_element_turns_about_its_quarter_chord_as_alpha_turns_the_wing():
-    from aeroengine.wing.estimate import in_ground_effect
-    from aeroengine.wing.rans import turn_elements
-
-    e = _drawn_element()
+def _chord_slope(e):
     te = 0.5 * (e[0] + e[-1])
     nose = e[int(np.argmax(np.linalg.norm(e - te, axis=1)))]
-    quarter = nose + 0.25 * (te - nose)
-    t = turn_elements([e], [5.0])[0]
-    # the quarter-chord point stays put: the turned outline's own quarter chord is where it was
-    te2 = 0.5 * (t[0] + t[-1])
-    nose2 = t[int(np.argmax(np.linalg.norm(t - te2, axis=1)))]
-    assert nose2 + 0.25 * (te2 - nose2) == pytest.approx(quarter, abs=1e-12)
-    # the same turn the wing gets from alpha 5 over a ground, up to where it sits
-    g = in_ground_effect([e], 5.0, 0.1)[0][0]
-    assert t - t.mean(axis=0) == pytest.approx(g - g.mean(axis=0), abs=1e-12)
+    return (te[1] - nose[1]) / (te[0] - nose[0])
 
 
-def test_element_turns_need_one_per_drawn_element():
-    from aeroengine.wing.rans import turn_elements
+def test_no_bend_leaves_the_section_as_drawn():
+    from aeroengine.wing.rans import bend_section
 
-    with pytest.raises(EngineError, match="one turn per element"):
-        turn_elements([_drawn_element(), _drawn_element()], [1.0])
+    els = _main_and_flap()
+    assert all(np.array_equal(a, b) for a, b in zip(bend_section(els, [0.0, 0.45], [0.0, 0.0]), els))
+
+
+def test_an_even_bend_turns_the_section_as_alpha_does():
+    from aeroengine.wing.rans import bend_section
+
+    els = _main_and_flap()
+    out = bend_section(els, [0.0, 0.45], [5.0, 5.0])
+    for a, b in zip(els, out):
+        assert np.array_equal(a[:, 0], b[:, 0])  # moved across the flow only: points at one x move together
+        assert b[:, 1] == pytest.approx(a[:, 1] - math.tan(math.radians(5.0)) * a[:, 0], abs=1e-12)
+    assert _chord_slope(out[1]) == pytest.approx(-math.tan(math.radians(5.0)), abs=1e-9)  # in_ground_effect's sense
+
+
+def test_a_bend_growing_aft_turns_the_flap_more_than_the_main():
+    from aeroengine.wing.rans import bend_section
+
+    out = bend_section(_main_and_flap(), [0.0, 0.45], [1.0, 8.0])
+    assert _chord_slope(out[1]) < _chord_slope(out[0]) < 0
 
 
 def test_finite_wing_turns_each_element_by_its_own_induced_angle(monkeypatch, tmp_path):
@@ -1123,7 +1126,8 @@ def test_finite_wing_turns_each_element_by_its_own_induced_angle(monkeypatch, tm
     calls = []
 
     def fake(p, workdir, mesh_file, su2_hint, cores, env, progress, log, field=True, mesh_ready=None, restart=None):
-        calls.append({"alpha": p["alpha"], "turns": list(p.get("element_turns") or []), "ready": mesh_ready is not None})
+        calls.append({"alpha": p["alpha"], "turns": list(p.get("element_turns") or []), "camber": p.get("camber"),
+                      "ready": mesh_ready is not None})
         workdir.mkdir(parents=True, exist_ok=True)
         (workdir / "restart.dat").write_text("x")
         cl = -0.08 * (12 - p["alpha"])
@@ -1139,4 +1143,6 @@ def test_finite_wing_turns_each_element_by_its_own_induced_angle(monkeypatch, tm
                           lambda *a: None, lambda *a, **k: None)
     # a downforce wing: the element behind meets a steeper flow, turned the unloading way (alpha's sense)
     assert all(len(c["turns"]) == 2 and c["turns"][0] < 0 < c["turns"][1] for c in calls)
+    # the section is bent, not its elements turned: the turn along the chord grows aft, from the wing's nose
+    assert all(c["camber"]["x"][0] == 0.0 and c["camber"]["turns"][0] < c["camber"]["turns"][-1] for c in calls)
     assert r["finite"]["element_turns"] == pytest.approx(calls[-1]["turns"], abs=1e-3)
