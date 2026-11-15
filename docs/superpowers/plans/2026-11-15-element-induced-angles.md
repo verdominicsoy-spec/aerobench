@@ -77,3 +77,29 @@
 ### Task 6: Write-up
 
 - [ ] Memory validation-status, push, `graphify update .`, report.
+
+---
+
+## Addendum (15 Nov, after the first frontwing#1.02 run: main within 7% of STAR, flaps 25-73% high, loop mis-steered)
+
+### Task 7: Chordwise loading from the RANS element loads
+
+**Files:** `engine/src/aeroengine/wing/vlm.py`, `engine/src/aeroengine/wing/finite.py`; tests in `test_wing_vlm.py`, `test_wing_finite.py`.
+
+**Interfaces:** `Lattice.chordwise(stations, loading=None)`: `loading` is each chordwise panel's share of every strip's circulation (sums to 1); the strips keep the lattice's own totals, the endplates are solved with the wing held, and the induced angle is the 3D normal velocity less the same loading's 2D one. `finite.element_turns(..., extents=None)`: with each element's (nose, trailing edge) as planform fractions, the loading is built from the shares, each element loaded as a thin airfoil (circulation density sqrt((1 - xi) / xi)), on a lattice of 24 chordwise panels.
+
+- [ ] Tests: the flat plate's own loading passed explicitly matches `loading=None` (rel 1e-3); on an endless span any loading gives under 1e-3 rad; with extents, one element still turns 0 and the share-weighted turns sum to 0.
+- [ ] Commit.
+
+### Task 8: Turns tied to the angle
+
+**Files:** `rans.solve_finite`; test in `test_wing_rans.py`.
+
+**Interfaces:** each solve at angle a gets the turns for the Cl the fixed point needs there, `(a - alpha) / c`, c the induced angle per unit Cl; the shares from the last converged solve (the chords' at first). The loop then steers on a alone; a several-element wing reuses no mesh between angles.
+
+- [ ] Test: in a two-element fake, every solve after the first gets `element_turns((a - alpha) / c, ...)` with the fake's shares.
+- [ ] Commit.
+
+### Task 9: frontwing#1.02 again
+
+- [ ] `run_car.py 0.315 0.0966 0.5245 -7.45 0.035 sst` at 6 cores, niced; compare with STAR's strip 3; README; commit.
