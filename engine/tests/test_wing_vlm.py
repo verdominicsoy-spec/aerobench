@@ -103,3 +103,22 @@ def test_dropped_wing_sees_more_induced_angle_inboard_at_its_high_end():
     load = s.k @ np.ones(4)
     assert load[1] > load[2] > 0
     assert Lattice(**kw, drop=-0.05).strips(4).k == pytest.approx(s.k[::-1, ::-1], rel=1e-6)  # the mirror image
+
+
+FRONTWING = dict(span=0.5245, chord=0.6245, height=0.0966, endplate=0.315, endplate_bottom=0.035)
+
+
+def test_chordwise_angle_vanishes_on_an_endless_span():
+    a = Lattice(span=1000.0, chord=1.0).chordwise([0.1, 0.5, 0.9])
+    assert np.all(np.abs(a) < 1e-3)
+
+
+def test_chordwise_angle_on_a_slender_wing_barely_grows_along_the_chord():
+    a = Lattice(span=10.0, chord=1.0).chordwise([0.1, 0.5, 0.9])
+    assert a[0] > 0 and a[0] < a[1] < a[2] < 1.3 * a[0]
+
+
+def test_chordwise_angle_on_a_short_wing_by_the_ground_grows_aft():
+    # frontwing#1.02 (aspect ratio 0.77): the flaps meet a steeper flow than the main (STAR, 15 Nov)
+    a = Lattice(**FRONTWING).chordwise([0.1, 0.5, 0.9])
+    assert a[0] < a[1] < a[2] and a[2] > 2 * a[0]

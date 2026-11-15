@@ -177,6 +177,28 @@ class Lattice:
         return Result(y=0.5 * (ys[:-1] + ys[1:]), cl=cl, induced=1.0 - cl / a2d, lift_slope=cl_wing,
                       k_lift=1 / cl_wing - 1 / a2d, k_drag=cdi / cl_wing ** 2)
 
+    def chordwise(self, stations: list[float]) -> np.ndarray:
+        """The induced angle (rad) along the chord at mid-span per unit section Cl on the chord, at
+        stations (fractions of the chord from the leading edge; straight between the control points,
+        held at the ends). The lattice's downwash beyond what the same chordwise loading would make
+        on an endless span at the same height: on a slender wing nearly level along the chord, on one
+        shorter than its chord growing aft, so the elements behind meet a steeper flow."""
+        _, _, _, wing, ys, ground, _, gam = self._system()
+        g = gam[wing].reshape(self.ny, self.nx)  # alpha 1 rad
+        xs = np.linspace(0.0, self.chord, self.nx + 1)
+        xv, xc = xs[:-1] + 0.25 * np.diff(xs), xs[:-1] + 0.75 * np.diff(xs)
+        dx = xc[:, None] - xv[None, :]
+        angles = []
+        for j in (self.ny // 2 - 1, self.ny // 2) if self.ny % 2 == 0 else (self.ny // 2,):
+            a = -1 / (2 * math.pi * dx)  # a unit vortex's normal velocity, as section_slope
+            if ground:
+                dz = 2 * float(self.z(0.5 * (ys[j] + ys[j + 1])))
+                a = a + dx / (2 * math.pi * (dx * dx + dz * dz))
+            # The 3D lattice lets no flow through: its vortices' normal velocity is -1 at every control point.
+            induced = 1.0 + a @ g[j]
+            angles.append(induced / (2 * g[j].sum() / self.chord))
+        return np.interp(np.asarray(stations, float) * self.chord, xc, np.mean(angles, axis=0))
+
 
     def strips(self, count: int) -> Strips:
         """The induced angle on count equal spanwise strips per unit section Cl on each, for a strip
