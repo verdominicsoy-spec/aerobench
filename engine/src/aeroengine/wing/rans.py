@@ -29,6 +29,25 @@ MESH_LEVELS = {  # surface and wake spacing scale, wall layer growth
 CONVERGENCE = {"quick": {"tolerance": 1e-3, "window": 100, "residual_drop": 3.0}}
 
 
+def turn_elements(placed: list[np.ndarray], turns: list[float]) -> list[np.ndarray]:
+    """Each element turned by its own angle (degrees, alpha's sense: the points as in_ground_effect
+    turns the wing) about its quarter chord, the nose being the point farthest from the trailing edge."""
+    if len(turns) != len(placed):
+        raise EngineError(f"element_turns needs one turn per element: {len(turns)} for {len(placed)}")
+    out = []
+    for e, turn in zip(placed, turns):
+        if turn == 0:
+            out.append(e)
+            continue
+        te = 0.5 * (e[0] + e[-1])
+        nose = e[int(np.argmax(np.linalg.norm(e - te, axis=1)))]
+        pivot = nose + 0.25 * (te - nose)
+        a = math.radians(turn)
+        rot = np.array([[math.cos(a), -math.sin(a)], [math.sin(a), math.cos(a)]])
+        out.append((e - pivot) @ rot + pivot)
+    return out
+
+
 def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: int, env: dict | None,
           progress: Callable[[float, str], None], log: Callable[..., None], field: bool = True,
           mesh_ready: dict | None = None, restart: Path | None = None) -> dict:
@@ -42,6 +61,8 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
     if not isinstance(raw, list) or not raw:
         raise EngineError("params.elements must list the elements: coords (placed, m), unit, angle, inverted, chord")
     placed = [np.asarray(e["coords"], float) for e in raw]
+    turns = [float(t) for t in p.get("element_turns") or [0.0] * len(raw)]
+    placed = turn_elements(placed, turns)
     inverted = [bool(e.get("inverted", False)) for e in raw]
     chords = [float(e["chord"]) for e in raw]
     speed, rho, mu = float(p.get("speed", 15)), float(p.get("rho", 1.225)), float(p.get("mu", 1.81e-5))
@@ -77,9 +98,9 @@ def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: 
         zones = [tuple(z) for z in mesh_ready["transition"]]
     elif transition == "auto":
         progress(2, "predicting where each element's flow turns turbulent")
-        for e, c in zip(raw, chords):
+        for e, c, turn in zip(raw, chords, turns):
             sense = -1 if e.get("inverted") else 1
-            a = float(e.get("angle", 0)) + sense * alpha
+            a = float(e.get("angle", 0)) + sense * (alpha + turn)
             row = polar(np.asarray(e["unit"], float), [a], reynolds(speed, c, rho, mu),
                         float(p.get("n_crit", 9.0)), bool(e.get("inverted", False)))["rows"][0]
             zones.append((row["transition_suction"], row["transition_pressure"]))

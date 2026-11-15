@@ -1079,3 +1079,39 @@ def test_finite_wing_that_settles_has_no_cliff(monkeypatch, tmp_path):
     r = rans.solve_finite(_finite_params(), tmp_path, tmp_path / "m.su2", None, 1, None, lambda *a: None,
                           lambda *a, **k: None)
     assert r["finite"]["converged"] and r["finite"]["cliff"] is None
+
+
+def _drawn_element():
+    return naca4("4412", 41) * 0.2 + np.array([0.3, 0.05])  # Selig order: trailing edge, upper, nose, lower
+
+
+def test_zero_turns_leave_the_elements_as_drawn():
+    from aeroengine.wing.rans import turn_elements
+
+    e = _drawn_element()
+    assert np.array_equal(turn_elements([e], [0.0])[0], e)
+
+
+def test_an_element_turns_about_its_quarter_chord_as_alpha_turns_the_wing():
+    from aeroengine.wing.estimate import in_ground_effect
+    from aeroengine.wing.rans import turn_elements
+
+    e = _drawn_element()
+    te = 0.5 * (e[0] + e[-1])
+    nose = e[int(np.argmax(np.linalg.norm(e - te, axis=1)))]
+    quarter = nose + 0.25 * (te - nose)
+    t = turn_elements([e], [5.0])[0]
+    # the quarter-chord point stays put: the turned outline's own quarter chord is where it was
+    te2 = 0.5 * (t[0] + t[-1])
+    nose2 = t[int(np.argmax(np.linalg.norm(t - te2, axis=1)))]
+    assert nose2 + 0.25 * (te2 - nose2) == pytest.approx(quarter, abs=1e-12)
+    # the same turn the wing gets from alpha 5 over a ground, up to where it sits
+    g = in_ground_effect([e], 5.0, 0.1)[0][0]
+    assert t - t.mean(axis=0) == pytest.approx(g - g.mean(axis=0), abs=1e-12)
+
+
+def test_element_turns_need_one_per_drawn_element():
+    from aeroengine.wing.rans import turn_elements
+
+    with pytest.raises(EngineError, match="one turn per element"):
+        turn_elements([_drawn_element(), _drawn_element()], [1.0])
