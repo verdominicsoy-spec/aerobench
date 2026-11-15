@@ -467,10 +467,10 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     in free air, until it settles within FINITE_TOLERANCE, FINITE_SOLVES
     solves, a solve does not converge (stopped), or the bracket closes to
     FINITE_CLIFF without settling (cliff: the section's Cl jumps there, a
-    stall, and no single angle is the answer). A wing of several elements also turns each element
-    about the mean by its own induced angle (finite.element_turns: the lattice's downwash grows along
-    a short wing's chord, so the flaps meet a steeper flow than the main), from the last solve's Cl and
-    element loads; settled means those turns have stopped moving too. cl, cd (with induced drag), regions and the field are the
+    stall, and no single angle is the answer). A wing of several elements is also bent along its
+    chord about the mean induced angle (finite.element_turns, bend_section: the lattice's downwash grows
+    along a short wing's chord, so the flaps meet a steeper flow than the main), from the last solve's Cl
+    and element loads; settled means each element's turn has stopped moving too. cl, cd (with induced drag), regions and the field are the
     last solve's, or after a stop the last one that converged. No car upwash, endplate vortex or spanwise variation: the
     mid-span section on the car."""
     import shutil
