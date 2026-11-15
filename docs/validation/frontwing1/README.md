@@ -152,3 +152,13 @@ On frontwing#1.02 at STAR's setup (`run_car.py 0.315 0.0966 0.5245 -7.45 0.035 s
 - The loop moved the angle the wrong way between solves 2 and 3. Each solve changes the turns as well as the angle, so the secant on the angle alone mis-steers.
 
 Next: build the lattice's chordwise loading from the RANS element loads instead of the flat plate's, steer the loop on the angle with the turns held for each step, then run to the end.
+
+Second run (15 Nov, later): the lattice now carries the elements' own loads (each a thin airfoil over its own extent, shared as the last solve loaded them) instead of a flat plate's, and each solve's turns follow from its angle (those for the Cl the fixed point needs there), so the loop steers on the angle alone. Fully turbulent SST, 3 solves. It brackets the answer between +9.26 deg (Cl -2.57) and +9.46 deg (Cl -2.41), a 6% step in Cl: the bend grows with the angle, so the section is steep there, not stalled (the loop now says settled for a step under 10%, a cliff over it). The main stays attached at its leading edge; flap 3 separates over its last 21%.
+
+| | main | flap 1 | flap 2 | flap 3 | Cl |
+|---|---|---|---|---|---|
+| STAR, strip 3 | -0.77 | -0.61 | -0.41 | -0.21 | -2.00 |
+| First bent run, solve 3 (flat-plate loading, not settled) | -0.72 | -0.97 | -0.71 | -0.26 | -2.65 (+33%) |
+| Second run, +9.46 deg | -0.67 | -0.87 | -0.63 | -0.24 | -2.41 (+21%) |
+
+Between the two ends the answer is about Cl -2.47 (+24%). Against STAR the main is 13% light and the flaps 16-54% heavy: the bend is in the right direction and not yet steep enough. The lattice turns the main -7.9 deg and the flaps +0.4, +5.7 and +8.4 deg about a mean of +16.9 deg, but it is a flat wing at one height: the real section climbs about 0.24 m from the main to flap 3's trailing edge, so its flaps sit nearer the endplates' top edges and their vortices than the flat lattice puts them. Next: the lattice with each element at its own height and angle.
