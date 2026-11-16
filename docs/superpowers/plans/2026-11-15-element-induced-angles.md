@@ -103,3 +103,29 @@
 ### Task 9: frontwing#1.02 again
 
 - [ ] `run_car.py 0.315 0.0966 0.5245 -7.45 0.035 sst` at 6 cores, niced; compare with STAR's strip 3; README; commit.
+
+---
+
+## Addendum 2 (16 Nov, after the second run: Cl +21%, main 13% light, flaps 16-54% heavy)
+
+Found before building: (a) the lattice was a flat plate at the ride height where the section climbs 0.24 m;
+(b) `bend_section` sheared across the flow, turning an element drawn at theta by cos^2 theta of its turn
+(flap 2 got 3.84 of 5.51 deg, flap 3 5.53 of 8.24); (c) a tilted panel's induced angle is its normal speed
+over n_z, not the normal speed. The rigid turn by the mean angle (about 17 deg) moves the elements' heights
+over the ground, but the panel method says the shares barely move with where the section is set after it
+(main 0.222-0.233 over +-20 mm): not the cause. The mean angle on the section as it sits is 2.2% over the
+flat plate's: the validated mean stays.
+
+### Task 10: Lattice of the section as it sits
+`vlm.Lattice(profile=...)`, `panel_angles`, `panel_loads`, `camber_line`; angle over n_z. Tests in `test_wing_vlm.py`.
+
+### Task 11: The bend turns, not shears
+`rans.bend_section`: a level line laid along the turned direction, heights off it turned with it. Tests: an
+even bend is in_ground_effect's rotation; a flap at 35 deg turns by the asked 6 deg; the slot gap keeps.
+
+### Task 12: Element turns on the section, wired into the loop
+`finite.element_turns(sections=, alpha=)`, `solve_finite` passes the drawn coords and alpha. Tests in
+`test_wing_finite.py`, `test_wing_rans.py`.
+
+### Task 13: frontwing#1.02 a third time
+`run_car.py 0.315 0.0966 0.5245 -7.45 0.035 sst "lattice of the section as it sits"`, 6 cores, niced; README.
