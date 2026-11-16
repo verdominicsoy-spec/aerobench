@@ -3,7 +3,7 @@ ride height, span (default 1 m, the project's), wing angle (default the
 job's 0) and the endplates' lower edge over the ground (default level with
 the wing) as given. Writes car.json.
 
-    engine/.venv/bin/python docs/validation/frontwing1/run_car.py <endplate m> [<ride height m> [<span m> [<alpha deg> [<endplate bottom m> [<model>]]]]]
+    engine/.venv/bin/python docs/validation/frontwing1/run_car.py <endplate m> [<ride height m> [<span m> [<alpha deg> [<endplate bottom m> [<model> [<note>]]]]]]
 
 frontwing#1.02 as STAR ran it: run_car.py 0.315 0.0966 0.5245 -7.45 0.035 sst (see README). model defaults to
 sst-lm, then rans.bracket checks it against the other; with sst the run is the fully turbulent one alone.
@@ -23,6 +23,7 @@ job = json.loads((HERE / "job.json").read_text())
 alpha = float(sys.argv[4]) if len(sys.argv) > 4 else job["alpha"]
 bottom = float(sys.argv[5]) if len(sys.argv) > 5 else None
 model = sys.argv[6] if len(sys.argv) > 6 else "sst-lm"
+note = sys.argv[7] if len(sys.argv) > 7 else None  # appended to the result's key, so a rerun keeps the last
 p = {**job, "alpha": alpha, "model": model, "mesh": "fine", "ride_height": ride,
      "finite": {"span": span, "endplate": endplate, "endplate_bottom": bottom}}
 work = Path(tempfile.mkdtemp())
@@ -38,6 +39,8 @@ if bottom is not None:
     key += f", endplate bottom {bottom:g} m, vortex lattice"
 if model != "sst-lm":
     key += f", {model}, each element at its own induced angle"
+if note:
+    key += f", {note}"
 out_path = HERE / "car.json"
 out = json.loads(out_path.read_text()) if out_path.exists() else {}
 out[key] = {k: r.get(k) for k in ("cl", "cd", "converged", "separated", "separation", "regions", "finite", "bracket",
