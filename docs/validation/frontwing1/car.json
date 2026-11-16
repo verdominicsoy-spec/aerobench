@@ -759,5 +759,66 @@
    0.0575,
    0.0224
   ]
+ },
+ "endplate 0.315 m, ride height 0.0966 m, span 0.5245 m, alpha -7.45 deg, endplate bottom 0.035 m, vortex lattice, sst, each element at its own induced angle": {
+  "cl": -2.41241945,
+  "cd": 0.7338706480342232,
+  "converged": true,
+  "separated": true,
+  "separation": "Flap 3 separates on its lower (suction) surface from 79% of its chord to the trailing edge (RANS).",
+  "regions": [
+   {
+    "element": 2,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "trailing-edge separation",
+    "start": 0.9319,
+    "end": 1.0
+   },
+   {
+    "element": 3,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "trailing-edge separation",
+    "start": 0.7851,
+    "end": 1.0
+   }
+  ],
+  "finite": {
+   "alpha_effective": 9.465,
+   "induced_angle": 16.915,
+   "aspect_ratio_effective": 1.582,
+   "ground_factor": 0.5923,
+   "solves": 3,
+   "converged": false,
+   "cd_induced": 0.6933770394242232,
+   "span": 0.5245,
+   "endplate": 0.315,
+   "endplate_bottom": 0.035,
+   "planform": 0.6245,
+   "model": "vortex lattice",
+   "stopped": null,
+   "cliff": {
+    "low": 9.257,
+    "high": 9.465,
+    "cl_low": -2.573288765,
+    "cl_high": -2.41241945
+   },
+   "element_turns": [
+    -7.914,
+    0.444,
+    5.737,
+    8.388
+   ]
+  },
+  "bracket": null,
+  "transition_decides": null,
+  "tu_at_wing": 0.009647088079987402,
+  "elements": [
+   -0.6692,
+   -0.8686,
+   -0.6308,
+   -0.2438
+  ]
  }
 }
