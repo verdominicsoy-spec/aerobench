@@ -289,7 +289,9 @@ class Lattice:
                 m = np.array([1.0, 1.0, -1.0])
                 v = v - _segments(lo * m, hi * m, wp[j])
             two_d = np.einsum("nmk,nk->nm", v, wn[j])
-            induced = -(w3[j] - two_d @ gw[j])  # the 3D flow less what the same loading makes in 2D
+            # the 3D flow less what the same loading makes in 2D, over n_z: a flow turned by d changes a panel's
+            # normal speed by n_z d. shortcut: n_z held to 0.2 (78 deg), where no turn of the flow emulates it
+            induced = -(w3[j] - two_d @ gw[j]) / np.maximum(wn[j][:, 2], 0.2)
             angles.append(induced / (2 * gw[j].sum() / self.chord))
         return wp[self._middle()[0], :, 0], np.mean(angles, axis=0)
 

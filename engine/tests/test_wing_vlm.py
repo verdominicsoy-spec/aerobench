@@ -188,3 +188,12 @@ def test_panel_loads_split_the_mid_span_circulation_by_panel():
     g = lat.panel_loads()
     assert g.shape == (10,) and np.all(g < 0)  # downforce
     assert 2 * g.sum() == pytest.approx(lat.solve().cl[lat.ny // 2], rel=1e-2)  # Cl = 2 Gamma / c
+
+
+def test_a_steep_panel_meets_the_same_induced_angle_as_a_level_one():
+    # a flow turned by d changes a panel's normal speed by n_z d: the angle is the normal speed over n_z
+    # (frontwing#1.02's flap 3 sits at 42 deg on the car; over n_z = 1 it read 26% low). A slender wing, so
+    # the plate's wake leaving level from its tilted vortices is far from the strips (at span 10 it is 11%)
+    level = Lattice(span=100.0, chord=1.0, profile=_flat_profile(1.0, 8, 0.01)).panel_angles()
+    steep = Lattice(span=100.0, chord=1.0, profile=_flat_profile(1.0, 8, 0.5)).panel_angles()
+    assert steep.mean() == pytest.approx(level.mean(), rel=1e-2)
