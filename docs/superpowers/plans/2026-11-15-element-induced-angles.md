@@ -129,3 +129,25 @@ even bend is in_ground_effect's rotation; a flap at 35 deg turns by the asked 6 
 
 ### Task 13: frontwing#1.02 a third time
 `run_car.py 0.315 0.0966 0.5245 -7.45 0.035 sst "lattice of the section as it sits"`, 6 cores, niced; README.
+
+## Addendum 3 (16 Nov, after the third run: +21%, no better)
+
+A potential-flow check (the 3D lattice of the section as it sits is the truth by construction): turning each
+panel's flow by its induced angle gives the 3D loads back exactly; turning and bending the section, as the RANS
+must (the flow runs along the ground), does in free air and not by the ground (main 41% light, flaps 2-3 29-34%
+heavy). Then the fourth run put the shares within 0.02 of STAR's and every element 25-45% over: the mean.
+
+### Task 14: Ground-consistent turns
+`finite.consistent_turns`, `section_loads`, `element_curve`, `vlm.Lattice(onset=...)`; `solve_finite` corrects each
+element's turn over a ground. Tests in `test_wing_finite.py`, `test_wing_rans.py`.
+
+### Task 15: The mid-span section's own angle
+`finite.section_induced_angle`; the loop steers on it (lifting line's stays for the induced drag). The section
+stands for mid-span; lifting line's angle is the span's mean (0.81 of the section's per unit Cl at aspect ratio 5).
+Changes Zerihan's validated case: rerun at h/c 0.448 and 0.134 against the measured mid-span Cl.
+
+### Task 16: Trailing legs along the surface
+`vlm._chains`: a profile's legs follow each element to its trailing edge. A tilted plate's angle no longer hangs on
+its tilt (was 29% low at 0.25 rad, aspect ratio 2).
+
+### Task 17: frontwing#1.02 run 5, Zerihan 0.448 and 0.134; README, memory, push.
