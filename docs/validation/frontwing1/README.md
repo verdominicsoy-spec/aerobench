@@ -162,3 +162,33 @@ Second run (15 Nov, later): the lattice now carries the elements' own loads (eac
 | Second run, +9.46 deg | -0.67 | -0.87 | -0.63 | -0.24 | -2.41 (+21%) |
 
 Between the two ends the answer is about Cl -2.47 (+24%). Against STAR the main is 13% light and the flaps 16-54% heavy: the bend is in the right direction and not yet steep enough. The lattice turns the main -7.9 deg and the flaps +0.4, +5.7 and +8.4 deg about a mean of +16.9 deg, but it is a flat wing at one height: the real section climbs about 0.24 m from the main to flap 3's trailing edge, so its flaps sit nearer the endplates' top edges and their vortices than the flat lattice puts them. Next: the lattice with each element at its own height and angle.
+
+### The section as it sits, and what turning it does by the ground (16 Nov, plan addendum 2)
+
+Three defects found before the next run, each fixed at its cause:
+
+- The lattice was a flat plate at the ride height. It is now each element's mean line at its own height and slope on the car (`Lattice(profile=...)`, `vlm.camber_line`), the endplates joined at every height the wing's trailing legs leave the tip. On the section as it sits, the mean induced angle (Trefftz) is 2.2% over the flat plate's, so the validated mean stays.
+- A panel's induced angle is its normal induced speed over n_z, not the speed itself: flap 3 sits at 42 deg on the car and read 26% low.
+- `bend_section` moved points across the flow only, which turns a line drawn at theta by cos^2 theta of the turn: flap 2 (22 deg as drawn) got 3.84 of 5.51 deg, flap 3 (35 deg) 5.53 of 8.24. It now turns every point by the turn at its x, whatever its slope; an even bend is in_ground_effect's rotation, and slot gaps keep within 3%.
+
+Third run (`run_car.py ... sst "lattice of the section as it sits"`): the lattice turns the main -7.9 deg and the flaps +2.7, +6.7 and +3.7 about the mean. Settled in 3 solves between +9.40 deg (Cl -2.58) and +9.58 deg (Cl -2.42). Flap 3 separates from 68% of its chord; STAR's is attached.
+
+| | main | flap 1 | flap 2 | flap 3 | Cl |
+|---|---|---|---|---|---|
+| STAR, strip 3 | -0.77 | -0.61 | -0.41 | -0.21 | -2.00 |
+| Second run (flat lattice, the shear) | -0.67 (-13%) | -0.87 (+43%) | -0.63 (+54%) | -0.24 (+16%) | -2.41 (+21%) |
+| Third run (the section as it sits, the turn) | -0.63 (-18%) | -0.80 (+30%) | -0.70 (+72%) | -0.29 (+37%) | -2.42 (+21%) |
+
+No better. Flap 2 was turned further the unloading way and carries more: unloading flap 1 raises the angle flap 2 meets in its slot, so the elements' turns act on each other. Why the method misses, checked in potential flow, where the lattice is the truth by construction (the 3D lattice of the section as it sits, against 2D lattices of the same mean lines):
+
+| potential flow, shares of the lift | main | flap 1 | flap 2 | flap 3 | Cl |
+|---|---|---|---|---|---|
+| 3D lattice, the section as it sits | 0.299 | 0.303 | 0.247 | 0.150 | -2.24 |
+| 2D, each panel's flow turned by its own induced angle | 0.299 | 0.303 | 0.247 | 0.150 | -2.24 |
+| 2D, the section turned by the mean (+18.9 deg) and bent by the rest, as the RANS gets it | 0.177 | 0.304 | 0.318 | 0.201 | -1.78 |
+| The same in free air: 3D | 0.233 | 0.285 | 0.291 | 0.191 | -1.71 |
+| The same in free air: 2D turned and bent | 0.234 | 0.277 | 0.289 | 0.200 | -1.72 |
+
+Turning the flow gives the 3D loads back exactly; turning the section does in free air and not by the ground. The RANS must turn the section (the flow runs along the ground), and turned 17-19 deg nose up the section's main rises 43 mm off the ground at its quarter chord and its flaps drop up to 100 mm toward it: the main loses its ground effect, the flaps gain. That is the RANS-against-STAR pattern (main light, flaps 2 and 3 heavy). Setting the turned section higher or lower barely moves the shares (panel method: main 0.222-0.233 over +-20 mm), so where it is set is not the fix.
+
+The fix (`finite.consistent_turns`): over a ground each element is turned so that the turned section carries, in the 2D lattice, what the section as it sits carries in the turned flow (the loop's angle, the validated mean, plus each element's own). At the third run's state that turns the main 3.5 deg and flap 1 4.8 deg less, flap 2 1.0 less and flap 3 1.9 more. Zerihan's single element turns 0.96 of its onset, about 0.05 deg at its 1.3, so its validation stands. Fourth run below.
