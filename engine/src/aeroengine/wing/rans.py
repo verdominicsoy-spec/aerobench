@@ -31,22 +31,30 @@ CONVERGENCE = {"quick": {"tolerance": 1e-3, "window": 100, "residual_drop": 3.0}
 
 def bend_section(placed: list[np.ndarray], x: list[float], turns: list[float]) -> list[np.ndarray]:
     """The section bent by a turn that varies along it (degrees at x in m, alpha's sense, as in_ground_effect
-    turns the wing; straight between, held past the ends): each point moved across the flow by the
-    integral of the turn's tangent from x[0]. Each element turns by the turn where it sits, and points at
-    the same x move together, so the slots between elements keep their gaps (turning each element about
-    its own pivot shuts them: frontwing#1.02's main trailing edge into flap 1)."""
+    turns the wing; straight between, held past the ends). A level line through the section's mean height is
+    laid along the turned direction without stretching it, and each point keeps its height off that line,
+    turned with it: every point turns by the turn at its own x, whatever its slope, and points at the same x
+    move together, so the slots between elements keep their gaps (turning each element about its own pivot
+    shuts them: frontwing#1.02's main trailing edge into flap 1). An even turn is in_ground_effect's.
+    Moving points across the flow alone turned an element drawn at 35 deg by only cos^2 of the turn."""
     if not any(turns):
         return placed
-    x, t = np.asarray(x, float), np.tan(np.radians(np.asarray(turns, float)))
-    run = np.concatenate([[0.0], np.cumsum(0.5 * (t[1:] + t[:-1]) * np.diff(x))])
+    x, t = np.asarray(x, float), np.radians(np.asarray(turns, float))
+    pts = np.vstack(placed)
+    lo, hi = min(float(pts[:, 0].min()), x[0]), max(float(pts[:, 0].max()), x[-1])
+    fine = np.linspace(lo, hi, 4001)
+    d = np.interp(fine, x, t)  # held past the ends
+    step = np.diff(fine)
+    along = np.concatenate([[0.0], np.cumsum(0.5 * (np.cos(d[1:]) + np.cos(d[:-1])) * step)]) + lo
+    down = np.concatenate([[0.0], np.cumsum(0.5 * (np.sin(d[1:]) + np.sin(d[:-1])) * step)])
+    mid = float(pts[:, 1].mean())
 
-    def drop(px: np.ndarray) -> np.ndarray:  # exact for a turn's tangent straight between the x
-        k = np.clip(np.searchsorted(x, px, side="right") - 1, 0, len(x) - 2)
-        inside = np.clip(px, x[0], x[-1])
-        within = run[k] + (inside - x[k]) * 0.5 * (t[k] + np.interp(inside, x, t))
-        return within + np.minimum(px - x[0], 0.0) * t[0] + np.maximum(px - x[-1], 0.0) * t[-1]
+    def bend(e: np.ndarray) -> np.ndarray:
+        px, h = e[:, 0], e[:, 1] - mid
+        a = np.interp(px, x, t)
+        return np.column_stack([np.interp(px, fine, along) + h * np.sin(a), mid - np.interp(px, fine, down) + h * np.cos(a)])
 
-    return [np.column_stack([e[:, 0], e[:, 1] - drop(e[:, 0])]) for e in placed]
+    return [bend(e) for e in placed]
 
 
 def solve(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, cores: int, env: dict | None,

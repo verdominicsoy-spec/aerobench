@@ -1103,14 +1103,41 @@ def test_no_bend_leaves_the_section_as_drawn():
 
 
 def test_an_even_bend_turns_the_section_as_alpha_does():
+    from aeroengine.wing.estimate import in_ground_effect
     from aeroengine.wing.rans import bend_section
 
     els = _main_and_flap()
     out = bend_section(els, [0.0, 0.45], [5.0, 5.0])
-    for a, b in zip(els, out):
-        assert np.array_equal(a[:, 0], b[:, 0])  # moved across the flow only: points at one x move together
-        assert b[:, 1] == pytest.approx(a[:, 1] - math.tan(math.radians(5.0)) * a[:, 0], abs=1e-12)
+    turned, _ = in_ground_effect(els, 5.0, 0.1)
+    shift = out[0][0] - turned[0][0]
+    for a, b in zip(turned, out):  # the same rotation, up to one translation of the whole section
+        assert b == pytest.approx(a + shift, abs=1e-6)
     assert _chord_slope(out[1]) == pytest.approx(-math.tan(math.radians(5.0)), abs=1e-9)  # in_ground_effect's sense
+
+
+def _angle(e):
+    return math.degrees(math.atan(_chord_slope(e)))
+
+
+def test_a_steep_flap_turns_by_the_turn_where_it_sits():
+    # frontwing#1.02's flap 3 is drawn at 35 deg: a shear across the flow turned it by cos^2 of that, 68%
+    from aeroengine.wing.rans import bend_section
+
+    main = naca4("4412", 41) * 0.3
+    tilt = math.radians(35.0)
+    rot = np.array([[math.cos(tilt), math.sin(tilt)], [-math.sin(tilt), math.cos(tilt)]])
+    flap = (naca4("4412", 41) * 0.15) @ rot + np.array([0.29, 0.0])  # trailing edge up, as an inverted wing's
+    out = bend_section([main, flap], [0.0, 0.25, 0.28, 0.45], [-4.0, -4.0, 6.0, 6.0])
+    assert _angle(flap) - _angle(out[1]) == pytest.approx(6.0, abs=0.05)
+
+
+def test_a_bend_keeps_the_slot_gap():
+    from aeroengine.wing.rans import bend_section
+
+    els = _main_and_flap()
+    gap = lambda m, f: np.min(np.linalg.norm(m[:, None, :] - f[None, :, :], axis=2))  # noqa: E731
+    out = bend_section(els, [0.0, 0.2, 0.3, 0.45], [-6.0, -6.0, 8.0, 8.0])
+    assert gap(*out) == pytest.approx(gap(*els), rel=0.03)
 
 
 def test_a_bend_growing_aft_turns_the_flap_more_than_the_main():
