@@ -192,3 +192,21 @@ No better. Flap 2 was turned further the unloading way and carries more: unloadi
 Turning the flow gives the 3D loads back exactly; turning the section does in free air and not by the ground. The RANS must turn the section (the flow runs along the ground), and turned 17-19 deg nose up the section's main rises 43 mm off the ground at its quarter chord and its flaps drop up to 100 mm toward it: the main loses its ground effect, the flaps gain. That is the RANS-against-STAR pattern (main light, flaps 2 and 3 heavy). Setting the turned section higher or lower barely moves the shares (panel method: main 0.222-0.233 over +-20 mm), so where it is set is not the fix.
 
 The fix (`finite.consistent_turns`): over a ground each element is turned so that the turned section carries, in the 2D lattice, what the section as it sits carries in the turned flow (the loop's angle, the validated mean, plus each element's own). At the third run's state that turns the main 3.5 deg and flap 1 4.8 deg less, flap 2 1.0 less and flap 3 1.9 more. Zerihan's single element turns 0.96 of its onset, about 0.05 deg at its 1.3, so its validation stands. Fourth run below.
+
+Fourth run (`... "turned to carry what the turned flow gives"`): 5 solves, settled between +10.46 deg (Cl -2.65) and +10.58 deg (Cl -2.50). Every share of the lift within 0.02 of STAR's (0.373, 0.299, 0.225, 0.104 against 0.385, 0.305, 0.205, 0.105), every element 25-45% over: the distribution now right, the mean angle not.
+
+The mean: the section the RANS solves stands for mid-span, and it is compared with STAR's mid-span strip, but lifting line's angle is the span's mean. Per unit of its own Cl the mid-span section of a rectangular wing of aspect ratio 5 meets 0.81 of it (the tips shed the vorticity); frontwing#1.02's, between endplates 60% of its span, 1.32 of it (9.0 deg per unit Cl against 6.8). The loop now steers on the mid-span section's own angle from the lattice (`finite.section_induced_angle`); lifting line's stays for the induced drag. On the way, the lattice's trailing legs now run along each element to its trailing edge: left straight from every panel they passed beside the panels behind, and a tilted plate read up to 29% less angle than a level one.
+
+Fifth run (`... "mid-span angle"`): 3 solves, settled between +12.43 deg (Cl -2.22) and +12.61 deg (Cl -2.15), no cliff.
+
+| | main | flap 1 | flap 2 | flap 3 | Cl |
+|---|---|---|---|---|---|
+| STAR, strip 3 | -0.77 | -0.61 | -0.41 | -0.21 | -2.00 |
+| Second run | -0.67 (-13%) | -0.87 (+43%) | -0.63 (+54%) | -0.24 (+16%) | -2.41 (+21%) |
+| Fourth run, +10.46 deg | -0.99 (+29%) | -0.79 (+30%) | -0.60 (+45%) | -0.28 (+31%) | -2.65 (+33%) |
+| Fifth run, +12.61 deg | -0.65 (-16%) | -0.70 (+14%) | -0.54 (+32%) | -0.26 (+24%) | -2.15 (+7.5%) |
+
+- The wing's mid-span Cl is now 7.5% over STAR's (about +9% between the bracket's ends), from +21%; the elements' mean error 21%, from 31%.
+- At the higher angle the main loses load again (-0.99 at +10.5 deg, -0.65 at +12.6) and the shares drift from STAR's (main 0.30 against 0.385): the main turned further nose up meets its own limit, which the potential-flow turns do not see.
+- Flap 3 separates from 79% of its chord; STAR's is attached.
+- Changes Zerihan's wing: its mid-span section now meets 0.74-0.87 of the angle it did. Rerun at h/c 0.448 and 0.134 against the measured mid-span Cl: see `../ground-3d`.

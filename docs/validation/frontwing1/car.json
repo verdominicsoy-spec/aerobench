@@ -876,5 +876,117 @@
    -0.7033,
    -0.2873
   ]
+ },
+ "endplate 0.315 m, ride height 0.0966 m, span 0.5245 m, alpha -7.45 deg, endplate bottom 0.035 m, vortex lattice, sst, each element at its own induced angle, turned to carry what the turned flow gives": {
+  "cl": -2.652198565,
+  "cd": 0.8817348439999231,
+  "converged": true,
+  "separated": true,
+  "separation": "Flap 3 separates on its lower (suction) surface from 73% of its chord to the trailing edge (RANS).",
+  "regions": [
+   {
+    "element": 2,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "trailing-edge separation",
+    "start": 0.9591,
+    "end": 1.0
+   },
+   {
+    "element": 3,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "trailing-edge separation",
+    "start": 0.7345,
+    "end": 1.0
+   }
+  ],
+  "finite": {
+   "alpha_effective": 10.462,
+   "induced_angle": 17.912,
+   "aspect_ratio_effective": 1.582,
+   "ground_factor": 0.5923,
+   "solves": 5,
+   "converged": true,
+   "cd_induced": 0.8380614908799231,
+   "span": 0.5245,
+   "endplate": 0.315,
+   "endplate_bottom": 0.035,
+   "planform": 0.6245,
+   "model": "vortex lattice",
+   "stopped": null,
+   "cliff": null,
+   "element_turns": [
+    -11.923,
+    -2.06,
+    6.08,
+    5.073
+   ]
+  },
+  "bracket": null,
+  "transition_decides": null,
+  "tu_at_wing": 0.009431907137156128,
+  "elements": [
+   -0.9898,
+   -0.7919,
+   -0.5955,
+   -0.275
+  ]
+ },
+ "endplate 0.315 m, ride height 0.0966 m, span 0.5245 m, alpha -7.45 deg, endplate bottom 0.035 m, vortex lattice, sst, each element at its own induced angle, mid-span angle": {
+  "cl": -2.149930121,
+  "cd": 0.5861530487785113,
+  "converged": true,
+  "separated": true,
+  "separation": "Flap 3 separates on its lower (suction) surface from 79% of its chord to the trailing edge (RANS).",
+  "regions": [
+   {
+    "element": 2,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "trailing-edge separation",
+    "start": 0.9647,
+    "end": 1.0
+   },
+   {
+    "element": 3,
+    "surface": "lower",
+    "loaded": "suction",
+    "kind": "trailing-edge separation",
+    "start": 0.7904,
+    "end": 1.0
+   }
+  ],
+  "finite": {
+   "alpha_effective": 12.606,
+   "induced_angle": 20.056,
+   "aspect_ratio_effective": 1.582,
+   "ground_factor": 0.5923,
+   "solves": 3,
+   "converged": true,
+   "cd_induced": 0.5506967358785113,
+   "span": 0.5245,
+   "endplate": 0.315,
+   "endplate_bottom": 0.035,
+   "planform": 0.6245,
+   "model": "vortex lattice",
+   "stopped": null,
+   "cliff": null,
+   "element_turns": [
+    -11.566,
+    -3.034,
+    5.273,
+    5.819
+   ]
+  },
+  "bracket": null,
+  "transition_decides": null,
+  "tu_at_wing": 0.009679581607290244,
+  "elements": [
+   -0.6482,
+   -0.6975,
+   -0.5429,
+   -0.2613
+  ]
  }
 }
