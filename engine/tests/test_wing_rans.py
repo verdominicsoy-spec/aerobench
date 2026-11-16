@@ -1199,8 +1199,9 @@ def test_finite_wing_ties_each_solves_turns_to_its_angle(monkeypatch, tmp_path):
     per_cl = induced_angle(1.0, 2.0, 1.0, 0.0, None, 1.0, None)
     assert len(calls) >= 2
     for c in calls[1:]:
+        # on the section as drawn, turned on the car by the wing's own angle
         want = element_turns(c["alpha"] / per_cl, [0.375, 0.875], [0.6, 0.4], 2.0, 1.0, 0.0, None, 1.0, None,
-                             extents=[(0.0, 0.5), (0.5, 1.0)])
+                             sections=[front["coords"], back["coords"]], alpha=0.0)
         assert c["turns"] == pytest.approx(want, abs=1e-9)
 
 

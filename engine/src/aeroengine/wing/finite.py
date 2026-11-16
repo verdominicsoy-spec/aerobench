@@ -198,10 +198,89 @@ def thin_airfoil_loading(extents: list[tuple[float, float]], shares: list[float]
     return load
 
 
+SECTION_PANELS = 32  # chordwise lattice panels over all the elements, when the lattice is the section as drawn
+
+
+@lru_cache(maxsize=32)
+def _section_angles(span: float, endplate: float, ride_height: float | None, endplate_bottom: float | None,
+                    sections: tuple, alpha: float, shares: tuple[float, ...]) -> tuple:
+    """The section on the car (sections as drawn, turned by alpha as in_ground_effect turns them, over the
+    ground from its lowest point) as a lattice of each element's mean line, every element loaded as a thin
+    airfoil with its share. Per element: its mean line's control points' x as drawn, and the induced angle
+    there (rad per unit section Cl on the lattice's chord); and that chord, front to back on the car."""
+    from .estimate import in_ground_effect
+    from .vlm import Lattice, camber_line
+
+    drawn = [np.asarray(e, float) for e in sections]
+    chords = [float(np.max(np.linalg.norm(e - 0.5 * (e[0] + e[-1]), axis=1))) for e in drawn]
+    counts = [max(6, round(SECTION_PANELS * c / sum(chords))) for c in chords]
+    turned, ground = in_ground_effect(drawn, alpha, ride_height or 0.0)
+    a = math.radians(alpha)
+    rot = np.array([[math.cos(a), -math.sin(a)], [math.sin(a), math.cos(a)]])  # as in_ground_effect
+    x0 = min(float(t[:, 0].min()) for t in turned)
+    plan = max(float(t[:, 0].max()) for t in turned) - x0
+    run = lambda t: np.sqrt(t * (1 - t)) + np.arcsin(np.sqrt(t))  # noqa: E731
+    panels, loading, controls = [], [], []
+    for e, n, share in zip(drawn, counts, shares):
+        line = camber_line(e, n)
+        car = line @ rot - np.array([x0, ground])
+        f = 0.5 * (1 - np.cos(np.linspace(0.0, math.pi, n + 1)))
+        panels += [(tuple(car[i]), tuple(car[i + 1])) for i in range(n)]
+        loading += list(share * (run(f[1:]) - run(f[:-1])) / (math.pi / 2))
+        controls.append(line[:-1, 0] + 0.75 * np.diff(line[:, 0]))
+    bottom = None if ride_height is None else ride_height if endplate_bottom is None else endplate_bottom
+    lat = Lattice(span=span, chord=plan, height=None if ride_height is None else 0.0, endplate=endplate,
+                  endplate_bottom=bottom if ride_height is not None else endplate_bottom, profile=panels, nx=16, nz=12)
+    angles = lat.panel_angles(loading)
+    out, k = [], 0
+    for xc, n in zip(controls, counts):
+        out.append((tuple(xc), tuple(angles[k:k + n])))
+        k += n
+    return tuple(out), plan
+
+
+def _section_turns(cl: float, shares: list[float], span: float, chord: float, endplate: float,
+                   ride_height: float | None, endplate_bottom: float | None, sections, alpha: float,
+                   at: list[float] | None) -> list[float]:
+    r = lambda v: None if v is None else round(float(v), 5)  # noqa: E731
+    key = tuple(tuple(map(tuple, np.round(np.asarray(e, float), 6))) for e in sections)
+    per, plan = _section_angles(r(span), r(max(endplate, 0.0)), r(ride_height), r(endplate_bottom), key,
+                                round(float(alpha), 4), tuple(round(float(x), 4) for x in shares))
+    drawn = [np.asarray(e, float) for e in sections]
+
+    def angle_at(x: float, e: int) -> float:
+        xc, a = np.asarray(per[e][0]), np.asarray(per[e][1])
+        o = np.argsort(xc)
+        return float(np.interp(x, xc[o], a[o]))
+
+    def three_quarter(e: np.ndarray) -> float:
+        te = 0.5 * (e[0] + e[-1])
+        nose = e[int(np.argmax(np.linalg.norm(e - te, axis=1)))]
+        return float(nose[0] + 0.75 * (te[0] - nose[0]))
+
+    own = [angle_at(three_quarter(e), i) for i, e in enumerate(drawn)]
+    mean = sum(w * x for w, x in zip(shares, own))
+    if at is None:
+        values = own
+    else:  # along the drawn x: the elements over each point (their mean where they overlap), else the nearest
+        lo = min(float(e[:, 0].min()) for e in drawn)
+        span_x = max(float(e[:, 0].max()) for e in drawn) - lo
+        ranges = [(float(e[:, 0].min()), float(e[:, 0].max())) for e in drawn]
+        values = []
+        for f in at:
+            x = lo + f * span_x
+            over = [i for i, (a, b) in enumerate(ranges) if a <= x <= b]
+            if not over:
+                over = [min(range(len(ranges)), key=lambda i: min(abs(x - ranges[i][0]), abs(x - ranges[i][1])))]
+            values.append(sum(angle_at(x, i) for i in over) / len(over))
+    return [-math.degrees(x - mean) * cl * chord / plan for x in values]
+
+
 def element_turns(cl: float, stations: list[float], shares: list[float], span: float, chord: float,
                   endplate: float, ride_height: float | None, planform: float | None = None,
                   endplate_bottom: float | None = None, at: list[float] | None = None,
-                  extents: list[tuple[float, float]] | None = None) -> list[float]:
+                  extents: list[tuple[float, float]] | None = None, sections: list | None = None,
+                  alpha: float = 0.0) -> list[float]:
     """Degrees each element turns on top of the wing's mean induced angle, alpha's sense (positive unloads
     a downforce wing at Cl < 0): the vortex lattice's induced angle at the element's station (fraction of
     the planform from the leading edge) less its load-weighted mean over the elements (shares, summing
@@ -209,9 +288,16 @@ def element_turns(cl: float, stations: list[float], shares: list[float], span: f
     the flaps unload against the main; one element turns by nothing, keeping lattice_factors' angle.
     at: the turn at these stations instead (on the same mean), to bend the section along its chord.
     extents: each element's nose and trailing edge (planform fractions): the lattice then carries the
-    elements' own loads (shares) along the chord, not a flat plate's (thin_airfoil_loading)."""
+    elements' own loads (shares) along the chord, not a flat plate's (thin_airfoil_loading).
+    sections: each element's coords as drawn (m), turned on the car by alpha (the wing's angle, degrees): the
+    lattice is then the section as it sits, each element's mean line at its own height and slope (frontwing#1.02
+    climbs 0.24 m from the main to flap 3, toward the endplates' top), and each element's angle is at its own
+    three-quarter chord; stations, planform and extents are not used (at is still a fraction of the planform
+    as drawn)."""
     if len(stations) < 2:
         return [0.0] * len(stations if at is None else at)
+    if sections is not None:
+        return _section_turns(cl, shares, span, chord, endplate, ride_height, endplate_bottom, sections, alpha, at)
     planform = planform or chord
     r = lambda v: None if v is None else round(float(v), 5)  # noqa: E731
     points = list(stations) + list(at or [])

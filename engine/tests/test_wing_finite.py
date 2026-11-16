@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pytest
 
@@ -187,3 +189,64 @@ def test_element_turns_on_the_rans_loading_still_average_out():
     t = element_turns(-2.0, STATIONS, SHARES, 0.5245, 0.682, 0.315, 0.0966, 0.6245, 0.035, extents=EXTENTS)
     assert sum(s * x for s, x in zip(SHARES, t)) == pytest.approx(0.0, abs=1e-9) and t[0] < 0 < t[-1]
     assert element_turns(-2.0, [0.75], [1.0], 1.0, 0.25, 0.2, 0.05, extents=[(0.0, 1.0)]) == [0.0]
+
+
+def _frontwing_sections():
+    """frontwing#1.02 as drawn (m): an inverted 4412 at each element's nose, chord and chord-line angle."""
+    from aeroengine.wing.airfoils import naca4
+
+    unit = naca4("4412") * np.array([1.0, -1.0])  # inverted: suction underneath
+    out = []
+    for nose, chord, deg in (((0.0139, 0.0615), 0.237, -10.37), ((0.242, 0.0376), 0.185, 2.63),
+                             ((0.4191, 0.0597), 0.137, 22.13), ((0.5372, 0.1218), 0.123, 34.63)):
+        a = math.radians(deg)
+        rot = np.array([[math.cos(a), math.sin(a)], [-math.sin(a), math.cos(a)]])  # trailing edge up for deg > 0
+        out.append(unit * chord @ rot + np.array(nose))
+    return out
+
+
+FRONT = dict(span=0.5245, chord=0.682, endplate=0.315, ride_height=0.0966, endplate_bottom=0.035)
+
+
+def test_camber_line_of_a_symmetric_section_is_its_chord_line():
+    from aeroengine.wing.airfoils import naca4
+    from aeroengine.wing.vlm import camber_line
+
+    line = camber_line(naca4("0012") * 0.5, 8)
+    assert line[0] == pytest.approx([0.0, 0.0], abs=1e-3) and line[-1] == pytest.approx([0.5, 0.0], abs=1e-3)
+    assert np.abs(line[:, 1]).max() < 1e-3
+    assert camber_line(naca4("4412") * 0.5, 8)[4, 1] > 0.015  # 4% camber, near its peak
+
+
+def test_element_turns_on_the_sections_keep_one_element_at_the_mean():
+    from aeroengine.wing.finite import element_turns
+
+    one = _frontwing_sections()[:1]
+    assert element_turns(-2.0, [0.75], [1.0], 0.5245, 0.237, 0.315, 0.0966, endplate_bottom=0.035, sections=one,
+                         alpha=-7.45) == [0.0]
+
+
+def test_element_turns_on_the_sections_average_out_and_unload_the_flaps():
+    from aeroengine.wing.finite import element_turns
+
+    t = element_turns(-2.0, STATIONS, SHARES, FRONT["span"], FRONT["chord"], FRONT["endplate"], FRONT["ride_height"],
+                      endplate_bottom=FRONT["endplate_bottom"], sections=_frontwing_sections(), alpha=-7.45)
+    assert sum(s * x for s, x in zip(SHARES, t)) == pytest.approx(0.0, abs=1e-9)
+    assert t[0] < 0 < t[1] and t[0] < t[2] and t[0] < t[3]
+
+
+def test_the_sections_bend_matches_each_elements_turn_at_its_three_quarter_chord():
+    from aeroengine.wing.finite import element_turns
+
+    secs = _frontwing_sections()
+    kw = dict(endplate_bottom=FRONT["endplate_bottom"], sections=secs, alpha=-7.45)
+    args = (-2.0, STATIONS, SHARES, FRONT["span"], FRONT["chord"], FRONT["endplate"], FRONT["ride_height"])
+    turns = element_turns(*args, **kw)
+    lo = min(float(s[:, 0].min()) for s in secs)
+    plan = max(float(s[:, 0].max()) for s in secs) - lo
+    at = []
+    for s in secs:
+        te = 0.5 * (s[0] + s[-1])
+        nose = s[int(np.argmax(np.linalg.norm(s - te, axis=1)))]
+        at.append((nose[0] + 0.75 * (te[0] - nose[0]) - lo) / plan)
+    assert element_turns(*args, at=at, **kw) == pytest.approx(turns, abs=0.05)

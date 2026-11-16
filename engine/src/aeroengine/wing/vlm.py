@@ -79,6 +79,27 @@ def section_slope(chord: float, height: float | None, n: int = 12) -> float:
     return 2 * float(gam.sum()) / chord
 
 
+def camber_line(coords: np.ndarray, n: int) -> np.ndarray:
+    """The element's mean line (n + 1 points, m) from its nose (the point farthest from the trailing edge, the
+    mean of the first and last points) to its trailing edge, cosine spaced: at each fraction of the chord, the
+    middle between the two surfaces, measured across the chord line."""
+    c = np.asarray(coords, float)
+    te = 0.5 * (c[0] + c[-1])
+    k = int(np.argmax(np.linalg.norm(c - te, axis=1)))
+    nose = c[k]
+    length = float(np.linalg.norm(te - nose))
+    along = (te - nose) / length
+    across = np.array([-along[1], along[0]])
+    off = []
+    for side in (c[:k + 1], c[k:]):
+        f, h = (side - nose) @ along / length, (side - nose) @ across
+        o = np.argsort(f)
+        off.append((f[o], h[o]))
+    fr = _cosine(n)
+    mid = 0.5 * (np.interp(fr, *off[0]) + np.interp(fr, *off[1]))
+    return nose + fr[:, None] * length * along + mid[:, None] * across
+
+
 @dataclass
 class Result:
     y: np.ndarray  # strip centres, m
@@ -268,7 +289,9 @@ class Lattice:
         g = gam.copy()
         if loading is not None:
             shape = np.asarray(loading, float)
-            total = gam[wing].reshape(self.ny, nc).sum(axis=1)
+            # the strips' totals from the wing turned 1 rad (a profile at its own angles may carry nothing)
+            turned = gam if self.profile is None else np.linalg.solve(mat, -np.where(wing, n[:, 2], 0.0))
+            total = turned[wing].reshape(self.ny, nc).sum(axis=1)
             g[wing] = (total[:, None] * (shape / shape.sum())[None, :]).ravel()
             plate = ~wing
             if plate.any():

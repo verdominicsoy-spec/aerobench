@@ -509,18 +509,17 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     a = _fixed_point([(x, alpha + induced_angle(c, span, chord, endplate, ride) - x) for x, c in polar], alpha) \
         if polar else alpha  # no estimate at any angle: RANS from the drawn angle
     log(f"quick estimate: the induced angle settles at {a:+.2f}°; RANS from there")
-    # Each element at its own induced angle about the mean (finite.element_turns): its three-quarter chord
-    # along the wing as drawn, the lattice loaded as the elements are (their extents, and their shares as the
-    # last solve carried them; the chords' shares at first). The turns at an angle are those for the Cl the
+    # Each element at its own induced angle about the mean (finite.element_turns): at its three-quarter chord,
+    # on a lattice of the section as it sits on the car, loaded as the elements are (their shares as the last
+    # solve carried them; the chords' shares at first). The turns at an angle are those for the Cl the
     # fixed point needs there, so every solve's turns follow from its angle and the loop steers on it alone.
     els = p["elements"]
-    stations, extents, chord_shares = [], [], [float(e["chord"]) / sum(float(x["chord"]) for x in els) for e in els]
+    stations, chord_shares = [], [float(e["chord"]) / sum(float(x["chord"]) for x in els) for e in els]
     for e in els:
         c = np.asarray(e["coords"], float)
         te = 0.5 * (c[0] + c[-1])
         nose = c[int(np.argmax(np.linalg.norm(c - te, axis=1)))]
         stations.append(float((nose[0] + 0.75 * (te[0] - nose[0]) - min(xs)) / planform))
-        extents.append((float((nose[0] - min(xs)) / planform), float((te[0] - min(xs)) / planform)))
     per_cl = induced_angle(1.0)  # degrees per unit Cl
 
     def shares(res: dict) -> list[float]:
@@ -531,11 +530,15 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
 
     grid = [i / 40 for i in range(41)]
 
+    drawn = [e["coords"] for e in els]
+
     def turned(cl: float, res: dict | None) -> tuple[list[float], dict]:
-        """Each element's turn, and the section's bend along its whole chord on the same mean."""
+        """Each element's turn, and the section's bend along its whole chord on the same mean: the lattice the
+        section as it sits on the car, at the wing's own angle (each element at its own height and slope)."""
         sh = shares(res) if res else chord_shares
-        bent = element_turns(cl, stations, sh, span, chord, endplate, ride, planform, bottom, at=grid, extents=extents)
-        return (element_turns(cl, stations, sh, span, chord, endplate, ride, planform, bottom, extents=extents),
+        kw = dict(sections=drawn, alpha=alpha)
+        bent = element_turns(cl, stations, sh, span, chord, endplate, ride, planform, bottom, at=grid, **kw)
+        return (element_turns(cl, stations, sh, span, chord, endplate, ride, planform, bottom, **kw),
                 {"x": [min(xs) + g * planform for g in grid], "turns": bent})
 
     used, last = {}, None
