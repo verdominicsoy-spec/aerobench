@@ -47,3 +47,14 @@ The same wing in 12 strips across the span (`finite.couple_strips` on `vlm.Latti
 - The wing's CL reads 1-5% under the balance, a point or two lower than the single strip. Part is the endplates' own side force: about 2% of the induced drag, a thrust no wing strip sees, which the single strip's angle counts in and the strips leave out. The tip strips also run 2-5 deg past the two RANS points the straight polar is drawn through.
 - At 0.090 and 0.067 the 2D point (not converged, separating early) has more lift than the on-car one at a smaller angle, so the straight line through them says Cl falls as the angle rises, which is a stalled section; these rows are left out rather than run on a polar that is not the section's (the coupled strips swing ±40 deg on it).
 
+
+## The mid-span section's own angle (16 Nov, `run.py 6 0.448 0.134`)
+
+`rans.solve_finite` now turns the section by the angle its mid-span meets (`finite.section_induced_angle`, the vortex lattice of the section as it sits), where it used lifting line's span mean; over a ground each element's turn is also corrected for the section being turned against the ground (`finite.consistent_turns`: 0.96 of the angle on this single element). Found on frontwing#1.02 (`../frontwing1`), where it took the mid-span Cl from +21% to +7.5% of STAR's. The section stands for mid-span, so the measured mid-span Cl (Figure 9b) is now the like-for-like number; the balance is the whole wing.
+
+| h/c | on-car Cl | before (lifting line) | measured mid-span | against it | measured wing | against it | separates from (measured) |
+|---|---|---|---|---|---|---|---|
+| 0.448 | 0.938 (unsteady, +-0.027) | 0.916 | 1.026 | -8.6% (was -10.7%) | 0.941 | -0.3% (was -2.7%) | attached (-) |
+| 0.134 | 1.647 (unsteady, +-0.071) | 1.608 | 1.684 | -2.2% (was -4.5%) | 1.612 | +2.2% (was -0.2%) | 0.927 (0.91) |
+
+Both nearer the mid-span pressures and still within 2.2% of the balance. At 0.448 the gap to mid-span is mostly the 2D section's: at its full angle it reads 9% over the measured mid-span (1.122), and the 3D loss the lattice gives (0.18) is about twice the measured one (0.10). Other heights not rerun.

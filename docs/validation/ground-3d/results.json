@@ -100,10 +100,10 @@
    "tu_at_wing": 0.001999267926175546
   },
   "on_car": {
-   "cl": 0.9163807357194,
-   "cd": 0.037767730620184514,
-   "converged": true,
-   "reason": "settled on average: Cl and Cd are the means of the last 1000 iterations (Cl swings \u00b10.013 about it)",
+   "cl": 0.9382457944532999,
+   "cd": 0.03828553850128253,
+   "converged": false,
+   "reason": "unsteady: no steady answer (residual down 4.0 orders, the flow itself moving); Cl and Cd are the means of the last 2000 iterations, Cl swinging \u00b10.027 about it",
    "x_sep": null,
    "regions": [
     {
@@ -111,31 +111,38 @@
      "surface": "upper",
      "loaded": "suction",
      "kind": "bubble",
-     "start": 0.6533,
-     "end": 0.8174
+     "start": 0.6578,
+     "end": 0.8219
     },
     {
      "element": 0,
      "surface": "lower",
      "loaded": "pressure",
      "kind": "bubble",
-     "start": 0.2112,
-     "end": 0.31
+     "start": 0.2096,
+     "end": 0.3279
     }
    ],
    "finite": {
-    "alpha_effective": 1.389,
-    "induced_angle": 1.389,
-    "aspect_ratio_effective": 5.774,
-    "ground_factor": 0.4894,
+    "alpha_effective": 1.234,
+    "induced_angle": 1.234,
+    "aspect_ratio_effective": 6.055,
+    "ground_factor": 0.4941,
     "solves": 1,
     "converged": true,
-    "cd_induced": 0.022655032571974515,
+    "cd_induced": 0.02286367178112253,
     "span": 1.1,
     "endplate": 0.1,
-    "stopped": null
+    "endplate_bottom": null,
+    "planform": 0.2234,
+    "model": "vortex lattice",
+    "stopped": null,
+    "cliff": null,
+    "element_turns": [
+     -0.04
+    ]
    },
-   "tu_at_wing": 0.0020003615139273434
+   "tu_at_wing": 0.0020058064622827296
   },
   "measured": {
    "cl_centre": 1.026,
@@ -260,50 +267,57 @@
    "tu_at_wing": 0.0019806704398267513
   },
   "on_car": {
-   "cl": 1.6084737812825,
-   "cd": 0.06229987848190134,
+   "cl": 1.6472767667094999,
+   "cd": 0.05817509420813316,
    "converged": false,
-   "reason": "unsteady: no steady answer (residual down 3.4 orders, the flow itself moving); Cl and Cd are the means of the last 2000 iterations, Cl swinging \u00b10.031 about it",
-   "x_sep": 0.9314,
+   "reason": "unsteady: no steady answer (residual down 3.9 orders, the flow itself moving); Cl and Cd are the means of the last 2000 iterations, Cl swinging \u00b10.071 about it",
+   "x_sep": 0.9267,
    "regions": [
     {
      "element": 0,
      "surface": "upper",
      "loaded": "suction",
      "kind": "bubble",
-     "start": 0.6623,
-     "end": 0.8249
+     "start": 0.6652,
+     "end": 0.8279
     },
     {
      "element": 0,
      "surface": "lower",
      "loaded": "pressure",
      "kind": "bubble",
-     "start": 0.3433,
-     "end": 0.4855
+     "start": 0.3281,
+     "end": 0.4665
     },
     {
      "element": 0,
      "surface": "lower",
      "loaded": "pressure",
      "kind": "trailing-edge separation",
-     "start": 0.9314,
+     "start": 0.9267,
      "end": 1.0
     }
    ],
    "finite": {
-    "alpha_effective": 1.234,
-    "induced_angle": 1.234,
-    "aspect_ratio_effective": 5.774,
-    "ground_factor": 0.261,
+    "alpha_effective": 1.073,
+    "induced_angle": 1.073,
+    "aspect_ratio_effective": 6.055,
+    "ground_factor": 0.2258,
     "solves": 2,
     "converged": true,
-    "cd_induced": 0.037220172239476344,
+    "cd_induced": 0.03220666742680316,
     "span": 1.1,
     "endplate": 0.1,
-    "stopped": null
+    "endplate_bottom": null,
+    "planform": 0.2234,
+    "model": "vortex lattice",
+    "stopped": null,
+    "cliff": null,
+    "element_turns": [
+     -0.035
+    ]
    },
-   "tu_at_wing": 0.001996422780100983
+   "tu_at_wing": 0.001990648185514751
   },
   "measured": {
    "cl_centre": 1.684,
