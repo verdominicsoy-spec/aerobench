@@ -788,11 +788,12 @@ def test_finite_wing_runs_at_the_induced_angle(monkeypatch, tmp_path):
     _estimate(monkeypatch, lambda a, n: -0.09 * (13 - a))  # the quick estimate: a little more lift
     r = rans.solve_finite(_finite_params(), tmp_path, tmp_path / "m.su2", None, 1, None, lambda *a: None,
                           lambda *a, **k: None)
-    # Fixed point a = (0.08 * 180/pi / (pi * 2)) * (12 - a): 5.061 deg.
+    # Fixed point a = k 0.08 (12 - a), k the mid-span section's angle per unit Cl (9.51 deg on this flat plate of
+    # aspect ratio 2, lifting line's mean 9.13): 5.186 deg.
     f = r["finite"]
-    assert f["converged"] and f["solves"] <= 4 and f["alpha_effective"] == pytest.approx(5.061, abs=0.1)
-    # The first solve at the estimate's own fixed point (0.8207 (13 - a) = a: 5.86 deg), not at the full angle.
-    assert calls[0]["alpha"] == pytest.approx(5.86, abs=0.02) and len(calls) >= 2
+    assert f["converged"] and f["solves"] <= 4 and f["alpha_effective"] == pytest.approx(5.186, abs=0.1)
+    # The first solve at the estimate's own fixed point (k 0.09 (13 - a) = a: 6.00 deg), not at the full angle.
+    assert calls[0]["alpha"] == pytest.approx(5.996, abs=0.02) and len(calls) >= 2
     assert all(c["ready"] and c["restart"] is not None for c in calls[1:])  # free air: one mesh, each from the last
     assert r["cl"] == pytest.approx(-0.08 * (12 - calls[-1]["alpha"]))
     assert r["cd"] == pytest.approx(0.03 + f["cd_induced"]) and f["cd_induced"] == pytest.approx(r["cl"] ** 2 / (np.pi * 2), rel=0.005)  # the lattice: AR 2 at e 0.999
@@ -1015,7 +1016,7 @@ def test_finite_wing_steers_by_an_unsteady_mean(monkeypatch, tmp_path):
     _estimate(monkeypatch, lambda a, n: -0.09 * (13 - a))
     r = rans.solve_finite(_finite_params(), tmp_path, tmp_path / "m.su2", None, 1, None, lambda *a: None,
                           lambda *a, **k: None)
-    assert r["finite"]["stopped"] is None and r["finite"]["alpha_effective"] == pytest.approx(5.061, abs=0.1)
+    assert r["finite"]["stopped"] is None and r["finite"]["alpha_effective"] == pytest.approx(5.186, abs=0.1)
     assert r["unsteady"] and not r["converged"]
 
 
@@ -1178,7 +1179,7 @@ def test_finite_wing_turns_each_element_by_its_own_induced_angle(monkeypatch, tm
 def test_finite_wing_ties_each_solves_turns_to_its_angle(monkeypatch, tmp_path):
     # The turns for the Cl the fixed point needs at that angle, so the loop steers on the angle alone.
     from aeroengine.wing import rans
-    from aeroengine.wing.finite import element_turns, induced_angle
+    from aeroengine.wing.finite import element_turns, section_induced_angle
 
     calls = []
 
@@ -1196,7 +1197,7 @@ def test_finite_wing_ties_each_solves_turns_to_its_angle(monkeypatch, tmp_path):
     back = {**front, "coords": [[1.0, 0], [0.5, 0], [1.0, 0]]}
     rans.solve_finite(_finite_params(elements=[front, back]), tmp_path, tmp_path / "m.su2", None, 1, None,
                       lambda *a: None, lambda *a, **k: None)
-    per_cl = induced_angle(1.0, 2.0, 1.0, 0.0, None, 1.0, None)
+    per_cl = section_induced_angle(1.0, [0.6, 0.4], 2.0, 1.0, 0.0, None, None, [front["coords"], back["coords"]], 0.0)
     assert len(calls) >= 2
     for c in calls[1:]:
         # on the section as drawn, turned on the car by the wing's own angle
@@ -1209,12 +1210,14 @@ def test_finite_wing_on_a_small_step_settles_without_a_cliff(monkeypatch, tmp_pa
     # frontwing#1.02 bent on the car (15 Nov): Cl -2.57 at +9.26 deg, -2.41 at +9.46, the answer between. A step
     # of 6% in Cl is a steep section, not a stall: the loop settles there and reports no cliff.
     from aeroengine.wing import rans
+    from aeroengine.wing.finite import section_induced_angle
 
     calls = []
     section = lambda a, n: -2.6 if a < 9.4 else -2.45  # noqa: E731
     monkeypatch.setattr(rans, "solve", _fake_solver(calls, section))
     _estimate(monkeypatch, section)
-    r = rans.solve_finite(_finite_params(alpha=-13.6), tmp_path, tmp_path / "m.su2", None, 1, None,
+    k = -section_induced_angle(1.0, [1.0], 2.0, 1.0, 0.0, None, None, [[[1, 0], [0, 0], [1, 0]]], 0.0)
+    r = rans.solve_finite(_finite_params(alpha=9.4 - k * 2.525), tmp_path, tmp_path / "m.su2", None, 1, None,
                           lambda *a: None, lambda *a, **k: None)
     f = r["finite"]
     assert f["converged"] and f["cliff"] is None and abs(f["alpha_effective"] - 9.4) <= 0.25
@@ -1224,7 +1227,7 @@ def test_finite_wing_over_the_ground_turns_each_element_to_carry_what_the_turned
     # The section must be turned, not the flow, and turning it moves its ends off and toward the ground:
     # each element's turn is corrected so the turned section carries what the turned flow gives it.
     from aeroengine.wing import rans
-    from aeroengine.wing.finite import consistent_turns, element_turns, induced_angle
+    from aeroengine.wing.finite import consistent_turns, element_turns, section_induced_angle
 
     calls = []
 
@@ -1243,8 +1246,8 @@ def test_finite_wing_over_the_ground_turns_each_element_to_carry_what_the_turned
     back = {**front, "coords": [[1.0, 0.12], [0.5, 0.05], [1.0, 0.08]]}
     rans.solve_finite(_finite_params(elements=[front, back], ride_height=0.1), tmp_path, tmp_path / "m.su2", None,
                       1, None, lambda *a: None, lambda *a, **k: None)
-    per_cl = induced_angle(1.0, 2.0, 1.0, 0.0, 0.1, 1.0, None)
     drawn = [front["coords"], back["coords"]]
+    per_cl = section_induced_angle(1.0, [0.6, 0.4], 2.0, 1.0, 0.0, 0.1, None, drawn, 0.0)
     for c in calls[1:]:
         own = element_turns(c["alpha"] / per_cl, [0.375, 0.875], [0.6, 0.4], 2.0, 1.0, 0.0, 0.1, 1.0, None,
                             sections=drawn, alpha=0.0)

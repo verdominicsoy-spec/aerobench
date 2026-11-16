@@ -484,7 +484,7 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     mid-span section on the car."""
     import shutil
 
-    from .finite import consistent_turns, element_curve, element_turns, lattice_factors
+    from .finite import consistent_turns, element_curve, element_turns, lattice_factors, section_induced_angle
 
     fin = p.get("finite") or {}
     for key in ("span", "endplate"):
@@ -497,9 +497,19 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     xs = [float(c[0]) for e in p["elements"] for c in e.get("coords") or []]
     planform = max(xs) - min(xs) if xs else chord  # front to back, as drawn
     bottom = fin.get("endplate_bottom")  # the endplates' lower edge over the ground; None: level with the wing
-    ar, gf = lattice_factors(span, chord, endplate, ride, planform, bottom)
-    induced_angle = lambda cl, *_: -math.degrees(cl / (math.pi * ar)) * gf  # noqa: E731
     alpha = float(p.get("alpha", 0.0))
+    ar, gf = lattice_factors(span, chord, endplate, ride, planform, bottom)  # lifting line's: the induced drag
+    els = p["elements"]
+    drawn = [e["coords"] for e in els]
+    chord_shares = [float(e["chord"]) / sum(float(x["chord"]) for x in els) for e in els]
+    last = None  # the last converged solve: its element loads load the lattice
+
+    def induced_angle(cl: float, *_) -> float:
+        """The angle the mid-span section feels (finite.section_induced_angle): the section the RANS solves stands
+        for mid-span, and lifting line's angle is the span's mean, 0.81 of it per unit section Cl at aspect ratio
+        5, about 1.2 of it on frontwing#1.02."""
+        return section_induced_angle(cl, shares(last) if last else chord_shares, span, chord, endplate, ride, bottom,
+                                     drawn, alpha)
     ground = ride is not None
     q = {k: v for k, v in p.items() if k != "finite"}
     # The first angle: the induced-angle fixed point on the quick estimate's polar (seconds). The 2D
@@ -513,14 +523,12 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     # on a lattice of the section as it sits on the car, loaded as the elements are (their shares as the last
     # solve carried them; the chords' shares at first). The turns at an angle are those for the Cl the
     # fixed point needs there, so every solve's turns follow from its angle and the loop steers on it alone.
-    els = p["elements"]
-    stations, chord_shares = [], [float(e["chord"]) / sum(float(x["chord"]) for x in els) for e in els]
+    stations = []
     for e in els:
         c = np.asarray(e["coords"], float)
         te = 0.5 * (c[0] + c[-1])
         nose = c[int(np.argmax(np.linalg.norm(c - te, axis=1)))]
         stations.append(float((nose[0] + 0.75 * (te[0] - nose[0]) - min(xs)) / planform))
-    per_cl = induced_angle(1.0)  # degrees per unit Cl
 
     def shares(res: dict) -> list[float]:
         cls = [float(e.get("cl", 0.0)) for e in res.get("elements") or []]
@@ -529,8 +537,6 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
         return out if out and all(0.0 <= x <= 1.0 for x in out) else chord_shares
 
     grid = [i / 40 for i in range(41)]
-
-    drawn = [e["coords"] for e in els]
 
     def turned(a: float, cl: float, res: dict | None) -> tuple[list[float], dict]:
         """Each element's turn, and the section's bend along its whole chord on the same mean: the lattice the
@@ -549,12 +555,13 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
             bent = [t + f for t, f in zip(bent, element_curve([np.asarray(c, float) for c in drawn], fix, np.asarray(x)))]
         return own, {"x": x, "turns": bent}
 
-    used, last = {}, None
+    used = {}
     ready, prev, r, settled, tried, stopped, good, cliff = None, None, None, False, [], None, None, None
     for n in range(1, FINITE_SOLVES + 1):
         folder = workdir / f"s{n}"
         folder.mkdir(parents=True, exist_ok=True)
         report = lambda pct, msg, n=n, a=a: progress(100 * (n - 1 + pct / 100) / FINITE_SOLVES, f"{a:+.1f}°: {msg}")
+        per_cl = induced_angle(1.0)  # degrees per unit Cl, on the elements as the last solve loaded them
         turns, camber = turned(a, (a - alpha) / per_cl if per_cl else 0.0, last)
         r = solve({**q, "alpha": a, "element_turns": turns, "camber": camber}, folder, mesh_file, su2_hint, cores, env, report, log,
                   field=field, mesh_ready=ready, restart=prev)
