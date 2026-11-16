@@ -137,3 +137,54 @@ def test_chordwise_angle_of_any_loading_vanishes_on_an_endless_span():
     lat = Lattice(span=1000.0, chord=1.0, nx=8)
     aft = np.linspace(1.0, 3.0, 8)
     assert np.all(np.abs(lat.chordwise([0.1, 0.5, 0.9], loading=aft / aft.sum())) < 1e-3)
+
+
+def _flat_profile(chord: float, n: int, angle: float = 0.0):
+    """n equal panels along a flat chord line at angle (rad, trailing edge down), nose at height 0."""
+    x = np.linspace(0.0, chord, n + 1)
+    pts = np.stack([x * math.cos(angle), -x * math.sin(angle)], axis=1)
+    return [(tuple(pts[i]), tuple(pts[i + 1])) for i in range(n)]
+
+
+def test_a_flat_profile_at_an_angle_carries_the_flat_plates_lift():
+    # the profile carries its own angle (flow along x): 0.005 rad of flat plate is 0.005 of the plain lattice
+    # (at 0.05 the tilted plate sits 5% of its chord lower at the back, and the tips carry 8% more)
+    plain = Lattice(span=4.0, chord=1.0, nx=8).solve().cl
+    tilted = Lattice(span=4.0, chord=1.0, profile=_flat_profile(1.0, 8, 0.005)).solve().cl
+    assert tilted == pytest.approx(0.005 * plain, rel=2e-3)
+
+
+def test_a_flat_profile_with_endplates_over_the_ground_matches_the_plain_lattice():
+    kw = dict(span=0.5245, chord=0.6245, height=0.0966, endplate=0.315, endplate_bottom=0.035)
+    plain = Lattice(**kw).chordwise([0.1, 0.5, 0.9])
+    prof = Lattice(**kw, profile=_flat_profile(0.6245, 8, 0.01)).chordwise([0.1, 0.5, 0.9])
+    assert prof == pytest.approx(plain, rel=3e-2)
+
+
+def _two_elements(chord: float = 1.0):
+    """A downforce main and a flap climbing behind it (trailing edges up), the flap's nose over the
+    main's trailing edge, as frontwing#1.02's."""
+    main = [((0.6 * i / 6, 0.02 * i / 6), (0.6 * (i + 1) / 6, 0.02 * (i + 1) / 6)) for i in range(6)]
+    nose = np.array([0.55, 0.05])
+    tail = nose + 0.45 * np.array([math.cos(0.4), math.sin(0.4)])
+    flap = [(tuple(nose + (tail - nose) * i / 4), tuple(nose + (tail - nose) * (i + 1) / 4)) for i in range(4)]
+    return main + flap
+
+
+def test_a_stacked_profile_sees_no_induced_angle_on_an_endless_span():
+    lat = Lattice(span=1000.0, chord=1.0, height=0.3, profile=_two_elements())
+    assert np.all(np.abs(lat.panel_angles()) < 1e-3)
+
+
+def test_the_flap_climbing_toward_the_endplates_top_meets_more_induced_angle():
+    # frontwing#1.02: flap 3 near the endplates' top edge, the main by the ground
+    kw = dict(span=0.5245, chord=1.0, height=0.1, endplate=0.4, endplate_bottom=0.035)
+    a = Lattice(**kw, profile=_two_elements()).panel_angles()
+    assert a[6:].mean() > a[:6].mean() > 0
+
+
+def test_panel_loads_split_the_mid_span_circulation_by_panel():
+    lat = Lattice(span=1000.0, chord=1.0, height=0.3, profile=_two_elements())
+    g = lat.panel_loads()
+    assert g.shape == (10,) and np.all(g < 0)  # downforce
+    assert 2 * g.sum() == pytest.approx(lat.solve().cl[lat.ny // 2], rel=1e-2)  # Cl = 2 Gamma / c

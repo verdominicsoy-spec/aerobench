@@ -111,12 +111,18 @@ class Lattice:
     ny: int = 24
     nz: int = 8
     drop: float = 0.0
+    # The section as it is: chordwise panels ((x0, z0), (x1, z1)) in m, x from the leading edge, z over
+    # z(y) (the base height). The panels carry the section's angles, the flow runs along x; nx is then the
+    # endplates' columns. None: a flat plate at a uniform angle of 1 rad.
+    profile: tuple | list | None = None
 
     def z(self, y):
         """The wing's height (over the ground, or over mid-span's in free air) at spanwise station y."""
         return (self.height or 0.0) - self.drop * np.asarray(y) / self.span
 
     def _panels(self):
+        if self.profile is not None:
+            return self._profile_panels()
         b, c = self.span, self.chord
         xs = np.linspace(0.0, c, self.nx + 1)
         # Free tips: the lattice ends a quarter strip inside them (Hough), which settles the lift by 24
@@ -159,17 +165,69 @@ class Lattice:
                             wing.append(False)
         return (np.array(a_pts), np.array(b_pts), np.array(cols), np.array(normals), np.array(wing), xs, ys)
 
+    def _profile_panels(self):
+        """_panels for a profile: each chordwise panel at its own height and slope, the endplates in
+        columns from the section's nose to its tail, their vortices joined at every height the wing's
+        trailing legs leave the tip, so no leg passes next to an endplate control point."""
+        b = self.span
+        prof = np.asarray(self.profile, float)  # (n, 2 ends, (x, z))
+        p0, p1 = prof[:, 0], prof[:, 1]
+        q, c3, t = p0 + 0.25 * (p1 - p0), p0 + 0.75 * (p1 - p0), p1 - p0
+        inset = 0.0 if self.endplate > 0 else 0.25 * b / (self.ny + 0.5)  # as _panels
+        ys = (b - 2 * inset) * (np.linspace(0.0, 1.0, self.ny + 1) - 0.5)
+        zy = self.z(ys)
+        slope = -self.drop / b
+        normal = np.stack([-t[:, 1], -t[:, 0] * slope, t[:, 0]], axis=1)  # (t_x, 0, t_z) x (0, 1, dz/dy)
+        normal /= np.linalg.norm(normal, axis=1, keepdims=True)
+        a_pts, b_pts, cols, normals, wing = [], [], [], [], []
+        for j in range(self.ny):
+            for i in range(len(prof)):
+                a_pts.append((q[i, 0], ys[j], zy[j] + q[i, 1]))
+                b_pts.append((q[i, 0], ys[j + 1], zy[j + 1] + q[i, 1]))
+                cols.append((c3[i, 0], 0.5 * (ys[j] + ys[j + 1]), 0.5 * (zy[j] + zy[j + 1]) + c3[i, 1]))
+                normals.append(tuple(normal[i]))
+                wing.append(True)
+        xs = np.linspace(float(prof[..., 0].min()), float(prof[..., 0].max()), self.nx + 1)
+        if self.endplate > 0:
+            for side in (-0.5, 0.5):
+                z0 = float(self.z(side * b))
+                bottom = (self.endplate_bottom if self.height is not None else z0 + self.endplate_bottom) \
+                    if self.endplate_bottom is not None else z0 + float(min(p0[:, 1].min(), p1[:, 1].min()))
+                top = bottom + self.endplate
+                legs = np.unique(np.round(z0 + q[:, 1], 9))
+                legs = legs[(legs > bottom) & (legs < top)]
+                gap = 0.3 * (top - bottom) / self.nz
+                grid = bottom + (top - bottom) * _cosine(self.nz)
+                keep = [z for z in grid if z in (bottom, top) or np.abs(legs - z).min(initial=np.inf) > gap]
+                zs = np.unique(np.concatenate([keep, legs]))
+                for k in range(len(zs) - 1):
+                    for i in range(self.nx):
+                        x0, dx = xs[i], xs[i + 1] - xs[i]
+                        xq, x3 = x0 + 0.25 * dx, x0 + 0.75 * dx
+                        za, zb = (zs[k], zs[k + 1]) if side > 0 else (zs[k + 1], zs[k])
+                        a_pts.append((xq, side * b, za))
+                        b_pts.append((xq, side * b, zb))
+                        cols.append((x3, side * b, 0.5 * (zs[k] + zs[k + 1])))
+                        normals.append((0.0, 1.0 if side > 0 else -1.0, 0.0))
+                        wing.append(False)
+        return (np.array(a_pts), np.array(b_pts), np.array(cols), np.array(normals), np.array(wing), xs, ys)
+
+    @property
+    def _chordwise_panels(self) -> int:
+        return self.nx if self.profile is None else len(self.profile)
+
     def _system(self):
         a, b, p, n, wing, xs, ys = self._panels()
         ground = self.height is not None
         v = _influence(a, b, p, FAR * max(self.span, self.chord), ground)
         mat = np.einsum("nmk,nk->nm", v, n)
-        rhs = -np.where(wing, n[:, 2], 0.0)  # alpha = 1 rad, small-angle: the freestream's normal part on the wing
+        # alpha = 1 rad, small-angle, on a flat plate; a profile carries its own angles, the flow along x
+        rhs = -np.where(wing, n[:, 0] if self.profile is not None else n[:, 2], 0.0)
         return a, b, n, wing, ys, ground, mat, np.linalg.solve(mat, rhs)
 
     def solve(self) -> Result:
         a, b, n, wing, ys, ground, mat, gam = self._system()
-        g = gam[wing].reshape(self.ny, self.nx).sum(axis=1)
+        g = gam[wing].reshape(self.ny, self._chordwise_panels).sum(axis=1)
         cl = 2 * g / self.chord
         cl_wing = float(np.sum(g * np.diff(ys))) * 2 / (self.span * self.chord)
         a2d = section_slope(self.chord, self.height, self.nx)
@@ -186,30 +244,54 @@ class Lattice:
         loading: each chordwise panel's share of every strip's circulation (the strips keep the
         lattice's own totals, the endplates are solved with the wing held); default the flat plate's
         own, heaviest at the front, where a multi-element wing spreads its load along the chord."""
-        _, _, _, wing, ys, ground, mat, gam = self._system()
-        g = gam.copy()  # alpha 1 rad
+        xc, angles = self._panel_angles(loading)
+        order = np.argsort(xc)
+        return np.interp(np.asarray(stations, float) * self.chord, xc[order], angles[order])
+
+    def panel_angles(self, loading=None) -> np.ndarray:
+        """chordwise's induced angle at each chordwise panel's control point (rad per unit section Cl)."""
+        return self._panel_angles(loading)[1]
+
+    def panel_loads(self) -> np.ndarray:
+        """Each chordwise panel's circulation at mid-span (the mean of the middle strips), m^2/s per m/s of
+        flow: 1 rad on a flat plate, the profile's own angles on a profile. Cl on the chord is 2 sum / chord."""
+        _, _, _, wing, _, _, _, gam = self._system()
+        return gam[wing].reshape(self.ny, self._chordwise_panels)[self._middle()].mean(axis=0)
+
+    def _middle(self) -> list[int]:
+        return [self.ny // 2 - 1, self.ny // 2] if self.ny % 2 == 0 else [self.ny // 2]
+
+    def _panel_angles(self, loading=None) -> tuple[np.ndarray, np.ndarray]:
+        a, b, p, n, wing, _, _ = self._panels()
+        _, _, _, _, ys, ground, mat, gam = self._system()
+        nc = self._chordwise_panels
+        g = gam.copy()
         if loading is not None:
             shape = np.asarray(loading, float)
-            total = gam[wing].reshape(self.ny, self.nx).sum(axis=1)
+            total = gam[wing].reshape(self.ny, nc).sum(axis=1)
             g[wing] = (total[:, None] * (shape / shape.sum())[None, :]).ravel()
             plate = ~wing
             if plate.any():
                 g[plate] = np.linalg.solve(mat[np.ix_(plate, plate)], -mat[np.ix_(plate, wing)] @ g[wing])
-        w3 = (mat @ g)[wing].reshape(self.ny, self.nx)  # every vortex's normal velocity at the control points
-        gw = g[wing].reshape(self.ny, self.nx)
-        xs = np.linspace(0.0, self.chord, self.nx + 1)
-        xv, xc = xs[:-1] + 0.25 * np.diff(xs), xs[:-1] + 0.75 * np.diff(xs)
-        dx = xc[:, None] - xv[None, :]
+        w3 = (mat @ g)[wing].reshape(self.ny, nc)  # every vortex's normal velocity at the control points
+        gw = g[wing].reshape(self.ny, nc)
+        wa, wb = a[wing].reshape(self.ny, nc, 3), b[wing].reshape(self.ny, nc, 3)
+        wp, wn = p[wing].reshape(self.ny, nc, 3), n[wing].reshape(self.ny, nc, 3)
+        far = 1e4 * max(self.span, self.chord)
         angles = []
-        for j in (self.ny // 2 - 1, self.ny // 2) if self.ny % 2 == 0 else (self.ny // 2,):
-            a = -1 / (2 * math.pi * dx)  # a unit vortex's normal velocity, as section_slope
+        for j in self._middle():
+            # the same loading on an endless span: each bound vortex run out to both sides (and its image)
+            ends = 0.5 * (wa[j] + wb[j])
+            lo, hi = ends.copy(), ends.copy()
+            lo[:, 1], hi[:, 1] = -far, far
+            v = _segments(lo, hi, wp[j])
             if ground:
-                dz = 2 * float(self.z(0.5 * (ys[j] + ys[j + 1])))
-                a = a + dx / (2 * math.pi * (dx * dx + dz * dz))
-            induced = -(w3[j] - a @ gw[j])  # the 3D flow less what the same loading makes in 2D
+                m = np.array([1.0, 1.0, -1.0])
+                v = v - _segments(lo * m, hi * m, wp[j])
+            two_d = np.einsum("nmk,nk->nm", v, wn[j])
+            induced = -(w3[j] - two_d @ gw[j])  # the 3D flow less what the same loading makes in 2D
             angles.append(induced / (2 * gw[j].sum() / self.chord))
-        return np.interp(np.asarray(stations, float) * self.chord, xc, np.mean(angles, axis=0))
-
+        return wp[self._middle()[0], :, 0], np.mean(angles, axis=0)
 
     def strips(self, count: int) -> Strips:
         """The induced angle on count equal spanwise strips per unit section Cl on each, for a strip
