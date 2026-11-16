@@ -61,6 +61,31 @@ def _influence(a: np.ndarray, b: np.ndarray, p: np.ndarray, far: float, ground: 
     return v
 
 
+def _chains(a: np.ndarray, b: np.ndarray, legs_a: list, legs_b: list, p: np.ndarray, far: float,
+            ground: bool) -> np.ndarray:
+    """Velocity at p (n, 3) from unit horseshoes whose legs run along legs_a/legs_b (points from the bound
+    vortex's ends onward) and then far downstream: (n, m, 3), with the ground's image as _influence."""
+    down = np.array([far, 0.0, 0.0])
+    starts, ends, owner = [], [], []
+    for k in range(len(a)):
+        pa, pb = np.vstack([a[k], legs_a[k]]), np.vstack([b[k], legs_b[k]])
+        seg = [(a[k], b[k])] + [(pb[i], pb[i + 1]) for i in range(len(pb) - 1)] + [(pb[-1], pb[-1] + down)]
+        seg += [(pa[i + 1], pa[i]) for i in range(len(pa) - 1)] + [(pa[-1] + down, pa[-1])]
+        starts += [s0 for s0, _ in seg]
+        ends += [e0 for _, e0 in seg]
+        owner += [k] * len(seg)
+    starts, ends, owner = np.array(starts), np.array(ends), np.array(owner)
+    out = np.zeros((len(p), len(a), 3))
+    m = np.array([1.0, 1.0, -1.0])
+    for lo in range(0, len(owner), 1500):
+        sl = slice(lo, lo + 1500)
+        v = _segments(starts[sl], ends[sl], p)
+        if ground:  # the image: mirrored under z = 0, opposite sign
+            v = v - _segments(starts[sl] * m, ends[sl] * m, p)
+        np.add.at(out, (slice(None), owner[sl]), v)
+    return out
+
+
 def _cosine(n: int) -> np.ndarray:
     return 0.5 * (1 - np.cos(np.linspace(0.0, math.pi, n + 1)))
 
@@ -192,7 +217,10 @@ class Lattice:
     def _profile_panels(self):
         """_panels for a profile: each chordwise panel at its own height and slope, the endplates in
         columns from the section's nose to its tail, their vortices joined at every height the wing's
-        trailing legs leave the tip, so no leg passes next to an endplate control point."""
+        trailing legs leave the tip, so no leg passes next to an endplate control point. Each wing
+        horseshoe's legs run along its element (the panels joined end to end) to that element's trailing
+        edge, then downstream (self._legs); left straight from each panel they passed beside the panels
+        behind a tilted or climbing section. Legs on an endplate stay straight, clear of its grid."""
         b = self.span
         prof = np.asarray(self.profile, float)  # (n, 2 ends, (x, z))
         p0, p1 = prof[:, 0], prof[:, 1]
@@ -211,6 +239,22 @@ class Lattice:
                 cols.append((c3[i, 0], 0.5 * (ys[j] + ys[j + 1]), 0.5 * (zy[j] + zy[j + 1]) + c3[i, 1]))
                 normals.append(tuple(normal[i]))
                 wing.append(True)
+        # each panel's way to its element's trailing edge: the ends of the panels after it in the same chain
+        joined = np.r_[np.linalg.norm(p0[1:] - p1[:-1], axis=1) < 1e-9, False]  # panel i runs into i + 1
+        ahead = []
+        for i in range(len(prof)):
+            k, way = i, [p1[i]]
+            while joined[k]:
+                k += 1
+                way.append(p1[k])
+            ahead.append(np.array(way))
+        tip = self.endplate > 0
+        legs_a, legs_b = [], []
+        for j in range(self.ny):
+            for i in range(len(prof)):
+                for legs, y, z, at_tip in ((legs_a, ys[j], zy[j], j == 0), (legs_b, ys[j + 1], zy[j + 1], j == self.ny - 1)):
+                    legs.append(np.empty((0, 3)) if tip and at_tip else
+                                np.column_stack([ahead[i][:, 0], np.full(len(ahead[i]), y), z + ahead[i][:, 1]]))
         xs = np.linspace(float(prof[..., 0].min()), float(prof[..., 0].max()), self.nx + 1)
         if self.endplate > 0:
             for side in (-0.5, 0.5):
@@ -234,7 +278,18 @@ class Lattice:
                         cols.append((x3, side * b, 0.5 * (zs[k] + zs[k + 1])))
                         normals.append((0.0, 1.0 if side > 0 else -1.0, 0.0))
                         wing.append(False)
+                        legs_a.append(np.empty((0, 3)))
+                        legs_b.append(np.empty((0, 3)))
+        self._legs = (legs_a, legs_b)
         return (np.array(a_pts), np.array(b_pts), np.array(cols), np.array(normals), np.array(wing), xs, ys)
+
+    def _wake_ends(self, a: np.ndarray, b: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Where each horseshoe's legs leave downstream: its bound vortex's ends, or a profile's trailing edges."""
+        if self.profile is None:
+            return a, b
+        la, lb = self._legs
+        return (np.array([w[-1] if len(w) else x for w, x in zip(la, a)]),
+                np.array([w[-1] if len(w) else x for w, x in zip(lb, b)]))
 
     @property
     def _chordwise_panels(self) -> int:
@@ -243,7 +298,8 @@ class Lattice:
     def _system(self):
         a, b, p, n, wing, xs, ys = self._panels()
         ground = self.height is not None
-        v = _influence(a, b, p, FAR * max(self.span, self.chord), ground)
+        far = FAR * max(self.span, self.chord)
+        v = _influence(a, b, p, far, ground) if self.profile is None else _chains(a, b, *self._legs, p, far, ground)
         mat = np.einsum("nmk,nk->nm", v, n)
         # alpha = 1 rad, small-angle, on a flat plate; a profile carries its own angles, the flow along x
         if self.profile is None:
@@ -261,7 +317,7 @@ class Lattice:
         cl = 2 * g / self.chord
         cl_wing = float(np.sum(g * np.diff(ys))) * 2 / (self.span * self.chord)
         a2d = section_slope(self.chord, self.height, self.nx)
-        cdi = _trefftz_drag(a, b, gam, ground) / (self.span * self.chord)
+        cdi = _trefftz_drag(*self._wake_ends(a, b), gam, ground) / (self.span * self.chord)
         return Result(y=0.5 * (ys[:-1] + ys[1:]), cl=cl, induced=1.0 - cl / a2d, lift_slope=cl_wing,
                       k_lift=1 / cl_wing - 1 / a2d, k_drag=cdi / cl_wing ** 2)
 

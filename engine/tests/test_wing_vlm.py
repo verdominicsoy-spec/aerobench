@@ -197,3 +197,11 @@ def test_a_steep_panel_meets_the_same_induced_angle_as_a_level_one():
     level = Lattice(span=100.0, chord=1.0, profile=_flat_profile(1.0, 8, 0.01)).panel_angles()
     steep = Lattice(span=100.0, chord=1.0, profile=_flat_profile(1.0, 8, 0.5)).panel_angles()
     assert steep.mean() == pytest.approx(level.mean(), rel=1e-2)
+
+
+def test_a_tilted_plates_induced_angle_does_not_hang_on_its_tilt():
+    # the trailing legs leave along the surface to the trailing edge: left straight from each panel they passed
+    # beside the panels behind, and a plate of aspect ratio 2 tilted 0.25 rad read 29% low
+    level = Lattice(span=2.0, chord=1.0, profile=_flat_profile(1.0, 12, 0.005)).panel_angles()
+    tilted = Lattice(span=2.0, chord=1.0, profile=_flat_profile(1.0, 12, 0.25)).panel_angles()
+    assert tilted.mean() == pytest.approx(level.mean(), rel=0.03)
