@@ -282,3 +282,27 @@ def test_consistent_turn_of_a_single_element_by_the_ground_is_nearly_its_onset()
     wing = naca4("6412") * np.array([0.2234, -0.2234])
     (t,) = consistent_turns([wing], 0.0, 0.1, [1.5])
     assert 0.9 * 1.5 < t < 1.5
+
+
+def test_section_induced_angle_is_the_mid_span_sections_own():
+    # aspect ratio 5 in free air: per unit of its own Cl the mid-span section meets 0.81 of lifting line's mean
+    # (Trefftz) angle per unit of the wing's CL, as the flat lattice says (0.0523 against 0.0644 rad): a rectangular
+    # wing sheds its vorticity near the tips, and its mid-span carries 1.2 of the wing's CL
+    from aeroengine.wing.airfoils import naca4
+    from aeroengine.wing.finite import induced_angle, section_induced_angle
+
+    w = naca4("6412") * np.array([0.25, -0.25])
+    a = section_induced_angle(-1.0, [1.0], 1.25, 0.25, 0.0, None, None, [w], 0.0)
+    assert a > 0 and a == pytest.approx(0.81 * induced_angle(-1.0, 1.25, 0.25, 0.0, None), rel=0.05)
+    assert section_induced_angle(-2.0, [1.0], 1.25, 0.25, 0.0, None, None, [w], 0.0) == pytest.approx(2 * a, rel=1e-9)
+
+
+def test_frontwings_mid_span_feels_more_than_lifting_lines_mean():
+    # frontwing#1.02 (aspect ratio 0.77, endplates 60% of the span): the mid-span section meets about 20% more
+    from aeroengine.wing.finite import induced_angle, section_induced_angle
+
+    a = section_induced_angle(-2.0, SHARES, FRONT["span"], FRONT["chord"], FRONT["endplate"], FRONT["ride_height"],
+                              FRONT["endplate_bottom"], _frontwing_sections(), -7.45)
+    ll = induced_angle(-2.0, FRONT["span"], FRONT["chord"], FRONT["endplate"], FRONT["ride_height"], 0.6245,
+                       FRONT["endplate_bottom"])
+    assert a > 1.1 * ll

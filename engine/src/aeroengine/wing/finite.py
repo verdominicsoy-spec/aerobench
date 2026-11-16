@@ -311,9 +311,20 @@ def consistent_turns(sections, alpha: float, ride_height: float | None, onset: l
     return list(_consistent(key, round(float(alpha), 4), round(float(ride_height), 6), tuple(round(float(x), 4) for x in onset)))
 
 
+def section_induced_angle(cl: float, shares: list[float], span: float, chord: float, endplate: float,
+                          ride_height: float | None, endplate_bottom: float | None, sections, alpha: float) -> float:
+    """Degrees the flow is turned at the section as it sits on the car (the vortex lattice of its mean lines,
+    loaded as shares say), the way that unloads it: the load-weighted mean of each element's own induced angle at
+    its three-quarter chord, the lattice's downwash beyond what the same loading makes on an endless span. The
+    angle the section feels, where induced_angle is lifting line's (Trefftz): on a slender wing they agree, on
+    frontwing#1.02 (aspect ratio 0.77) this one is 20% larger, on Zerihan's wing by the ground smaller."""
+    return _section_turns(cl, shares, span, chord, endplate, ride_height, endplate_bottom, sections, alpha, None,
+                          mean_only=True)[0]
+
+
 def _section_turns(cl: float, shares: list[float], span: float, chord: float, endplate: float,
                    ride_height: float | None, endplate_bottom: float | None, sections, alpha: float,
-                   at: list[float] | None) -> list[float]:
+                   at: list[float] | None, mean_only: bool = False) -> list[float]:
     r = lambda v: None if v is None else round(float(v), 5)  # noqa: E731
     key = tuple(tuple(map(tuple, np.round(np.asarray(e, float), 6))) for e in sections)
     per, plan = _section_angles(r(span), r(max(endplate, 0.0)), r(ride_height), r(endplate_bottom), key,
@@ -331,7 +342,9 @@ def _section_turns(cl: float, shares: list[float], span: float, chord: float, en
         return float(nose[0] + 0.75 * (te[0] - nose[0]))
 
     own = [angle_at(three_quarter(e), i) for i, e in enumerate(drawn)]
-    mean = sum(w * x for w, x in zip(shares, own))
+    mean = sum(w * x for w, x in zip(shares, own)) / sum(shares)
+    if mean_only:
+        return [-math.degrees(mean) * cl * chord / plan]
     if at is None:
         values = own
     else:  # along the drawn x: the elements over each point (their mean where they overlap), else the nearest
