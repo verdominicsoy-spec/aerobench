@@ -136,6 +136,9 @@ class Lattice:
     # z(y) (the base height). The panels carry the section's angles, the flow runs along x; nx is then the
     # endplates' columns. None: a flat plate at a uniform angle of 1 rad.
     profile: tuple | list | None = None
+    # A profile's flow turned at each chordwise panel (rad, alpha's sense: as if the panel were turned trailing
+    # edge down by it), the same on every strip. None: the flow along x.
+    onset: tuple | list | None = None
 
     def z(self, y):
         """The wing's height (over the ground, or over mid-span's in free air) at spanwise station y."""
@@ -243,7 +246,13 @@ class Lattice:
         v = _influence(a, b, p, FAR * max(self.span, self.chord), ground)
         mat = np.einsum("nmk,nk->nm", v, n)
         # alpha = 1 rad, small-angle, on a flat plate; a profile carries its own angles, the flow along x
-        rhs = -np.where(wing, n[:, 0] if self.profile is not None else n[:, 2], 0.0)
+        if self.profile is None:
+            rhs = -np.where(wing, n[:, 2], 0.0)
+        else:
+            turn = np.zeros(len(n))
+            if self.onset is not None:
+                turn[wing] = np.tile(np.asarray(self.onset, float), self.ny)
+            rhs = -np.where(wing, n[:, 0] * np.cos(turn) + n[:, 2] * np.sin(turn), 0.0)
         return a, b, n, wing, ys, ground, mat, np.linalg.solve(mat, rhs)
 
     def solve(self) -> Result:

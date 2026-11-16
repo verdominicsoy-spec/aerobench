@@ -1218,3 +1218,36 @@ def test_finite_wing_on_a_small_step_settles_without_a_cliff(monkeypatch, tmp_pa
                           lambda *a: None, lambda *a, **k: None)
     f = r["finite"]
     assert f["converged"] and f["cliff"] is None and abs(f["alpha_effective"] - 9.4) <= 0.25
+
+
+def test_finite_wing_over_the_ground_turns_each_element_to_carry_what_the_turned_flow_gives_it(monkeypatch, tmp_path):
+    # The section must be turned, not the flow, and turning it moves its ends off and toward the ground:
+    # each element's turn is corrected so the turned section carries what the turned flow gives it.
+    from aeroengine.wing import rans
+    from aeroengine.wing.finite import consistent_turns, element_turns, induced_angle
+
+    calls = []
+
+    def fake(p, workdir, mesh_file, su2_hint, cores, env, progress, log, field=True, mesh_ready=None, restart=None):
+        calls.append({"alpha": p["alpha"], "turns": list(p["element_turns"])})
+        workdir.mkdir(parents=True, exist_ok=True)
+        cl = -0.08 * (12 - p["alpha"])
+        return {"alpha": p["alpha"], "cl": cl, "cd": 0.03, "converged": True, "separated": False, "separation": None,
+                "regions": [], "mesh": {"cells": 1}, "transition": [[0.0, 0.0]] * 2,
+                "elements": [{"cl": 0.6 * cl, "cd": 0.02}, {"cl": 0.4 * cl, "cd": 0.01}]}
+
+    monkeypatch.setattr(rans, "solve", fake)
+    _estimate(monkeypatch, lambda a, n: -0.09 * (13 - a))
+    front = {"coords": [[0.5, 0.02], [0, 0.0], [0.5, -0.02]], "unit": [[1, 0], [0, 0], [1, 0]], "angle": 0,
+             "inverted": True, "chord": 0.5}
+    back = {**front, "coords": [[1.0, 0.12], [0.5, 0.05], [1.0, 0.08]]}
+    rans.solve_finite(_finite_params(elements=[front, back], ride_height=0.1), tmp_path, tmp_path / "m.su2", None,
+                      1, None, lambda *a: None, lambda *a, **k: None)
+    per_cl = induced_angle(1.0, 2.0, 1.0, 0.0, 0.1, 1.0, None)
+    drawn = [front["coords"], back["coords"]]
+    for c in calls[1:]:
+        own = element_turns(c["alpha"] / per_cl, [0.375, 0.875], [0.6, 0.4], 2.0, 1.0, 0.0, 0.1, 1.0, None,
+                            sections=drawn, alpha=0.0)
+        onset = [c["alpha"] + t for t in own]
+        want = [t + g - o for t, g, o in zip(own, consistent_turns(drawn, 0.0, 0.1, onset), onset)]
+        assert c["turns"] == pytest.approx(want, abs=1e-6) and c["turns"] != pytest.approx(own, abs=1e-3)

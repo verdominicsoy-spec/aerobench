@@ -484,7 +484,7 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     mid-span section on the car."""
     import shutil
 
-    from .finite import element_turns, lattice_factors
+    from .finite import consistent_turns, element_curve, element_turns, lattice_factors
 
     fin = p.get("finite") or {}
     for key in ("span", "endplate"):
@@ -532,14 +532,22 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
 
     drawn = [e["coords"] for e in els]
 
-    def turned(cl: float, res: dict | None) -> tuple[list[float], dict]:
+    def turned(a: float, cl: float, res: dict | None) -> tuple[list[float], dict]:
         """Each element's turn, and the section's bend along its whole chord on the same mean: the lattice the
-        section as it sits on the car, at the wing's own angle (each element at its own height and slope)."""
+        section as it sits on the car, at the wing's own angle (each element at its own height and slope). Over a
+        ground each element's turn is then corrected so the turned section carries what the section as it sits
+        carries in the turned flow (finite.consistent_turns): the flow at a plus each element's own turn."""
         sh = shares(res) if res else chord_shares
         kw = dict(sections=drawn, alpha=alpha)
         bent = element_turns(cl, stations, sh, span, chord, endplate, ride, planform, bottom, at=grid, **kw)
-        return (element_turns(cl, stations, sh, span, chord, endplate, ride, planform, bottom, **kw),
-                {"x": [min(xs) + g * planform for g in grid], "turns": bent})
+        own = element_turns(cl, stations, sh, span, chord, endplate, ride, planform, bottom, **kw)
+        x = [min(xs) + g * planform for g in grid]
+        if ride is not None:
+            onset = [a - alpha + t for t in own]
+            fix = [g - o for g, o in zip(consistent_turns(drawn, alpha, ride, onset), onset)]
+            own = [t + f for t, f in zip(own, fix)]
+            bent = [t + f for t, f in zip(bent, element_curve([np.asarray(c, float) for c in drawn], fix, np.asarray(x)))]
+        return own, {"x": x, "turns": bent}
 
     used, last = {}, None
     ready, prev, r, settled, tried, stopped, good, cliff = None, None, None, False, [], None, None, None
@@ -547,7 +555,7 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
         folder = workdir / f"s{n}"
         folder.mkdir(parents=True, exist_ok=True)
         report = lambda pct, msg, n=n, a=a: progress(100 * (n - 1 + pct / 100) / FINITE_SOLVES, f"{a:+.1f}°: {msg}")
-        turns, camber = turned((a - alpha) / per_cl if per_cl else 0.0, last)
+        turns, camber = turned(a, (a - alpha) / per_cl if per_cl else 0.0, last)
         r = solve({**q, "alpha": a, "element_turns": turns, "camber": camber}, folder, mesh_file, su2_hint, cores, env, report, log,
                   field=field, mesh_ready=ready, restart=prev)
         used[folder] = turns

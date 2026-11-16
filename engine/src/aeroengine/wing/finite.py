@@ -239,6 +239,78 @@ def _section_angles(span: float, endplate: float, ride_height: float | None, end
     return tuple(out), plan
 
 
+def element_curve(drawn: list[np.ndarray], values: list[float], x: np.ndarray) -> np.ndarray:
+    """Each element's value along the drawn x: the mean of the elements over each point, else the nearest's."""
+    ranges = [(float(e[:, 0].min()), float(e[:, 0].max())) for e in drawn]
+    out = []
+    for px in x:
+        over = [i for i, (a, b) in enumerate(ranges) if a <= px <= b] or \
+            [min(range(len(ranges)), key=lambda i: min(abs(px - ranges[i][0]), abs(px - ranges[i][1])))]
+        out.append(sum(values[i] for i in over) / len(over))
+    return np.array(out)
+
+
+def section_loads(sections, alpha: float, ride_height: float | None, onset: list[float] | None = None,
+                  turns: list[float] | None = None) -> list[float]:
+    """Each element's circulation (m^2/s per m/s) in the 2D vortex lattice of its mean line: the section as drawn
+    (m), turned on the car by alpha (degrees) and set over the ground from its lowest point, with each element's
+    flow turned by onset (degrees, alpha's sense) or each element turned by turns (bend_section: the section
+    bent, points at one x together)."""
+    from .estimate import in_ground_effect
+    from .rans import bend_section
+    from .vlm import Lattice, camber_line
+
+    drawn = [np.asarray(e, float) for e in sections]
+    if turns is not None:
+        lo, hi = min(float(e[:, 0].min()) for e in drawn), max(float(e[:, 0].max()) for e in drawn)
+        x = np.linspace(lo, hi, 241)
+        drawn = bend_section(drawn, list(x), list(element_curve(drawn, list(turns), x)))
+    chords = [float(np.max(np.linalg.norm(e - 0.5 * (e[0] + e[-1]), axis=1))) for e in drawn]
+    counts = [max(6, round(SECTION_PANELS * c / sum(chords))) for c in chords]
+    turned, ground = in_ground_effect(drawn, alpha, ride_height or 0.0)
+    a = math.radians(alpha)
+    rot = np.array([[math.cos(a), -math.sin(a)], [math.sin(a), math.cos(a)]])
+    x0 = min(float(t[:, 0].min()) for t in turned)
+    panels, flow = [], []
+    for k, (e, n) in enumerate(zip(drawn, counts)):
+        car = camber_line(e, n) @ rot - np.array([x0, ground])
+        panels += [(tuple(car[i]), tuple(car[i + 1])) for i in range(n)]
+        flow += [math.radians(onset[k]) if onset is not None else 0.0] * n
+    plan = max(float(t[:, 0].max()) for t in turned) - x0
+    lat = Lattice(span=1e4 * plan, chord=plan, height=None if ride_height is None else 0.0, profile=panels,
+                  onset=flow, ny=2)
+    g = lat.panel_loads()
+    out, k = [], 0
+    for n in counts:
+        out.append(float(g[k:k + n].sum()))
+        k += n
+    return out
+
+
+@lru_cache(maxsize=64)
+def _consistent(sections: tuple, alpha: float, ride_height: float, onset: tuple[float, ...]) -> tuple[float, ...]:
+    from scipy.optimize import least_squares
+
+    target = np.array(section_loads(sections, alpha, ride_height, onset=list(onset)))
+    scale = float(np.abs(target).max()) or 1.0
+    fit = least_squares(lambda t: (np.array(section_loads(sections, alpha, ride_height, turns=list(t))) - target) / scale,
+                        np.array(onset, float), diff_step=1e-4, xtol=1e-10, ftol=1e-12)
+    return tuple(float(t) for t in fit.x)
+
+
+def consistent_turns(sections, alpha: float, ride_height: float | None, onset: list[float]) -> list[float]:
+    """Degrees to turn each element by (alpha's sense, bend_section) so that the section, over the ground, carries
+    what it carries in a flow turned by onset at each element as it sits (2D vortex lattice of the mean lines).
+    The on-car RANS must turn the section, not the flow (the flow runs along the ground), and turning it lifts
+    one end off the ground and lowers the other: frontwing#1.02 turned 17 deg nose up takes its main 43 mm
+    further from the ground at the quarter chord, and its flaps up to 100 mm closer. In free air turning the
+    section is turning the flow: onset is returned. Zerihan's single element: 0.96 of the onset."""
+    if ride_height is None:
+        return [float(x) for x in onset]
+    key = tuple(tuple(map(tuple, np.round(np.asarray(e, float), 6))) for e in sections)
+    return list(_consistent(key, round(float(alpha), 4), round(float(ride_height), 6), tuple(round(float(x), 4) for x in onset)))
+
+
 def _section_turns(cl: float, shares: list[float], span: float, chord: float, endplate: float,
                    ride_height: float | None, endplate_bottom: float | None, sections, alpha: float,
                    at: list[float] | None) -> list[float]:

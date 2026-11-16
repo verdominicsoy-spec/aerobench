@@ -250,3 +250,35 @@ def test_the_sections_bend_matches_each_elements_turn_at_its_three_quarter_chord
         nose = s[int(np.argmax(np.linalg.norm(s - te, axis=1)))]
         at.append((nose[0] + 0.75 * (te[0] - nose[0]) - lo) / plan)
     assert element_turns(*args, at=at, **kw) == pytest.approx(turns, abs=0.05)
+
+
+def test_consistent_turns_in_free_air_are_the_onset():
+    # off the ground, turning the section is turning the flow
+    from aeroengine.wing.finite import consistent_turns
+
+    secs = _frontwing_sections()
+    onset = [10.0, 14.0, 16.0, 15.0]
+    assert consistent_turns(secs, -7.45, None, onset) == pytest.approx(onset, abs=1e-9)
+
+
+def test_consistent_turns_by_the_ground_carry_what_the_turned_flow_does():
+    # frontwing#1.02: the section turned 17 deg nose up lifts its main off the ground; the main is turned
+    # less than its onset, so its load (in the 2D lattice) is the one the turned flow gives it
+    from aeroengine.wing.finite import consistent_turns, section_loads
+
+    secs = _frontwing_sections()
+    onset = [10.0, 18.0, 21.0, 19.0]
+    t = consistent_turns(secs, -7.45, 0.0966, onset)
+    assert t[0] < onset[0]
+    target = section_loads(secs, -7.45, 0.0966, onset=onset)
+    assert section_loads(secs, -7.45, 0.0966, turns=t) == pytest.approx(target, rel=1e-3)
+
+
+def test_consistent_turn_of_a_single_element_by_the_ground_is_nearly_its_onset():
+    # Zerihan's wing (validated within 3%): 1 deg of flow is 0.96 deg of turn at h/c 0.45
+    from aeroengine.wing.airfoils import naca4
+    from aeroengine.wing.finite import consistent_turns
+
+    wing = naca4("6412") * np.array([0.2234, -0.2234])
+    (t,) = consistent_turns([wing], 0.0, 0.1, [1.5])
+    assert 0.9 * 1.5 < t < 1.5
