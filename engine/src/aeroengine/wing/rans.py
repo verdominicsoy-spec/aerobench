@@ -469,8 +469,9 @@ def solve_finite(p: dict, workdir: Path, mesh_file: Path, su2_hint: str | None, 
     """The wing as it runs on the car: its section at the angle the flow meets
     it there. p["finite"] holds span and endplate height (m), and optionally
     endplate_bottom, the endplates' lower edge over the ground. The induced
-    angle (the vortex lattice's downwash on wing, endplates and the ground's
-    image, finite.lattice_factors) is first settled on the quick estimate's polar; RANS starts
+    angle (the one the mid-span section feels: finite.section_induced_angle, the vortex lattice of the section as
+    it sits, endplates and the ground's image; lifting line's, finite.lattice_factors, gives the induced drag)
+    is first settled on the quick estimate's polar; RANS starts
     there and the angle is moved by its own Cl (relaxed, then secant; once two
     solves bracket the answer, inside the bracket), each solve from the last
     in free air, until it settles within FINITE_TOLERANCE, FINITE_SOLVES
