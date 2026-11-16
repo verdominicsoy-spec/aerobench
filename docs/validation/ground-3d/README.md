@@ -57,4 +57,4 @@ The same wing in 12 strips across the span (`finite.couple_strips` on `vlm.Latti
 | 0.448 | 0.938 (unsteady, +-0.027) | 0.916 | 1.026 | -8.6% (was -10.7%) | 0.941 | -0.3% (was -2.7%) | attached (-) |
 | 0.134 | 1.647 (unsteady, +-0.071) | 1.608 | 1.684 | -2.2% (was -4.5%) | 1.612 | +2.2% (was -0.2%) | 0.927 (0.91) |
 
-Both nearer the mid-span pressures and still within 2.2% of the balance. At 0.448 the gap to mid-span is mostly the 2D section's: at its full angle it reads 9% over the measured mid-span (1.122), and the 3D loss the lattice gives (0.18) is about twice the measured one (0.10). Other heights not rerun.
+Both nearer the mid-span pressures and still within 2.2% of the balance. At 0.448 the on-car section loses 0.184 from the 2D one at its full angle (1.122), where the measured mid-span sits 0.096 under that 2D number; which of the 2D section and the induced angle carries the rest is not known (no measured 2D section). Other heights not rerun.
