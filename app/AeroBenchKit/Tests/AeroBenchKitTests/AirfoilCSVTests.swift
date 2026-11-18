@@ -224,7 +224,8 @@ final class AirfoilCSVTests: XCTestCase {
 
     /// CATIA's GSD_PointSplineLoftFromExcel sheet: keywords in column A, X,Y,Z
     /// in mm in columns A to C, one StartCurve/EndCurve spline per element inside
-    /// one StartLoft/EndLoft block, End last.
+    /// one StartLoft/EndLoft block, End last. Car axes (section on XZ, flow -X,
+    /// Z up), and after EndLoft the corner of the front and bottom tangents.
     func testCATIAExport() throws {
         let rows = twoElements.catiaCSV().split(separator: "\n").map(String.init)
         XCTAssertEqual(rows.filter { Double($0.split(separator: ",")[0]) == nil },
@@ -237,14 +238,21 @@ final class AirfoilCSVTests: XCTestCase {
             for (k, q) in placed.enumerated() {
                 let p = rows[at + 1 + k].split(separator: ",").map { Double($0)! }
                 XCTAssertEqual(p.count, 3)
-                XCTAssertEqual(p[0], q.x * 1000, accuracy: 1e-3)
-                XCTAssertEqual(p[1], q.y * 1000, accuracy: 1e-3)
-                XCTAssertEqual(p[2], 0)
+                XCTAssertEqual(p[0], -q.x * 1000, accuracy: 1e-3)
+                XCTAssertEqual(p[1], 0)
+                XCTAssertEqual(p[2], q.y * 1000, accuracy: 1e-3)
             }
             at += placed.count + 1
             XCTAssertEqual(rows[at], "EndCurve")
             at += 1
         }
+        XCTAssertEqual(rows[at], "EndLoft")
+        let corner = rows[at + 1].split(separator: ",").map { Double($0)! }
+        let all = twoElements.elements.flatMap { $0.placed() }
+        XCTAssertEqual(corner[0], -all.map(\.x).min()! * 1000, accuracy: 1e-3)
+        XCTAssertEqual(corner[1], 0)
+        XCTAssertEqual(corner[2], all.map(\.y).min()! * 1000, accuracy: 1e-3)
+        XCTAssertEqual(rows.count, at + 3)  // EndLoft, the corner, End
     }
 
     /// Designcenter NX journal (Tools ▸ Journal ▸ Play): per element, a spline

@@ -193,15 +193,9 @@ final class WingLabModel {
     }
 
     /// Re-solve the preview only when the estimate changes its lift targets
-    /// (a stale estimate landing mid-drag does not); the wakes' drag always.
+    /// (a stale estimate landing mid-drag does not).
     private func estimateChanged() {
-        if estimate?.liftTargets(madeFor: estimateWing, wing: wing) != previewTargets { recompute() } else { makeLiveField() }
-    }
-
-    /// The estimate says an element separates at the wing's angle, which the live flow cannot show.
-    var estimateSeparates: Bool {
-        guard let r = estimate?.row(nearest: wing.alpha), abs(r.alpha - wing.alpha) < 0.6 else { return false }
-        return r.liveFieldCannotShow
+        if estimate?.liftTargets(madeFor: estimateWing, wing: wing) != previewTargets { recompute() }
     }
     /// Re-run the estimate through the warm engine on every change to the wing: always on.
     let liveEstimate = true
@@ -240,11 +234,11 @@ final class WingLabModel {
     var ransField: WingField? {
         didSet { fieldImages = [:]; changeImages = [:] }
     }
-    /// The scalar on the canvas, RANS or live: total pressure unless picked otherwise.
+    /// The RANS scalar on the canvas: total pressure unless picked otherwise.
     var fieldScalar = "cp0"
     var showStreamlines = true
     /// A field on the canvas behind the wing: the last RANS run's while it is
-    /// of this wing, else the live one from the preview.
+    /// of this wing (the inviscid preview draws no field).
     var fieldOnCanvas = true
     /// Whether the last RANS run's field is of the wing as it is now (each
     /// element within a millimetre): once the wing is edited it is not shown.
@@ -264,14 +258,6 @@ final class WingLabModel {
         if let image = fieldImages[key] { return image }
         guard let f = ransField, let image = Self.image(f, key) else { return nil }
         fieldImages[key] = image
-        return image
-    }
-
-    /// The live field's scalar as an image, kept until the next live field.
-    func liveFieldImage(_ key: String) -> CGImage? {
-        if let image = liveImages[key] { return image }
-        guard let f = liveField, let image = Self.image(f, key) else { return nil }
-        liveImages[key] = image
         return image
     }
 
@@ -702,21 +688,6 @@ final class WingLabModel {
     private(set) var preview: PanelSolution?
     private(set) var previewMilliseconds: Double = 0
     private(set) var previewError: String?
-    /// Rough streamlines of the preview's inviscid flow in the wing's frame,
-    /// traced off the main thread after each edit (the last set until then).
-    private(set) var roughStreamlines: [[SIMD2<Double>]] = []
-    @ObservationIgnored private var streamlineTask: Task<Void, Never>?
-    /// The preview's flow as a colour field (Cp, speed and, once the live
-    /// estimate has each element's drag, Cp0 from their wakes) in the
-    /// preview's frame, made off the main thread after each edit (about 20 ms).
-    private(set) var liveField: WingField? {
-        didSet { liveImages = [:] }
-    }
-    /// Degrees that turn the live field's frame into the wing's (over a ground the preview runs along the flow).
-    private(set) var liveFieldTurn = 0.0
-    @ObservationIgnored private var liveImages: [String: CGImage] = [:]
-    @ObservationIgnored private var liveFieldTask: Task<Void, Never>?
-    @ObservationIgnored private var previewTurn = 0.0
 
     var families: [String] { Array(Set(library.map(\.family))).sorted() }
 
@@ -992,10 +963,8 @@ final class WingLabModel {
         guard !wing.elements.isEmpty else {
             preview = nil
             previewError = nil
-            traceStreamlines(turn: 0)
             return
         }
-        defer { traceStreamlines(turn: wing.inGroundEffect == nil ? 0 : wing.alpha) }
         let start = Date()
         // The estimate's lift per element when it is of this wing: the flow then matches RANS's far better.
         let targets = estimate?.liftTargets(madeFor: estimateWing, wing: wing)
@@ -1012,55 +981,6 @@ final class WingLabModel {
             }
         }
         previewMilliseconds = Date().timeIntervalSince(start) * 1000
-    }
-
-    /// Traces the preview's streamlines in the background, turned back by
-    /// `turn` degrees (over a ground the preview's frame runs along the flow).
-    private func traceStreamlines(turn: Double) {
-        previewTurn = turn
-        makeLiveField()
-        streamlineTask?.cancel()
-        guard let p = preview else {
-            roughStreamlines = []
-            return
-        }
-        streamlineTask = Task.detached(priority: .userInitiated) { [weak self] in
-            let lines = p.streamlines { Task.isCancelled }
-            let a = turn * Double.pi / 180, c = cos(a), s = sin(a)
-            let wingFrame = lines.map { $0.map { SIMD2(c * $0.x - s * $0.y, s * $0.x + c * $0.y) } }
-            await MainActor.run {
-                guard !Task.isCancelled else { return }
-                self?.roughStreamlines = wingFrame
-            }
-        }
-    }
-
-    /// Makes the live field of the preview in the background, its wakes from
-    /// the live estimate's drag of each element at the wing's angle.
-    private func makeLiveField() {
-        liveFieldTask?.cancel()
-        guard let p = preview else {
-            liveField = nil
-            return
-        }
-        let turn = previewTurn
-        var wakeCd: [Double]?
-        if let row = estimate?.row(nearest: wing.alpha), abs(row.alpha - wing.alpha) < 0.6, row.elements.count == p.elements.count {
-            wakeCd = row.elements.map(\.cdOwn)
-        }
-        liveFieldTask = Task.detached(priority: .userInitiated) { [weak self, wakeCd] in
-            let stop = OSAllocatedUnfairLock(initialState: false)
-            let field = await withTaskCancellationHandler {
-                p.field(wakeCd: wakeCd, isCancelled: { stop.withLock { $0 } })
-            } onCancel: {
-                stop.withLock { $0 = true }
-            }
-            await MainActor.run {
-                guard !Task.isCancelled, let field else { return }
-                self?.liveField = field
-                self?.liveFieldTurn = turn
-            }
-        }
     }
 
     // MARK: Saving

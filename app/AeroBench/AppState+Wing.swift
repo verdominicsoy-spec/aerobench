@@ -178,7 +178,7 @@ extension AppState {
     func exportWingCSV() {
         let wing = wingLab.wing
         guard !wing.elements.isEmpty else { return }
-        let format = AirfoilCSV.Format(rawValue: UserDefaults.standard.string(forKey: "wingCSVFormat") ?? "") ?? .generic
+        let format = AirfoilCSV.Format(rawValue: UserDefaults.standard.string(forKey: "wingExportFormat") ?? "") ?? .catia
         do {
             if format == .fusion {
                 let panel = NSOpenPanel()

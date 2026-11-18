@@ -450,11 +450,6 @@ struct WingCanvas: View {
                         .font(.caption.monospacedDigit())
                 }
                 fieldControls(lab)
-                if shownField(lab) == nil, lab.preview != nil {
-                    Toggle("Streamlines (inviscid, rough)", isOn: Binding(get: { lab.showStreamlines }, set: { lab.showStreamlines = $0 }))
-                        .toggleStyle(.checkbox).font(.caption)
-                        .help("The panel method's flow, traced on every edit: no boundary layer, wake or separation. Run RANS CFD for the real flow.")
-                }
             }
             .canvasPlate()
                 Spacer()
@@ -523,17 +518,10 @@ struct WingCanvas: View {
             Spacer()
             if let shown = shownField(lab) {
                 Group {
-                    if shown.rans != nil, lab.showChange, let change = lab.changeImage(shown.scalar.key) {
+                    if lab.showChange, let change = lab.changeImage(shown.scalar.key) {
                         ChangeColorbar(name: shown.scalar.name, limit: change.limit)
                     } else {
-                        HStack(spacing: 6) {
-                            FieldColorbar(scalar: shown.scalar)
-                            if shown.rans == nil {
-                                Text((lab.preview?.liftMatched == true ? "live, lift from the estimate" : "live, inviscid")
-                                     + (lab.estimateSeparates ? "; separating, not shown" : ""))
-                                    .font(.caption2).foregroundStyle(lab.estimateSeparates ? S37.C.clayInk : S37.C.inkSecondary)
-                            }
-                        }
+                        FieldColorbar(scalar: shown.scalar)
                     }
                 }
                 .canvasPlate()
@@ -551,8 +539,8 @@ struct WingCanvas: View {
         let scalar: WingField.Scalar
         /// Degrees that turn the field's frame into the wing's.
         let turn: Double
-        /// The RANS run it is from; nil for the live field.
-        let rans: WingRansResult?
+        /// The RANS run it is from.
+        let rans: WingRansResult
 
         func toWing(_ p: SIMD2<Double>) -> SIMD2<Double> { Self.turn(p, turn) }
         func toField(_ p: SIMD2<Double>) -> SIMD2<Double> { Self.turn(p, -turn) }
@@ -563,14 +551,11 @@ struct WingCanvas: View {
     }
 
     /// The field there is for the canvas: the last RANS run's while it is of
-    /// this wing, else the live one from the preview.
+    /// this wing. The inviscid preview draws none: it is too far from the real flow.
     private func availableField(_ lab: WingLabModel) -> ShownField? {
-        func pick(_ f: WingField) -> WingField.Scalar? { f.scalars.first { $0.key == lab.fieldScalar } ?? f.scalars.first }
-        if lab.fieldIsCurrent, let f = lab.ransField, let r = lab.ransResult, let s = pick(f) {
-            return ShownField(field: f, scalar: s, turn: -(r.frameTurn ?? 0), rans: r)
-        }
-        if let f = lab.liveField, let s = pick(f) { return ShownField(field: f, scalar: s, turn: lab.liveFieldTurn, rans: nil) }
-        return nil
+        guard lab.fieldIsCurrent, let f = lab.ransField, let r = lab.ransResult,
+              let s = f.scalars.first(where: { $0.key == lab.fieldScalar }) ?? f.scalars.first else { return nil }
+        return ShownField(field: f, scalar: s, turn: -(r.frameTurn ?? 0), rans: r)
     }
 
     /// The field on the canvas, if one is shown.
@@ -590,9 +575,8 @@ struct WingCanvas: View {
                 ForEach(a.field.scalars) { Text($0.name).tag($0.key) }
             }
             .pickerStyle(.menu).fixedSize().font(.caption)
-            .help(a.rans != nil ? "The last RANS run's flow over the plane, behind the wing"
-                  : "The live field, remade on every edit: the panel method's inviscid flow, and for Cp0 a wake off each trailing edge sized by the live estimate's drag of that element. No boundary layer, separation or slot effects: run RANS CFD for the real flow.")
-            if a.rans != nil, lab.canShowChange {
+            .help("The last RANS run's flow over the plane, behind the wing")
+            if lab.canShowChange {
                 Toggle("Change from A", isOn: Binding(get: { lab.showChange }, set: { lab.showChange = $0 }))
                     .toggleStyle(.checkbox).font(.caption)
                     .help("B's field minus A's: blue where it fell, red where it rose, white where it held")
@@ -616,16 +600,6 @@ struct WingCanvas: View {
         let shown = shownField(lab)
         let onField = shown != nil
         if let shown { drawField(ctx, m, lab, shown) }
-        if shown?.rans == nil, lab.showStreamlines, !lab.roughStreamlines.isEmpty {
-            // The live preview's inviscid flow: dashed, as it is only rough.
-            var path = Path()
-            for line in lab.roughStreamlines where line.count > 1 {
-                path.move(to: m.view(line[0]))
-                for p in line.dropFirst() { path.addLine(to: m.view(p)) }
-            }
-            let ink = onField ? Color.black.opacity(0.4) : S37.C.inkTertiary.opacity(0.55)
-            ctx.stroke(path, with: .color(ink), style: StrokeStyle(lineWidth: 0.6, dash: [3, 2]))
-        }
         if let a = lab.pinned {
             for e in a.wing.elements {
                 let path = Self.outline(e, m)
@@ -719,10 +693,10 @@ struct WingCanvas: View {
         let f = shown.field, key = shown.scalar.key
         let t = shown.turn * .pi / 180, c = cos(t), sn = sin(t), s = m.scale
         let w = f.window.x1 - f.window.x0, h = f.window.y1 - f.window.y0
-        let change = shown.rans != nil && lab.showChange ? lab.changeImage(key)?.image : nil
-        if let image = change ?? (shown.rans != nil ? lab.fieldImage(key) : lab.liveFieldImage(key)) {
+        let change = lab.showChange ? lab.changeImage(key)?.image : nil
+        if let image = change ?? lab.fieldImage(key) {
             var g = ctx
-            if let r = shown.rans, !r.usable { g.opacity = 0.5 }
+            if !shown.rans.usable { g.opacity = 0.5 }
             // Image space (metres from the window's top left, y down) to the view:
             // into the run's frame, turned into the wing's, then the canvas mapping.
             let tx = m.origin.x + s * (c * f.window.x0 - sn * f.window.y1)
@@ -730,7 +704,7 @@ struct WingCanvas: View {
             g.concatenate(CGAffineTransform(a: s * c, b: -s * sn, c: s * sn, d: s * c, tx: tx, ty: ty))
             g.draw(Image(decorative: image, scale: 1), in: CGRect(x: 0, y: 0, width: w, height: h))
         }
-        if lab.showStreamlines, shown.rans != nil {
+        if lab.showStreamlines {
             var path = Path()
             for line in f.streamlines where line.count > 1 {
                 path.move(to: m.view(shown.toWing(line[0])))
@@ -1293,13 +1267,14 @@ struct WingInspector: View {
     @Environment(AppState.self) private var app
     @State private var sentNote: String?
     @State private var modelHelp = false
-    @AppStorage("wingCSVFormat") private var csvFormatName = AirfoilCSV.Format.generic.rawValue
+    // A new key, so a pick saved under the old default ("wingCSVFormat") gives way to CATIA.
+    @AppStorage("wingExportFormat") private var csvFormatName = AirfoilCSV.Format.catia.rawValue
 
     private var csvFootnote: String {
-        switch AirfoilCSV.Format(rawValue: csvFormatName) ?? .generic {
+        switch AirfoilCSV.Format(rawValue: csvFormatName) ?? .catia {
         case .generic: return "Points in mm, in the wing's frame: element, index, x, y."
         case .fusion: return "One file per element in cm, for Utilities ▸ Scripts ▸ ImportSplineCSV. Each spline closes at the trailing edge and keeps only the points it needs, within 0.05 mm."
-        case .catia: return "One spline per element in mm, through only the points it needs, within 0.05 mm. Paste into GSD_PointSplineLoftFromExcel.xls at A1 and run it with option 2. Close each trailing edge with a line."
+        case .catia: return "One spline per element in mm, through only the points it needs, within 0.05 mm, in car axes: on the XZ plane, flow along −X, Z up. Paste into GSD_PointSplineLoftFromExcel.xls at A1 and run it with option 2. Close each trailing edge with a line. The loose point is where the tangents at the wing's front and bottom meet."
         case .nx: return "A journal for Tools ▸ Journal ▸ Play: one spline per element through only the points it needs (within 0.05 mm), shown. Every section point is kept on layer 200, hidden."
         }
     }
