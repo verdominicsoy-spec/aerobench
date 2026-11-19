@@ -1596,3 +1596,20 @@ had not been showing the estimate's warnings at all (a flap far past the
 main, a close ground): it now lists them under the numbers, and its accuracy
 note gives the out-of-sample figures (lift within about 10% where RANS held,
 drag 40% low to 20% high) in place of "lift within 2%, drag 10% high".
+
+**Version 7: the pressure-side rule is for the last element only.** Version
+5 had flagged design-12 #455 on Flap 1's pressure-side peak (22.9), reading
+the RANS separation as starting there. RANS turning Flap 1 2.3, 6, 10 and 14
+degrees past the main (medium mesh, SST, and SA at 2.3 and 14; none
+converged, the residual down 0.5 to 0.7 orders) stalled it from the leading
+edge of its suction side every time, behind a main with a bubble from 0.55
+to 0.87 of its chord, while the peak fell to 4.6. So on a front flap the peak
+pointed the designer the wrong way (turn the flap more) and said nothing
+about the cause. It stays for the last element, which is judged like a
+single section: two single inverted elements set the wrong way separated
+from that side's leading edge in RANS. design-12 is a miss again, and its
+cause (most likely the main and its wake near the ground) has no rule: the
+mains RANS separated (design-12, study-2) sit 5 to 7 degrees past their
+stall in place, the ones it held 4 to 14. A study's RANS checks are what
+catch these: a check scores only when RANS converged, attached, so an
+unconverged or separated finalist shows as failed, never as the answer.

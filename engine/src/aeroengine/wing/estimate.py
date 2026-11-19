@@ -36,9 +36,8 @@ its attached trials separating. With three to five elements (RANS, NACA
 however the turn was split, and from 30 degrees past it lost its lift or
 separated even with each flap within 25 degrees of the one in front: the
 estimate read those wings 27 to 87% high. A single element separates at its
-stall angle less STALL_MARGIN. The main or a flap the flow meets from its
-pressure side (turned too little for the flow off the element ahead, or set
-at a negative angle) separates from that side's leading edge: see
+stall angle less STALL_MARGIN, and the last element, met by the flow from
+its pressure side (set the wrong way), from that side's leading edge: see
 PRESSURE_PEAK_LIMIT. Each row says why in `why`.
 
 What it misses: the slot's effect on lift beyond what the panel method's
@@ -70,8 +69,9 @@ from .viscous import polar, reynolds
 # Version 4: flaps held to the element in front (past the main only a warning); front elements judged on
 # their free-air angle in place; over a ground, separation on the image's whole-wing gain.
 # Version 5: the main and flaps separate on a pressure-side peak (PRESSURE_PEAK_LIMIT).
+# Version 7: that pressure-side rule for the last element only (RANS contradicted it on a front flap).
 # Version 6: an element whose section shows no stall in NeuralFoil's sweep is named in the warnings.
-VERSION = 6
+VERSION = 7
 STALL_MARGIN = 2.0  # degrees: the last element counts as separating this far short of its stall angle
 # An element with another behind it: the slot keeps it attached well past its
 # own stall angle, but not for ever. Fitted on a NACA 6212 main-and-flap wing
@@ -117,20 +117,23 @@ DEFLECTION_HIGH_RE = 2.7e6
 # at Cl max (21.34 degrees), 38.0 past it (23.28). How it moves with the
 # Reynolds and Mach numbers is not known here.
 SLAT_PEAK_LIMIT = 35.0
-# The main or a flap whose stagnation point sits on its suction side: the flow
-# wraps round the nose onto the pressure side, peaks there and separates from
-# that side's leading edge once the peak over the trailing-edge pressure in the
-# panel solution passes PRESSURE_PEAK_LIMIT (the slat's rule, on the other
-# side). No angle rule sees it: on design-12 #455 (RANS fine mesh, SST and
-# SST-LM, 161 mm) Flap 1 sat 2.3 degrees past the main at 4.6 degrees in place
-# against a 12-degree stall, peaked at 22.9 and separated from 62% of its chord.
-# Bracketed by one run each side (RANS, 15 m/s, flaps and single elements at
-# 0.4 to 1.5 x 10^5 on their own chords): design-4 #1223's Flap 2 held at 6.5,
-# and a single inverted element 8.5 degrees the wrong way separated at 11.4
-# (not converged, as was design-12); every main and RANS reference sits at 0,
-# the published NLR 7301 and 30P30N (but its slat at 0 degrees) too. On a NACA
-# 4412 alone the limit falls at about -11.5 degrees. Not for a slat: at low
-# angle its cove corner peaks on the pressure side with the flow attached.
+# The last element (a single section, or the last flap) whose stagnation point
+# sits on its suction side: the flow wraps round the nose onto the pressure
+# side, peaks there and separates from that side's leading edge once the peak
+# over the trailing-edge pressure in the panel solution passes
+# PRESSURE_PEAK_LIMIT (the slat's rule, on the other side). RANS (fine mesh,
+# SST-LM, 15 m/s, Re 3 x 10^5, not converged) separated two single inverted
+# elements 8.5 and 30.5 degrees the wrong way exactly so, at 11.4 and 161;
+# design-4 #1223's last flap held at 6.5; every main and RANS reference sits at
+# 0, the published NLR 7301 and 30P30N (but its slat at 0 degrees) too. On a
+# NACA 4412 alone the limit falls at about -11.5 degrees. Not for a slat: at
+# low angle its cove corner peaks on the pressure side with the flow attached.
+# Not for an element with one behind it either: design-12 #455's Flap 1 peaks
+# at 22.9 there (2.3 degrees past the main), but RANS turning it 2.3 to 14
+# degrees past the main (19 Nov 2026, medium mesh, SST and SA, none converged)
+# stalled it from its suction side's leading edge every time, behind a main
+# with a bubble from 0.55 to 0.87 of its chord: the peak falls to 4.6 and
+# the wing stays separated, so the peak says nothing there.
 PRESSURE_PEAK_LIMIT = 9.0
 
 
@@ -353,7 +356,7 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
         if i < main and peak > SLAT_PEAK_LIMIT:
             return (f"{name}'s suction peak is {peak:.0f} below its trailing-edge pressure (Cp) in place, more than "
                     f"the {SLAT_PEAK_LIMIT:.0f} the 30P30N slat held: it separates")
-        if i >= main and pressure > PRESSURE_PEAK_LIMIT:
+        if not front and not led[i] and pressure > PRESSURE_PEAK_LIMIT:
             return (f"{name} meets the flow from its pressure side: the peak there is {pressure:.0f} below its "
                     f"trailing-edge pressure (Cp) in place, more than {PRESSURE_PEAK_LIMIT:.0f}: it separates from "
                     f"that side's leading edge")

@@ -176,15 +176,17 @@ the runs the estimate's corrections were fitted to.
   study bests (design-4 and design-6, which RANS held). So it is a
   conservative "needs RANS" test, not a separation predictor. The flags the
   optimiser uses flag none of the 6.
-- Estimate version 5 (19 Nov 2026) checks the pressure side too: the main
-  or a flap whose stagnation point sits on its suction side separates once
-  the peak the flow makes wrapping onto the pressure side passes 9
-  (`estimate.PRESSURE_PEAK_LIMIT`). Rerun on every saved RANS result, it
-  calls 5 of the 8 out-of-sample runs that separated or did not settle
-  separating (design-7, the 92.5-degree flap twice, design-12 twice, and two
-  single elements at negative angles added since), with no attached run
-  called separating. It still misses study-2 #483, whose main separates
-  from 67% of its chord at its trailing edge; no peak sees that.
+- Estimate version 7 (19 Nov 2026) judges the last element on its pressure
+  side too: met by the flow from that side, it separates once the peak there
+  passes 9 (`estimate.PRESSURE_PEAK_LIMIT`). Rerun on every saved RANS result
+  it calls 3 of the 8 out-of-sample runs that separated or did not settle
+  separating (design-7, and two single elements set the wrong way, added
+  since), with no attached run called separating. Version 5 had the rule on
+  every element and called design-12 too, but RANS reruns with its Flap 1
+  turned 2.3 to 14 degrees past the main stalled that flap from its suction
+  side every time, so the reason it gave was wrong (DECISIONS.md, 19 Nov).
+  Still missed: design-12 and study-2, both with the main 5 to 7 degrees past
+  its stall in place, where others held 4 to 14; only RANS tells them apart.
 - The rank numbers come from 5 to 11 different wings across studies, not
   from the trials of one study. Read them as a sanity check, not a measure.
   The 22 RANS trials of the overnight study, on which DECISIONS.md quotes a
