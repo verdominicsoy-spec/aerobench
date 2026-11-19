@@ -70,7 +70,8 @@ from .viscous import polar, reynolds
 # Version 4: flaps held to the element in front (past the main only a warning); front elements judged on
 # their free-air angle in place; over a ground, separation on the image's whole-wing gain.
 # Version 5: the main and flaps separate on a pressure-side peak (PRESSURE_PEAK_LIMIT).
-VERSION = 5
+# Version 6: an element whose section shows no stall in NeuralFoil's sweep is named in the warnings.
+VERSION = 6
 STALL_MARGIN = 2.0  # degrees: the last element counts as separating this far short of its stall angle
 # An element with another behind it: the slot keeps it attached well past its
 # own stall angle, but not for ever. Fitted on a NACA 6212 main-and-flap wing
@@ -299,14 +300,20 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
     viscous = []  # per element: NeuralFoil rows, one per wing angle
     scale = []  # per element and wing angle: viscous over inviscid lift (elements with one behind them)
     stall = []  # per element: the angle of its maximum lift alone
+    # Per element: whether that maximum is a stall, not the end of the sweep. A thick, cambered
+    # section at a low Reynolds number can lose NeuralFoil's confidence near its peak and climb
+    # again to the end (design-4 #1223's Flap 2): its stall is unknown, and said so in the warnings.
+    stall_found = []
+    sweep = np.arange(-6.0, 26.0, 1.0)
     for i, e in enumerate(elements):
         sense = -1.0 if e.get("inverted") else 1.0
         unit = np.asarray(e["unit"], float)
         re = res[i]
         own = [float(e.get("angle", 0.0)) + sense * effective[k][i] for k in range(len(alphas))]
-        sweep = np.arange(-6.0, 26.0, 1.0)
         curve = polar(unit, sweep, re, n_crit, False, model_size, tunnel=alone)["rows"]
-        stall.append(float(sweep[int(np.argmax([r["cl"] for r in curve]))]))
+        top = int(np.argmax([r["cl"] for r in curve]))
+        stall.append(float(sweep[top]))
+        stall_found.append(top < len(sweep) - 1)
         if i == len(elements) - 1 and not led[i]:
             viscous.append(polar(unit, own, re, n_crit, bool(e.get("inverted")), model_size, tunnel=alone)["rows"])
             scale.append([None] * len(alphas))
@@ -377,6 +384,10 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
             if past_main[i] is not None and past_main[i] > limit[i]:
                 warnings.append(f"{label(i, main)} is turned {past_main[i]:.1f}° past the main: RANS separated NACA 6212 "
                                 f"cascades from {limit[i]:.0f}° past, and held frontwing#1's Flap 2 at 32.5°; check it with RANS")
+            if not stall_found[i] and not led[i]:
+                warnings.append(f"NeuralFoil finds no stall angle for {label(i, main).lower()}'s section below "
+                                f"{sweep[-1]:.0f}° at its Reynolds number ({res[i]:.2g}), so whether it stalls is not "
+                                f"judged; check it with RANS")
             if reason:
                 why.append(reason)
             els.append({"cl": cl_own * share, "cd": cd_own * share, "cm": v["cm"] * share * chords[i] / ref,
@@ -388,7 +399,7 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
                         "confidence": v["confidence"], "trusted": v["trusted"], "stall_angle": stall[i],
                         "past_stall": reason is not None, "deflection": deflection[i], "past_main": past_main[i],
                         "max_deflection": limit[i], "led": led[i], "suction_peak": peaks[k][i],
-                        "pressure_peak": pressure_peaks[k][i],
+                        "pressure_peak": pressure_peaks[k][i], "stall_found": stall_found[i],
                         "role": "slat" if i < main else ("main" if i == main else "flap")})
         if image_gain[k] > GROUND_SEPARATION_GAIN:
             warnings.append(f"Near the ground the estimate cannot tell whether the flow under the wing holds: the image "

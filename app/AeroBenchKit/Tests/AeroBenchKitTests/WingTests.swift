@@ -738,6 +738,14 @@ final class WingEstimateTests: XCTestCase {
         let row = try XCTUnwrap(WingEstimate.decode(resultFile: Data(json.utf8)).rows.first)
         XCTAssertEqual(row.elements.first?.deflection, 45.6)
         XCTAssertEqual(row.why?.hasPrefix("Flap 1 is turned"), true)
+        XCTAssertNil(row.warnings)
+    }
+
+    func testDecodesTheEstimatesWarnings() throws {
+        let el = #"{"cl": -0.4, "cd": 0.01, "cm": -0.1, "cl_own": -1.2, "cd_own": 0.03, "cl_inviscid_own": -1.5, "effective_angle": 12.3, "upwash": -12.3, "transition_suction": 0.05, "transition_pressure": 0.6, "confidence": 0.99, "trusted": true, "held_below_stall": false}"#
+        let json = #"{"data": {"ref_chord": 0.44, "re": [304000], "rows": [{"alpha": 0.0, "cl": -1.9, "cd": 0.04, "trusted": true, "warnings": ["NeuralFoil finds no stall angle for flap 2's section below 25°"], "elements": [\#(el)]}]}}"#
+        let row = try XCTUnwrap(WingEstimate.decode(resultFile: Data(json.utf8)).rows.first)
+        XCTAssertEqual(row.warnings, ["NeuralFoil finds no stall angle for flap 2's section below 25°"])
     }
 }
 

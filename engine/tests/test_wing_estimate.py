@@ -126,7 +126,7 @@ def test_flaps_separate_past_the_main_as_rans_found():
             D.ANGLES[n] = old
         els = [{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "chord": e.chord, "angle": e.angle,
                 "inverted": e.inverted} for e in w.elements]
-        return estimate(els, [0.0], 15.0)["rows"][0]["warnings"]
+        return [w for w in estimate(els, [0.0], 15.0)["rows"][0]["warnings"] if "past the main" in w]
 
     assert not warned(3, -2, 12) and not warned(4, -2, 8)  # 24 degrees: RANS attached
     for case in ((3, -2, 16), (4, -2, 10), (3, 2, 19)):  # 32, 30, 38 degrees: RANS separated
@@ -233,3 +233,30 @@ def test_a_flap_turned_too_little_for_the_flow_off_the_main_separates():
     r = estimate(w["elements"], [0.0], w["speed"], w["rho"], w["mu"], ref_chord=w["ref_chord"],
                  ride_height=w["ride_height"])["rows"][0]
     assert r["separating"] and r["why"].startswith("Flap 1") and "pressure side" in r["why"]
+
+
+def test_a_section_with_no_stall_in_its_polar_is_named():
+    """design-4 #1223's Flap 2: NeuralFoil's lift is highest at the end of the sweep, so it gives no stall angle and
+    the estimate had silently judged the flap against 25 degrees. It now says so instead."""
+    import json
+
+    import numpy as np
+
+    from aeroengine.wing.geometry import Element
+
+    f = json.loads((Path(__file__).parent / "data" / "no_stall_flap.json").read_text())
+    e = Element(np.asarray(f["unit"]), f["chord"], 0.0, [0.0, 0.0], False)
+    r = estimate([{"coords": e.placed().tolist(), "unit": f["unit"], "chord": f["chord"], "angle": 0.0,
+                   "inverted": False}], [0.0], 15.0)["rows"][0]
+    assert r["elements"][0]["stall_found"] is False
+    assert any("no stall angle for main's section" in w for w in r["warnings"])
+
+
+def test_a_section_that_stalls_in_its_polar_gives_no_stall_warning():
+    from aeroengine.wing.airfoils import naca4
+    from aeroengine.wing.geometry import Element
+
+    e = Element(naca4("4412"), 0.3, 4.0, [0.0, 0.0], False)
+    r = estimate([{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "chord": 0.3, "angle": 4.0,
+                   "inverted": False}], [0.0], 15.0)["rows"][0]
+    assert r["elements"][0]["stall_found"] is True and not r["warnings"]

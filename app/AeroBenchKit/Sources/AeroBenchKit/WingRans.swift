@@ -295,6 +295,9 @@ public struct WingEstimate: Codable, Equatable, Sendable {
         public var separating: Bool?
         public var why: String?
         public var elements: [Element]
+        /// What the estimate cannot judge here and RANS should (a flap far past the main, a close ground,
+        /// a section with no stall in NeuralFoil's sweep).
+        public var warnings: [String]? = nil
 
         public var id: Double { alpha }
 

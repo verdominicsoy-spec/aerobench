@@ -2260,7 +2260,11 @@ struct EstimateResults: View {
                               systemImage: "exclamationmark.triangle")
                             .font(.caption).foregroundStyle(S37.C.chart5).fixedSize(horizontal: false, vertical: true)
                     }
-                    Text("Panel method and NeuralFoil: lift within about 2% of RANS on a main-and-flap wing until the flap nears separation, drag about 10% high. For trends and screening; RANS CFD for numbers to keep.")
+                    ForEach(here.warnings ?? [], id: \.self) { w in
+                        Label(w, systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(S37.C.chart5).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text("Panel method and NeuralFoil: on wings RANS held attached, lift within about 10% and drag 40% low to 20% high; near separation lift reads up to 50% high. For trends and screening; RANS CFD for numbers to keep.")
                         .font(.caption2).foregroundStyle(S37.C.inkSecondary).fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(width: 290, alignment: .leading)

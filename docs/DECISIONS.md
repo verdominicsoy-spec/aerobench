@@ -1576,3 +1576,23 @@ every main, RANS reference and published case reads 0 (but the 30P30N slat at
 0 degrees, so slats are left out). It moves no lift or drag. Out-of-sample
 separated or unsettled runs called separating: 5 of 8, was 1; study-2's
 trailing-edge separation on its main is still missed.
+
+**Trailing-edge separation on a main: not yet.** study-2 #483's main
+separates from 67% of its chord in RANS (converged), 7 degrees past its
+stall in place, where design-6's held 10.9 past: no angle rule splits them,
+nor the suction peak (12.8 separated, 14.2 held). Head's method on the panel
+speeds ranks the separated mains last (0.92 and 0.89 of chord against 0.96
+to 1.00 held, at any H from 2.0 to 2.8), but puts the 30P30N main, attached in
+the tunnel, separating at 0.21 at 8.1 degrees. A rule on one converged case
+with a tunnel case against it is not shipped; it needs RANS on mains near
+that line.
+
+**Version 6: a section with no stall says so.** 8 of 39 elements on the
+saved RANS wings (small thick flaps, about 1e5) have NeuralFoil's highest
+lift at the end of the sweep, its confidence falling under 0.3 near the real
+peak, so the stall-angle checks were judging them against 25 degrees without
+a word. Each now carries stall_found false and a warning naming it. Wing Lab
+had not been showing the estimate's warnings at all (a flap far past the
+main, a close ground): it now lists them under the numbers, and its accuracy
+note gives the out-of-sample figures (lift within about 10% where RANS held,
+drag 40% low to 20% high) in place of "lift within 2%, drag 10% high".
