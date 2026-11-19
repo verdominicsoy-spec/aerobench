@@ -1556,3 +1556,23 @@ mesh moves lift and drag under 3%. Costs: about 1.5x the run time, and
 convergence on 76% of UIUC angles against 85%. SST, SA, the coarser meshes and
 the quick scan stay in Wing Lab for speed. The laminar drag allowance is
 reported for the fully turbulent models only, as before.
+
+## 2026-11-19: the estimate checks the pressure side (version 5)
+
+The estimate called separation only on the suction side: an element past its
+stall angle, a flap turned too far past the one in front, a slat's suction
+peak. RANS separated three cases it called attached, all from the leading
+edge of the pressure side: design-12 #455's Flap 1, only 2.3 degrees past the
+main (Cp -23 on its pressure side in place, estimate 55% high on lift), and
+two single inverted elements at negative angles. The flow off the element
+ahead meets the flap's nose from its suction side. NeuralFoil cannot give a
+negative stall angle (confidence under 0.25 on that side), and an integral
+boundary layer on the panel speeds called leading-edge bubbles separated, so
+the rule is the slat's pressure-difference rule on the other side: when the
+stagnation point sits on the suction side, the main or a flap separates once
+its pressure-side peak over the trailing-edge pressure passes 9. That limit
+sits between one held run (6.5) and one separated (11.4, not converged);
+every main, RANS reference and published case reads 0 (but the 30P30N slat at
+0 degrees, so slats are left out). It moves no lift or drag. Out-of-sample
+separated or unsettled runs called separating: 5 of 8, was 1; study-2's
+trailing-edge separation on its main is still missed.

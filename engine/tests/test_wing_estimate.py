@@ -206,3 +206,30 @@ def test_a_flap_is_held_to_the_element_in_front_not_to_the_main():
     w = json.loads((Path(__file__).parent / "data" / "frontwing1_study.json").read_text())
     r = estimate(w["elements"], [0.0], 20.0, 1.184, 1.81e-5, 9.0, w["ref_chord"])["rows"][0]
     assert "past the main" not in (r["why"] or "")
+
+
+def test_a_single_element_met_from_its_pressure_side_separates():
+    """RANS separated two single elements at negative angles from the leading edge of their pressure side
+    (jobs of 17 Nov 2026); the estimate only looked at the suction side and called both attached."""
+    from aeroengine.wing.airfoils import naca4
+    from aeroengine.wing.geometry import Element
+
+    def row(angle):
+        e = Element(naca4("4412"), 0.3, angle, [0.0, 0.0], False)
+        return estimate([{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "chord": 0.3, "angle": angle,
+                          "inverted": False}], [0.0], 15.0)["rows"][0]
+
+    assert not row(-4.0)["separating"]
+    late = row(-14.0)
+    assert late["separating"] and "pressure side" in late["why"]
+
+
+def test_a_flap_turned_too_little_for_the_flow_off_the_main_separates():
+    """design-12 #455: RANS separated Flap 1, 2.3 degrees past the main, from 62% of its chord. The estimate
+    read it attached and 55% high."""
+    import json
+
+    w = json.loads((Path(__file__).parent / "data" / "underturned_flap.json").read_text())
+    r = estimate(w["elements"], [0.0], w["speed"], w["rho"], w["mu"], ref_chord=w["ref_chord"],
+                 ride_height=w["ride_height"])["rows"][0]
+    assert r["separating"] and r["why"].startswith("Flap 1") and "pressure side" in r["why"]
