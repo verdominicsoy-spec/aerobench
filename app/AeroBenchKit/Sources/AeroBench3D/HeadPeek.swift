@@ -42,7 +42,7 @@ public final class HeadPeek {
     }
 
     var blend: Double { state.blend }
-    var headCM: SIMD3<Double>? { state.headCM }
+    var offsetCM: SIMD2<Double>? { state.offsetCM }
     /// Straight in front of the view's centre, at the calibrated distance.
     var restCM: SIMD3<Double> { SIMD3(0, 0, config.distanceCM) }
 
@@ -109,6 +109,6 @@ public final class HeadPeek {
             HeadGeometry.head($0, hfov: config.hfovDegrees * .pi / 180, imageAspect: tracker.imageAspect,
                               distanceCM: config.distanceCM, layout: layout, mirrored: tracker.mirrored)
         }
-        state.face(head, at: sample?.time ?? CACurrentMediaTime(), rest: restCM)
+        state.face(head, at: sample?.time ?? CACurrentMediaTime(), rest: state.neutralCM ?? restCM)
     }
 }

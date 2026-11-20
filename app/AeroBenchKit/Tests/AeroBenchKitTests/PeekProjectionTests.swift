@@ -66,13 +66,14 @@ final class PeekProjectionTests: XCTestCase {
         XCTAssertEqual(n.y, expected.y, accuracy: 5e-3)
     }
 
-    func testEyeBlendIsEvenInPerspectiveStrength() {
-        let rest = SIMD3<Double>(0, 0, 100), head = SIMD3<Double>(4, -2, 10)
-        XCTAssertEqual(PeekWindow.blendEye(rest: rest, head: head, t: 0), rest)
-        XCTAssertEqual(PeekWindow.blendEye(rest: rest, head: head, t: 1), head)
-        let mid = PeekWindow.blendEye(rest: rest, head: head, t: 0.5)
-        XCTAssertEqual(1 / mid.z, (1 / rest.z + 1 / head.z) / 2, accuracy: 1e-12)  // 1/z is what the eye sees
-        XCTAssertEqual(mid.x, 2, accuracy: 1e-12)
+    func testEyeTurnsByTheHeadsAngle() {
+        // The viewer's own field of view is kept; the eye moves through the same
+        // angle the head does, seen from the window.
+        let rest = SIMD3<Double>(0, 0, 200)
+        XCTAssertEqual(PeekWindow.eye(rest: rest, offsetCM: [0, 0], distanceCM: 50, blend: 1), rest)
+        XCTAssertEqual(PeekWindow.eye(rest: rest, offsetCM: [10, -5], distanceCM: 50, blend: 1), SIMD3(40, -20, 200))
+        XCTAssertEqual(PeekWindow.eye(rest: rest, offsetCM: [10, -5], distanceCM: 50, blend: 0.5), SIMD3(20, -10, 200))
+        XCTAssertEqual(PeekWindow.eye(rest: rest, offsetCM: [10, -5], distanceCM: 50, blend: 0), rest)
     }
 
     func testParallaxDirection() {

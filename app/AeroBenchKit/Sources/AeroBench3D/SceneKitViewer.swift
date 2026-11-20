@@ -37,6 +37,10 @@ public final class SceneKitViewer: Viewer3D {
     private var peekObservers: [NSObjectProtocol] = []
     private var peekLink: CADisplayLink?
     private let peekLinkTarget = LinkTarget()
+    /// A grid room behind the window, shown while peeking: its front edges sit
+    /// on the view's edges, which is what makes the depth read (every reference
+    /// demo has one).
+    private let peekRoom = SceneKitViewer.makePeekRoom()
 
     /// Hold Shift to peek with head tracking. nil: no peeking (the Flow Field viewer).
     public var peek: HeadPeek? {
@@ -114,6 +118,7 @@ public final class SceneKitViewer: Viewer3D {
         scene.rootNode.addChildNode(previewRoot)
         scene.rootNode.addChildNode(editRoot)
         scene.rootNode.addChildNode(overlayRoot)
+        scene.rootNode.addChildNode(peekRoom)
         overlayRoot.addChildNode(pointsNode)
         overlayRoot.addChildNode(sliceNode)
         overlayRoot.addChildNode(frameNode)
@@ -291,9 +296,10 @@ public final class SceneKitViewer: Viewer3D {
 
     private func applyCamera() {
         cameraRevision &+= 1
-        if let peek, peek.blend > 0, let layout = peek.layout {
-            applyPeekCamera(peek, layout: layout)
+        if let peek, peek.blend > 0, peek.layout != nil {
+            applyPeekCamera(peek)
         } else {
+            peekRoom.isHidden = true
             cameraNode.camera = normalCamera
             cameraNode.simdPosition = SIMD3<Float>(orbit.position)
             cameraNode.simdLook(at: SIMD3<Float>(orbit.target), up: SIMD3<Float>(orbit.screenUp), localFront: SIMD3(0, 0, -1))
@@ -308,13 +314,11 @@ public final class SceneKitViewer: Viewer3D {
     /// The screen as a window: the plane through the orbit target is pinned to
     /// the view's edges, so what you orbit around stays put and moving your
     /// head looks around it. The eye eases from the normal view to the head.
-    private func applyPeekCamera(_ peek: HeadPeek, layout: HeadGeometry.Layout) {
+    private func applyPeekCamera(_ peek: HeadPeek) {
         let depth = orbit.distance
         let window = orbit.peekWindow(depth: depth, aspect: aspect)
-        let worldPerCM = 2 * window.halfHeight / max(layout.viewHeightCM, 1e-6)
-        let head = (peek.headCM ?? peek.restCM) * worldPerCM
-        let eye = PeekWindow.blendEye(rest: orbit.restEye(window: window, depth: depth, boundsRadius: Double(radius)),
-                                     head: head, t: peek.blend)
+        let eye = PeekWindow.eye(rest: orbit.restEye(window: window, depth: depth, boundsRadius: Double(radius)),
+                                 offsetCM: peek.offsetCM ?? .zero, distanceCM: peek.config.distanceCM, blend: peek.blend)
         let (position, projection) = orbit.peekCamera(window: window, eye: eye, near: 0.05 * eye.z,
                                                       far: eye.z + 4 * Double(radius) + depth)
         peekCamera.projectionTransform = SCNMatrix4(projection)
@@ -323,6 +327,40 @@ public final class SceneKitViewer: Viewer3D {
         // Keep the un-peeked orientation: the off-axis frustum does the looking around.
         cameraNode.simdLook(at: SIMD3<Float>(position + orbit.forward), up: SIMD3<Float>(orbit.screenUp),
                             localFront: SIMD3(0, 0, -1))
+
+        // The room: from the window back to just behind the model.
+        let back = max(simd_dot(SIMD3<Double>(center) - orbit.target, orbit.forward) + Double(radius), Double(radius)) * 1.1
+        let r = SIMD3<Float>(orbit.right * window.halfWidth), u = SIMD3<Float>(orbit.up * window.halfHeight)
+        let z = SIMD3<Float>(-orbit.forward * back)
+        peekRoom.simdTransform = simd_float4x4(columns: (SIMD4(r, 0), SIMD4(u, 0), SIMD4(z, 0), SIMD4(SIMD3<Float>(window.center), 1)))
+        peekRoom.opacity = CGFloat(peek.blend)
+        peekRoom.isHidden = false
+    }
+
+    /// A unit grid room: x and y in -1...1, z from 0 (the window) to -1 (the back wall).
+    private static func makePeekRoom() -> SCNNode {
+        let n = 8
+        var v: [SIMD3<Float>] = []
+        func line(_ a: SIMD3<Float>, _ b: SIMD3<Float>) { v += [a, b] }
+        for i in 0...n {
+            let s = Float(i) / Float(n) * 2 - 1, d = -Float(i) / Float(n)
+            line([s, -1, -1], [s, 1, -1]); line([-1, s, -1], [1, s, -1])  // back wall
+            line([s, -1, 0], [s, -1, -1]); line([s, 1, 0], [s, 1, -1])  // floor and ceiling, front to back
+            line([-1, s, 0], [-1, s, -1]); line([1, s, 0], [1, s, -1])  // side walls, front to back
+            line([-1, -1, d], [1, -1, d]); line([-1, 1, d], [1, 1, d])  // floor and ceiling, across
+            line([-1, -1, d], [-1, 1, d]); line([1, -1, d], [1, 1, d])  // side walls, up
+        }
+        let geometry = SCNGeometry(sources: [SCNGeometrySource(vertices: v.map { SCNVector3($0) })],
+                                   elements: [SCNGeometryElement(indices: (0..<Int32(v.count)).map { $0 }, primitiveType: .line)])
+        let material = SCNMaterial()
+        material.lightingModel = .constant
+        material.diffuse.contents = NSColor.secondaryLabelColor
+        material.writesToDepthBuffer = false  // the model always draws over it
+        geometry.materials = [material]
+        let node = SCNNode(geometry: geometry)
+        node.isHidden = true
+        node.renderingOrder = -1
+        return node
     }
 
     private func installPeek() {

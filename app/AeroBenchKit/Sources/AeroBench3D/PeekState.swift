@@ -53,6 +53,13 @@ public struct PeekState: Sendable {
     public var blend: Double { progress * progress * (3 - 2 * progress) }
     /// Filtered head position in cm (view-centred), nil before the first face.
     public private(set) var headCM: SIMD3<Double>?
+    /// Where the head was when Shift went down: "straight on" for this peek.
+    public private(set) var neutralCM: SIMD3<Double>?
+    /// Head movement since Shift was pressed, cm (x right, y up); nil before a face.
+    public var offsetCM: SIMD2<Double>? {
+        guard let h = headCM, let n = neutralCM else { return nil }
+        return SIMD2(h.x - n.x, h.y - n.y)
+    }
     /// Whether the webcam should be running.
     public var wantsCamera: Bool {
         held || (lastRelease.map { now - $0 < stopAfter } ?? false)
@@ -77,6 +84,7 @@ public struct PeekState: Sendable {
         guard trackerAvailable else { return }
         held = true
         lastRelease = nil
+        neutralCM = headCM  // nil until the first face: set there
     }
 
     public mutating func release(at t: TimeInterval) {
@@ -97,6 +105,7 @@ public struct PeekState: Sendable {
             lostFrom = nil
             lastFace = t
             headCM = SIMD3((0..<3).map { filters[$0].filter(head[$0], at: t) })
+            if held, neutralCM == nil { neutralCM = headCM }
             return
         }
         guard let seen = lastFace, let shown = headCM, t - seen > faceLostAfter else { return }
@@ -108,6 +117,7 @@ public struct PeekState: Sendable {
     /// The webcam stopped: the last head is stale, so the next peek waits for a fresh face.
     public mutating func cameraStopped() {
         headCM = nil
+        neutralCM = nil
         lastFace = nil
         lostFrom = nil
         filters = [OneEuroFilter(), OneEuroFilter(), OneEuroFilter()]

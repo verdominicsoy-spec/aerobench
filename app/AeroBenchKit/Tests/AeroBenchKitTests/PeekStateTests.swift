@@ -119,6 +119,22 @@ final class PeekStateTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(s.headCM).x, -3, accuracy: 1e-9, "not filtered from the old head")
     }
 
+    func testShiftPressSetsTheNeutralHead() throws {
+        // Where your head is when you press Shift is "straight on": nothing moves until you do.
+        var s = PeekState()
+        s.press(at: 0, trackerAvailable: true)
+        s.face(SIMD3(3, 12, 55), at: 0, rest: rest)
+        XCTAssertEqual(try XCTUnwrap(s.offsetCM).x, 0, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(s.offsetCM).y, 0, accuracy: 1e-9)
+        for i in 1...30 { s.face(SIMD3(8, 12, 55), at: Double(i) * dt, rest: rest) }
+        XCTAssertEqual(try XCTUnwrap(s.offsetCM).x, 5, accuracy: 0.05)
+        s.release(at: 1.5)
+        // The next press re-centres on wherever the head is then.
+        s.press(at: 2, trackerAvailable: true)
+        s.face(SIMD3(8, 12, 55), at: 2, rest: rest)
+        XCTAssertEqual(try XCTUnwrap(s.offsetCM).x, 0, accuracy: 0.05)
+    }
+
     func testUnavailableTrackerNeverBlends() {
         var s = PeekState()
         s.press(at: 0, trackerAvailable: false)

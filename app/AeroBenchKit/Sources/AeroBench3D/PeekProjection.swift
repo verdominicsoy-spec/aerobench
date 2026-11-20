@@ -8,13 +8,15 @@ public struct PeekWindow: Equatable, Sendable {
     public var halfWidth: Double  // world, along OrbitCamera.right
     public var halfHeight: Double  // world, along OrbitCamera.up
 
-    /// The eye part way (t, 0...1) from `rest` to `head`. Sideways linearly; in
-    /// depth through 1/z, which is how strong the perspective looks, so an ease
-    /// from a far eye (orthographic) does not arrive all at the end.
-    public static func blendEye(rest: SIMD3<Double>, head: SIMD3<Double>, t: Double) -> SIMD3<Double> {
-        let xy = simd_mix(SIMD2(rest.x, rest.y), SIMD2(head.x, head.y), SIMD2(repeating: t))
-        let inverseZ = (1 - t) / rest.z + t / head.z
-        return SIMD3(xy.x, xy.y, t >= 1 ? head.z : t <= 0 ? rest.z : 1 / inverseZ)
+    /// The eye for a head that has moved `offsetCM` sideways since Shift went
+    /// down, `blend` of the way in. The view's own field of view is kept (the
+    /// eye stays at `rest.z`) and the eye moves through the same angle the head
+    /// did, seen from the window: pressing Shift changes nothing until the head
+    /// moves. Like the reference demos, this is not the physical scale, which
+    /// would flatten the view to about 19° on a MacBook.
+    public static func eye(rest: SIMD3<Double>, offsetCM: SIMD2<Double>, distanceCM: Double, blend: Double) -> SIMD3<Double> {
+        let lateral = offsetCM * (rest.z / max(distanceCM, 1e-6)) * blend
+        return SIMD3(rest.x + lateral.x, rest.y + lateral.y, rest.z)
     }
 
     public init(center: SIMD3<Double>, halfWidth: Double, halfHeight: Double) {

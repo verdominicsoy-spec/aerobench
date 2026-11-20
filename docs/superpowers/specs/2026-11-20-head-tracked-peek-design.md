@@ -119,6 +119,13 @@ view, holding Shift eases into perspective for the peek and back on release
   build), the whole model sat behind the glass and slid sideways with the
   head, which read as the model moving. Parts in front of the plane can be
   cut by the view's edges; accepted.
+- **After the second hand test (user: "stays stationary but doesn't look
+  right"), matched the reference demos** (True3D WindowMode, World Labs'
+  off-axis sneaker, trompeloeil): the head position when Shift goes down is
+  the neutral point; the eye keeps the viewer's own field of view and moves
+  through the same angle as the head (not the physical ~19°, which flattened
+  the view on every press); and a grid room anchored to the view's edges
+  fades in behind the window. The two items below describe the first build.
 - Eye position, in window coordinates: x and y from the face, z = the
   calibrated distance. Convert to world with the same scale. The camera
   moves to that eye, keeps looking along the un-peeked view direction (no
