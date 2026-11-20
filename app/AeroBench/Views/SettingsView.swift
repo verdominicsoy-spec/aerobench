@@ -1,9 +1,12 @@
+import AeroBench3D
 import AeroBenchKit
 import AppKit
 import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppState.self) private var app
+    @State private var calibrating = false
+    @State private var calibrationMessage: String?
 
     var body: some View {
         @Bindable var settings = app.settings
@@ -60,10 +63,86 @@ struct SettingsView: View {
                      + "A wing optimisation runs its trials at once on \(settings.coresPerJob) cores each, "
                      + "\(settings.parallelTrials * settings.coresPerJob) in all.")
             }
+
+            peekSection(settings)
         }
         .formStyle(.grouped)
         .frame(width: 560)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private func peekSection(_ settings: AppSettings) -> some View {
+        @Bindable var settings = settings
+        let tracker = app.cad.viewer.peek?.tracker
+        Section {
+            Toggle("Hold Shift to peek with head tracking", isOn: Binding(
+                get: { settings.peekEnabled },
+                set: { on in
+                    guard on else {
+                        settings.peekEnabled = false
+                        app.applyPeekSettings()
+                        return
+                    }
+                    Task {
+                        let granted = await tracker?.requestAccess() ?? false
+                        settings.peekEnabled = granted
+                        app.applyPeekSettings()
+                    }
+                }))
+            Stepper("Your distance to the screen: \(Int(settings.peekDistanceCM)) cm",
+                    value: $settings.peekDistanceCM, in: 30...120)
+                .onChange(of: settings.peekDistanceCM) { app.applyPeekSettings() }
+            HStack {
+                Button(calibrating ? "Calibrating…" : "Calibrate") { calibrate(settings) }
+                    .disabled(calibrating || !settings.peekEnabled)
+                Text("Sit at that distance and look at the screen.").foregroundStyle(.secondary)
+            }
+            peekStatus(settings, tracker: tracker)
+        } header: {
+            Text("Head-tracked peek")
+        } footer: {
+            Text("In the CAD viewer, hold Shift and move your head to look around a part, as if through a window. "
+                 + "Works on the built-in display, where the camera is. Closing one eye makes it stronger.")
+        }
+    }
+
+    @ViewBuilder
+    private func peekStatus(_ settings: AppSettings, tracker: HeadTracker?) -> some View {
+        switch tracker?.status {
+        case .denied?:
+            Label("Camera access is off: System Settings > Privacy & Security > Camera", systemImage: "exclamationmark.triangle")
+                .foregroundStyle(S37.C.clayInk)
+        case .noCamera?:
+            Label("No built-in camera found", systemImage: "exclamationmark.triangle").foregroundStyle(S37.C.clayInk)
+        default:
+            if let calibrationMessage {
+                Label(calibrationMessage, systemImage: "exclamationmark.triangle").foregroundStyle(S37.C.clayInk)
+            } else if settings.peekHFOVDegrees > 0 {
+                Label(String(format: "Calibrated: webcam field of view %.1f°", settings.peekHFOVDegrees),
+                      systemImage: "checkmark.circle")
+                    .foregroundStyle(S37.C.sageInk)
+            } else {
+                Label("Not calibrated: \(Int(AppSettings.assumedHFOVDegrees))° field of view assumed",
+                      systemImage: "info.circle")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func calibrate(_ settings: AppSettings) {
+        guard let peek = app.cad.viewer.peek else { return }
+        calibrating = true
+        calibrationMessage = nil
+        Task {
+            if let hfov = await peek.calibrate(distanceCM: settings.peekDistanceCM) {
+                settings.peekHFOVDegrees = hfov
+                app.applyPeekSettings()
+            } else {
+                calibrationMessage = "No face seen. Sit facing the screen and try again."
+            }
+            calibrating = false
+        }
     }
 
     private func chooseFolder(title: String, files: Bool = false) -> URL? {

@@ -1,3 +1,4 @@
+import AeroBench3D
 import AeroBenchKit
 import AppKit
 import Observation
@@ -60,6 +61,7 @@ final class AppState {
         self.settings = settings
         jobs = JobManager(settings: settings)
         cad = CADViewerModel()
+        cad.viewer.peek = HeadPeek(config: settings.peekConfig)
         flow = FlowFieldModel()
         wingLab = WingLabModel()
         recentProjects = (UserDefaults.standard.stringArray(forKey: Self.recentsKey) ?? [])
@@ -390,5 +392,12 @@ final class AppState {
 
     func show(_ title: String, _ error: Error) {
         alert = AppAlert(title: title, message: error.localizedDescription)
+    }
+}
+
+extension AppState {
+    /// Pushes the head-tracked peek settings to the CAD viewer.
+    func applyPeekSettings() {
+        cad.viewer.peek?.config = settings.peekConfig
     }
 }

@@ -1,3 +1,4 @@
+import AeroBench3D
 import AeroBenchKit
 import Foundation
 import Observation
@@ -10,6 +11,9 @@ final class AppSettings {
         static let maxParallelJobs = "maxParallelJobs"
         static let coresPerJob = "coresPerJob"
         static let parallelTrials = "parallelTrials"
+        static let peekEnabled = "peekEnabled"
+        static let peekDistanceCM = "peekDistanceCM"
+        static let peekHFOVDegrees = "peekHFOVDegrees"
     }
 
     private let defaults = UserDefaults.standard
@@ -22,6 +26,19 @@ final class AppSettings {
     var coresPerJob: Int { didSet { defaults.set(coresPerJob, forKey: Key.coresPerJob) } }
     /// Wing Lab optimiser: trials run at once, each on coresPerJob cores.
     var parallelTrials: Int { didSet { defaults.set(parallelTrials, forKey: Key.parallelTrials) } }
+    /// Hold Shift in the CAD viewer to peek with head tracking.
+    var peekEnabled: Bool { didSet { defaults.set(peekEnabled, forKey: Key.peekEnabled) } }
+    /// Eyes to screen, measured once by the user; the peek keeps this distance fixed.
+    var peekDistanceCM: Double { didSet { defaults.set(peekDistanceCM, forKey: Key.peekDistanceCM) } }
+    /// The webcam's horizontal field of view from calibration; 0 = not calibrated.
+    var peekHFOVDegrees: Double { didSet { defaults.set(peekHFOVDegrees, forKey: Key.peekHFOVDegrees) } }
+    /// Used until the webcam is calibrated.
+    static let assumedHFOVDegrees = 62.0
+
+    var peekConfig: HeadPeek.Config {
+        HeadPeek.Config(enabled: peekEnabled, distanceCM: peekDistanceCM,
+                        hfovDegrees: peekHFOVDegrees > 0 ? peekHFOVDegrees : Self.assumedHFOVDegrees)
+    }
 
     init() {
         let defaults = UserDefaults.standard
@@ -33,6 +50,10 @@ final class AppSettings {
         coresPerJob = cores > 0 ? cores : Self.defaultCores
         let trials = defaults.integer(forKey: Key.parallelTrials)
         parallelTrials = trials > 0 ? trials : 1
+        peekEnabled = defaults.bool(forKey: Key.peekEnabled)
+        let distance = defaults.double(forKey: Key.peekDistanceCM)
+        peekDistanceCM = distance > 0 ? distance : 55
+        peekHFOVDegrees = defaults.double(forKey: Key.peekHFOVDegrees)
     }
 
     var engineDirectory: URL? {
