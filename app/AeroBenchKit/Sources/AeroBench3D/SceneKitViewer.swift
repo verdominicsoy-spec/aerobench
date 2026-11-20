@@ -305,11 +305,11 @@ public final class SceneKitViewer: Viewer3D {
 
     // MARK: Head-tracked peek
 
-    /// The screen as a window: the plane at the model's front is pinned to the
-    /// view's edges, and the eye eases from the normal view to the tracked head.
+    /// The screen as a window: the plane through the orbit target is pinned to
+    /// the view's edges, so what you orbit around stays put and moving your
+    /// head looks around it. The eye eases from the normal view to the head.
     private func applyPeekCamera(_ peek: HeadPeek, layout: HeadGeometry.Layout) {
-        let depth = orbit.peekDepth(boundsCenter: SIMD3<Double>(center), boundsRadius: Double(radius),
-                                    minDepth: 0.05 * orbit.distance)
+        let depth = orbit.distance
         let window = orbit.peekWindow(depth: depth, aspect: aspect)
         let worldPerCM = 2 * window.halfHeight / max(layout.viewHeightCM, 1e-6)
         let head = (peek.headCM ?? peek.restCM) * worldPerCM

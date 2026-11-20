@@ -119,19 +119,17 @@ final class PeekProjectionTests: XCTestCase {
         }
     }
 
-    func testWindowDepthClamps() {
+    func testTheOrbitTargetStaysPut() {
+        // The user's concept: what you orbit around stays still and the head
+        // reveals its sides, so the window plane goes through the target.
         let c = camera()
-        let minDepth = 0.05 * c.distance
-        // Zoomed inside the model: its front is behind the eye.
-        XCTAssertEqual(c.peekDepth(boundsCenter: c.target, boundsRadius: 2 * c.distance, minDepth: minDepth), minDepth)
-        // The whole model beyond the target: the window stays at the target.
-        XCTAssertEqual(c.peekDepth(boundsCenter: c.target + c.forward * 5 * c.distance, boundsRadius: c.distance, minDepth: minDepth),
-                       c.distance, accuracy: 1e-9)
-        // In between: the front of the bounds.
-        XCTAssertEqual(c.peekDepth(boundsCenter: c.target, boundsRadius: 0.25 * c.distance, minDepth: minDepth),
-                       0.75 * c.distance, accuracy: 1e-9)
-        let w = c.peekWindow(depth: minDepth, aspect: aspect)
-        let (position, projection) = c.peekCamera(window: w, eye: c.restEye(window: w, depth: minDepth, boundsRadius: 1.2), near: 0.001, far: 100)
-        XCTAssertFalse(position.x.isNaN || projection.columns.0.x.isNaN || projection.columns.2.x.isNaN)
+        let w = c.peekWindow(depth: c.distance, aspect: aspect)
+        XCTAssertLessThan(simd_distance(w.center, c.target), 1e-9)
+        for e in [SIMD3(0.3, -0.2, 1.0) * c.distance, SIMD3(-0.4, 0.3, 1.4) * c.distance] {
+            let (position, projection) = c.peekCamera(window: w, eye: e, near: 0.01, far: 100)
+            let n = ndc(c.target, c, position, projection)
+            XCTAssertEqual(n.x, 0, accuracy: 1e-9)
+            XCTAssertEqual(n.y, 0, accuracy: 1e-9)
+        }
     }
 }

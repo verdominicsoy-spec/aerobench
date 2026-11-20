@@ -113,12 +113,12 @@ view, holding Shift eases into perspective for the peek and back on release
 - The virtual window is a plane perpendicular to the view direction, with
   the size the current view shows at that depth. Map it 1:1 onto the
   physical window, which fixes the world-per-cm scale.
-- **Put the plane at the front of the visible model** (the nearest depth of
-  its bounds, clamped between the near plane and `orbit.target`), not
-  through the target. The model then sits behind the glass as in the spike.
-  Anything in front of the screen plane that crosses the view's edges breaks
-  the illusion. (My call, from the builder check: through the target, about
-  half the model would sit in front of the glass.)
+- **Put the plane through `orbit.target`** (user, after the first hand
+  test). The point you orbit around stays still on screen and moving your
+  head looks around it. With the plane at the model's front (the first
+  build), the whole model sat behind the glass and slid sideways with the
+  head, which read as the model moving. Parts in front of the plane can be
+  cut by the view's edges; accepted.
 - Eye position, in window coordinates: x and y from the face, z = the
   calibrated distance. Convert to world with the same scale. The camera
   moves to that eye, keeps looking along the un-peeked view direction (no

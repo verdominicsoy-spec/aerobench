@@ -29,13 +29,6 @@ public struct PeekWindow: Equatable, Sendable {
 /// "Generalized Perspective Projection"), so the window stays pinned to the
 /// view's edges while things behind and in front of it shift.
 extension OrbitCamera {
-    /// Depth of the window plane: the front of a bounding sphere, clamped to
-    /// [minDepth, distance], so the model sits behind the glass.
-    public func peekDepth(boundsCenter: SIMD3<Double>, boundsRadius: Double, minDepth: Double) -> Double {
-        let front = simd_dot(boundsCenter - position, forward) - boundsRadius
-        return min(max(front, minDepth), max(distance, minDepth))
-    }
-
     /// The window at `depth` along forward, sized to what the un-peeked view shows there.
     public func peekWindow(depth: Double, aspect: Double) -> PeekWindow {
         let halfHeight = orthographic ? orthoHalfHeight : depth * tan(fovY / 2)
