@@ -86,6 +86,20 @@ final class OrbitCameraTests: XCTestCase {
         XCTAssertFalse(OrbitSCNView.scrollPans(precise: true, phase: [], momentumPhase: [], command: false))
     }
 
+    func testOptionDragPansShiftDragOrbits() {
+        XCTAssertTrue(OrbitSCNView.dragPans(.option))
+        XCTAssertFalse(OrbitSCNView.dragPans(.shift))
+        XCTAssertFalse(OrbitSCNView.dragPans([]))
+    }
+
+    func testPeekNeedsShiftAlone() {
+        XCTAssertTrue(OrbitSCNView.peekHeld(.shift))
+        XCTAssertTrue(OrbitSCNView.peekHeld([.shift, .capsLock]))  // caps lock is not a chord
+        XCTAssertFalse(OrbitSCNView.peekHeld([.shift, .command]))
+        XCTAssertFalse(OrbitSCNView.peekHeld([.shift, .option]))
+        XCTAssertFalse(OrbitSCNView.peekHeld([]))
+    }
+
     func testOrbitNeverFlipsOverTheTop() {
         var c = camera(ortho: false)
         for _ in 0..<200 { c.orbit(dx: 0, dy: -50) }

@@ -635,7 +635,7 @@ extension SceneKitViewer {
 
 /// SCNView that turns mouse and trackpad input into camera moves. Orbits
 /// pivot about the point under the cursor where the drag or gesture began.
-///   drag: orbit        shift/option-drag, right-drag, middle-drag: pan
+///   drag (or shift-drag while peeking): orbit        option-drag, right-drag, middle-drag: pan
 ///   pinch: zoom at the cursor        mouse wheel or command-scroll: zoom at the cursor
 ///   two-finger scroll on a trackpad: pan        trackpad rotate: turn about the up axis
 ///   double-click or two-finger double-tap: centre on the point (empty space: fit)
@@ -671,8 +671,17 @@ final class OrbitSCNView: SCNView {
         window?.makeFirstResponder(self)
         let p = location(event)
         last = p
-        panning = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.option)
+        panning = Self.dragPans(event.modifierFlags)
         if !panning { onInput?(.orbitBegan(at: p)) }
+    }
+
+    /// Option-drag pans. Shift is left free for the head-tracked peek.
+    static func dragPans(_ flags: NSEvent.ModifierFlags) -> Bool { flags.contains(.option) }
+
+    /// Shift on its own (caps lock and the like aside) holds a peek; Shift with
+    /// Command or Option is a shortcut, not a peek.
+    static func peekHeld(_ flags: NSEvent.ModifierFlags) -> Bool {
+        flags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function]) == .shift
     }
 
     override func mouseDragged(with event: NSEvent) { drag(event, pan: panning) }

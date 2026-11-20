@@ -393,7 +393,7 @@ assembly tree and part names; the result is cached in
 file at the same preset is instant.
 
 Drag to orbit; pinch (or a mouse wheel, or ⌘-scroll) zooms toward the point
-under the cursor, as close as you like; two-finger scroll, shift-drag or
+under the cursor, as close as you like; two-finger scroll, option-drag or
 right-drag pans; double-click a part to orbit around that point. Front/Back/Left/Right/Top/Bottom/Iso views, Fit,
 and perspective or orthographic. Untick parts in the tree to hide them; the
 bounds readout follows what is visible. Turn on Measure and click two points;
