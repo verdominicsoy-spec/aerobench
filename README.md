@@ -310,8 +310,13 @@ the quick estimate, else the inviscid preview with a Cd you type in (the
 same rule as the results strip). *Compare in the Lap Sim* makes car B car A
 with this wing in place of the one it replaces.
 
-**Export**: each element as a .dat, or all points as CSV, in mm in the wing's
-frame, for CATIA.
+**Export**: each element as a .dat (mm, wing frame), or the wing's points for
+a CAD tool: CATIA (the default), Fusion 360 or Designcenter NX. The CATIA file
+is in car axes (flow along −X, Z up) and goes into 3DEXPERIENCE with the macros
+in `app/scripts`: `ImportAeroBenchWing_3DX` builds the splines,
+`AeroBenchWingParametric_3DX` builds them driven by parameters (element chord
+scale, angle and slide, wing angle, position and span). Add `app/scripts` once
+with Alt+F8 > Macro libraries.
 *Report as PDF* makes one A4 page for a design review: the wing, its
 conditions, every solver's latest answer (with ClA and CdA on the car), Cp,
 the estimate polar and the RANS flow field.

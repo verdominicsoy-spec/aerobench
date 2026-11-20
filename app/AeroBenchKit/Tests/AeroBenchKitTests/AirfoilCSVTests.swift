@@ -204,7 +204,7 @@ final class AirfoilCSVTests: XCTestCase {
     /// internal unit, whatever the document's), no header, one spline per file.
     /// The loop ends on its first point, so Fusion closes the spline.
     func testFusion360Export() throws {
-        XCTAssertEqual(AirfoilCSV.Format.allCases.map(\.rawValue), ["Generic", "Fusion 360", "CATIA", "Designcenter NX"])
+        XCTAssertEqual(AirfoilCSV.Format.allCases.map(\.rawValue), ["CATIA", "Fusion 360", "Designcenter NX"])
         for (i, e) in twoElements.elements.enumerated() {
             let rows = twoElements.fusionCSV(of: i).split(separator: "\n", omittingEmptySubsequences: false)
             XCTAssertEqual(rows.last, "")  // ends with a newline

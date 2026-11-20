@@ -1,0 +1,336 @@
+' ImportAeroBenchWing_3DX.CATScript  (3DEXPERIENCE)
+'
+' Brings AeroBench Wing Lab's CATIA export (Export > Points as CSV, set to CATIA,
+' file "wing_catia_mm.csv") into a 3D Part in 3DEXPERIENCE CATIA.
+'
+' Run it:
+'   1. Open the 3D Part you want the wing in (or have nothing open and the
+'      macro makes a new 3D Shape).
+'   2. Alt+F8 (Tools > Macro > Macros...) > Macro libraries... > Library type
+'      "Directories" > Add existing library > pick the folder holding this file.
+'   3. Pick ImportAeroBenchWing_3DX.CATScript and press Run.
+'   4. Choose a file. The macro asks for another one until you press Cancel,
+'      so a front and a rear wing land in the same Part.
+'
+' What it builds, per file: a geometrical set named after the file, and in it
+' one geometrical set per element ("Main", "Flap 1", ...) holding the points
+' (hidden), a spline through them, a straight trailing-edge line, and the
+' closed curve "Main" (a Join of the two), ready to extrude along Y or loft.
+' Next to them, the point "Tangent corner": where the tangents at the wing's
+' furthest-forward point and its lowest point meet.
+'
+' The file: per element, the fewest points a spline needs to stay within
+' 0.05 mm of the section, in mm, in the car's axes as the team's wing parts
+' have them: the section on the XZ plane (Y = 0), flow along -X (X points
+' forward), Z up. Each element's chord, angle, position and inversion are
+' applied; the wing's place on the car is not, so move the set into place.
+' Older Wing Lab point files ("element,index,x_mm,y_mm", wing frame) still
+' work: they are turned into the same car axes.
+'
+' Trailing edges: an open one (first and last points apart) is closed by the
+' line between them. A closed one (first and last points together) drops
+' the repeated last point, and the line spans the last short panel, so the
+' trailing edge stays a sharp corner rather than being rounded by a closed
+' spline.
+'
+' Changes from the CATIA V5 version: 3DEXPERIENCE has no Documents.Add("Part"),
+' so the macro works in the active 3D Part's editor, or creates a new 3D Shape
+' through PLMNewService when no Part is active.
+
+Option Explicit
+
+Const TITLE = "AeroBench import"
+Const CLOSED_TE_MM = 0.01  ' first and last points closer than this: closed trailing edge
+
+Sub CATMain()
+    Dim editor1 As Editor
+    Dim part1 As Part
+    Set part1 = GetOrCreatePart(editor1)
+    If part1 Is Nothing Then Exit Sub
+
+    Dim sep As String
+    sep = Mid(CStr(1.5), 2, 1)  ' this Windows locale's decimal separator; the CSV always uses "."
+
+    Dim hidden As Selection
+    Set hidden = editor1.Selection
+    hidden.Clear
+
+    Dim path As String, count As Integer
+    count = 0
+    Do
+        path = CATIA.FileSelectionBox("Wing Lab CATIA export, wing_catia_mm.csv (Cancel when done)", "*.csv", 0)
+        If path = "" Then Exit Do
+        If ImportFile(part1, path, sep, hidden) Then count = count + 1
+    Loop
+
+    If hidden.Count > 0 Then hidden.VisProperties.SetShow 1  ' 1 = hide
+    hidden.Clear
+
+    On Error Resume Next
+    part1.Update
+    If Err.Number <> 0 Then
+        MsgBox "The Part did not update cleanly: " & Err.Description & vbCrLf & _
+               "Look for the feature with the red mark in the tree.", vbExclamation, "AeroBench import"
+    End If
+    On Error GoTo 0
+
+    If count = 0 Then MsgBox "No wing was imported.", vbInformation, "AeroBench import"
+End Sub
+
+' The Part being edited, or a new 3D Part when none is active.
+Function GetOrCreatePart(editor1)
+    Set GetOrCreatePart = Nothing
+    Dim obj
+    On Error Resume Next
+    Set editor1 = CATIA.ActiveEditor
+    If Err.Number = 0 And Not (editor1 Is Nothing) Then
+        Set obj = editor1.ActiveObject
+        If Err.Number = 0 And Not (obj Is Nothing) Then
+            If TypeName(obj) = "Part" Then
+                Set GetOrCreatePart = obj
+                Exit Function
+            End If
+        End If
+    End If
+    Err.Clear
+
+    Dim svc
+    Set svc = CATIA.GetSessionService("PLMNewService")
+    ' A 3D Shape first: asking for a "3DPart" pops up "Operation not authorized"
+    ' on licences (like the Makers one) that can't create one directly.
+    svc.PLMCreate "3DShape", editor1
+    If Err.Number <> 0 Then
+        Err.Clear
+        svc.PLMCreate "3DPart", editor1
+    End If
+    If Err.Number = 0 And Not (editor1 Is Nothing) Then Set obj = editor1.ActiveObject
+    On Error GoTo 0
+
+    If IsObject(obj) Then
+        If Not (obj Is Nothing) Then
+            If TypeName(obj) = "Part" Then
+                Set GetOrCreatePart = obj
+                Exit Function
+            End If
+        End If
+    End If
+    MsgBox "Couldn't find or create a 3D Part." & vbCrLf & _
+           "Open the 3D Part you want the wing in (so its tree is showing) and run the macro again.", _
+           vbExclamation, "AeroBench import"
+End Function
+
+' Reads one Wing Lab export and builds its geometry. Returns False (after saying why)
+' when the file is not one.
+Function ImportFile(part1, path, sep, hidden)
+    ImportFile = False
+
+    Dim fso, stream, text
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set stream = fso.OpenTextFile(path, 1)  ' 1 = for reading
+    text = stream.ReadAll
+    stream.Close
+
+    ' AeroBench writes LF line ends; strip CR in case the file went through Windows.
+    Dim lines, head
+    lines = Split(Replace(text, vbCr, ""), vbLf)
+    If UBound(lines) < 1 Then
+        MsgBox path & " is empty.", vbExclamation, TITLE
+        Exit Function
+    End If
+    head = LCase(Trim(lines(0)))
+    If head = "startloft" Then
+        ImportFile = ImportCatia(part1, path, sep, hidden, lines)
+    ElseIf head = "element,index,x_mm,y_mm" Or UBound(Split(lines(0), ",")) = 2 Then
+        ImportFile = ImportPoints(part1, path, sep, hidden, lines)
+    Else
+        MsgBox path & " is not a Wing Lab export." & vbCrLf & _
+               "Export it with Wing Lab > Export > Points as CSV, set to CATIA (the file starts with StartLoft).", _
+               vbExclamation, TITLE
+    End If
+End Function
+
+' Wing Lab's CATIA export: StartLoft, then per element StartCurve, X,Y,Z rows in mm in
+' car axes, EndCurve; then EndLoft, the loose tangent-corner point, End.
+Function ImportCatia(part1, path, sep, hidden, lines)
+    ImportCatia = False
+    Dim fileSet, xs(), zs(), n, i, t, f, inCurve, count, cornerX, cornerZ, hasCorner
+    Set fileSet = part1.HybridBodies.Add()
+    fileSet.Name = BaseName(path)
+    inCurve = False
+    n = 0
+    count = 0
+    hasCorner = False
+    For i = 0 To UBound(lines)
+        t = Trim(lines(i))
+        Select Case LCase(t)
+        Case "", "startloft", "endloft"
+        Case "end"
+            Exit For
+        Case "startcurve"
+            inCurve = True
+            n = 0
+        Case "endcurve"
+            If n > 0 Then BuildElement part1, fileSet, ElementLabel(count), xs, zs, n, hidden
+            count = count + 1
+            inCurve = False
+        Case Else
+            f = Split(t, ",")
+            If UBound(f) < 2 Then
+                MsgBox path & ", line " & (i + 1) & ": expected X,Y,Z.", vbExclamation, TITLE
+                Exit Function
+            End If
+            If inCurve Then
+                ReDim Preserve xs(n), zs(n)
+                xs(n) = Num(f(0), sep)
+                zs(n) = Num(f(2), sep)
+                n = n + 1
+            Else
+                cornerX = Num(f(0), sep)
+                cornerZ = Num(f(2), sep)
+                hasCorner = True
+            End If
+        End Select
+    Next
+    If count = 0 Then
+        MsgBox path & " has no StartCurve ... EndCurve block, so no element.", vbExclamation, TITLE
+        Exit Function
+    End If
+    If hasCorner Then
+        Dim pt
+        Set pt = MakePoint(part1.HybridShapeFactory, cornerX, cornerZ)
+        pt.Name = "Tangent corner"
+        fileSet.AppendHybridShape pt
+    End If
+    ImportCatia = True
+End Function
+
+' Older Wing Lab point files: "element,index,x_mm,y_mm" (or rows of "index,x,y") in the
+' wing's frame, x downstream. Turned into car axes (X = -x) as they are read.
+Function ImportPoints(part1, path, sep, hidden, lines)
+    ImportPoints = False
+    Dim hasHeader, first, nCols
+    hasHeader = (LCase(Trim(lines(0))) = "element,index,x_mm,y_mm")
+    If hasHeader Then
+        first = 1
+        nCols = 4
+    Else
+        first = 0
+        nCols = 3
+    End If
+
+    Dim fileSet
+    Set fileSet = part1.HybridBodies.Add()
+    fileSet.Name = BaseName(path)
+
+    ' Rows are grouped by element, in order: collect one element, build it, go on.
+    Dim elemName, rowName, xs(), zs(), n, i, f, count
+    elemName = ""
+    n = 0
+    count = 0
+    For i = first To UBound(lines)
+        If Trim(lines(i)) <> "" Then
+            f = Split(lines(i), ",")
+            If UBound(f) < nCols - 1 Then
+                MsgBox path & ", line " & (i + 1) & ": expected " & nCols & " columns.", vbExclamation, TITLE
+                Exit Function
+            End If
+            If hasHeader Then
+                rowName = Trim(f(0))
+            Else
+                If Trim(f(0)) = "0" Then count = count + 1
+                rowName = ElementLabel(count - 1)
+            End If
+            If rowName <> elemName Then
+                If n > 0 Then BuildElement part1, fileSet, elemName, xs, zs, n, hidden
+                elemName = rowName
+                n = 0
+            End If
+            ReDim Preserve xs(n), zs(n)
+            xs(n) = -Num(f(nCols - 2), sep)
+            zs(n) = Num(f(nCols - 1), sep)
+            n = n + 1
+        End If
+    Next
+    If n > 0 Then BuildElement part1, fileSet, elemName, xs, zs, n, hidden
+    ImportPoints = True
+End Function
+
+' A number written with "." in this Windows locale.
+Function Num(s, sep)
+    Num = CDbl(Replace(Trim(s), ".", sep))
+End Function
+
+' One element: points, a spline from the first to the last distinct point,
+' a trailing-edge line back to the first, and their Join as the outline.
+Sub BuildElement(part1, fileSet, elemName, xs, ys, n, hidden)
+    Dim hsf As HybridShapeFactory
+    Set hsf = part1.HybridShapeFactory
+
+    Dim last As Long
+    last = n - 1
+    If Sqr((xs(last) - xs(0)) ^ 2 + (ys(last) - ys(0)) ^ 2) < CLOSED_TE_MM Then last = n - 2
+    If last < 3 Then
+        MsgBox "Element " & elemName & " has too few points; skipped.", vbExclamation, "AeroBench import"
+        Exit Sub
+    End If
+
+    Dim elemSet As HybridBody
+    Set elemSet = fileSet.HybridBodies.Add()
+    elemSet.Name = elemName
+    Dim pointSet As HybridBody
+    Set pointSet = elemSet.HybridBodies.Add()
+    pointSet.Name = elemName & " points"
+
+    Dim spline As HybridShapeSpline
+    Set spline = hsf.AddNewSpline()
+    spline.SetSplineType 0  ' cubic
+    spline.SetClosing 0     ' open: the trailing-edge line closes it
+
+    Dim k As Long, pt, firstPt, lastPt
+    For k = 0 To last
+        Set pt = MakePoint(hsf, xs(k), ys(k))
+        pt.Name = elemName & " pt " & k
+        pointSet.AppendHybridShape pt
+        spline.AddPoint part1.CreateReferenceFromObject(pt)
+        If k = 0 Then Set firstPt = pt
+        Set lastPt = pt
+    Next
+    spline.Name = elemName & " spline"
+    elemSet.AppendHybridShape spline
+
+    Dim teLine As HybridShapeLinePtPt
+    Set teLine = hsf.AddNewLinePtPt(part1.CreateReferenceFromObject(lastPt), part1.CreateReferenceFromObject(firstPt))
+    teLine.Name = elemName & " TE"
+    elemSet.AppendHybridShape teLine
+
+    Dim outline As HybridShapeAssemble
+    Set outline = hsf.AddNewJoin(part1.CreateReferenceFromObject(spline), part1.CreateReferenceFromObject(teLine))
+    outline.Name = elemName
+    elemSet.AppendHybridShape outline
+
+    hidden.Add pointSet
+    hidden.Add spline
+    hidden.Add teLine
+End Sub
+
+' A point of the section on the car's XZ plane (Y = 0), mm.
+Function MakePoint(hsf, x, z)
+    Set MakePoint = hsf.AddNewPointCoord(x, 0.0, z)
+End Function
+
+' Wing Lab's names: element 0 is "Main", then "Flap 1", "Flap 2"...
+Function ElementLabel(i)
+    If i <= 0 Then
+        ElementLabel = "Main"
+    Else
+        ElementLabel = "Flap " & i
+    End If
+End Function
+
+' "C:\...\wing_points_mm.csv" -> "wing_points_mm"
+Function BaseName(path)
+    Dim b
+    b = Mid(path, InStrRev(path, "\") + 1)
+    If LCase(Right(b, 4)) = ".csv" Then b = Left(b, Len(b) - 4)
+    BaseName = b
+End Function

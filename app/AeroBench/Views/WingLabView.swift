@@ -1268,13 +1268,13 @@ struct WingInspector: View {
     @State private var sentNote: String?
     @State private var modelHelp = false
     // A new key, so a pick saved under the old default ("wingCSVFormat") gives way to CATIA.
+    // A pick that no longer exists (the old "Generic") reads as CATIA too.
     @AppStorage("wingExportFormat") private var csvFormatName = AirfoilCSV.Format.catia.rawValue
 
     private var csvFootnote: String {
         switch AirfoilCSV.Format(rawValue: csvFormatName) ?? .catia {
-        case .generic: return "Points in mm, in the wing's frame: element, index, x, y."
         case .fusion: return "One file per element in cm, for Utilities ▸ Scripts ▸ ImportSplineCSV. Each spline closes at the trailing edge and keeps only the points it needs, within 0.05 mm."
-        case .catia: return "One spline per element in mm, through only the points it needs, within 0.05 mm, in car axes: on the XZ plane, flow along −X, Z up. Paste into GSD_PointSplineLoftFromExcel.xls at A1 and run it with option 2. Close each trailing edge with a line. The loose point is where the tangents at the wing's front and bottom meet."
+        case .catia: return "One spline per element in mm, through only the points it needs, within 0.05 mm, in car axes: on the XZ plane, flow along −X, Z up. In 3DEXPERIENCE run ImportAeroBenchWing_3DX (or AeroBenchWingParametric_3DX for a wing driven by parameters) from Alt+F8 and pick this file: it builds each element's spline, closes the trailing edge with a line and marks the tangent corner, the point where the tangents at the wing's front and bottom meet. The same file also pastes into CATIA V5's GSD_PointSplineLoftFromExcel.xls at A1 (option 2)."
         case .nx: return "A journal for Tools ▸ Journal ▸ Play: one spline per element through only the points it needs (within 0.05 mm), shown. Every section point is kept on layer 200, hidden."
         }
     }
@@ -1357,7 +1357,9 @@ struct WingInspector: View {
                 HStack(spacing: S37.Space.s3) {
                     Button("Elements as .dat…") { app.exportWingDat() }
                     Button("Points as CSV…") { app.exportWingCSV() }
-                    Picker("CSV for", selection: $csvFormatName) {
+                    Picker("CSV for", selection: Binding(
+                        get: { (AirfoilCSV.Format(rawValue: csvFormatName) ?? .catia).rawValue },
+                        set: { csvFormatName = $0 })) {
                         ForEach(AirfoilCSV.Format.allCases, id: \.self) { Text($0.rawValue).tag($0.rawValue) }
                     }
                     .labelsHidden()
