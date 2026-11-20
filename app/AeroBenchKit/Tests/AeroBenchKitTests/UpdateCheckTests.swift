@@ -15,6 +15,16 @@ final class UpdateCheckTests: XCTestCase {
                        ["--count", "--since=@1793937876", "HEAD", "@{u}"])
     }
 
+    func testABranchWithNoUpstreamCountsItsLocalCommits() {
+        // head-tracked-peek was only on this Mac: "@{u}" failed rev-list and the app showed no update.
+        XCTAssertEqual(UpdateCheck.revListArgs(builtCommit: "abc", builtDate: Date(), online: true, hasUpstream: false),
+                       ["--count", "HEAD", "^abc"])
+        let built = Date(timeIntervalSince1970: 1_793_937_876)
+        XCTAssertEqual(UpdateCheck.revListArgs(builtCommit: nil, builtDate: built, online: true, hasUpstream: false),
+                       ["--count", "--since=@1793937876", "HEAD"])
+        XCTAssertNil(UpdateCheck.revListArgs(builtCommit: nil, builtDate: nil, online: true, hasUpstream: false))
+    }
+
     func testWithNothingToGoOnOnlyGitHubCounts() {
         XCTAssertEqual(UpdateCheck.revListArgs(builtCommit: nil, builtDate: nil, online: true), ["--count", "@{u}", "^HEAD"])
         XCTAssertNil(UpdateCheck.revListArgs(builtCommit: nil, builtDate: nil, online: false))
