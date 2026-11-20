@@ -6,7 +6,7 @@
 
 Hold Shift in the CAD viewer and the screen becomes a window onto the model:
 the webcam follows your head, and the view changes as if the model sat
-behind the glass. Move your head left and you see round the right side of a
+behind the glass. Move your head left and you see round the left side of a
 flap; move up and you look down into a slot gap. Let go of Shift and the view
 returns to where it was.
 
