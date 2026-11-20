@@ -1,4 +1,5 @@
 import XCTest
+import SceneKit
 import simd
 @testable import AeroBench3D
 
@@ -63,6 +64,35 @@ final class PeekProjectionTests: XCTestCase {
         // what is in front of it shifts against the head.
         XCTAssertGreaterThan(ndc(behind, c, b.position, b.projection).x, ndc(behind, c, a.position, a.projection).x)
         XCTAssertLessThan(ndc(inFront, c, b.position, b.projection).x, ndc(inFront, c, a.position, a.projection).x)
+    }
+
+    /// SceneKit must read the custom projection in the convention peekCamera writes it.
+    @MainActor
+    func testSceneKitAgreesWithPeekProjection() throws {
+        guard MTLCreateSystemDefaultDevice() != nil else { throw XCTSkip("no Metal device") }
+        let c = camera()
+        let d = c.distance * 0.7
+        let w = c.peekWindow(depth: d, aspect: aspect)
+        let (position, projection) = c.peekCamera(window: w, eye: SIMD3(0.3 * d, -0.2 * d, 0.8 * d), near: 0.01, far: 100)
+
+        let view = SCNView(frame: NSRect(x: 0, y: 0, width: 800, height: 500), options: nil)
+        let scene = SCNScene()
+        let node = SCNNode()
+        node.camera = SCNCamera()
+        node.camera?.projectionTransform = SCNMatrix4(projection)
+        node.simdPosition = SIMD3<Float>(position)
+        node.simdLook(at: SIMD3<Float>(position + c.forward), up: SIMD3<Float>(c.screenUp), localFront: SIMD3(0, 0, -1))
+        scene.rootNode.addChildNode(node)
+        view.scene = scene
+        view.pointOfView = node
+
+        for p: SIMD3<Double> in [[0.5, 0.2, 0.3], [1.1, -0.4, 0.9], [-0.3, 0.6, -0.2]] {
+            let s = view.projectPoint(SCNVector3(p.x, p.y, p.z))
+            let got = SIMD2(Double(s.x) / 800 * 2 - 1, Double(s.y) / 500 * 2 - 1)
+            let expected = ndc(p, c, position, projection)
+            XCTAssertEqual(got.x, expected.x, accuracy: 1e-4)
+            XCTAssertEqual(got.y, expected.y, accuracy: 1e-4)
+        }
     }
 
     func testWindowDepthClamps() {
