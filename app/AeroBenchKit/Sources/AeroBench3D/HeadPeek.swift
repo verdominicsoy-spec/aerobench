@@ -21,7 +21,11 @@ public final class HeadPeek {
 
     public var config: Config {
         didSet {
-            if !config.enabled { release(at: CACurrentMediaTime()) }
+            if !config.enabled {
+                // Off means the camera goes now, not when the 30 s grace runs out.
+                state = PeekState()
+                tracker.stop()
+            }
             stopCameraIfIdle()
         }
     }
@@ -79,7 +83,10 @@ public final class HeadPeek {
         for _ in 0..<40 where tracker.status == .starting {
             try? await Task.sleep(for: .milliseconds(100))
         }
-        guard tracker.status == .running else { return nil }
+        guard tracker.status == .running else {
+            stopCameraIfIdle()
+            return nil
+        }
         calibration = []
         try? await Task.sleep(for: .seconds(1))
         let separations = calibration ?? []
@@ -89,7 +96,10 @@ public final class HeadPeek {
     }
 
     private func stopCameraIfIdle() {
-        if !state.wantsCamera, calibration == nil { tracker.stop() }
+        if !state.wantsCamera, calibration == nil {
+            tracker.stop()
+            state.cameraStopped()
+        }
     }
 
     private func receive(_ sample: HeadGeometry.Sample?) {

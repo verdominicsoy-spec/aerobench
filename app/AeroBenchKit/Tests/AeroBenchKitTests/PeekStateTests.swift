@@ -29,9 +29,18 @@ final class PeekStateTests: XCTestCase {
         XCTAssertLessThan(sd, 0.5 / 3)
     }
 
-    func testBlendEasesInAndOut() {
+    private let rest = SIMD3<Double>(0, 0, 55)
+
+    /// Pressed at 0 with a face already seen.
+    private func pressedWithFace() -> PeekState {
         var s = PeekState()
         s.press(at: 0, trackerAvailable: true)
+        s.face(SIMD3(1, 2, 55), at: 0, rest: rest)
+        return s
+    }
+
+    func testBlendEasesInAndOut() {
+        var s = pressedWithFace()
         XCTAssertEqual(s.blend, 0)
         var last = 0.0
         for t in stride(from: 0.01, through: 0.15, by: 0.01) {
@@ -39,8 +48,7 @@ final class PeekStateTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(s.blend, last)
             last = s.blend
         }
-        s = PeekState()
-        s.press(at: 0, trackerAvailable: true)
+        s = pressedWithFace()
         s.tick(at: 0.075)
         XCTAssertGreaterThan(s.blend, 0)
         XCTAssertLessThan(s.blend, 1)
@@ -59,8 +67,7 @@ final class PeekStateTests: XCTestCase {
     }
 
     func testDeactivationEndsPeek() {
-        var s = PeekState()
-        s.press(at: 0, trackerAvailable: true)
+        var s = pressedWithFace()
         s.tick(at: 0.075)
         let mid = s.blend
         s.release(at: 0.075)  // e.g. the window lost key mid-ease
@@ -84,6 +91,32 @@ final class PeekStateTests: XCTestCase {
         XCTAssertGreaterThan(easing.x, 0)
         s.face(nil, at: lastFace + 0.65, rest: rest)
         XCTAssertLessThan(simd_distance(try XCTUnwrap(s.headCM), rest), 1e-9)
+    }
+
+    func testNoBlendBeforeTheFirstFace() {
+        // Easing toward a guessed head and then snapping to the real one is a jump.
+        var s = PeekState()
+        s.press(at: 0, trackerAvailable: true)
+        s.tick(at: 0.5)
+        XCTAssertEqual(s.blend, 0)
+        s.face(SIMD3(1, 2, 55), at: 0.5, rest: rest)
+        s.tick(at: 0.575)
+        XCTAssertGreaterThan(s.blend, 0)
+        XCTAssertLessThan(s.blend, 1)
+    }
+
+    func testCameraStopForgetsTheHead() throws {
+        var s = pressedWithFace()
+        s.tick(at: 0.2)
+        s.release(at: 0.2)
+        s.tick(at: 0.4)
+        s.cameraStopped()
+        XCTAssertNil(s.headCM)
+        s.press(at: 60, trackerAvailable: true)
+        s.tick(at: 60.2)
+        XCTAssertEqual(s.blend, 0, "waits for a fresh face")
+        s.face(SIMD3(-3, 4, 55), at: 60.2, rest: rest)
+        XCTAssertEqual(try XCTUnwrap(s.headCM).x, -3, accuracy: 1e-9, "not filtered from the old head")
     }
 
     func testUnavailableTrackerNeverBlends() {

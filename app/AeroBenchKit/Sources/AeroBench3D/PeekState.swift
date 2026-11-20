@@ -105,10 +105,21 @@ public struct PeekState: Sendable {
         headCM = simd_mix(lostFrom!, rest, SIMD3(repeating: p * p * (3 - 2 * p)))
     }
 
+    /// The webcam stopped: the last head is stale, so the next peek waits for a fresh face.
+    public mutating func cameraStopped() {
+        headCM = nil
+        lastFace = nil
+        lostFrom = nil
+        filters = [OneEuroFilter(), OneEuroFilter(), OneEuroFilter()]
+    }
+
     public mutating func tick(at t: TimeInterval) {
         let dt = max(t - now, 0)
         now = max(now, t)
-        progress = min(max(progress + (held ? dt : -dt) / fade, 0), 1)
+        // Ease in only once the head is known: easing toward a guess and then
+        // snapping to the real head would be a jump.
+        let rising = held && headCM != nil
+        progress = min(max(progress + (rising ? dt : -dt) / fade, 0), 1)
         // Snap rounding residue, so "off" is exactly 0 and the peek camera is let go.
         if progress < 1e-9 { progress = 0 } else if progress > 1 - 1e-9 { progress = 1 }
     }

@@ -113,6 +113,11 @@ struct SettingsView: View {
         case .denied?:
             Label("Camera access is off: System Settings > Privacy & Security > Camera", systemImage: "exclamationmark.triangle")
                 .foregroundStyle(S37.C.clayInk)
+        case .needsPermission? where settings.peekEnabled:
+            HStack {
+                Label("Camera access needed", systemImage: "exclamationmark.triangle").foregroundStyle(S37.C.clayInk)
+                Button("Allow…") { Task { _ = await tracker?.requestAccess() } }
+            }
         case .noCamera?:
             Label("No built-in camera found", systemImage: "exclamationmark.triangle").foregroundStyle(S37.C.clayInk)
         default:

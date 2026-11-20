@@ -8,6 +8,15 @@ public struct PeekWindow: Equatable, Sendable {
     public var halfWidth: Double  // world, along OrbitCamera.right
     public var halfHeight: Double  // world, along OrbitCamera.up
 
+    /// The eye part way (t, 0...1) from `rest` to `head`. Sideways linearly; in
+    /// depth through 1/z, which is how strong the perspective looks, so an ease
+    /// from a far eye (orthographic) does not arrive all at the end.
+    public static func blendEye(rest: SIMD3<Double>, head: SIMD3<Double>, t: Double) -> SIMD3<Double> {
+        let xy = simd_mix(SIMD2(rest.x, rest.y), SIMD2(head.x, head.y), SIMD2(repeating: t))
+        let inverseZ = (1 - t) / rest.z + t / head.z
+        return SIMD3(xy.x, xy.y, t >= 1 ? head.z : t <= 0 ? rest.z : 1 / inverseZ)
+    }
+
     public init(center: SIMD3<Double>, halfWidth: Double, halfHeight: Double) {
         self.center = center
         self.halfWidth = halfWidth
@@ -34,9 +43,10 @@ extension OrbitCamera {
     }
 
     /// The eye that reproduces the un-peeked view: the camera itself in
-    /// perspective; in orthographic, an eye far enough back to look parallel.
-    public func restEye(window: PeekWindow, depth: Double) -> SIMD3<Double> {
-        SIMD3(0, 0, orthographic ? 100 * window.halfHeight : depth)
+    /// perspective; in orthographic, an eye far enough back to look parallel
+    /// across the model's depth even when zoomed in on a small part of it.
+    public func restEye(window: PeekWindow, depth: Double, boundsRadius: Double) -> SIMD3<Double> {
+        SIMD3(0, 0, orthographic ? 1000 * max(window.halfHeight, boundsRadius) : depth)
     }
 
     /// Camera position and off-axis projection for an eye at `eye`, in the

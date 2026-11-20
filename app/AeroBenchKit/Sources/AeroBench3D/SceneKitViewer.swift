@@ -65,7 +65,7 @@ public final class SceneKitViewer: Viewer3D {
     public var projection: Projection = .perspective {
         didSet {
             orbit.orthographic = projection == .orthographic
-            cameraNode.camera?.usesOrthographicProjection = orbit.orthographic
+            normalCamera.usesOrthographicProjection = orbit.orthographic
             fitAll()
         }
     }
@@ -278,7 +278,7 @@ public final class SceneKitViewer: Viewer3D {
     private func place(direction: SIMD3<Float>, up: SIMD3<Float>) {
         pivot = nil
         orbit.worldUp = SIMD3<Double>(upAxis == .z ? SIMD3<Float>(0, 0, 1) : SIMD3<Float>(0, 1, 0))
-        orbit.fovY = Double(cameraNode.camera?.fieldOfView ?? 35) * .pi / 180
+        orbit.fovY = Double(normalCamera.fieldOfView) * .pi / 180  // not the peek camera's, while peeking
         orbit.frame(center: SIMD3<Double>(center), radius: Double(radius), direction: SIMD3<Double>(direction),
                     up: SIMD3<Double>(up), aspect: aspect)
         applyCamera()
@@ -313,7 +313,8 @@ public final class SceneKitViewer: Viewer3D {
         let window = orbit.peekWindow(depth: depth, aspect: aspect)
         let worldPerCM = 2 * window.halfHeight / max(layout.viewHeightCM, 1e-6)
         let head = (peek.headCM ?? peek.restCM) * worldPerCM
-        let eye = simd_mix(orbit.restEye(window: window, depth: depth), head, SIMD3(repeating: peek.blend))
+        let eye = PeekWindow.blendEye(rest: orbit.restEye(window: window, depth: depth, boundsRadius: Double(radius)),
+                                     head: head, t: peek.blend)
         let (position, projection) = orbit.peekCamera(window: window, eye: eye, near: 0.05 * eye.z,
                                                       far: eye.z + 4 * Double(radius) + depth)
         peekCamera.projectionTransform = SCNMatrix4(projection)
@@ -394,6 +395,8 @@ public final class SceneKitViewer: Viewer3D {
         let now = CACurrentMediaTime()
         peek.layout = peekLayout()
         if peek.layout == nil { peek.release(at: now) }  // moved off the built-in display
+        // A Shift-up eaten by a tracking loop (live resize, a menu) never reaches the monitor.
+        if !OrbitSCNView.peekHeld(NSEvent.modifierFlags) { peek.release(at: now) }
         peek.tick(at: now)
         applyCamera()  // the last call, at blend 0, puts the normal camera back
         if peek.blend == 0 { stopPeekLink() }

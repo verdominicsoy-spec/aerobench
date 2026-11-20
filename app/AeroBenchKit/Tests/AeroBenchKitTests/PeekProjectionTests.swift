@@ -42,7 +42,7 @@ final class PeekProjectionTests: XCTestCase {
         let c = camera()
         let d = c.distance * 0.6
         let w = c.peekWindow(depth: d, aspect: aspect)
-        let (position, projection) = c.peekCamera(window: w, eye: c.restEye(window: w, depth: d), near: 0.01, far: 100)
+        let (position, projection) = c.peekCamera(window: w, eye: c.restEye(window: w, depth: d, boundsRadius: 1.2), near: 0.01, far: 100)
         XCTAssertLessThan(simd_distance(position, c.position), 1e-9)
         for p: SIMD3<Double> in [[0.5, 0.2, 0.3], [1.1, -0.4, 0.9], [-0.3, 0.6, -0.2]] {
             let n = ndc(p, c, position, projection), expected = c.project(p, aspect: aspect)
@@ -51,11 +51,35 @@ final class PeekProjectionTests: XCTestCase {
         }
     }
 
+    func testOrthoRestEyeMatchesTheOrthoView() {
+        // Zoomed in to inspect a gap: the window is small next to the model's depth.
+        var c = camera(ortho: true)
+        c.orthoHalfHeight = 0.06
+        let d = c.distance * 0.7
+        let w = c.peekWindow(depth: d, aspect: aspect)
+        let (position, projection) = c.peekCamera(window: w, eye: c.restEye(window: w, depth: d, boundsRadius: 1.2),
+                                                  near: 0.01, far: 1e5)
+        // A point near the back of the model, off the window's centre.
+        let p = w.center + c.forward * 2.4 + c.right * 0.04 + c.up * 0.03
+        let n = ndc(p, c, position, projection), expected = c.project(p, aspect: aspect)
+        XCTAssertEqual(n.x, expected.x, accuracy: 5e-3)
+        XCTAssertEqual(n.y, expected.y, accuracy: 5e-3)
+    }
+
+    func testEyeBlendIsEvenInPerspectiveStrength() {
+        let rest = SIMD3<Double>(0, 0, 100), head = SIMD3<Double>(4, -2, 10)
+        XCTAssertEqual(PeekWindow.blendEye(rest: rest, head: head, t: 0), rest)
+        XCTAssertEqual(PeekWindow.blendEye(rest: rest, head: head, t: 1), head)
+        let mid = PeekWindow.blendEye(rest: rest, head: head, t: 0.5)
+        XCTAssertEqual(1 / mid.z, (1 / rest.z + 1 / head.z) / 2, accuracy: 1e-12)  // 1/z is what the eye sees
+        XCTAssertEqual(mid.x, 2, accuracy: 1e-12)
+    }
+
     func testParallaxDirection() {
         let c = camera()
         let d = c.distance * 0.7
         let w = c.peekWindow(depth: d, aspect: aspect)
-        let rest = c.restEye(window: w, depth: d)
+        let rest = c.restEye(window: w, depth: d, boundsRadius: 1.2)
         let moved = rest + SIMD3(0.2 * d, 0, 0)
         let behind = w.center + c.forward * 0.5 * d, inFront = w.center - c.forward * 0.3 * d
         let a = c.peekCamera(window: w, eye: rest, near: 0.01, far: 100)
@@ -107,7 +131,7 @@ final class PeekProjectionTests: XCTestCase {
         XCTAssertEqual(c.peekDepth(boundsCenter: c.target, boundsRadius: 0.25 * c.distance, minDepth: minDepth),
                        0.75 * c.distance, accuracy: 1e-9)
         let w = c.peekWindow(depth: minDepth, aspect: aspect)
-        let (position, projection) = c.peekCamera(window: w, eye: c.restEye(window: w, depth: minDepth), near: 0.001, far: 100)
+        let (position, projection) = c.peekCamera(window: w, eye: c.restEye(window: w, depth: minDepth, boundsRadius: 1.2), near: 0.001, far: 100)
         XCTAssertFalse(position.x.isNaN || projection.columns.0.x.isNaN || projection.columns.2.x.isNaN)
     }
 }
