@@ -11,11 +11,14 @@ public final class HeadPeek {
         public var enabled: Bool
         public var distanceCM: Double
         public var hfovDegrees: Double
+        /// Multiplies head movement: 1 turns the view by the head's own angle.
+        public var sensitivity: Double
 
-        public init(enabled: Bool, distanceCM: Double, hfovDegrees: Double) {
+        public init(enabled: Bool, distanceCM: Double, hfovDegrees: Double, sensitivity: Double = 2) {
             self.enabled = enabled
             self.distanceCM = distanceCM
             self.hfovDegrees = hfovDegrees
+            self.sensitivity = sensitivity
         }
     }
 

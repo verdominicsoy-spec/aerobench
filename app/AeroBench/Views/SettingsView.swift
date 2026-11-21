@@ -94,6 +94,12 @@ struct SettingsView: View {
                     value: $settings.peekDistanceCM, in: 30...120)
                 .onChange(of: settings.peekDistanceCM) { app.applyPeekSettings() }
             HStack {
+                Text("Head sensitivity")
+                Slider(value: $settings.peekSensitivity, in: 1...4, step: 0.25)
+                Text(String(format: "%g×", settings.peekSensitivity)).monospacedDigit().frame(width: 36, alignment: .trailing)
+            }
+            .onChange(of: settings.peekSensitivity) { app.applyPeekSettings() }
+            HStack {
                 Button(calibrating ? "Calibrating…" : "Calibrate") { calibrate(settings) }
                     .disabled(calibrating || !settings.peekEnabled)
                 Text("Sit at that distance and look at the screen.").foregroundStyle(.secondary)

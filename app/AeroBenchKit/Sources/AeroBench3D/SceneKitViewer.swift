@@ -327,7 +327,8 @@ public final class SceneKitViewer: Viewer3D {
         let depth = orbit.distance
         let window = orbit.peekWindow(depth: depth, aspect: aspect)
         let eye = PeekWindow.eye(rest: orbit.restEye(window: window, depth: depth, boundsRadius: Double(radius)),
-                                 offsetCM: peek.offsetCM ?? .zero, distanceCM: peek.config.distanceCM, blend: peek.blend)
+                                 offsetCM: peek.offsetCM ?? .zero, distanceCM: peek.config.distanceCM, blend: peek.blend,
+                                 sensitivity: peek.config.sensitivity)
         let (position, projection) = orbit.peekCamera(window: window, eye: eye, near: 0.05 * eye.z,
                                                       far: eye.z + 4 * Double(radius) + depth)
         peekCamera.projectionTransform = SCNMatrix4(projection)

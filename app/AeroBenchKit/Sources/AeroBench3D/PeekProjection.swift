@@ -13,9 +13,11 @@ public struct PeekWindow: Equatable, Sendable {
     /// eye stays at `rest.z`) and the eye moves through the same angle the head
     /// did, seen from the window: pressing Shift changes nothing until the head
     /// moves. Like the reference demos, this is not the physical scale, which
-    /// would flatten the view to about 19° on a MacBook.
-    public static func eye(rest: SIMD3<Double>, offsetCM: SIMD2<Double>, distanceCM: Double, blend: Double) -> SIMD3<Double> {
-        let lateral = offsetCM * (rest.z / max(distanceCM, 1e-6)) * blend
+    /// would flatten the view to about 19° on a MacBook. `sensitivity`
+    /// multiplies the head's movement.
+    public static func eye(rest: SIMD3<Double>, offsetCM: SIMD2<Double>, distanceCM: Double, blend: Double,
+                           sensitivity: Double = 1) -> SIMD3<Double> {
+        let lateral = offsetCM * sensitivity * (rest.z / max(distanceCM, 1e-6)) * blend
         return SIMD3(rest.x + lateral.x, rest.y + lateral.y, rest.z)
     }
 

@@ -74,6 +74,8 @@ final class PeekProjectionTests: XCTestCase {
         XCTAssertEqual(PeekWindow.eye(rest: rest, offsetCM: [10, -5], distanceCM: 50, blend: 1), SIMD3(40, -20, 200))
         XCTAssertEqual(PeekWindow.eye(rest: rest, offsetCM: [10, -5], distanceCM: 50, blend: 0.5), SIMD3(20, -10, 200))
         XCTAssertEqual(PeekWindow.eye(rest: rest, offsetCM: [10, -5], distanceCM: 50, blend: 0), rest)
+        // Sensitivity multiplies the head's movement.
+        XCTAssertEqual(PeekWindow.eye(rest: rest, offsetCM: [10, -5], distanceCM: 50, blend: 1, sensitivity: 2), SIMD3(80, -40, 200))
     }
 
     func testParallaxDirection() {

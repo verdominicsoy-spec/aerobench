@@ -14,6 +14,7 @@ final class AppSettings {
         static let peekEnabled = "peekEnabled"
         static let peekDistanceCM = "peekDistanceCM"
         static let peekHFOVDegrees = "peekHFOVDegrees"
+        static let peekSensitivity = "peekSensitivity"
     }
 
     private let defaults = UserDefaults.standard
@@ -32,12 +33,15 @@ final class AppSettings {
     var peekDistanceCM: Double { didSet { defaults.set(peekDistanceCM, forKey: Key.peekDistanceCM) } }
     /// The webcam's horizontal field of view from calibration; 0 = not calibrated.
     var peekHFOVDegrees: Double { didSet { defaults.set(peekHFOVDegrees, forKey: Key.peekHFOVDegrees) } }
+    /// How much the view moves for a head movement (1 = the head's own angle).
+    var peekSensitivity: Double { didSet { defaults.set(peekSensitivity, forKey: Key.peekSensitivity) } }
     /// Used until the webcam is calibrated.
     static let assumedHFOVDegrees = 62.0
 
     var peekConfig: HeadPeek.Config {
         HeadPeek.Config(enabled: peekEnabled, distanceCM: peekDistanceCM,
-                        hfovDegrees: peekHFOVDegrees > 0 ? peekHFOVDegrees : Self.assumedHFOVDegrees)
+                        hfovDegrees: peekHFOVDegrees > 0 ? peekHFOVDegrees : Self.assumedHFOVDegrees,
+                        sensitivity: peekSensitivity)
     }
 
     init() {
@@ -54,6 +58,8 @@ final class AppSettings {
         let distance = defaults.double(forKey: Key.peekDistanceCM)
         peekDistanceCM = distance > 0 ? distance : 55
         peekHFOVDegrees = defaults.double(forKey: Key.peekHFOVDegrees)
+        let sensitivity = defaults.double(forKey: Key.peekSensitivity)
+        peekSensitivity = sensitivity > 0 ? sensitivity : 2
     }
 
     var engineDirectory: URL? {
