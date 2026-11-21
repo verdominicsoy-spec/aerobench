@@ -59,23 +59,43 @@ final class PartEditTests: XCTestCase {
     }
 
     func testLatestOnlyDropsSupersededInputs() async {
-        let ran = Recorder()
+        // A gate holds the first run open, so the test does not depend on how
+        // fast the machine is (10 ms sleeps failed on the CI runner).
+        let ran = Recorder(), gate = Gate()
         let runner = LatestOnly<Int, Int> { n in
             await ran.add(n)
-            try await Task.sleep(nanoseconds: 50_000_000)
+            if n == 1 { await gate.wait() }
             return n * 10
         }
-        async let first = runner.submit(1)
-        try? await Task.sleep(nanoseconds: 10_000_000)
-        async let second = runner.submit(2)
-        try? await Task.sleep(nanoseconds: 5_000_000)
-        async let third = runner.submit(3)
-        let (a, b, c) = await (first, second, third)
+        let first = Task { await runner.submit(1) }
+        while await ran.values.isEmpty { await Task.yield() }  // 1 is running, held at the gate
+        let second = Task { await runner.submit(2) }
+        try? await Task.sleep(nanoseconds: 100_000_000)  // 2 waits behind 1
+        let third = Task { await runner.submit(3) }  // and 3 replaces it
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        await gate.release()
+        let (a, b, c) = (await first.value, await second.value, await third.value)
         XCTAssertEqual(try a?.get(), 10)
         XCTAssertNil(b)
         XCTAssertEqual(try c?.get(), 30)
         let order = await ran.values
         XCTAssertEqual(order, [1, 3])
+    }
+}
+
+private actor Gate {
+    private var open = false
+    private var waiter: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        if open { return }
+        await withCheckedContinuation { waiter = $0 }
+    }
+
+    func release() {
+        open = true
+        waiter?.resume()
+        waiter = nil
     }
 }
 

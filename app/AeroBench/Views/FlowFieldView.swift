@@ -640,8 +640,10 @@ struct FlowExploreView: View {
                 .frame(minWidth: 300, idealWidth: 340, maxWidth: 440)
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
-                    ForEach(StandardView.allCases) { v in Button(v.title) { app.flow.viewer.look(from: v) } }
-                    Button("Fit") { app.flow.viewer.fitAll() }
+                    ForEach(StandardView.allCases) { v in
+                        Button(v.title) { app.flow.viewer.look(from: v) }.help("\(v.title) view (\(v.key))")
+                    }
+                    Button("Fit") { app.flow.viewer.fitAll() }.help("Fit everything (F)")
                     Divider().frame(height: 14)
                     Button("Side profile") {
                         app.flow.sliceCut = .side

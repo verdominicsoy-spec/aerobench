@@ -182,6 +182,8 @@ final class PanelFieldTests: XCTestCase {
         let ms = Date().timeIntervalSince(start) * 1000
         print("live field \(f.nx) x \(f.ny): \(Int(ms)) ms")
         XCTAssertEqual(f.scalars.count, 3)
-        XCTAssertLessThan(ms, 10000)  // a debug build; about 20 ms in the release app
+        // A debug build: about 3 s on a Mac, 7.5-11 s on GitHub's macOS runner (one run went
+        // past the old 10 s); about 20 ms in the release app.
+        XCTAssertLessThan(ms, 30000)
     }
 }

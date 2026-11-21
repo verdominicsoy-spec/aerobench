@@ -7,6 +7,8 @@ public enum StandardView: String, CaseIterable, Identifiable, Sendable {
 
     public var id: String { rawValue }
     public var title: String { rawValue == "iso" ? "Iso" : rawValue.capitalized }
+    /// Its key in the 3D view: 1-7 in this order.
+    public var key: Int { (Self.allCases.firstIndex(of: self) ?? 0) + 1 }
 }
 
 public enum Projection: String, CaseIterable, Identifiable, Sendable {

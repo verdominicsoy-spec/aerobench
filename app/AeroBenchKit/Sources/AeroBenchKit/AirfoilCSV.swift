@@ -9,9 +9,9 @@ import simd
 /// multi-element wing export (element,index,x_mm,y_mm) gives one section per
 /// element. Each becomes a Selig .dat the engine's import reads like any other.
 public enum AirfoilCSV {
-    /// Who reads an exported wing's points: Wing.csvFile, fusionCSV, catiaCSV or nxPoints.
+    /// Who reads an exported wing's points: catiaCSV, fusionCSV or nxJournal.
     public enum Format: String, CaseIterable, Sendable {
-        case generic = "Generic", fusion = "Fusion 360", catia = "CATIA", nx = "Designcenter NX"
+        case catia = "CATIA", fusion = "Fusion 360", nx = "Designcenter NX"
     }
 
     public indirect enum ParseError: LocalizedError, Equatable {

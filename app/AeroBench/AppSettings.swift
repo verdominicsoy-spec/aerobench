@@ -1,3 +1,4 @@
+import AeroBench3D
 import AeroBenchKit
 import Foundation
 import Observation
@@ -10,6 +11,7 @@ final class AppSettings {
         static let maxParallelJobs = "maxParallelJobs"
         static let coresPerJob = "coresPerJob"
         static let parallelTrials = "parallelTrials"
+        static let peekEnabled = "peekEnabled"
     }
 
     private let defaults = UserDefaults.standard
@@ -22,6 +24,11 @@ final class AppSettings {
     var coresPerJob: Int { didSet { defaults.set(coresPerJob, forKey: Key.coresPerJob) } }
     /// Wing Lab optimiser: trials run at once, each on coresPerJob cores.
     var parallelTrials: Int { didSet { defaults.set(parallelTrials, forKey: Key.parallelTrials) } }
+    /// Hold Shift in the CAD viewer to peek with head tracking (on by default).
+    var peekEnabled: Bool { didSet { defaults.set(peekEnabled, forKey: Key.peekEnabled) } }
+    var peekConfig: HeadPeek.Config {
+        HeadPeek.Config(enabled: peekEnabled)
+    }
 
     init() {
         let defaults = UserDefaults.standard
@@ -33,6 +40,8 @@ final class AppSettings {
         coresPerJob = cores > 0 ? cores : Self.defaultCores
         let trials = defaults.integer(forKey: Key.parallelTrials)
         parallelTrials = trials > 0 ? trials : 1
+        // On unless turned off: the first Shift over the CAD view asks for the camera.
+        peekEnabled = defaults.object(forKey: Key.peekEnabled) as? Bool ?? true
     }
 
     var engineDirectory: URL? {

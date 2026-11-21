@@ -126,7 +126,7 @@ def test_flaps_separate_past_the_main_as_rans_found():
             D.ANGLES[n] = old
         els = [{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "chord": e.chord, "angle": e.angle,
                 "inverted": e.inverted} for e in w.elements]
-        return estimate(els, [0.0], 15.0)["rows"][0]["warnings"]
+        return [w for w in estimate(els, [0.0], 15.0)["rows"][0]["warnings"] if "past the main" in w]
 
     assert not warned(3, -2, 12) and not warned(4, -2, 8)  # 24 degrees: RANS attached
     for case in ((3, -2, 16), (4, -2, 10), (3, 2, 19)):  # 32, 30, 38 degrees: RANS separated
@@ -206,3 +206,58 @@ def test_a_flap_is_held_to_the_element_in_front_not_to_the_main():
     w = json.loads((Path(__file__).parent / "data" / "frontwing1_study.json").read_text())
     r = estimate(w["elements"], [0.0], 20.0, 1.184, 1.81e-5, 9.0, w["ref_chord"])["rows"][0]
     assert "past the main" not in (r["why"] or "")
+
+
+def test_a_single_element_met_from_its_pressure_side_separates():
+    """RANS separated two single elements at negative angles from the leading edge of their pressure side
+    (jobs of 17 Nov 2026); the estimate only looked at the suction side and called both attached."""
+    from aeroengine.wing.airfoils import naca4
+    from aeroengine.wing.geometry import Element
+
+    def row(angle):
+        e = Element(naca4("4412"), 0.3, angle, [0.0, 0.0], False)
+        return estimate([{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "chord": 0.3, "angle": angle,
+                          "inverted": False}], [0.0], 15.0)["rows"][0]
+
+    assert not row(-4.0)["separating"]
+    late = row(-14.0)
+    assert late["separating"] and "pressure side" in late["why"]
+
+
+def test_a_front_flap_is_not_judged_on_its_pressure_side():
+    """design-12 #455: Flap 1 peaks at 22.9 on its pressure side, but RANS turning it 2.3 to 14 degrees past the
+    main stalled it from its suction side every time (19 Nov 2026). The pressure-side rule is for the last element."""
+    import json
+
+    w = json.loads((Path(__file__).parent / "data" / "underturned_flap.json").read_text())
+    r = estimate(w["elements"], [0.0], w["speed"], w["rho"], w["mu"], ref_chord=w["ref_chord"],
+                 ride_height=w["ride_height"])["rows"][0]
+    assert r["elements"][1]["pressure_peak"] > 20
+    assert "pressure side" not in (r["why"] or "")
+
+
+def test_a_section_with_no_stall_in_its_polar_is_named():
+    """design-4 #1223's Flap 2: NeuralFoil's lift is highest at the end of the sweep, so it gives no stall angle and
+    the estimate had silently judged the flap against 25 degrees. It now says so instead."""
+    import json
+
+    import numpy as np
+
+    from aeroengine.wing.geometry import Element
+
+    f = json.loads((Path(__file__).parent / "data" / "no_stall_flap.json").read_text())
+    e = Element(np.asarray(f["unit"]), f["chord"], 0.0, [0.0, 0.0], False)
+    r = estimate([{"coords": e.placed().tolist(), "unit": f["unit"], "chord": f["chord"], "angle": 0.0,
+                   "inverted": False}], [0.0], 15.0)["rows"][0]
+    assert r["elements"][0]["stall_found"] is False
+    assert any("no stall angle for main's section" in w for w in r["warnings"])
+
+
+def test_a_section_that_stalls_in_its_polar_gives_no_stall_warning():
+    from aeroengine.wing.airfoils import naca4
+    from aeroengine.wing.geometry import Element
+
+    e = Element(naca4("4412"), 0.3, 4.0, [0.0, 0.0], False)
+    r = estimate([{"coords": e.placed().tolist(), "unit": e.unit.tolist(), "chord": 0.3, "angle": 4.0,
+                   "inverted": False}], [0.0], 15.0)["rows"][0]
+    assert r["elements"][0]["stall_found"] is True and not r["warnings"]

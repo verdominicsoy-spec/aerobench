@@ -433,15 +433,23 @@ public struct Wing: Codable, Equatable, Sendable {
     /// Every element's guide points for CATIA's GSD_PointSplineLoftFromExcel sheet: one
     /// StartCurve/EndCurve spline per element inside one StartLoft/EndLoft block (the
     /// macro's import fails without it), X,Y,Z in mm in columns A to C, End last.
+    /// In the car's axes, as the team's CATIA parts have it: the section on the XZ
+    /// plane, flow along -X, Z up, so X = -x, Y = 0, Z = y and nothing needs turning.
+    /// After EndLoft, one loose point (the macro makes it, no spline takes it): where
+    /// the tangent at the wing's furthest-forward point meets the one at its lowest.
     /// The trailing edge stays as the section has it (CATIA joins it with a line).
     public func catiaCSV() -> String {
+        func row(_ p: SIMD2<Double>) -> String { String(format: "%.4f,0,%.4f", -p.x * 1000, p.y * 1000) }
         var lines = ["StartLoft"]
         for i in elements.indices {
             lines.append("StartCurve")
-            lines += guidePoints(of: i).map { String(format: "%.4f,%.4f,0", $0.x * 1000, $0.y * 1000) }
+            lines += guidePoints(of: i).map(row)
             lines.append("EndCurve")
         }
-        return (lines + ["EndLoft", "End"]).joined(separator: "\n") + "\n"
+        lines.append("EndLoft")
+        let all = elements.flatMap { $0.placed() }
+        if let front = all.map(\.x).min(), let low = all.map(\.y).min() { lines.append(row(SIMD2(front, low))) }
+        return (lines + ["End"]).joined(separator: "\n") + "\n"
     }
 
     /// The whole wing as a Designcenter NX journal (Tools ▸ Journal ▸ Play):

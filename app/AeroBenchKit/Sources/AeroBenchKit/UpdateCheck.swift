@@ -8,10 +8,12 @@ public enum UpdateCheck {
     /// built, by its executable's date: without that, a checkout ahead of GitHub
     /// read as up to date however old the build was. Offline, only local ones.
     /// Nil when there is nothing to compare.
-    public static func revListArgs(builtCommit: String?, builtDate: Date?, online: Bool) -> [String]? {
-        let upstream = online ? ["@{u}"] : []
+    public static func revListArgs(builtCommit: String?, builtDate: Date?, online: Bool, hasUpstream: Bool = true) -> [String]? {
+        // A branch only on this Mac has no upstream: "@{u}" would fail the whole count.
+        let compare = online && hasUpstream
+        let upstream = compare ? ["@{u}"] : []
         if let c = builtCommit { return ["--count", "HEAD"] + upstream + ["^" + c] }
         if let d = builtDate { return ["--count", "--since=@\(Int(d.timeIntervalSince1970))", "HEAD"] + upstream }
-        return online ? ["--count", "@{u}", "^HEAD"] : nil
+        return compare ? ["--count", "@{u}", "^HEAD"] : nil
     }
 }

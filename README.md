@@ -310,8 +310,13 @@ the quick estimate, else the inviscid preview with a Cd you type in (the
 same rule as the results strip). *Compare in the Lap Sim* makes car B car A
 with this wing in place of the one it replaces.
 
-**Export**: each element as a .dat, or all points as CSV, in mm in the wing's
-frame, for CATIA.
+**Export**: each element as a .dat (mm, wing frame), or the wing's points for
+a CAD tool: CATIA (the default), Fusion 360 or Designcenter NX. The CATIA file
+is in car axes (flow along −X, Z up) and goes into 3DEXPERIENCE with the macros
+in `app/scripts`: `ImportAeroBenchWing_3DX` builds the splines,
+`AeroBenchWingParametric_3DX` builds them driven by parameters (element chord
+scale, angle and slide, wing angle, position and span). Add `app/scripts` once
+with Alt+F8 > Macro libraries.
 *Report as PDF* makes one A4 page for a design review: the wing, its
 conditions, every solver's latest answer (with ClA and CdA on the car), Cp,
 the estimate polar and the RANS flow field.
@@ -388,12 +393,20 @@ assembly tree and part names; the result is cached in
 file at the same preset is instant.
 
 Drag to orbit; pinch (or a mouse wheel, or ⌘-scroll) zooms toward the point
-under the cursor, as close as you like; two-finger scroll, shift-drag or
-right-drag pans; double-click a part to orbit around that point. Front/Back/Left/Right/Top/Bottom/Iso views, Fit,
+under the cursor, as close as you like; two-finger scroll, option-drag or
+right-drag pans; double-click a part to orbit around that point. Front/Back/Left/Right/Top/Bottom/Iso views
+(keys 1–7 once you have clicked into the view), Fit (F),
 and perspective or orthographic. Untick parts in the tree to hide them; the
 bounds readout follows what is visible. Turn on Measure and click two points;
 with Snap to vertex on, clicks snap to the nearest mesh vertex, so edges and
 corners measure exactly. STL and OBJ carry no units, so pick mm, m or in.
+*Head-tracked peek*: hold Shift over the CAD or Flow Field viewer and move your
+head to look around a part or through the flow, as if the screen were a window
+onto it (the first time, macOS asks for the camera). Where your head is when you press Shift counts as
+straight on. It moves one to one with your head, leaning in included, and the
+model sits behind the glass. Settings has an off switch. It works on
+the built-in display only, ignores clicks while you peek, and is strongest
+with one eye closed.
 *Section* cuts the visible parts with a plane across x, y or z (shown in the
 3D view) and draws the cut flat and to scale below it, with a slider for
 where it cuts and the coordinates under the pointer, to see a wing or the

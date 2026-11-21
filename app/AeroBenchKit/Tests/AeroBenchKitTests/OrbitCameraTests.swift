@@ -86,6 +86,31 @@ final class OrbitCameraTests: XCTestCase {
         XCTAssertFalse(OrbitSCNView.scrollPans(precise: true, phase: [], momentumPhase: [], command: false))
     }
 
+    func testOptionDragPansShiftDragOrbits() {
+        XCTAssertTrue(OrbitSCNView.dragPans(.option))
+        XCTAssertFalse(OrbitSCNView.dragPans(.shift))
+        XCTAssertFalse(OrbitSCNView.dragPans([]))
+    }
+
+    func testPeekNeedsShiftAlone() {
+        XCTAssertTrue(OrbitSCNView.peekHeld(.shift))
+        XCTAssertTrue(OrbitSCNView.peekHeld([.shift, .capsLock]))  // caps lock is not a chord
+        XCTAssertFalse(OrbitSCNView.peekHeld([.shift, .command]))
+        XCTAssertFalse(OrbitSCNView.peekHeld([.shift, .option]))
+        XCTAssertFalse(OrbitSCNView.peekHeld([]))
+    }
+
+    func testViewKeys() {
+        // 1-7 in the toolbar's order, F to fit; anything else goes on to the app.
+        XCTAssertEqual(OrbitSCNView.viewKey("1"), .view(.front))
+        XCTAssertEqual(OrbitSCNView.viewKey("7"), .view(.iso))
+        XCTAssertEqual(OrbitSCNView.viewKey("f"), .fit)
+        XCTAssertEqual(OrbitSCNView.viewKey("F"), .fit)
+        XCTAssertNil(OrbitSCNView.viewKey("8"))
+        XCTAssertNil(OrbitSCNView.viewKey("x"))
+        XCTAssertNil(OrbitSCNView.viewKey(""))
+    }
+
     func testOrbitNeverFlipsOverTheTop() {
         var c = camera(ortho: false)
         for _ in 0..<200 { c.orbit(dx: 0, dy: -50) }
@@ -107,5 +132,33 @@ final class OrbitCameraTests: XCTestCase {
         // The sphere's silhouette must sit inside the view.
         let edge = c.target + c.up * 1.2
         XCTAssertLessThan(abs(c.project(edge, aspect: aspect).y), 1)
+    }
+
+    func testLensChangeKeepsTheFraming() {
+        // A narrower lens moves the camera back so the target plane shows the same area.
+        var c = OrbitCamera()
+        c.frame(center: [0.5, 0.2, 0.3], radius: 1.2, direction: [-1, -1, 0.8], up: [0, 0, 1], aspect: 1.6)
+        let lens = 17 * Double.pi / 180
+        let n = c.withFovY(lens)
+        XCTAssertEqual(n.fovY, lens)
+        XCTAssertEqual(n.distance * tan(lens / 2), c.distance * tan(c.fovY / 2), accuracy: 1e-9)
+        XCTAssertEqual(simd_distance(n.target, c.target), 0, accuracy: 1e-12)
+        XCTAssertEqual(simd_distance(n.forward, c.forward), 0, accuracy: 1e-12)
+        // Orthographic: the lens does not change what is shown, so the camera stays.
+        var o = c
+        o.orthographic = true
+        XCTAssertEqual(o.withFovY(lens).position, o.position)
+    }
+
+    @MainActor
+    func testLayoutFiresOnlyWhenTheSizeChanges() {
+        // A layout pass that sets the same size must not redraw the camera (it fed a loop).
+        let v = OrbitSCNView(frame: NSRect(x: 0, y: 0, width: 100, height: 80), options: nil)
+        var calls = 0
+        v.onLayout = { calls += 1 }
+        v.setFrameSize(NSSize(width: 100, height: 80))
+        XCTAssertEqual(calls, 0)
+        v.setFrameSize(NSSize(width: 120, height: 80))
+        XCTAssertEqual(calls, 1)
     }
 }

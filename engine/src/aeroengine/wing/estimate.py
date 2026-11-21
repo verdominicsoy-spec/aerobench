@@ -36,7 +36,9 @@ its attached trials separating. With three to five elements (RANS, NACA
 however the turn was split, and from 30 degrees past it lost its lift or
 separated even with each flap within 25 degrees of the one in front: the
 estimate read those wings 27 to 87% high. A single element separates at its
-stall angle less STALL_MARGIN. Each row says why in `why`.
+stall angle less STALL_MARGIN, and the last element, met by the flow from
+its pressure side (set the wrong way), from that side's leading edge: see
+PRESSURE_PEAK_LIMIT. Each row says why in `why`.
 
 What it misses: the slot's effect on lift beyond what the panel method's
 interaction gives, a slot so narrow it chokes, how the deflection limit
@@ -66,7 +68,10 @@ from .viscous import polar, reynolds
 # front-element limits refitted on the RANS references, slats, a flap limit that rises with Reynolds number.
 # Version 4: flaps held to the element in front (past the main only a warning); front elements judged on
 # their free-air angle in place; over a ground, separation on the image's whole-wing gain.
-VERSION = 4
+# Version 5: the main and flaps separate on a pressure-side peak (PRESSURE_PEAK_LIMIT).
+# Version 7: that pressure-side rule for the last element only (RANS contradicted it on a front flap).
+# Version 6: an element whose section shows no stall in NeuralFoil's sweep is named in the warnings.
+VERSION = 7
 STALL_MARGIN = 2.0  # degrees: the last element counts as separating this far short of its stall angle
 # An element with another behind it: the slot keeps it attached well past its
 # own stall angle, but not for ever. Fitted on a NACA 6212 main-and-flap wing
@@ -112,6 +117,24 @@ DEFLECTION_HIGH_RE = 2.7e6
 # at Cl max (21.34 degrees), 38.0 past it (23.28). How it moves with the
 # Reynolds and Mach numbers is not known here.
 SLAT_PEAK_LIMIT = 35.0
+# The last element (a single section, or the last flap) whose stagnation point
+# sits on its suction side: the flow wraps round the nose onto the pressure
+# side, peaks there and separates from that side's leading edge once the peak
+# over the trailing-edge pressure in the panel solution passes
+# PRESSURE_PEAK_LIMIT (the slat's rule, on the other side). RANS (fine mesh,
+# SST-LM, 15 m/s, Re 3 x 10^5, not converged) separated two single inverted
+# elements 8.5 and 30.5 degrees the wrong way exactly so, at 11.4 and 161;
+# design-4 #1223's last flap held at 6.5; every main and RANS reference sits at
+# 0, the published NLR 7301 and 30P30N (but its slat at 0 degrees) too. On a
+# NACA 4412 alone the limit falls at about -11.5 degrees. Not for a slat: at
+# low angle its cove corner peaks on the pressure side with the flow attached.
+# Not for an element with one behind it either: design-12 #455's Flap 1 peaks
+# at 22.9 there (2.3 degrees past the main), but RANS turning it 2.3 to 14
+# degrees past the main (19 Nov 2026, medium mesh, SST and SA, none converged)
+# stalled it from its suction side's leading edge every time, behind a main
+# with a bubble from 0.55 to 0.87 of its chord: the peak falls to 4.6 and
+# the wing stays separated, so the peak says nothing there.
+PRESSURE_PEAK_LIMIT = 9.0
 
 
 def max_deflection(re: float) -> float:
@@ -131,6 +154,20 @@ def suction_peak(cp: np.ndarray, xy: np.ndarray, inverted: bool) -> float:
     peak, as at a slat's cove corner at low angle, does not count."""
     le = int(np.argmax(np.linalg.norm(xy - 0.5 * (xy[0] + xy[-1]), axis=1)))
     side = cp[le:] if inverted else cp[:le + 1]
+    return float(0.5 * (cp[0] + cp[-1]) - side.min())
+
+
+def pressure_peak(cp: np.ndarray, gamma: np.ndarray, xy: np.ndarray, inverted: bool) -> float:
+    """Trailing-edge Cp less the lowest Cp on the pressure side, when the
+    stagnation point (where the surface speed changes sign, nearest the
+    leading edge) sits on the suction side so the flow wraps round the nose
+    onto the pressure side; 0 when it does not."""
+    le = int(np.argmax(np.linalg.norm(xy - 0.5 * (xy[0] + xy[-1]), axis=1)))
+    flips = np.nonzero(np.sign(gamma[:-1]) != np.sign(gamma[1:]))[0]
+    stag = int(flips[np.argmin(np.abs(flips - le))]) if len(flips) else le
+    if not (stag > le if inverted else stag < le):
+        return 0.0
+    side = cp[:le + 1] if inverted else cp[le:]
     return float(0.5 * (cp[0] + cp[-1]) - side.min())
 # Over a ground the panel method's image overstates the lift the ground adds,
 # and more so the closer the ground: its gain grows without limit as the gap
@@ -224,6 +261,7 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
     lifts = []  # [row][element] lift alone here against freestream angle
     amplify = []  # [row][element] lift alone over the ground / alone in free air (1 in free air)
     peaks = []  # [row][element] suction peak over trailing-edge pressure, in place
+    pressure_peaks = []  # [row][element] the same on the pressure side, where the flow wraps onto it
     # Over a ground, the free-air cascade too: front elements are judged on the angle
     # their neighbours give them there, and the ground on the image's whole-wing gain.
     free_multi = Solver(placed, ref) if multi is None else None
@@ -255,6 +293,8 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
                                               alone[i][1]) for i in range(len(placed))])
             image_gain.append(r.cl_total / rf.cl_total - 1 if abs(rf.cl_total) > 0.05 else 0.0)
         peaks.append([suction_peak(cp, xy, bool(e.get("inverted"))) for cp, xy, e in zip(r.cp, placed, elements)])
+        pressure_peaks.append([pressure_peak(cp, g, xy, bool(e.get("inverted")))
+                               for cp, g, xy, e in zip(r.cp, r.gamma, placed, elements)])
         inviscid.append(row_inv)
         lifts.append(here)
         amplify.append(row_amp)
@@ -263,14 +303,20 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
     viscous = []  # per element: NeuralFoil rows, one per wing angle
     scale = []  # per element and wing angle: viscous over inviscid lift (elements with one behind them)
     stall = []  # per element: the angle of its maximum lift alone
+    # Per element: whether that maximum is a stall, not the end of the sweep. A thick, cambered
+    # section at a low Reynolds number can lose NeuralFoil's confidence near its peak and climb
+    # again to the end (design-4 #1223's Flap 2): its stall is unknown, and said so in the warnings.
+    stall_found = []
+    sweep = np.arange(-6.0, 26.0, 1.0)
     for i, e in enumerate(elements):
         sense = -1.0 if e.get("inverted") else 1.0
         unit = np.asarray(e["unit"], float)
         re = res[i]
         own = [float(e.get("angle", 0.0)) + sense * effective[k][i] for k in range(len(alphas))]
-        sweep = np.arange(-6.0, 26.0, 1.0)
         curve = polar(unit, sweep, re, n_crit, False, model_size, tunnel=alone)["rows"]
-        stall.append(float(sweep[int(np.argmax([r["cl"] for r in curve]))]))
+        top = int(np.argmax([r["cl"] for r in curve]))
+        stall.append(float(sweep[top]))
+        stall_found.append(top < len(sweep) - 1)
         if i == len(elements) - 1 and not led[i]:
             viscous.append(polar(unit, own, re, n_crit, bool(e.get("inverted")), model_size, tunnel=alone)["rows"])
             scale.append([None] * len(alphas))
@@ -301,7 +347,7 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
     past_main = [angle[i] - angle[main] if i > main else None for i in range(len(elements))]
     limit = [max_deflection(re) for re in res]
 
-    def separation(i: int, in_place: float, front: bool, peak: float) -> str | None:
+    def separation(i: int, in_place: float, front: bool, peak: float, pressure: float) -> str | None:
         """Why element i separates here, or None."""
         name = label(i, main)
         if deflection[i] is not None and deflection[i] > limit[i]:
@@ -310,6 +356,10 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
         if i < main and peak > SLAT_PEAK_LIMIT:
             return (f"{name}'s suction peak is {peak:.0f} below its trailing-edge pressure (Cp) in place, more than "
                     f"the {SLAT_PEAK_LIMIT:.0f} the 30P30N slat held: it separates")
+        if not front and not led[i] and pressure > PRESSURE_PEAK_LIMIT:
+            return (f"{name} meets the flow from its pressure side: the peak there is {pressure:.0f} below its "
+                    f"trailing-edge pressure (Cp) in place, more than {PRESSURE_PEAK_LIMIT:.0f}: it separates from "
+                    f"that side's leading edge")
         if led[i]:
             return None
         if front and in_place > stall[i] + FRONT_SEPARATION:
@@ -333,10 +383,14 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
             # Held at the separation line: past it the element counts as separating and the number means little.
             past_onset = min(max(0.0, in_place - (stall[i] - 4.0)), FRONT_SEPARATION + 4.0) if front else 0.0
             cd_own = v["cd"] * (1 + DRAG_GROWTH * (0.0 if led[i] else past_onset**2))
-            reason = separation(i, in_place_free if front else in_place, front, peaks[k][i])
+            reason = separation(i, in_place_free if front else in_place, front, peaks[k][i], pressure_peaks[k][i])
             if past_main[i] is not None and past_main[i] > limit[i]:
                 warnings.append(f"{label(i, main)} is turned {past_main[i]:.1f}° past the main: RANS separated NACA 6212 "
                                 f"cascades from {limit[i]:.0f}° past, and held frontwing#1's Flap 2 at 32.5°; check it with RANS")
+            if not stall_found[i] and not led[i]:
+                warnings.append(f"NeuralFoil finds no stall angle for {label(i, main).lower()}'s section below "
+                                f"{sweep[-1]:.0f}° at its Reynolds number ({res[i]:.2g}), so whether it stalls is not "
+                                f"judged; check it with RANS")
             if reason:
                 why.append(reason)
             els.append({"cl": cl_own * share, "cd": cd_own * share, "cm": v["cm"] * share * chords[i] / ref,
@@ -348,6 +402,7 @@ def estimate(elements: list[dict], alphas: list[float], speed: float, rho: float
                         "confidence": v["confidence"], "trusted": v["trusted"], "stall_angle": stall[i],
                         "past_stall": reason is not None, "deflection": deflection[i], "past_main": past_main[i],
                         "max_deflection": limit[i], "led": led[i], "suction_peak": peaks[k][i],
+                        "pressure_peak": pressure_peaks[k][i], "stall_found": stall_found[i],
                         "role": "slat" if i < main else ("main" if i == main else "flap")})
         if image_gain[k] > GROUND_SEPARATION_GAIN:
             warnings.append(f"Near the ground the estimate cannot tell whether the flow under the wing holds: the image "
