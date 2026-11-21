@@ -320,15 +320,15 @@ public final class SceneKitViewer: Viewer3D {
 
     // MARK: Head-tracked peek
 
-    /// The screen as a window: the plane through the orbit target is pinned to
-    /// the view's edges, so what you orbit around stays put and moving your
-    /// head looks around it. The eye eases from the normal view to the head.
+    /// The screen as a window: the plane at the model's front is pinned to the
+    /// view's edges, so the model sits behind the glass and moving your head
+    /// looks around it. The eye eases from the normal view to the head.
     private func applyPeekCamera(_ peek: HeadPeek) {
         // The eye follows the head's real angle, so the off-axis view is
         // pre-distorted for where your eye really is. Nothing else moves.
         let offset = peek.offsetCM ?? .zero, d = peek.pressDistanceCM
         let view = orbit
-        let depth = view.distance
+        let depth = view.peekDepth(center: SIMD3<Double>(center), radius: Double(radius))
         let window = view.peekWindow(depth: depth, aspect: aspect)
         let eye = PeekWindow.eye(rest: view.restEye(window: window, depth: depth, boundsRadius: Double(radius)),
                                  offsetCM: offset, distanceCM: d, blend: peek.blend)
@@ -342,7 +342,7 @@ public final class SceneKitViewer: Viewer3D {
                             localFront: SIMD3(0, 0, -1))
 
         // The room: from the window back to just behind the model.
-        let back = max(simd_dot(SIMD3<Double>(center) - view.target, view.forward) + Double(radius), Double(radius)) * 1.1
+        let back = max(simd_dot(SIMD3<Double>(center) - window.center, view.forward) + Double(radius), Double(radius)) * 1.1
         let r = SIMD3<Float>(view.right * window.halfWidth), u = SIMD3<Float>(view.up * window.halfHeight)
         let z = SIMD3<Float>(-view.forward * back)
         peekRoom.simdTransform = simd_float4x4(columns: (SIMD4(r, 0), SIMD4(u, 0), SIMD4(z, 0), SIMD4(SIMD3<Float>(window.center), 1)))

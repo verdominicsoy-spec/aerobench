@@ -135,4 +135,12 @@ final class PeekProjectionTests: XCTestCase {
         }
     }
 
+
+    func testGlassAtTheModelsFront() {
+        // The window sits where the model begins, so all of it is behind the glass.
+        let c = camera()
+        XCTAssertEqual(c.peekDepth(center: c.target, radius: 1.2), c.distance - 1.2, accuracy: 1e-9)
+        // Zoomed right into a part, the glass stops a quarter of the way to the target.
+        XCTAssertEqual(c.peekDepth(center: c.target, radius: c.distance), 0.25 * c.distance, accuracy: 1e-9)
+    }
 }

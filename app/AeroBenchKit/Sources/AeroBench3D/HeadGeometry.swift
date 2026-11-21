@@ -54,7 +54,8 @@ public enum HeadGeometry {
                      distanceCM)
     }
 
-    /// An average adult's distance between pupils, cm.
+    /// An average adult's distance between pupils, cm. It only sets the absolute scale,
+    /// which the peek never uses: it works from your distance relative to the Shift press.
     public static let pupilGapCM = 6.3
 
     /// How far the eyes are from the webcam, cm, from the gap between them in the

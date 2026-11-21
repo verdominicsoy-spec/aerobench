@@ -37,6 +37,9 @@ a gimmick: "it feels like a controller instead of a window".
 - **The distance.** From the eye gap, as now (median of three frames, then a slow One Euro filter), and it also
   feeds the head's sideways position (a 1 cm move at 30 cm is a bigger angle in the image than at 60 cm).
   *My call:* turning the head shortens the eye gap and reads as leaning back a little; the smoothing keeps it mild.
+- **No calibration.** The distance is measured automatically from the eye gap. The spacing between your eyes
+  is never needed: one webcam can't tell it apart from distance, and the eye only uses your distance relative
+  to the Shift press, where the assumed 6.3 cm cancels exactly.
 - **The glass.** The window plane sits where the model's bounding sphere begins along the view direction, but no
   nearer than a quarter of the way to the orbit target, so zooming right into a part still works. The room runs
   from that plane to just behind the model. The un-peeked view is the same frustum, so nothing jumps at the press.

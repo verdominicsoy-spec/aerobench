@@ -60,4 +60,26 @@ final class HeadGeometryTests: XCTestCase {
         XCTAssertEqual(d(at55 / 2), 110, accuracy: 1e-9)
         XCTAssertTrue(d(0).isFinite)
     }
+
+    func testThePeekNeedsNoEyeSpacing() {
+        // One webcam can't tell wide-set eyes far away from narrow-set ones close up, and
+        // the peek doesn't need to: two people at the same seats, moving the same way, get
+        // the same eye even though their spacings (5.8 and 7.0 cm) differ from the 6.3 assumed.
+        let hfov = 62.0 * .pi / 180, k = 2 * tan(hfov / 2)
+        let layout = HeadGeometry.Layout(viewWidthCM: 30, viewHeightCM: 19, cameraCM: [0, 11])
+        let rest = SIMD3<Double>(0, 0, 3)
+        func eye(spacing: Double) -> SIMD3<Double> {
+            // At 55 cm straight on at the press, then 40 cm and 8 cm to the right.
+            func at(_ x: Double, _ z: Double) -> SIMD3<Double> {
+                let s = HeadGeometry.Sample(eyeMid: [0.5 - x / (k * z), 0.5], separation: spacing / (k * z), time: 0)
+                return HeadGeometry.head(s, hfov: hfov, imageAspect: 16.0 / 9, distanceCM: HeadGeometry.distance(s, hfov: hfov),
+                                         layout: layout, mirrored: false)
+            }
+            let press = at(0, 55), now = at(8, 40)
+            return PeekWindow.eye(rest: rest, offsetCM: now - press, distanceCM: press.z, blend: 1)
+        }
+        let a = eye(spacing: 5.8), b = eye(spacing: 7.0)
+        XCTAssertEqual(simd_distance(a, b), 0, accuracy: 1e-9)
+        XCTAssertEqual(a.z, 3 * 40 / 55, accuracy: 1e-9)
+    }
 }
