@@ -149,6 +149,21 @@ final class PeekStateTests: XCTestCase {
         XCTAssertFalse(s.isHeld)
     }
 
+    func testFacesDoNotSlowTheFade() {
+        // Camera frames arrive between display ticks; they must not eat tick time.
+        var s = PeekState()
+        s.press(at: 0, trackerAvailable: true)
+        s.face(SIMD3(1, 2, 55), at: 0, rest: rest)
+        var t = 0.0
+        while t < 0.15 - 1e-9 {
+            t += 1.0 / 60
+            s.face(SIMD3(1, 2, 55), at: t + 0.005, rest: rest)  // a frame lands just after each tick
+            s.tick(at: t + 1.0 / 60 * 0.5)
+        }
+        s.tick(at: 0.15)
+        XCTAssertEqual(s.blend, 1, "fully in after the 0.15 s fade")
+    }
+
     func testUnavailableTrackerNeverBlends() {
         var s = PeekState()
         s.press(at: 0, trackerAvailable: false)

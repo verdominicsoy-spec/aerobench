@@ -85,9 +85,7 @@ struct SettingsView: View {
         } header: {
             Text("Head-tracked peek")
         } footer: {
-            Text("In the CAD and Flow Field viewers, hold Shift and move your head to look around, as if through a window. "
-                 + "Where your head is when you press Shift counts as straight on. "
-                 + "Works on the built-in display, where the camera is. Closing one eye makes it stronger.")
+            Text("Hold Shift over the CAD or Flow Field view and move your head. Built-in display only.")
         }
     }
 

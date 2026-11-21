@@ -100,6 +100,17 @@ final class OrbitCameraTests: XCTestCase {
         XCTAssertFalse(OrbitSCNView.peekHeld([]))
     }
 
+    func testViewKeys() {
+        // 1-7 in the toolbar's order, F to fit; anything else goes on to the app.
+        XCTAssertEqual(OrbitSCNView.viewKey("1"), .view(.front))
+        XCTAssertEqual(OrbitSCNView.viewKey("7"), .view(.iso))
+        XCTAssertEqual(OrbitSCNView.viewKey("f"), .fit)
+        XCTAssertEqual(OrbitSCNView.viewKey("F"), .fit)
+        XCTAssertNil(OrbitSCNView.viewKey("8"))
+        XCTAssertNil(OrbitSCNView.viewKey("x"))
+        XCTAssertNil(OrbitSCNView.viewKey(""))
+    }
+
     func testOrbitNeverFlipsOverTheTop() {
         var c = camera(ortho: false)
         for _ in 0..<200 { c.orbit(dx: 0, dy: -50) }

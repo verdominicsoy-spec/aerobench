@@ -98,7 +98,7 @@ public struct PeekState: Sendable {
     /// A camera frame: the measured head (cm), or nil when no face was found.
     /// `rest` is where the head eases to once the face has been gone a while.
     public mutating func face(_ head: SIMD3<Double>?, at t: TimeInterval, rest: SIMD3<Double>) {
-        now = max(now, t)
+        // Not the fade's clock: a frame landing between ticks would eat tick time.
         if let head {
             if lostFrom != nil, let shown = headCM {
                 // Coming back after a loss: filter on from what is shown, not from the stale value.

@@ -55,8 +55,8 @@ public final class HeadPeek {
     private var available: Bool {
         guard config.enabled, layout != nil else { return false }
         switch tracker.status {
-        case .off, .starting, .running: return true
-        case .needsPermission, .denied, .noCamera: return false
+        case .off, .starting, .running, .noCamera: return true  // no camera: try again, it may be back
+        case .needsPermission, .denied: return false
         }
     }
 

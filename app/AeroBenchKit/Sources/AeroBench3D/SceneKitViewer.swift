@@ -299,7 +299,7 @@ public final class SceneKitViewer: Viewer3D {
 
     private var aspect: Double {
         let size = scnView.bounds.size
-        return size.height > 0 ? Double(size.width / size.height) : 1
+        return size.width > 0 && size.height > 0 ? Double(size.width / size.height) : 1  // a collapsed view
     }
 
     private func applyCamera() {
@@ -497,8 +497,8 @@ public final class SceneKitViewer: Viewer3D {
     private func peekStep() {
         guard let peek else { return stopPeekLink() }
         let now = CACurrentMediaTime()
-        peek.layout = peekLayout()
-        if peek.layout == nil { peek.release(at: now) }  // moved off the built-in display
+        // Moved off the built-in display: ease out on the last layout instead of snapping.
+        if let layout = peekLayout() { peek.layout = layout } else { peek.release(at: now) }
         // A Shift-up eaten by a tracking loop (live resize, a menu) never reaches the monitor.
         if !OrbitSCNView.peekHeld(NSEvent.modifierFlags) { peek.release(at: now) }
         peek.tick(at: now)
@@ -510,6 +510,10 @@ public final class SceneKitViewer: Viewer3D {
 
     private func handle(_ input: OrbitSCNView.Input) {
         switch input {
+        case .view(let view):
+            return look(from: view)
+        case .fit:
+            return fitAll()
         case .orbitBegan(let location):
             pivot = pointUnder(location)
             return
@@ -865,10 +869,13 @@ extension SceneKitViewer {
 ///   pinch: zoom at the cursor        mouse wheel or command-scroll: zoom at the cursor
 ///   two-finger scroll on a trackpad: pan        trackpad rotate: turn about the up axis
 ///   double-click or two-finger double-tap: centre on the point (empty space: fit)
+///   keys 1-7: front, back, left, right, top, bottom, iso        F: fit
 final class OrbitSCNView: SCNView {
     enum Phase { case discrete, began, changed, ended, cancelled }
 
-    enum Input {
+    enum Input: Equatable {
+        case view(StandardView)
+        case fit
         case orbitBegan(at: CGPoint)
         case orbit(dx: Double, dy: Double)
         case focus(at: CGPoint)
@@ -899,6 +906,24 @@ final class OrbitSCNView: SCNView {
         last = p
         panning = Self.dragPans(event.modifierFlags)
         if !panning { onInput?(.orbitBegan(at: p)) }
+    }
+
+    /// Keys in the 3D view (after a click into it): 1-7 for the standard views
+    /// in the toolbar's order, F to fit. Bare keys, so not menu shortcuts,
+    /// which would also fire while typing in a field.
+    static func viewKey(_ characters: String) -> Input? {
+        if characters.lowercased() == "f" { return .fit }
+        guard let n = Int(characters), (1...StandardView.allCases.count).contains(n) else { return nil }
+        return .view(StandardView.allCases[n - 1])
+    }
+
+    override func keyDown(with event: NSEvent) {
+        let chord = !event.modifierFlags.intersection([.command, .option, .control]).isEmpty
+        if !chord, let input = Self.viewKey(event.charactersIgnoringModifiers ?? "") {
+            onInput?(input)
+        } else {
+            super.keyDown(with: event)
+        }
     }
 
     /// Option-drag pans. Shift is left free for the head-tracked peek.
