@@ -410,6 +410,14 @@ def _start(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
     raise AssertionError("unreachable")
 
 
+def _ranks(cores: int) -> int:
+    """MPI ranks for a run: no more than the machine's CPUs. mpirun refuses
+    more ranks than slots ("not enough slots", GitHub's 4-CPU runner asked
+    for 6). Open MPI counts physical cores, so a refusal can still happen
+    with hyperthreads; that one starts again on one core."""
+    return max(1, min(cores, os.cpu_count() or 1))
+
+
 class StartupCrash(Exception):
     def __init__(self, detail: str) -> None:
         super().__init__("SU2 crashed while starting")
@@ -486,6 +494,7 @@ def _run_once(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
     (workdir / "su2.cfg").write_text(case.cfg(str(rel)))
     cmd = [str(su2), "su2.cfg"]
     mpirun = shutil.which("mpirun", path=str(su2.parent)) or shutil.which("mpirun")
+    cores = _ranks(cores)
     if cores > 1 and mpirun:
         cmd = [mpirun, "-n", str(cores)] + (["--allow-run-as-root"] if hasattr(os, "geteuid") and os.geteuid() == 0 else []) + cmd
         # One machine: keep Open MPI off the cluster network transports.
@@ -551,7 +560,7 @@ def _run_once(case: Case, mesh: Path, workdir: Path, su2: Path, cores: int,
                 last = int(parts[1])
         raise Diverged(last)
     if proc.returncode != 0 and not stopped and not screen["CL"] and any(
-            k in line for line in tail for k in ("MPI_Win_create", "ompi_osc", "MPI_Init")):
+            k in line for line in tail for k in ("MPI_Win_create", "ompi_osc", "MPI_Init", "not enough slots")):
         raise StartupCrash("\n".join(tail[-12:]))
     if (proc.returncode != 0 and not stopped) or not history_file.exists():
         raise EngineError(f"SU2 stopped with exit code {proc.returncode}", "\n".join(tail[-12:]))

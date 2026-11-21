@@ -36,6 +36,8 @@ main() {
     step "Getting the latest version"
     if ! git diff --quiet || ! git diff --cached --quiet; then
       warn "You have local changes, so the update was skipped (git status shows them)."
+    elif ! git rev-parse --verify --quiet '@{u}' >/dev/null; then
+      echo "This branch ($(git branch --show-current)) is only on this Mac, so there is nothing to pull."
     elif ! git pull --ff-only; then
       warn "Could not update (offline?). Carrying on with what you have."
     fi

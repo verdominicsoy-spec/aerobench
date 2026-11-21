@@ -116,10 +116,10 @@ enum S37Motifs {
             guard let solid = solidRect(points, aspect: size.width / size.height) else { continue }
             let scale = max(size.width / solid.width, size.height / solid.height)
             if let prev = best, scale < step {
-                if step / scale < prev.scale / step { best = (points, solid, scale) }
+                if step / scale < prev.scale / step { best = (points, solid, Double(scale)) }
                 break
             }
-            best = (points, solid, scale)
+            best = (points, solid, Double(scale))
             if points.count > 300_000 { break }
         }
         guard let (points, solid, scale) = best else { return }

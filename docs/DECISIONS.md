@@ -1556,3 +1556,60 @@ mesh moves lift and drag under 3%. Costs: about 1.5x the run time, and
 convergence on 76% of UIUC angles against 85%. SST, SA, the coarser meshes and
 the quick scan stay in Wing Lab for speed. The laminar drag allowance is
 reported for the fully turbulent models only, as before.
+
+## 2026-11-19: the estimate checks the pressure side (version 5)
+
+The estimate called separation only on the suction side: an element past its
+stall angle, a flap turned too far past the one in front, a slat's suction
+peak. RANS separated three cases it called attached, all from the leading
+edge of the pressure side: design-12 #455's Flap 1, only 2.3 degrees past the
+main (Cp -23 on its pressure side in place, estimate 55% high on lift), and
+two single inverted elements at negative angles. The flow off the element
+ahead meets the flap's nose from its suction side. NeuralFoil cannot give a
+negative stall angle (confidence under 0.25 on that side), and an integral
+boundary layer on the panel speeds called leading-edge bubbles separated, so
+the rule is the slat's pressure-difference rule on the other side: when the
+stagnation point sits on the suction side, the main or a flap separates once
+its pressure-side peak over the trailing-edge pressure passes 9. That limit
+sits between one held run (6.5) and one separated (11.4, not converged);
+every main, RANS reference and published case reads 0 (but the 30P30N slat at
+0 degrees, so slats are left out). It moves no lift or drag. Out-of-sample
+separated or unsettled runs called separating: 5 of 8, was 1; study-2's
+trailing-edge separation on its main is still missed.
+
+**Trailing-edge separation on a main: not yet.** study-2 #483's main
+separates from 67% of its chord in RANS (converged), 7 degrees past its
+stall in place, where design-6's held 10.9 past: no angle rule splits them,
+nor the suction peak (12.8 separated, 14.2 held). Head's method on the panel
+speeds ranks the separated mains last (0.92 and 0.89 of chord against 0.96
+to 1.00 held, at any H from 2.0 to 2.8), but puts the 30P30N main, attached in
+the tunnel, separating at 0.21 at 8.1 degrees. A rule on one converged case
+with a tunnel case against it is not shipped; it needs RANS on mains near
+that line.
+
+**Version 6: a section with no stall says so.** 8 of 39 elements on the
+saved RANS wings (small thick flaps, about 1e5) have NeuralFoil's highest
+lift at the end of the sweep, its confidence falling under 0.3 near the real
+peak, so the stall-angle checks were judging them against 25 degrees without
+a word. Each now carries stall_found false and a warning naming it. Wing Lab
+had not been showing the estimate's warnings at all (a flap far past the
+main, a close ground): it now lists them under the numbers, and its accuracy
+note gives the out-of-sample figures (lift within about 10% where RANS held,
+drag 40% low to 20% high) in place of "lift within 2%, drag 10% high".
+
+**Version 7: the pressure-side rule is for the last element only.** Version
+5 had flagged design-12 #455 on Flap 1's pressure-side peak (22.9), reading
+the RANS separation as starting there. RANS turning Flap 1 2.3, 6, 10 and 14
+degrees past the main (medium mesh, SST, and SA at 2.3 and 14; none
+converged, the residual down 0.5 to 0.7 orders) stalled it from the leading
+edge of its suction side every time, behind a main with a bubble from 0.55
+to 0.87 of its chord, while the peak fell to 4.6. So on a front flap the peak
+pointed the designer the wrong way (turn the flap more) and said nothing
+about the cause. It stays for the last element, which is judged like a
+single section: two single inverted elements set the wrong way separated
+from that side's leading edge in RANS. design-12 is a miss again, and its
+cause (most likely the main and its wake near the ground) has no rule: the
+mains RANS separated (design-12, study-2) sit 5 to 7 degrees past their
+stall in place, the ones it held 4 to 14. A study's RANS checks are what
+catch these: a check scores only when RANS converged, attached, so an
+unconverged or separated finalist shows as failed, never as the answer.

@@ -83,8 +83,14 @@ public struct DrawnTrack: Codable, Equatable, Sendable {
 
     private func curvature(_ p: [SIMD2<Double>], _ t: Double) -> Double {
         let u = 1 - t
-        let d1 = 3 * u * u * (p[1] - p[0]) + 6 * u * t * (p[2] - p[1]) + 3 * t * t * (p[3] - p[2])
-        let d2 = 6 * u * (p[2] - 2 * p[1] + p[0]) + 6 * t * (p[3] - 2 * p[2] + p[1])
+        // In typed terms: as one expression, Xcode 26.6 (CI) times out type-checking it.
+        let a: SIMD2<Double> = 3 * u * u * (p[1] - p[0])
+        let b: SIMD2<Double> = 6 * u * t * (p[2] - p[1])
+        let c: SIMD2<Double> = 3 * t * t * (p[3] - p[2])
+        let d1 = a + b + c
+        let e: SIMD2<Double> = 6 * u * (p[2] - 2 * p[1] + p[0])
+        let f: SIMD2<Double> = 6 * t * (p[3] - 2 * p[2] + p[1])
+        let d2 = e + f
         let speed = (d1 * d1).sum().squareRoot()
         return speed < 1e-12 ? 0 : (d1.x * d2.y - d1.y * d2.x) / (speed * speed * speed)
     }

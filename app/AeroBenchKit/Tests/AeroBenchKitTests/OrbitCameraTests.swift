@@ -86,6 +86,31 @@ final class OrbitCameraTests: XCTestCase {
         XCTAssertFalse(OrbitSCNView.scrollPans(precise: true, phase: [], momentumPhase: [], command: false))
     }
 
+    func testOptionDragPansShiftDragOrbits() {
+        XCTAssertTrue(OrbitSCNView.dragPans(.option))
+        XCTAssertFalse(OrbitSCNView.dragPans(.shift))
+        XCTAssertFalse(OrbitSCNView.dragPans([]))
+    }
+
+    func testPeekNeedsShiftAlone() {
+        XCTAssertTrue(OrbitSCNView.peekHeld(.shift))
+        XCTAssertTrue(OrbitSCNView.peekHeld([.shift, .capsLock]))  // caps lock is not a chord
+        XCTAssertFalse(OrbitSCNView.peekHeld([.shift, .command]))
+        XCTAssertFalse(OrbitSCNView.peekHeld([.shift, .option]))
+        XCTAssertFalse(OrbitSCNView.peekHeld([]))
+    }
+
+    func testViewKeys() {
+        // 1-7 in the toolbar's order, F to fit; anything else goes on to the app.
+        XCTAssertEqual(OrbitSCNView.viewKey("1"), .view(.front))
+        XCTAssertEqual(OrbitSCNView.viewKey("7"), .view(.iso))
+        XCTAssertEqual(OrbitSCNView.viewKey("f"), .fit)
+        XCTAssertEqual(OrbitSCNView.viewKey("F"), .fit)
+        XCTAssertNil(OrbitSCNView.viewKey("8"))
+        XCTAssertNil(OrbitSCNView.viewKey("x"))
+        XCTAssertNil(OrbitSCNView.viewKey(""))
+    }
+
     func testOrbitNeverFlipsOverTheTop() {
         var c = camera(ortho: false)
         for _ in 0..<200 { c.orbit(dx: 0, dy: -50) }

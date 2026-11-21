@@ -77,9 +77,9 @@ struct CADToolbar: View {
             // The view, measuring and section tools need a model to act on.
             Group {
                 ForEach(StandardView.allCases) { view in
-                    Button(view.title) { cad.viewer.look(from: view) }
+                    Button(view.title) { cad.viewer.look(from: view) }.help("\(view.title) view (\(view.key))")
                 }
-                Button("Fit") { cad.viewer.fitAll() }
+                Button("Fit") { cad.viewer.fitAll() }.help("Fit everything (F)")
                 S37Segmented(options: [(Projection.perspective, "Persp"), (.orthographic, "Ortho")], selection: $cad.projection)
                     .fixedSize()
                 Divider().frame(height: 18)

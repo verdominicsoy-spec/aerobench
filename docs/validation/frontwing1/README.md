@@ -101,7 +101,7 @@ So the strips do not change the single strip's answer: at STAR's setup the latti
 
 ### STAR's wing alone (15 Nov, `star_wing.py`, `su2_elements.py`)
 
-STAR ran frontwing#1.02 alone: wing and both endplates, half model, moving ground, 20 m/s, fully turbulent SST, the endplate bottoms 35 mm off the ground. It stopped at 368 iterations on the aero lead's criteria; over the last 100 its CL moved 0.0016 and its CD 0.0010. `WingNumbers.java` (in OneDrive `AERO/starccm macros`) wrote the forces, the whole wetted surface (154 273 faces) and three cuts. The surface table adds up to STAR's own force to 0.01 N. Wing y+ is 1.6 median and 2.8 at the 95th percentile.
+STAR ran frontwing#1.02 alone: wing and both endplates, half model, moving ground, 20 m/s, fully turbulent SST, the endplate bottoms 35 mm off the ground. It stopped at 368 iterations on the aero lead's criteria; over the last 100 its CL moved 0.0016 and its CD 0.0010. `WingNumbers.java` (in iCloud Drive `Formula Student/Aero/Macros/STAR`) wrote the forces, the whole wetted surface (154 273 faces) and three cuts. The surface table adds up to STAR's own force to 0.01 N. Wing y+ is 1.6 median and 2.8 at the 95th percentile.
 
 On AeroBench's reference (the 524.5 mm span times the 682 mm sum of the chords):
 

@@ -1,3 +1,4 @@
+import AeroBench3D
 import AeroBenchKit
 import AppKit
 import SwiftUI
@@ -60,10 +61,47 @@ struct SettingsView: View {
                      + "A wing optimisation runs its trials at once on \(settings.coresPerJob) cores each, "
                      + "\(settings.parallelTrials * settings.coresPerJob) in all.")
             }
+
+            peekSection(settings)
         }
         .formStyle(.grouped)
         .frame(width: 560)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private func peekSection(_ settings: AppSettings) -> some View {
+        @Bindable var settings = settings
+        Section {
+            Toggle("Hold Shift to peek with head tracking", isOn: $settings.peekEnabled)
+                .onChange(of: settings.peekEnabled) { app.applyPeekSettings() }
+            HStack {
+                Text("Head sensitivity")
+                Slider(value: $settings.peekSensitivity, in: 1...4, step: 0.25)
+                Text(String(format: "%g×", settings.peekSensitivity)).monospacedDigit().frame(width: 36, alignment: .trailing)
+            }
+            .onChange(of: settings.peekSensitivity) { app.applyPeekSettings() }
+            peekStatus(app.cad.viewer.peek?.tracker)
+        } header: {
+            Text("Head-tracked peek")
+        } footer: {
+            Text("Hold Shift over the CAD or Flow Field view and move your head. Built-in display only.")
+        }
+    }
+
+    @ViewBuilder
+    private func peekStatus(_ tracker: HeadTracker?) -> some View {
+        switch tracker?.status {
+        case .denied?:
+            Label("Camera access is off: System Settings > Privacy & Security > Camera", systemImage: "exclamationmark.triangle")
+                .foregroundStyle(S37.C.clayInk)
+        case .noCamera?:
+            Label("No built-in camera found", systemImage: "exclamationmark.triangle").foregroundStyle(S37.C.clayInk)
+        case .needsPermission?:
+            Label("The first Shift over the CAD or Flow Field view asks for the camera", systemImage: "info.circle").foregroundStyle(.secondary)
+        default:
+            EmptyView()
+        }
     }
 
     private func chooseFolder(title: String, files: Bool = false) -> URL? {

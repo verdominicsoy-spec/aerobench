@@ -178,7 +178,7 @@ extension AppState {
     func exportWingCSV() {
         let wing = wingLab.wing
         guard !wing.elements.isEmpty else { return }
-        let format = AirfoilCSV.Format(rawValue: UserDefaults.standard.string(forKey: "wingCSVFormat") ?? "") ?? .generic
+        let format = AirfoilCSV.Format(rawValue: UserDefaults.standard.string(forKey: "wingExportFormat") ?? "") ?? .catia
         do {
             if format == .fusion {
                 let panel = NSOpenPanel()
@@ -205,11 +205,11 @@ extension AppState {
                 return
             }
             let panel = NSSavePanel()
-            panel.title = format == .catia ? "Export Points for CATIA" : "Export Wing Points"
-            panel.nameFieldStringValue = format == .catia ? "wing_catia_mm.csv" : "wing_points_mm.csv"
+            panel.title = "Export Points for CATIA"
+            panel.nameFieldStringValue = "wing_catia_mm.csv"
             panel.allowedContentTypes = [.commaSeparatedText]
             guard panel.runModal() == .OK, let url = panel.url else { return }
-            try (format == .catia ? wing.catiaCSV() : wing.csvFile()).write(to: url, atomically: true, encoding: .utf8)
+            try wing.catiaCSV().write(to: url, atomically: true, encoding: .utf8)
         } catch {
             show("Could not export the points", error)
         }

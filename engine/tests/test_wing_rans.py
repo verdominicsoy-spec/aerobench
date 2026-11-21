@@ -244,6 +244,46 @@ with open("history.csv", "w") as h:
     assert out["converged"], out
 
 
+def test_an_mpi_slots_refusal_starts_again(tmp_path):
+    """GitHub's 4-CPU Linux runner: mpirun -n 6 refused ("not enough slots")
+    and the run failed outright instead of starting again more modestly."""
+    import stat
+    import sys
+
+    from aeroengine.wing import su2 as m
+
+    fake = tmp_path / "SU2_CFD"
+    fake.write_text(f"""#!{sys.executable}
+import math, os, sys
+flag = "started_once"
+if not os.path.exists(flag):
+    open(flag, "w").close()
+    print("There are not enough slots available in the system to satisfy the 6", flush=True)
+    print("slots that were requested by the application:", flush=True)
+    sys.exit(1)
+with open("history.csv", "w") as h:
+    h.write('"Inner_Iter","rms[P]","CL","CD"\\n')
+    for it in range(400):
+        rms, cl, cd = -2 - it / 50, 1.2 + 0.3 * math.exp(-it / 5), 0.02 + 0.01 * math.exp(-it / 5)
+        h.write(f"{{it}},{{rms}},{{cl}},{{cd}}\\n"); h.flush()
+        print(f"|{{it:>12}}|{{rms:>12.6f}}|{{cl:>12.6f}}|{{cd:>12.6f}}|", flush=True)
+""")
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    case = Case(speed=20, rho=1.2, mu=1.8e-5, alpha_deg=5, ref_chord=0.4, ref_point=(0.1, 0), walls=[], iterations=400)
+    out = m.run(case, tmp_path / "m.su2", tmp_path, fake, cores=1)
+    assert (tmp_path / "started_once").exists(), out
+    assert out["converged"], out
+
+
+def test_mpi_ranks_never_exceed_the_cpus(monkeypatch):
+    from aeroengine.wing import su2 as m
+
+    monkeypatch.setattr("os.cpu_count", lambda: 4)
+    assert m._ranks(6) == 4
+    assert m._ranks(2) == 2
+    assert m._ranks(0) == 1
+
+
 def test_sweep_chains_restarts_and_keeps_to_its_time_limit(monkeypatch, tmp_path):
     from aeroengine.wing import rans
 

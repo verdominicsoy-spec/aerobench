@@ -30,6 +30,32 @@ public final class SceneKitViewer: Viewer3D {
     private var currentView: StandardView = .iso
     private let clickTarget = ClickTarget()
     private let doubleClickTarget = ClickTarget()
+    private let normalCamera = SCNCamera()
+    /// Used while peeking: its projectionTransform is the off-axis window.
+    private let peekCamera = SCNCamera()
+    private var peekMonitor: Any?
+    private var peekObservers: [NSObjectProtocol] = []
+    private var peekLink: CADisplayLink?
+    private let peekLinkTarget = LinkTarget()
+    /// A grid room behind the window, shown while peeking: its front edges sit
+    /// on the view's edges, which is what makes the depth read (every reference
+    /// demo has one).
+    private let peekRoom = SceneKitViewer.makePeekRoom()
+    /// While peeking: a key light fixed to the room, so the lit and shaded sides
+    /// stay put as you look around and the model drops a shadow on the room.
+    /// The headlight lights every face you see head-on, which reads as flat.
+    private let peekKey = SceneKitViewer.makePeekKey()
+    private let headLight = SCNLight()
+    private let ambientLight = SCNLight()
+    private static let headIntensity: CGFloat = 900, ambientIntensity: CGFloat = 350
+
+    /// Hold Shift to peek with head tracking. nil: no peeking (the Flow Field viewer).
+    public var peek: HeadPeek? {
+        didSet { installPeek() }
+    }
+
+    /// A peek is showing (fully or easing).
+    public var isPeeking: Bool { (peek?.blend ?? 0) > 0 }
 
     public var onPick: ((PickResult) -> Void)?
     /// Edit mode: hover and click report the screen point even with nothing
@@ -50,7 +76,7 @@ public final class SceneKitViewer: Viewer3D {
     public var projection: Projection = .perspective {
         didSet {
             orbit.orthographic = projection == .orthographic
-            cameraNode.camera?.usesOrthographicProjection = orbit.orthographic
+            normalCamera.usesOrthographicProjection = orbit.orthographic
             fitAll()
         }
     }
@@ -75,7 +101,7 @@ public final class SceneKitViewer: Viewer3D {
         // toward a fixed centre and stops there.
         scnView.allowsCameraControl = false
 
-        let camera = SCNCamera()
+        let camera = normalCamera
         camera.automaticallyAdjustsZRange = true
         camera.fieldOfView = 35
         cameraNode.camera = camera
@@ -84,21 +110,23 @@ public final class SceneKitViewer: Viewer3D {
 
         // A headlight that follows the camera, plus soft ambient fill.
         let head = SCNNode()
-        head.light = SCNLight()
-        head.light?.type = .directional
-        head.light?.intensity = 900
+        head.light = headLight
+        headLight.type = .directional
+        headLight.intensity = Self.headIntensity
         cameraNode.addChildNode(head)
         let ambient = SCNNode()
-        ambient.light = SCNLight()
-        ambient.light?.type = .ambient
-        ambient.light?.intensity = 350
+        ambient.light = ambientLight
+        ambientLight.type = .ambient
+        ambientLight.intensity = Self.ambientIntensity
         scene.rootNode.addChildNode(ambient)
+        scene.rootNode.addChildNode(peekKey)
 
         scene.rootNode.addChildNode(modelRoot)
         scene.rootNode.addChildNode(markerRoot)
         scene.rootNode.addChildNode(previewRoot)
         scene.rootNode.addChildNode(editRoot)
         scene.rootNode.addChildNode(overlayRoot)
+        scene.rootNode.addChildNode(peekRoom)
         overlayRoot.addChildNode(pointsNode)
         overlayRoot.addChildNode(sliceNode)
         overlayRoot.addChildNode(frameNode)
@@ -263,7 +291,7 @@ public final class SceneKitViewer: Viewer3D {
     private func place(direction: SIMD3<Float>, up: SIMD3<Float>) {
         pivot = nil
         orbit.worldUp = SIMD3<Double>(upAxis == .z ? SIMD3<Float>(0, 0, 1) : SIMD3<Float>(0, 1, 0))
-        orbit.fovY = Double(cameraNode.camera?.fieldOfView ?? 35) * .pi / 180
+        orbit.fovY = Double(normalCamera.fieldOfView) * .pi / 180  // not the peek camera's, while peeking
         orbit.frame(center: SIMD3<Double>(center), radius: Double(radius), direction: SIMD3<Double>(direction),
                     up: SIMD3<Double>(up), aspect: aspect)
         applyCamera()
@@ -271,22 +299,221 @@ public final class SceneKitViewer: Viewer3D {
 
     private var aspect: Double {
         let size = scnView.bounds.size
-        return size.height > 0 ? Double(size.width / size.height) : 1
+        return size.width > 0 && size.height > 0 ? Double(size.width / size.height) : 1  // a collapsed view
     }
 
     private func applyCamera() {
         cameraRevision &+= 1
-        cameraNode.simdPosition = SIMD3<Float>(orbit.position)
-        cameraNode.simdLook(at: SIMD3<Float>(orbit.target), up: SIMD3<Float>(orbit.screenUp), localFront: SIMD3(0, 0, -1))
-        cameraNode.camera?.usesOrthographicProjection = orbit.orthographic
-        cameraNode.camera?.orthographicScale = orbit.orthoHalfHeight
+        if let peek, peek.blend > 0, peek.layout != nil {
+            applyPeekCamera(peek)
+        } else {
+            peekRoom.isHidden = true
+            setPeekLighting(0)
+            cameraNode.camera = normalCamera
+            cameraNode.simdPosition = SIMD3<Float>(orbit.position)
+            cameraNode.simdLook(at: SIMD3<Float>(orbit.target), up: SIMD3<Float>(orbit.screenUp), localFront: SIMD3(0, 0, -1))
+            normalCamera.usesOrthographicProjection = orbit.orthographic
+            normalCamera.orthographicScale = orbit.orthoHalfHeight
+        }
         onCameraChange?()
+    }
+
+    // MARK: Head-tracked peek
+
+    /// The screen as a window: the plane through the orbit target is pinned to
+    /// the view's edges, so what you orbit around stays put and moving your
+    /// head looks around it. The eye eases from the normal view to the head.
+    private func applyPeekCamera(_ peek: HeadPeek) {
+        // The eye follows the head's real angle, so the off-axis view is
+        // pre-distorted for where your eye really is; sensitivity above 1x
+        // turns the whole view about its target, which does not stretch it.
+        let offset = peek.offsetCM ?? .zero, d = peek.config.distanceCM
+        let extra = (peek.config.sensitivity - 1) * peek.blend
+        let view = orbit.peekTurned(yaw: extra * atan(offset.x / d), pitch: extra * atan(offset.y / d))
+        let depth = view.distance
+        let window = view.peekWindow(depth: depth, aspect: aspect)
+        let eye = PeekWindow.eye(rest: view.restEye(window: window, depth: depth, boundsRadius: Double(radius)),
+                                 offsetCM: offset, distanceCM: d, blend: peek.blend)
+        let (position, projection) = view.peekCamera(window: window, eye: eye, near: 0.05 * eye.z,
+                                                     far: eye.z + 4 * Double(radius) + depth)
+        peekCamera.projectionTransform = SCNMatrix4(projection)
+        cameraNode.camera = peekCamera
+        cameraNode.simdPosition = SIMD3<Float>(position)
+        // Keep the view's own orientation: the off-axis frustum does the looking around.
+        cameraNode.simdLook(at: SIMD3<Float>(position + view.forward), up: SIMD3<Float>(view.screenUp),
+                            localFront: SIMD3(0, 0, -1))
+
+        // The room: from the window back to just behind the model.
+        let back = max(simd_dot(SIMD3<Double>(center) - view.target, view.forward) + Double(radius), Double(radius)) * 1.1
+        let r = SIMD3<Float>(view.right * window.halfWidth), u = SIMD3<Float>(view.up * window.halfHeight)
+        let z = SIMD3<Float>(-view.forward * back)
+        peekRoom.simdTransform = simd_float4x4(columns: (SIMD4(r, 0), SIMD4(u, 0), SIMD4(z, 0), SIMD4(SIMD3<Float>(window.center), 1)))
+        peekRoom.opacity = CGFloat(peek.blend)
+        peekRoom.isHidden = false
+
+        // Key light from above, in front and to the left of the un-peeked view:
+        // fixed while you peek, so the shading stays on the model.
+        let toLight = simd_normalize(orbit.up * 1.2 - orbit.forward * 0.6 - orbit.right * 0.5)
+        let reach = max(window.halfWidth, window.halfHeight, back)
+        peekKey.simdPosition = SIMD3<Float>(window.center + toLight * reach * 3)
+        peekKey.simdLook(at: SIMD3<Float>(window.center), up: SIMD3<Float>(orbit.forward), localFront: SIMD3(0, 0, -1))
+        peekKey.light?.orthographicScale = CGFloat(reach * 1.6)
+        peekKey.light?.zFar = CGFloat(reach * 8)
+        peekCamera.screenSpaceAmbientOcclusionRadius = CGFloat(radius) * 0.04
+        setPeekLighting(peek.blend)
+    }
+
+    /// 0: the normal view's lights. 1: the peek's key light, shadows and occlusion.
+    private func setPeekLighting(_ blend: Double) {
+        let t = CGFloat(blend)
+        headLight.intensity = Self.headIntensity * (1 - 0.7 * t)
+        ambientLight.intensity = Self.ambientIntensity * (1 - 0.45 * t)
+        peekKey.light?.intensity = 1100 * t
+        peekKey.isHidden = blend == 0
+        peekCamera.screenSpaceAmbientOcclusionIntensity = 1.2 * t
+    }
+
+    private static func makePeekKey() -> SCNNode {
+        let light = SCNLight()
+        light.type = .directional
+        light.castsShadow = true
+        light.shadowMapSize = CGSize(width: 2048, height: 2048)
+        light.shadowSampleCount = 16
+        light.shadowRadius = 6
+        light.shadowColor = NSColor(white: 0, alpha: 0.55)
+        light.zNear = 0.001
+        let node = SCNNode()
+        node.light = light
+        node.isHidden = true
+        return node
+    }
+
+    /// A unit grid room: x and y in -1...1, z from 0 (the window) to -1 (the back wall).
+    private static func makePeekRoom() -> SCNNode {
+        let n = 8
+        var v: [SIMD3<Float>] = []
+        func line(_ a: SIMD3<Float>, _ b: SIMD3<Float>) { v += [a, b] }
+        for i in 0...n {
+            let s = Float(i) / Float(n) * 2 - 1, d = -Float(i) / Float(n)
+            line([s, -1, -1], [s, 1, -1]); line([-1, s, -1], [1, s, -1])  // back wall
+            line([s, -1, 0], [s, -1, -1]); line([s, 1, 0], [s, 1, -1])  // floor and ceiling, front to back
+            line([-1, s, 0], [-1, s, -1]); line([1, s, 0], [1, s, -1])  // side walls, front to back
+            line([-1, -1, d], [1, -1, d]); line([-1, 1, d], [1, 1, d])  // floor and ceiling, across
+            line([-1, -1, d], [-1, 1, d]); line([1, -1, d], [1, 1, d])  // side walls, up
+        }
+        let geometry = SCNGeometry(sources: [SCNGeometrySource(vertices: v.map { SCNVector3($0) })],
+                                   elements: [SCNGeometryElement(indices: (0..<Int32(v.count)).map { $0 }, primitiveType: .line)])
+        let material = SCNMaterial()
+        material.lightingModel = .constant
+        material.diffuse.contents = NSColor.secondaryLabelColor
+        material.writesToDepthBuffer = false  // the model always draws over it
+        geometry.materials = [material]
+        let node = SCNNode(geometry: geometry)
+        node.isHidden = true
+        node.renderingOrder = -1
+        node.castsShadow = false
+        // Shadow catchers: the floor and the back wall show the model's shadow and nothing else.
+        let catcher = SCNMaterial()
+        catcher.lightingModel = .shadowOnly
+        catcher.isDoubleSided = true
+        for (size, position, angle) in [(CGSize(width: 2, height: 1), SCNVector3(0, -1, -0.5), -CGFloat.pi / 2),
+                                         (CGSize(width: 2, height: 2), SCNVector3(0, 0, -1), 0)] {
+            let plane = SCNPlane(width: size.width, height: size.height)
+            plane.materials = [catcher]
+            let wall = SCNNode(geometry: plane)
+            wall.position = position
+            wall.eulerAngles.x = angle
+            wall.castsShadow = false
+            node.addChildNode(wall)
+        }
+        return node
+    }
+
+    private func installPeek() {
+        if let peekMonitor { NSEvent.removeMonitor(peekMonitor) }
+        peekObservers.forEach(NotificationCenter.default.removeObserver)
+        peekMonitor = nil
+        peekObservers = []
+        stopPeekLink()
+        guard peek != nil else { return }
+        peekMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            MainActor.assumeIsolated { self?.peekFlagsChanged(event) }
+            return event
+        }
+        // Shift-up never arrives once another app or window has the keyboard.
+        for name in [NSWindow.didResignKeyNotification, NSApplication.didResignActiveNotification] {
+            peekObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.endPeek() }
+            })
+        }
+        peekLinkTarget.action = { [weak self] in MainActor.assumeIsolated { self?.peekStep() } }
+    }
+
+    private func peekFlagsChanged(_ event: NSEvent) {
+        guard let peek else { return }
+        let now = CACurrentMediaTime()
+        if OrbitSCNView.peekHeld(event.modifierFlags), canStartPeek(event) {
+            peek.layout = peekLayout()
+            peek.press(at: now)
+            startPeekLink()  // runs while Shift is held, even before the first face
+        } else {
+            peek.release(at: now)
+        }
+    }
+
+    /// Shift over this viewer, in the key window, not while typing.
+    private func canStartPeek(_ event: NSEvent) -> Bool {
+        guard let window = scnView.window, window.isKeyWindow, event.window === window,
+              !(window.firstResponder is NSText) else { return false }
+        let p = scnView.convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        return scnView.bounds.contains(p)
+    }
+
+    private func endPeek() {
+        peek?.release(at: CACurrentMediaTime())
+    }
+
+    /// The view on the glass, if the window is on the built-in display (where the webcam is).
+    private func peekLayout() -> HeadGeometry.Layout? {
+        guard let window = scnView.window, let screen = window.screen,
+              let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID,
+              CGDisplayIsBuiltin(id) != 0 else { return nil }
+        let rect = window.convertToScreen(scnView.convert(scnView.bounds, to: nil))
+        return HeadGeometry.layout(viewRect: rect, screenFrame: screen.frame, screenSizeMM: CGDisplayScreenSize(id))
+    }
+
+    private func startPeekLink() {
+        guard peekLink == nil else { return }
+        let link = scnView.displayLink(target: peekLinkTarget, selector: #selector(LinkTarget.fire))
+        link.add(to: .main, forMode: .common)
+        peekLink = link
+    }
+
+    private func stopPeekLink() {
+        peekLink?.invalidate()
+        peekLink = nil
+    }
+
+    private func peekStep() {
+        guard let peek else { return stopPeekLink() }
+        let now = CACurrentMediaTime()
+        // Moved off the built-in display: ease out on the last layout instead of snapping.
+        if let layout = peekLayout() { peek.layout = layout } else { peek.release(at: now) }
+        // A Shift-up eaten by a tracking loop (live resize, a menu) never reaches the monitor.
+        if !OrbitSCNView.peekHeld(NSEvent.modifierFlags) { peek.release(at: now) }
+        peek.tick(at: now)
+        applyCamera()  // the last call, at blend 0, puts the normal camera back
+        if peek.blend == 0, !peek.state.isHeld { stopPeekLink() }
     }
 
     // MARK: Mouse and trackpad
 
     private func handle(_ input: OrbitSCNView.Input) {
         switch input {
+        case .view(let view):
+            return look(from: view)
+        case .fit:
+            return fitAll()
         case .orbitBegan(let location):
             pivot = pointUnder(location)
             return
@@ -298,7 +525,7 @@ public final class SceneKitViewer: Viewer3D {
         case .pan(let dx, let dy):
             orbit.pan(dx: dx, dy: dy, viewHeight: Double(scnView.bounds.height))
         case .hover(let location):
-            if onEditHover != nil || onHover != nil {
+            if !isPeeking, onEditHover != nil || onHover != nil {
                 let pointer = editPointer(at: location)
                 onEditHover?(pointer)
                 onHover?(pointer)
@@ -328,6 +555,8 @@ public final class SceneKitViewer: Viewer3D {
     /// The surface point under a view location, or the target plane there.
     private func pointUnder(_ location: CGPoint) -> SIMD3<Double> {
         if let p = surfacePoint(location) { return p }
+        // The off-axis view does not match pointOnTargetPlane's maths: use the target.
+        if isPeeking { return orbit.target }
         let size = scnView.bounds.size
         let ndc = SIMD2<Double>(Double(location.x / max(size.width, 1)) * 2 - 1, Double(location.y / max(size.height, 1)) * 2 - 1)
         return orbit.pointOnTargetPlane(ndc: ndc, aspect: aspect)
@@ -431,6 +660,7 @@ public final class SceneKitViewer: Viewer3D {
     }
 
     private func handleClick(_ gesture: NSClickGestureRecognizer) {
+        if isPeeking { return }  // peeking is for looking; a pick would land off the normal view
         if let onEditClick, model != nil {
             onEditClick(editPointer(at: gesture.location(in: scnView)))
             return
@@ -635,14 +865,17 @@ extension SceneKitViewer {
 
 /// SCNView that turns mouse and trackpad input into camera moves. Orbits
 /// pivot about the point under the cursor where the drag or gesture began.
-///   drag: orbit        shift/option-drag, right-drag, middle-drag: pan
+///   drag (or shift-drag while peeking): orbit        option-drag, right-drag, middle-drag: pan
 ///   pinch: zoom at the cursor        mouse wheel or command-scroll: zoom at the cursor
 ///   two-finger scroll on a trackpad: pan        trackpad rotate: turn about the up axis
 ///   double-click or two-finger double-tap: centre on the point (empty space: fit)
+///   keys 1-7: front, back, left, right, top, bottom, iso        F: fit
 final class OrbitSCNView: SCNView {
     enum Phase { case discrete, began, changed, ended, cancelled }
 
-    enum Input {
+    enum Input: Equatable {
+        case view(StandardView)
+        case fit
         case orbitBegan(at: CGPoint)
         case orbit(dx: Double, dy: Double)
         case focus(at: CGPoint)
@@ -671,8 +904,35 @@ final class OrbitSCNView: SCNView {
         window?.makeFirstResponder(self)
         let p = location(event)
         last = p
-        panning = event.modifierFlags.contains(.shift) || event.modifierFlags.contains(.option)
+        panning = Self.dragPans(event.modifierFlags)
         if !panning { onInput?(.orbitBegan(at: p)) }
+    }
+
+    /// Keys in the 3D view (after a click into it): 1-7 for the standard views
+    /// in the toolbar's order, F to fit. Bare keys, so not menu shortcuts,
+    /// which would also fire while typing in a field.
+    static func viewKey(_ characters: String) -> Input? {
+        if characters.lowercased() == "f" { return .fit }
+        guard let n = Int(characters), (1...StandardView.allCases.count).contains(n) else { return nil }
+        return .view(StandardView.allCases[n - 1])
+    }
+
+    override func keyDown(with event: NSEvent) {
+        let chord = !event.modifierFlags.intersection([.command, .option, .control]).isEmpty
+        if !chord, let input = Self.viewKey(event.charactersIgnoringModifiers ?? "") {
+            onInput?(input)
+        } else {
+            super.keyDown(with: event)
+        }
+    }
+
+    /// Option-drag pans. Shift is left free for the head-tracked peek.
+    static func dragPans(_ flags: NSEvent.ModifierFlags) -> Bool { flags.contains(.option) }
+
+    /// Shift on its own (caps lock and the like aside) holds a peek; Shift with
+    /// Command or Option is a shortcut, not a peek.
+    static func peekHeld(_ flags: NSEvent.ModifierFlags) -> Bool {
+        flags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function]) == .shift
     }
 
     override func mouseDragged(with event: NSEvent) { drag(event, pan: panning) }
@@ -733,6 +993,15 @@ final class OrbitSCNView: SCNView {
         if p.contains(.cancelled) { return .cancelled }
         if p.contains(.changed) || p.contains(.stationary) { return .changed }
         return .discrete
+    }
+}
+
+/// The display link's Objective-C target.
+private final class LinkTarget: NSObject {
+    var action: (() -> Void)?
+
+    @objc func fire() {
+        action?()
     }
 }
 

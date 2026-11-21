@@ -32,7 +32,9 @@ extension AppState {
         guard let root = repoRoot else { return }
         Task.detached(priority: .utility) {
             let online = Self.git(["fetch", "--quiet"], in: root) != nil
-            guard let args = UpdateCheck.revListArgs(builtCommit: Self.builtCommit, builtDate: Self.builtDate, online: online),
+            let hasUpstream = Self.git(["rev-parse", "--verify", "--quiet", "@{u}"], in: root) != nil
+            guard let args = UpdateCheck.revListArgs(builtCommit: Self.builtCommit, builtDate: Self.builtDate,
+                                                     online: online, hasUpstream: hasUpstream),
                   let count = Self.git(["rev-list"] + args, in: root).flatMap({ Int($0) }) else { return }
             await MainActor.run { self.updatesBehind = count }
         }
