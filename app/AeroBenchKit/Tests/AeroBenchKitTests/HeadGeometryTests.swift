@@ -49,22 +49,6 @@ final class HeadGeometryTests: XCTestCase {
         // 31° off axis horizontally at 55 cm.
         XCTAssertEqual(head(0, 0.5).x - layout.cameraCM.x, 55 * tan(31 * Double.pi / 180), accuracy: 1e-9)
     }
-    func testEyeAngleOrdersByX() {
-        // From the image-left eye to the image-right one, whichever Vision lists first.
-        XCTAssertEqual(HeadGeometry.eyeAngle([0, 0], [1, 1]), .pi / 4, accuracy: 1e-12)
-        XCTAssertEqual(HeadGeometry.eyeAngle([1, 1], [0, 0]), .pi / 4, accuracy: 1e-12)
-        XCTAssertEqual(HeadGeometry.eyeAngle([0, 3], [2, 3]), 0, accuracy: 1e-12)
-        XCTAssertTrue(HeadGeometry.eyeAngle([0, 0], [1e-9, 1]).isFinite)  // head on its side
-    }
-
-    func testTiltSign() {
-        // Unmirrored, the camera faces you: your right ear down puts your right eye, on the
-        // image's left, lower, and the eye line turns anticlockwise in the image. That is a
-        // clockwise tilt as you see it. Mirrored frames flip it.
-        let s = HeadGeometry.Sample(eyeMid: [0.5, 0.5], separation: 0.1, eyeAngle: 0.2, time: 0)
-        XCTAssertEqual(HeadGeometry.tilt(s, mirrored: false), 0.2, accuracy: 1e-12)
-        XCTAssertEqual(HeadGeometry.tilt(s, mirrored: true), -0.2, accuracy: 1e-12)
-    }
 
     func testDistanceFromEyeGap() {
         let hfov = 62.0 * .pi / 180

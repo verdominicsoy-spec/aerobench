@@ -185,34 +185,6 @@ final class PeekStateTests: XCTestCase {
         s.press(at: 40, trackerAvailable: true)
         XCTAssertTrue(s.wantsCamera)
     }
-    func testTiltIsRecentredAtShift() {
-        // The tilt you hold when Shift goes down is level.
-        var s = PeekState()
-        s.face(rest, tilt: 0.2, at: 0, rest: rest)
-        s.press(at: 0, trackerAvailable: true)
-        XCTAssertEqual(s.tiltOffset, 0, accuracy: 1e-9)
-        for i in 1...30 { s.face(rest, tilt: 0.3, at: Double(i) * dt, rest: rest) }
-        XCTAssertEqual(s.tiltOffset, 0.1, accuracy: 0.005)
-    }
-
-    func testTiltEasesToLevelWhenTheFaceIsLost() {
-        var s = PeekState()
-        s.press(at: 0, trackerAvailable: true)
-        s.face(rest, tilt: 0, at: 0, rest: rest)
-        for i in 1...30 { s.face(rest, tilt: 0.4, at: Double(i) * dt, rest: rest) }
-        XCTAssertGreaterThan(s.tiltOffset, 0.3)
-        let last = 30 * dt
-        s.face(nil, at: last + s.faceLostAfter + s.fade + 0.01, rest: rest)
-        XCTAssertEqual(s.tiltOffset, 0, accuracy: 1e-9)
-    }
-
-    func testNoTiltBeforeAFace() {
-        var s = PeekState()
-        s.press(at: 0, trackerAvailable: true)
-        XCTAssertEqual(s.tiltOffset, 0)
-        s.cameraStopped()
-        XCTAssertEqual(s.tiltOffset, 0)
-    }
 
     /// Pressed at 0, then a face at `distance` every frame from `from` for `seconds`.
     private func feed(_ s: inout PeekState, distance: Double, from: Double = 0, seconds: Double) {
@@ -221,61 +193,58 @@ final class PeekStateTests: XCTestCase {
         while t < from + seconds { s.face(rest, distance: distance, at: t, rest: rest); t += dt }
     }
 
-    func testGainIsInverseDistance() {
-        for (d, g) in [(27.5, 2.0), (55, 1), (20, 2), (200, 0.5)] {
-            var s = PeekState()
-            feed(&s, distance: d, seconds: 1)
-            XCTAssertEqual(s.gain(reference: 55), g, accuracy: 1e-6, "at \(d) cm")
-        }
+    func testDistanceSettlesOnASteadyFace() throws {
+        var s = PeekState()
+        feed(&s, distance: 27.5, seconds: 1)
+        XCTAssertEqual(try XCTUnwrap(s.distanceCM), 27.5, accuracy: 1e-6)
         var none = PeekState()
         none.press(at: 0, trackerAvailable: true)
-        XCTAssertEqual(none.gain(reference: 55), 1)
+        XCTAssertNil(none.distanceCM)
     }
 
-    func testGainIsSmoothed() {
+    func testDistanceIsSmoothed() throws {
         var s = PeekState()
         feed(&s, distance: 55, seconds: 1)
-        let target = 55 / 45.8
         feed(&s, distance: 45.8, from: 1, seconds: 0.1)
-        XCTAssertLessThan(s.gain(reference: 55), 1 + 0.5 * (target - 1))
+        XCTAssertGreaterThan(try XCTUnwrap(s.distanceCM), 55 - 0.5 * (55 - 45.8))
         feed(&s, distance: 45.8, from: 1.1, seconds: 1.9)
-        XCTAssertEqual(s.gain(reference: 55), target, accuracy: 0.01 * target)
+        XCTAssertEqual(try XCTUnwrap(s.distanceCM), 45.8, accuracy: 0.01 * 45.8)
     }
 
-    func testGainHeldWhenTheFaceIsLost() {
+    func testDistanceHeldWhenTheFaceIsLost() {
         var s = PeekState()
         feed(&s, distance: 27.5, seconds: 1)
         s.face(nil, at: 1 + s.faceLostAfter + s.fade + 1, rest: rest)
-        XCTAssertEqual(s.gain(reference: 55), 2, accuracy: 1e-6)
+        XCTAssertEqual(s.distanceCM ?? 0, 27.5, accuracy: 1e-6)
     }
 
-    func testOneBadFrameDoesNotJerkTheGain() {
+    func testOneBadFrameDoesNotJerkTheDistance() {
         for spike in [110.0, 5e6] {
             var s = PeekState()
             feed(&s, distance: 55, seconds: 1)
             var t = 1.0
             s.face(rest, distance: spike, at: t, rest: rest)
             for _ in 0..<30 {
-                XCTAssertEqual(s.gain(reference: 55), 1, accuracy: 0.01, "spike \(spike)")
+                XCTAssertEqual(s.distanceCM ?? 0, 55, accuracy: 0.55, "spike \(spike)")
                 t += dt
                 s.face(rest, distance: 55, at: t, rest: rest)
             }
         }
     }
 
-    func testGainDoesNotJumpWhenTheFaceComesBack() {
+    func testDistanceDoesNotJumpWhenTheFaceComesBack() {
         var s = PeekState()
         feed(&s, distance: 27.5, seconds: 1)
         let back = 1 + s.faceLostAfter + s.fade + 1
         s.face(nil, at: back - 0.5, rest: rest)
         s.face(rest, distance: 55, at: back, rest: rest)
-        XCTAssertEqual(s.gain(reference: 55), 2, accuracy: 0.02)
+        XCTAssertEqual(s.distanceCM ?? 0, 27.5, accuracy: 0.3)
     }
 
-    func testGainIsOneAfterTheCameraStops() {
+    func testNoDistanceAfterTheCameraStops() {
         var s = PeekState()
         feed(&s, distance: 27.5, seconds: 1)
         s.cameraStopped()
-        XCTAssertEqual(s.gain(reference: 55), 1)
+        XCTAssertNil(s.distanceCM)
     }
 }

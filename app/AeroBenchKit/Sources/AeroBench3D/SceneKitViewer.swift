@@ -325,32 +325,25 @@ public final class SceneKitViewer: Viewer3D {
     /// head looks around it. The eye eases from the normal view to the head.
     private func applyPeekCamera(_ peek: HeadPeek) {
         // The eye follows the head's real angle, so the off-axis view is
-        // pre-distorted for where your eye really is; sensitivity above 1x
-        // turns the whole view about its target, which does not stretch it.
+        // pre-distorted for where your eye really is. Nothing else moves.
         let offset = peek.offsetCM ?? .zero, d = peek.config.distanceCM
-        // Livelier the closer you sit (gain is reference distance ÷ yours).
-        let sensitivity = peek.config.sensitivity * peek.gain
-        let extra = (sensitivity - 1) * peek.blend
-        let view = orbit.peekTurned(yaw: extra * atan(offset.x / d), pitch: extra * atan(offset.y / d))
+        let view = orbit
         let depth = view.distance
         let window = view.peekWindow(depth: depth, aspect: aspect)
         let eye = PeekWindow.eye(rest: view.restEye(window: window, depth: depth, boundsRadius: Double(radius)),
                                  offsetCM: offset, distanceCM: d, blend: peek.blend)
-        // Head tilt: the camera rolls with it, so the model turns the other way on the screen.
-        let roll = sensitivity * peek.tiltOffset * peek.blend
-        let axes = view.peekAxes(roll: roll)
         let (position, projection) = view.peekCamera(window: window, eye: eye, near: 0.05 * eye.z,
-                                                     far: eye.z + 4 * Double(radius) + depth, roll: roll)
+                                                     far: eye.z + 4 * Double(radius) + depth)
         peekCamera.projectionTransform = SCNMatrix4(projection)
         cameraNode.camera = peekCamera
         cameraNode.simdPosition = SIMD3<Float>(position)
         // Keep the view's own orientation: the off-axis frustum does the looking around.
-        cameraNode.simdLook(at: SIMD3<Float>(position + view.forward), up: SIMD3<Float>(axes.up),
+        cameraNode.simdLook(at: SIMD3<Float>(position + view.forward), up: SIMD3<Float>(view.up),
                             localFront: SIMD3(0, 0, -1))
 
         // The room: from the window back to just behind the model.
         let back = max(simd_dot(SIMD3<Double>(center) - view.target, view.forward) + Double(radius), Double(radius)) * 1.1
-        let r = SIMD3<Float>(axes.right * window.halfWidth), u = SIMD3<Float>(axes.up * window.halfHeight)
+        let r = SIMD3<Float>(view.right * window.halfWidth), u = SIMD3<Float>(view.up * window.halfHeight)
         let z = SIMD3<Float>(-view.forward * back)
         peekRoom.simdTransform = simd_float4x4(columns: (SIMD4(r, 0), SIMD4(u, 0), SIMD4(z, 0), SIMD4(SIMD3<Float>(window.center), 1)))
         peekRoom.opacity = CGFloat(peek.blend)

@@ -138,7 +138,6 @@ private final class FrameReader: NSObject, AVCaptureVideoDataOutputSampleBufferD
               let right = centre(marks.rightPupil) ?? centre(marks.rightEye) else { return nil }
         let mid = SIMD2(Double((left.x + right.x) / 2 / size.width), Double((left.y + right.y) / 2 / size.height))
         let separation = Double(hypot(left.x - right.x, left.y - right.y) / size.width)
-        let angle = HeadGeometry.eyeAngle(SIMD2(Double(left.x), Double(left.y)), SIMD2(Double(right.x), Double(right.y)))
-        return HeadGeometry.Sample(eyeMid: mid, separation: separation, eyeAngle: angle, time: time)
+        return HeadGeometry.Sample(eyeMid: mid, separation: separation, time: time)
     }
 }

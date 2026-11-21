@@ -75,17 +75,11 @@ struct SettingsView: View {
         Section {
             Toggle("Hold Shift to peek with head tracking", isOn: $settings.peekEnabled)
                 .onChange(of: settings.peekEnabled) { app.applyPeekSettings() }
-            HStack {
-                Text("Head sensitivity")
-                Slider(value: $settings.peekSensitivity, in: 1...4, step: 0.25)
-                Text(String(format: "%g×", settings.peekSensitivity)).monospacedDigit().frame(width: 36, alignment: .trailing)
-            }
-            .onChange(of: settings.peekSensitivity) { app.applyPeekSettings() }
             peekStatus(app.cad.viewer.peek?.tracker)
         } header: {
             Text("Head-tracked peek")
         } footer: {
-            Text("Hold Shift over the CAD or Flow Field view and move or tilt your head. Built-in display only.")
+            Text("Hold Shift over the CAD or Flow Field view and move your head, as if the screen were a window. Built-in display only.")
         }
     }
 

@@ -12,7 +12,6 @@ final class AppSettings {
         static let coresPerJob = "coresPerJob"
         static let parallelTrials = "parallelTrials"
         static let peekEnabled = "peekEnabled"
-        static let peekSensitivity = "peekSensitivity"
     }
 
     private let defaults = UserDefaults.standard
@@ -27,10 +26,8 @@ final class AppSettings {
     var parallelTrials: Int { didSet { defaults.set(parallelTrials, forKey: Key.parallelTrials) } }
     /// Hold Shift in the CAD viewer to peek with head tracking (on by default).
     var peekEnabled: Bool { didSet { defaults.set(peekEnabled, forKey: Key.peekEnabled) } }
-    /// How much the view moves for a head movement (1 = the head's own angle).
-    var peekSensitivity: Double { didSet { defaults.set(peekSensitivity, forKey: Key.peekSensitivity) } }
     var peekConfig: HeadPeek.Config {
-        HeadPeek.Config(enabled: peekEnabled, sensitivity: peekSensitivity)
+        HeadPeek.Config(enabled: peekEnabled)
     }
 
     init() {
@@ -45,8 +42,6 @@ final class AppSettings {
         parallelTrials = trials > 0 ? trials : 1
         // On unless turned off: the first Shift over the CAD view asks for the camera.
         peekEnabled = defaults.object(forKey: Key.peekEnabled) as? Bool ?? true
-        let sensitivity = defaults.double(forKey: Key.peekSensitivity)
-        peekSensitivity = sensitivity > 0 ? sensitivity : 2
     }
 
     var engineDirectory: URL? {
