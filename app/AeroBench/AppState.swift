@@ -63,6 +63,8 @@ final class AppState {
         cad = CADViewerModel()
         cad.viewer.peek = HeadPeek(config: settings.peekConfig)
         flow = FlowFieldModel()
+        // Its own peek (and camera session): only one viewer is on screen to press Shift over.
+        flow.viewer.peek = HeadPeek(config: settings.peekConfig)
         wingLab = WingLabModel()
         recentProjects = (UserDefaults.standard.stringArray(forKey: Self.recentsKey) ?? [])
             .map { URL(fileURLWithPath: $0) }
@@ -396,8 +398,9 @@ final class AppState {
 }
 
 extension AppState {
-    /// Pushes the head-tracked peek settings to the CAD viewer.
+    /// Pushes the head-tracked peek settings to the CAD and Flow Field viewers.
     func applyPeekSettings() {
         cad.viewer.peek?.config = settings.peekConfig
+        flow.viewer.peek?.config = settings.peekConfig
     }
 }

@@ -54,7 +54,8 @@ MediaPipe) was tried by the user on their MacBook.
 - Stereo, glasses, or headsets.
 - Tracking distance (lean in to zoom). Distance stays locked; see the spike.
 - More than one viewer at a time.
-- The Flow Field viewer. It shares `Viewer3D`, so it can come later.
+- The Flow Field viewer at first. Turned on later at the user's request
+  (streamlines and vortex cores are the 3D tracing task head tracking helps most).
 - iOS.
 
 ## Anti-goals (a failure even if it works)
@@ -201,8 +202,8 @@ as orbiting.
 - **Option+drag pans in every viewer** (user). The Flow Field viewer uses the
   same `SceneKitViewer` and `OrbitSCNView` (`FlowFieldModel.swift:146`,
   `CADViewerModel.swift:125`), so the pan change sits in the shared code and
-  both viewers match. Peek is turned on per viewer instance: on for the CAD
-  viewer, off for Flow Field.
+  both viewers match. Peek is turned on per viewer instance: first CAD only,
+  then the Flow Field viewer too (user), each with its own HeadPeek.
 
 ## Open questions for the user
 
