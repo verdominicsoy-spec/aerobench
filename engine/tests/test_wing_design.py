@@ -184,10 +184,11 @@ def test_balance_needs_a_base_car(engine, tmp_path):
 @pytest.mark.skipif(not __import__("os").environ.get("AEROBENCH_SU2") and not __import__("shutil").which("SU2_CFD"),
                     reason="SU2 not found")
 def test_design_with_rans_ranks_by_rans(engine, tmp_path):
-    # 4 cores (GitHub's Linux runner has 4; more are capped to the CPUs): on one core the two
-    # RANS checks ran past 25 minutes there.
+    # 4 cores (GitHub's Linux runner has 4; more are capped to the CPUs), and each check capped at
+    # 1,200 iterations (a wing that settles takes about 1,000): the picks differ by platform, and
+    # there a separated wing ran on to the 4,000-iteration cap past 40 minutes.
     code, _, out = _design(engine, tmp_path, "rans", timeout=2400, trials=80, seed=5, checks=2, mesh="quick", model="sa",
-                           cores=4)
+                           iterations=1200, cores=4)
     assert code == 0, out
     f = out["finalists"]
     assert 1 <= len(f) <= 2 and all(x["rans"] is not None for x in f)
