@@ -15,8 +15,10 @@ a gimmick: "it feels like a controller instead of a window".
   speeds up on top of that.
 - **Lean in like a real window.** Coming closer brings the eye closer in proportion (half the distance, half the
   eye distance), so the edges reveal more and nearby parts shift more. Sitting back does the opposite.
-- **Behind the glass.** The window plane sits at the front of the model, not through its middle, so the whole
-  model is inside the computer and the screen edge never cuts through something in front of it.
+- **Behind the glass (tried, reverted).** Moving the window plane to the model's front made the depth less
+  believable: a screen-sized room can't hold a model that fills the view from there, and a room wider than the
+  screen hides its edges, which are what sell the box behind the screen. The plane stays through the orbit
+  target, with the room's front edges on the screen's edges.
 - **Unchanged:** Shift to peek, recentred at the press (pressing changes nothing until you move), the 0.15 s ease
   in and out, the grid room behind the glass, the key light and shadows, built-in display only.
 - **Removed:** the sensitivity slider and its turn, the head-tilt roll, the distance gain.
@@ -40,9 +42,6 @@ a gimmick: "it feels like a controller instead of a window".
 - **No calibration.** The distance is measured automatically from the eye gap. The spacing between your eyes
   is never needed: one webcam can't tell it apart from distance, and the eye only uses your distance relative
   to the Shift press, where the assumed 6.3 cm cancels exactly.
-- **The glass.** The window plane sits where the model's bounding sphere begins along the view direction, but no
-  nearer than a quarter of the way to the orbit target, so zooming right into a part still works. The room runs
-  from that plane to just behind the model. The un-peeked view is the same frustum, so nothing jumps at the press.
 - **Orthographic views** keep the far-back eye; the same mapping gives a sheared look-around, as now.
 
 ## Non-goals
