@@ -82,4 +82,15 @@ final class HeadGeometryTests: XCTestCase {
         XCTAssertEqual(simd_distance(a, b), 0, accuracy: 1e-9)
         XCTAssertEqual(a.z, 3 * 40 / 55, accuracy: 1e-9)
     }
+
+    func testLensMatchesThePane() {
+        // The 3D view's lens is the angle the pane covers from 55 cm, held to 10°...35°.
+        func lens(_ height: Double) -> Double {
+            HeadGeometry.lensFovY(HeadGeometry.Layout(viewWidthCM: 25, viewHeightCM: height, cameraCM: [0, 11]), distanceCM: 55)
+        }
+        XCTAssertEqual(lens(16), 2 * atan(8.0 / 55), accuracy: 1e-12)
+        XCTAssertEqual(lens(2), 10 * .pi / 180, accuracy: 1e-12)
+        XCTAssertEqual(lens(0), 10 * .pi / 180, accuracy: 1e-12)
+        XCTAssertEqual(lens(60), 35 * .pi / 180, accuracy: 1e-12)
+    }
 }

@@ -54,6 +54,13 @@ public enum HeadGeometry {
                      distanceCM)
     }
 
+    /// The vertical lens (radians) that draws the view as the pane looks from `distanceCM`,
+    /// so the peek's window is physically exact; held to 10°...35°.
+    public static func lensFovY(_ layout: Layout, distanceCM: Double) -> Double {
+        let lens = 2 * atan(layout.viewHeightCM / 2 / max(distanceCM, 1e-6))
+        return min(max(lens, 10 * .pi / 180), 35 * .pi / 180)
+    }
+
     /// An average adult's distance between pupils, cm. It only sets the absolute scale,
     /// which the peek never uses: it works from your distance relative to the Shift press.
     public static let pupilGapCM = 6.3

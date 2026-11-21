@@ -67,6 +67,17 @@ public struct OrbitCamera: Equatable, Sendable {
         return 2 * half / max(viewHeight, 1)
     }
 
+    /// The same framing with another vertical lens: in perspective the camera moves
+    /// along forward so the target plane shows the same area; only the perspective changes.
+    public func withFovY(_ fovY: Double) -> OrbitCamera {
+        var c = self
+        c.fovY = fovY
+        if !orthographic {
+            c.position = target - forward * distance * tan(self.fovY / 2) / tan(fovY / 2)
+        }
+        return c
+    }
+
     // MARK: Moves
 
     /// Turntable orbit about `pivot` (default the target). dx, dy in points;

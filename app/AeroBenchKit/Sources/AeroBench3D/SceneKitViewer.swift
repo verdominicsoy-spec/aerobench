@@ -146,6 +146,10 @@ public final class SceneKitViewer: Viewer3D {
         }
         scnView.addGestureRecognizer(doubleClick)
         scnView.onInput = { [weak self] input in self?.handle(input) }
+        scnView.onLayout = { [weak self] in
+            guard let self, !self.isPeeking else { return }
+            self.applyCamera()
+        }
     }
 
     // MARK: Model
@@ -307,6 +311,7 @@ public final class SceneKitViewer: Viewer3D {
         if let peek, peek.blend > 0, peek.layout != nil {
             applyPeekCamera(peek)
         } else {
+            syncLens()
             peekRoom.isHidden = true
             setPeekLighting(0)
             cameraNode.camera = normalCamera
@@ -319,6 +324,17 @@ public final class SceneKitViewer: Viewer3D {
     }
 
     // MARK: Head-tracked peek
+
+    /// While the peek can run, the lens is the pane as you see it from your seat, so the
+    /// peek's window is physically exact (the 35° lens moved the eye 2.5x too little
+    /// against the screen frame and flattened the depth); else 35°. The framing is kept.
+    private func syncLens() {
+        let layout = (peek?.config.enabled ?? false) ? peekLayout() : nil
+        let lens = layout.map { HeadGeometry.lensFovY($0, distanceCM: peek?.config.distanceCM ?? 55) } ?? 35 * .pi / 180
+        guard abs(lens - orbit.fovY) > 1e-6 else { return }
+        orbit = orbit.withFovY(lens)
+        normalCamera.fieldOfView = CGFloat(lens * 180 / .pi)
+    }
 
     /// The screen as a window: the plane through the orbit target is pinned to
     /// the view's edges, so what you orbit around stays put and moving your
@@ -885,6 +901,18 @@ final class OrbitSCNView: SCNView {
     }
 
     var onInput: ((Input) -> Void)?
+    /// The view's size or window changed (the lens follows the pane).
+    var onLayout: (() -> Void)?
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        onLayout?()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        onLayout?()
+    }
     private var last: CGPoint?
     private var panning = false
 

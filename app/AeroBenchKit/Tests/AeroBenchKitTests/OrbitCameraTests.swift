@@ -133,4 +133,20 @@ final class OrbitCameraTests: XCTestCase {
         let edge = c.target + c.up * 1.2
         XCTAssertLessThan(abs(c.project(edge, aspect: aspect).y), 1)
     }
+
+    func testLensChangeKeepsTheFraming() {
+        // A narrower lens moves the camera back so the target plane shows the same area.
+        var c = OrbitCamera()
+        c.frame(center: [0.5, 0.2, 0.3], radius: 1.2, direction: [-1, -1, 0.8], up: [0, 0, 1], aspect: 1.6)
+        let lens = 17 * Double.pi / 180
+        let n = c.withFovY(lens)
+        XCTAssertEqual(n.fovY, lens)
+        XCTAssertEqual(n.distance * tan(lens / 2), c.distance * tan(c.fovY / 2), accuracy: 1e-9)
+        XCTAssertEqual(simd_distance(n.target, c.target), 0, accuracy: 1e-12)
+        XCTAssertEqual(simd_distance(n.forward, c.forward), 0, accuracy: 1e-12)
+        // Orthographic: the lens does not change what is shown, so the camera stays.
+        var o = c
+        o.orthographic = true
+        XCTAssertEqual(o.withFovY(lens).position, o.position)
+    }
 }
