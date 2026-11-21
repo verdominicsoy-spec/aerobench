@@ -220,7 +220,9 @@ public final class PanelSolver: @unchecked Sendable {
         }
         var circulation = (0..<k).map { e in
             let pts = elements[e], g = kutta.speed[e]
-            return (0..<(pts.count - 1)).reduce(0.0) { $0 + 0.5 * (g[$1] + g[$1 + 1]) * simd_distance(pts[$1], pts[$1 + 1]) }
+            var total = 0.0  // a loop: as a reduce, Xcode 26.6 (CI) times out type-checking it
+            for i in 0..<(pts.count - 1) { total += 0.5 * (g[i] + g[i + 1]) * simd_distance(pts[i], pts[i + 1]) }
+            return total
         }
         let aimed = (0..<k).filter { abs(targetCl[$0]) > 0.02 }
         let miss = { (s: PanelSolution) in aimed.map { (s.cl[$0] - targetCl[$0]) / max(abs(targetCl[$0]), 0.05) } }
@@ -248,7 +250,8 @@ public final class PanelSolver: @unchecked Sendable {
             }
             if !took { break }
         }
-        guard size(r) <= 0.01, out.cl.allSatisfy(\.isFinite), out.cp.allSatisfy({ $0.allSatisfy(\.isFinite) }) else { return kutta }
+        guard size(r) <= 0.01, out.cl.allSatisfy({ (x: Double) in x.isFinite }),
+              out.cp.allSatisfy({ (row: [Double]) in row.allSatisfy { $0.isFinite } }) else { return kutta }
         out.liftMatched = true
         out.kuttaCl = kutta.cl
         out.kuttaCm = kutta.cm
