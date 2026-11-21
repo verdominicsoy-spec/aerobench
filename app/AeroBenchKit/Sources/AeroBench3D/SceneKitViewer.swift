@@ -328,14 +328,16 @@ public final class SceneKitViewer: Viewer3D {
         // pre-distorted for where your eye really is; sensitivity above 1x
         // turns the whole view about its target, which does not stretch it.
         let offset = peek.offsetCM ?? .zero, d = peek.config.distanceCM
-        let extra = (peek.config.sensitivity - 1) * peek.blend
+        // Livelier the closer you sit (gain is reference distance ÷ yours).
+        let sensitivity = peek.config.sensitivity * peek.gain
+        let extra = (sensitivity - 1) * peek.blend
         let view = orbit.peekTurned(yaw: extra * atan(offset.x / d), pitch: extra * atan(offset.y / d))
         let depth = view.distance
         let window = view.peekWindow(depth: depth, aspect: aspect)
         let eye = PeekWindow.eye(rest: view.restEye(window: window, depth: depth, boundsRadius: Double(radius)),
                                  offsetCM: offset, distanceCM: d, blend: peek.blend)
         // Head tilt: the camera rolls with it, so the model turns the other way on the screen.
-        let roll = peek.config.sensitivity * peek.tiltOffset * peek.blend
+        let roll = sensitivity * peek.tiltOffset * peek.blend
         let axes = view.peekAxes(roll: roll)
         let (position, projection) = view.peekCamera(window: window, eye: eye, near: 0.05 * eye.z,
                                                      far: eye.z + 4 * Double(radius) + depth, roll: roll)

@@ -57,6 +57,15 @@ public enum HeadGeometry {
                      distanceCM)
     }
 
+    /// An average adult's distance between pupils, cm.
+    public static let pupilGapCM = 6.3
+
+    /// How far the eyes are from the webcam, cm, from the gap between them in the
+    /// image. Too noisy for the eye position (see `head`), fine smoothed as a gain.
+    public static func distance(_ s: Sample, hfov: Double) -> Double {
+        pupilGapCM / (2 * tan(hfov / 2) * max(s.separation, 1e-6))
+    }
+
     /// Angle of the line from the image-left eye to the image-right one, radians:
     /// the order Vision lists the eyes in does not matter.
     public static func eyeAngle(_ p: SIMD2<Double>, _ q: SIMD2<Double>) -> Double {

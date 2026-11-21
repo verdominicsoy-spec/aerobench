@@ -65,4 +65,15 @@ final class HeadGeometryTests: XCTestCase {
         XCTAssertEqual(HeadGeometry.tilt(s, mirrored: false), 0.2, accuracy: 1e-12)
         XCTAssertEqual(HeadGeometry.tilt(s, mirrored: true), -0.2, accuracy: 1e-12)
     }
+
+    func testDistanceFromEyeGap() {
+        let hfov = 62.0 * .pi / 180
+        let at55 = 6.3 / (2 * tan(hfov / 2) * 55)
+        func d(_ gap: Double) -> Double {
+            HeadGeometry.distance(HeadGeometry.Sample(eyeMid: [0.5, 0.5], separation: gap, time: 0), hfov: hfov)
+        }
+        XCTAssertEqual(d(at55), 55, accuracy: 1e-9)
+        XCTAssertEqual(d(at55 / 2), 110, accuracy: 1e-9)
+        XCTAssertTrue(d(0).isFinite)
+    }
 }

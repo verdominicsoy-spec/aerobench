@@ -83,6 +83,18 @@ public struct PeekState: Sendable {
     private var neutralTilt: Double?  // the tilt when Shift went down: level for this peek
     private var tiltLostFrom: Double?
     private var tiltFilter = OneEuroFilter()
+    /// Smoothed eye distance, cm; nil before a face. Held while the face is lost.
+    public private(set) var distanceCM: Double?
+    // Slow and without lead: blinks and the pupil/contour switch must not twitch the gain.
+    private var distanceFilter = Self.newDistanceFilter()
+    private static func newDistanceFilter() -> OneEuroFilter { OneEuroFilter(minCutoff: 0.4, beta: 0.005, lead: 0) }
+
+    /// How much livelier the peek is for how close you are: `reference` ÷ distance,
+    /// held to 0.5...2 so a misread face can't fling the view; 1 before a face.
+    public func gain(reference: Double) -> Double {
+        guard let d = distanceCM else { return 1 }
+        return min(max(reference / max(d, 1e-6), 0.5), 2)
+    }
 
     public init(fade: Double = 0.15, faceLostAfter: Double = 0.5, stopAfter: Double = 30) {
         self.fade = fade
@@ -107,18 +119,21 @@ public struct PeekState: Sendable {
 
     /// A camera frame: the measured head (cm), or nil when no face was found.
     /// `rest` is where the head eases to once the face has been gone a while.
-    public mutating func face(_ head: SIMD3<Double>?, tilt measured: Double = 0, at t: TimeInterval, rest: SIMD3<Double>) {
+    public mutating func face(_ head: SIMD3<Double>?, tilt measured: Double = 0, distance: Double? = nil,
+                              at t: TimeInterval, rest: SIMD3<Double>) {
         // Not the fade's clock: a frame landing between ticks would eat tick time.
         if let head {
             if lostFrom != nil, let shown = headCM {
                 // Coming back after a loss: filter on from what is shown, not from the stale value.
                 for i in 0..<3 { filters[i].reset(to: shown[i], at: t) }
                 if let shownTilt = tilt { tiltFilter.reset(to: shownTilt, at: t) }
+                if let shownDistance = distanceCM { distanceFilter.reset(to: shownDistance, at: t) }
             }
             lostFrom = nil
             tiltLostFrom = nil
             lastFace = t
             tilt = tiltFilter.filter(measured, at: t)
+            if let distance { distanceCM = distanceFilter.filter(distance, at: t) }
             if held, neutralTilt == nil { neutralTilt = tilt }
             headCM = SIMD3((0..<3).map { filters[$0].filter(head[$0], at: t) })
             if held, neutralCM == nil { neutralCM = headCM }
@@ -142,6 +157,8 @@ public struct PeekState: Sendable {
         neutralTilt = nil
         tiltLostFrom = nil
         tiltFilter = OneEuroFilter()
+        distanceCM = nil
+        distanceFilter = Self.newDistanceFilter()
     }
 
     public mutating func tick(at t: TimeInterval) {

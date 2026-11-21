@@ -50,6 +50,8 @@ public final class HeadPeek {
     var blend: Double { state.blend }
     var offsetCM: SIMD2<Double>? { state.offsetCM }
     var tiltOffset: Double { state.tiltOffset }
+    /// Sensitivity multiplier: livelier the closer you sit than `config.distanceCM`.
+    var gain: Double { state.gain(reference: config.distanceCM) }
     /// Straight in front of the view's centre.
     var restCM: SIMD3<Double> { SIMD3(0, 0, config.distanceCM) }
 
@@ -107,6 +109,7 @@ public final class HeadPeek {
                               distanceCM: config.distanceCM, layout: layout, mirrored: tracker.mirrored)
         }
         let tilt = sample.map { HeadGeometry.tilt($0, mirrored: tracker.mirrored) } ?? 0
-        state.face(head, tilt: tilt, at: sample?.time ?? CACurrentMediaTime(), rest: state.neutralCM ?? restCM)
+        let distance = sample.map { HeadGeometry.distance($0, hfov: config.hfovDegrees * .pi / 180) }
+        state.face(head, tilt: tilt, distance: distance, at: sample?.time ?? CACurrentMediaTime(), rest: state.neutralCM ?? restCM)
     }
 }
