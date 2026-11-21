@@ -146,10 +146,7 @@ public final class SceneKitViewer: Viewer3D {
         }
         scnView.addGestureRecognizer(doubleClick)
         scnView.onInput = { [weak self] input in self?.handle(input) }
-        scnView.onLayout = { [weak self] in
-            guard let self, !self.isPeeking else { return }
-            self.applyCamera()
-        }
+        scnView.onLayout = { [weak self] in self?.refreshLens() }
     }
 
     // MARK: Model
@@ -328,6 +325,13 @@ public final class SceneKitViewer: Viewer3D {
     /// While the peek can run, the lens is the pane as you see it from your seat, so the
     /// peek's window is physically exact (the 35° lens moved the eye 2.5x too little
     /// against the screen frame and flattened the depth); else 35°. The framing is kept.
+    /// Re-checks the lens now (the peek settings, the pane or its display changed), so it
+    /// never changes late, on the first event of your next gesture.
+    public func refreshLens() {
+        guard !isPeeking else { return }  // the peek redraws every frame and syncs at its end
+        applyCamera()
+    }
+
     private func syncLens() {
         let layout = (peek?.config.enabled ?? false) ? peekLayout() : nil
         let lens = layout.map { HeadGeometry.lensFovY($0, distanceCM: peek?.config.distanceCM ?? 55) } ?? 35 * .pi / 180
@@ -901,16 +905,26 @@ final class OrbitSCNView: SCNView {
     }
 
     var onInput: ((Input) -> Void)?
-    /// The view's size or window changed (the lens follows the pane).
+    /// The view's size, window or screen changed (the lens follows the pane).
     var onLayout: (() -> Void)?
+    private var screenObserver: NSObjectProtocol?
 
     override func setFrameSize(_ newSize: NSSize) {
+        let changed = newSize != frame.size  // a same-size layout pass must not redraw (it fed a loop)
         super.setFrameSize(newSize)
-        onLayout?()
+        if changed { onLayout?() }
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
+        // Dragged to another display without a resize: neither hook above fires.
+        screenObserver = window.map {
+            NotificationCenter.default.addObserver(forName: NSWindow.didChangeScreenNotification, object: $0,
+                                                   queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.onLayout?() }
+            }
+        }
         onLayout?()
     }
     private var last: CGPoint?

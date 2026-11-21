@@ -402,5 +402,7 @@ extension AppState {
     func applyPeekSettings() {
         cad.viewer.peek?.config = settings.peekConfig
         flow.viewer.peek?.config = settings.peekConfig
+        cad.viewer.refreshLens()
+        flow.viewer.refreshLens()
     }
 }

@@ -149,4 +149,16 @@ final class OrbitCameraTests: XCTestCase {
         o.orthographic = true
         XCTAssertEqual(o.withFovY(lens).position, o.position)
     }
+
+    @MainActor
+    func testLayoutFiresOnlyWhenTheSizeChanges() {
+        // A layout pass that sets the same size must not redraw the camera (it fed a loop).
+        let v = OrbitSCNView(frame: NSRect(x: 0, y: 0, width: 100, height: 80), options: nil)
+        var calls = 0
+        v.onLayout = { calls += 1 }
+        v.setFrameSize(NSSize(width: 100, height: 80))
+        XCTAssertEqual(calls, 0)
+        v.setFrameSize(NSSize(width: 120, height: 80))
+        XCTAssertEqual(calls, 1)
+    }
 }
