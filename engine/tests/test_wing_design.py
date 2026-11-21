@@ -119,7 +119,7 @@ def test_a_place_in_the_room_never_leaves_the_box():
             assert pts[:, 0].max() == pytest.approx(0.70, abs=1e-6) and pts[:, 1].max() == pytest.approx(0.35, abs=1e-6)
 
 
-def _design(engine, tmp_path, name, timeout=300, **params):
+def _design(engine, tmp_path, name, timeout=300, cores=1, **params):
     import json
 
     # The box's floor 80 mm off the ground: at 30 mm RANS separated the NACA 6212 starting wing (lift gain 9%),
@@ -127,7 +127,8 @@ def _design(engine, tmp_path, name, timeout=300, **params):
     job = {"command": "wing-design", "params": {"box": [0.0, 0.08, 0.70, 0.40], "elements": 2, "inverted": True,
                                                 "goal": "max_cla", "span": 1.2, "endplate": 0.25, "speed": 15.0,
                                                 "trials": 12, "checks": 0, "storage": str(tmp_path / f"{name}.db"),
-                                                "name": name, **params}}
+                                                "name": name, **params},
+           "options": {"cores": cores}}
     code, events, stderr = engine.run("wing-design", job, tmp_path / f"job-{name}", timeout=timeout)
     result = tmp_path / f"job-{name}" / "result.json"
     return code, events, (json.loads(result.read_text())["data"] if code == 0 else stderr + str(events[-3:]))
@@ -183,7 +184,10 @@ def test_balance_needs_a_base_car(engine, tmp_path):
 @pytest.mark.skipif(not __import__("os").environ.get("AEROBENCH_SU2") and not __import__("shutil").which("SU2_CFD"),
                     reason="SU2 not found")
 def test_design_with_rans_ranks_by_rans(engine, tmp_path):
-    code, _, out = _design(engine, tmp_path, "rans", timeout=1500, trials=80, seed=5, checks=2, mesh="quick", model="sa")
+    # 4 cores (GitHub's Linux runner has 4; more are capped to the CPUs): on one core the two
+    # RANS checks ran past 25 minutes there.
+    code, _, out = _design(engine, tmp_path, "rans", timeout=2400, trials=80, seed=5, checks=2, mesh="quick", model="sa",
+                           cores=4)
     assert code == 0, out
     f = out["finalists"]
     assert 1 <= len(f) <= 2 and all(x["rans"] is not None for x in f)
