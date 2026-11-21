@@ -135,6 +135,20 @@ final class PeekStateTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(s.offsetCM).x, 0, accuracy: 0.05)
     }
 
+    func testHeldWhileWaitingForTheFirstFace() {
+        // The display loop runs while Shift is held, even at blend 0 before the
+        // camera has found a face; stopping there left a cold start dead.
+        var s = PeekState()
+        s.press(at: 0, trackerAvailable: true)
+        s.tick(at: 0.3)
+        XCTAssertEqual(s.blend, 0)
+        XCTAssertTrue(s.isHeld)
+        s.release(at: 0.4)
+        XCTAssertFalse(s.isHeld)
+        s.press(at: 1, trackerAvailable: false)
+        XCTAssertFalse(s.isHeld)
+    }
+
     func testUnavailableTrackerNeverBlends() {
         var s = PeekState()
         s.press(at: 0, trackerAvailable: false)

@@ -3,11 +3,8 @@ import Foundation
 import simd
 
 /// Where the viewer's head is, from the webcam: the physical layout of the
-/// view on the glass, the head position at a locked distance, and the
-/// webcam's field of view from a one-time calibration. Pure maths.
+/// view on the glass and the head position at a locked distance. Pure maths.
 public enum HeadGeometry {
-    /// Average adult interpupillary distance.
-    public static let ipdCM = 6.3
     /// The built-in webcam sits just above the top edge of the display.
     public static let cameraAboveGlassCM = 0.8
 
@@ -55,14 +52,5 @@ public enum HeadGeometry {
         return SIMD3(layout.cameraCM.x + u * 2 * tanH * distanceCM,
                      layout.cameraCM.y + (s.eyeMid.y - 0.5) * 2 * tanV * distanceCM,
                      distanceCM)
-    }
-
-    /// The webcam's horizontal field of view (radians) that makes the median
-    /// eye separation mean `distanceCM`. nil without a usable separation.
-    public static func calibratedHFOV(separations: [Double], distanceCM: Double) -> Double? {
-        let valid = separations.filter { $0 > 0 }.sorted()
-        guard !valid.isEmpty, distanceCM > 0 else { return nil }
-        let median = valid[valid.count / 2]
-        return 2 * atan(ipdCM / (median * 2 * distanceCM))
     }
 }

@@ -74,8 +74,20 @@ final class PeekProjectionTests: XCTestCase {
         XCTAssertEqual(PeekWindow.eye(rest: rest, offsetCM: [10, -5], distanceCM: 50, blend: 1), SIMD3(40, -20, 200))
         XCTAssertEqual(PeekWindow.eye(rest: rest, offsetCM: [10, -5], distanceCM: 50, blend: 0.5), SIMD3(20, -10, 200))
         XCTAssertEqual(PeekWindow.eye(rest: rest, offsetCM: [10, -5], distanceCM: 50, blend: 0), rest)
-        // Sensitivity multiplies the head's movement.
-        XCTAssertEqual(PeekWindow.eye(rest: rest, offsetCM: [10, -5], distanceCM: 50, blend: 1, sensitivity: 2), SIMD3(80, -40, 200))
+    }
+
+    func testExtraSensitivityTurnsTheViewRigidly() {
+        // Sensitivity above 1x turns the view about its target instead of moving
+        // the eye further: a turn does not stretch the picture.
+        let c = camera()
+        XCTAssertEqual(c.peekTurned(yaw: 0, pitch: 0), c)
+        let right = c.peekTurned(yaw: 0.2, pitch: 0)
+        XCTAssertGreaterThan(simd_dot(right.position - c.position, c.right), 0, "head right: see more of the right side")
+        XCTAssertEqual(right.distance, c.distance, accuracy: 1e-9)
+        XCTAssertEqual(right.target, c.target)
+        let up = c.peekTurned(yaw: 0, pitch: 0.2)
+        XCTAssertGreaterThan(simd_dot(up.position - c.position, c.up), 0, "head up: see more of the top")
+        XCTAssertEqual(up.distance, c.distance, accuracy: 1e-9)
     }
 
     func testParallaxDirection() {

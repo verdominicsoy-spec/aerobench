@@ -49,12 +49,4 @@ final class HeadGeometryTests: XCTestCase {
         // 31° off axis horizontally at 55 cm.
         XCTAssertEqual(head(0, 0.5).x - layout.cameraCM.x, 55 * tan(31 * Double.pi / 180), accuracy: 1e-9)
     }
-
-    func testCalibrationRoundTrip() {
-        let sep = 6.3 / (2 * 55 * tan(31 * Double.pi / 180))
-        let hfov = HeadGeometry.calibratedHFOV(separations: [sep * 0.9, sep, sep * 1.2, 0, -1], distanceCM: 55)
-        XCTAssertEqual(try XCTUnwrap(hfov) * 180 / .pi, 62, accuracy: 1e-9)
-        XCTAssertNil(HeadGeometry.calibratedHFOV(separations: [], distanceCM: 55))
-        XCTAssertNil(HeadGeometry.calibratedHFOV(separations: [0, -2], distanceCM: 55))
-    }
 }

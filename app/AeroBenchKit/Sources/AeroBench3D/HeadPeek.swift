@@ -14,7 +14,10 @@ public final class HeadPeek {
         /// Multiplies head movement: 1 turns the view by the head's own angle.
         public var sensitivity: Double
 
-        public init(enabled: Bool, distanceCM: Double, hfovDegrees: Double, sensitivity: Double = 2) {
+        /// distanceCM cancels out (head movement is used as an angle); hfovDegrees is
+        /// the MacBook webcam's, as macOS does not report it, and any error in it
+        /// only scales the movement, which sensitivity covers.
+        public init(enabled: Bool = true, distanceCM: Double = 55, hfovDegrees: Double = 62, sensitivity: Double = 2) {
             self.enabled = enabled
             self.distanceCM = distanceCM
             self.hfovDegrees = hfovDegrees
@@ -37,7 +40,7 @@ public final class HeadPeek {
     /// The view on the built-in display; nil when it is elsewhere (no peeking).
     var layout: HeadGeometry.Layout?
     private(set) var state = PeekState()
-    private var calibration: [Double]?
+    private var shiftDown = false
 
     public init(config: Config) {
         self.config = config
@@ -46,7 +49,7 @@ public final class HeadPeek {
 
     var blend: Double { state.blend }
     var offsetCM: SIMD2<Double>? { state.offsetCM }
-    /// Straight in front of the view's centre, at the calibrated distance.
+    /// Straight in front of the view's centre.
     var restCM: SIMD3<Double> { SIMD3(0, 0, config.distanceCM) }
 
     private var available: Bool {
@@ -58,11 +61,21 @@ public final class HeadPeek {
     }
 
     func press(at t: TimeInterval) {
+        shiftDown = true
+        if config.enabled, layout != nil, tracker.status == .needsPermission {
+            // The first Shift asks for the camera; carry on if it is still held.
+            Task {
+                guard await tracker.requestAccess(), shiftDown else { return }
+                press(at: CACurrentMediaTime())
+            }
+            return
+        }
         state.press(at: t, trackerAvailable: available)
         if state.wantsCamera { tracker.start() }
     }
 
     func release(at t: TimeInterval) {
+        shiftDown = false
         let wasWanted = state.wantsCamera
         state.release(at: t)
         // Let the camera go once nobody has peeked for a while.
@@ -79,34 +92,14 @@ public final class HeadPeek {
         state.tick(at: t)
     }
 
-    /// Collects about a second of eye separations at `distanceCM` and returns
-    /// the webcam's horizontal field of view in degrees; nil if no face was seen.
-    public func calibrate(distanceCM: Double) async -> Double? {
-        tracker.start()
-        for _ in 0..<40 where tracker.status == .starting {
-            try? await Task.sleep(for: .milliseconds(100))
-        }
-        guard tracker.status == .running else {
-            stopCameraIfIdle()
-            return nil
-        }
-        calibration = []
-        try? await Task.sleep(for: .seconds(1))
-        let separations = calibration ?? []
-        calibration = nil
-        stopCameraIfIdle()
-        return HeadGeometry.calibratedHFOV(separations: separations, distanceCM: distanceCM).map { $0 * 180 / .pi }
-    }
-
     private func stopCameraIfIdle() {
-        if !state.wantsCamera, calibration == nil {
+        if !state.wantsCamera {
             tracker.stop()
             state.cameraStopped()
         }
     }
 
     private func receive(_ sample: HeadGeometry.Sample?) {
-        if let sample { calibration?.append(sample.separation) }
         guard let layout else { return }
         let head = sample.map {
             HeadGeometry.head($0, hfov: config.hfovDegrees * .pi / 180, imageAspect: tracker.imageAspect,

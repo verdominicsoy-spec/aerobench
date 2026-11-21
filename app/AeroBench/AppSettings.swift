@@ -12,8 +12,6 @@ final class AppSettings {
         static let coresPerJob = "coresPerJob"
         static let parallelTrials = "parallelTrials"
         static let peekEnabled = "peekEnabled"
-        static let peekDistanceCM = "peekDistanceCM"
-        static let peekHFOVDegrees = "peekHFOVDegrees"
         static let peekSensitivity = "peekSensitivity"
     }
 
@@ -27,21 +25,12 @@ final class AppSettings {
     var coresPerJob: Int { didSet { defaults.set(coresPerJob, forKey: Key.coresPerJob) } }
     /// Wing Lab optimiser: trials run at once, each on coresPerJob cores.
     var parallelTrials: Int { didSet { defaults.set(parallelTrials, forKey: Key.parallelTrials) } }
-    /// Hold Shift in the CAD viewer to peek with head tracking.
+    /// Hold Shift in the CAD viewer to peek with head tracking (on by default).
     var peekEnabled: Bool { didSet { defaults.set(peekEnabled, forKey: Key.peekEnabled) } }
-    /// Eyes to screen, measured once by the user; the peek keeps this distance fixed.
-    var peekDistanceCM: Double { didSet { defaults.set(peekDistanceCM, forKey: Key.peekDistanceCM) } }
-    /// The webcam's horizontal field of view from calibration; 0 = not calibrated.
-    var peekHFOVDegrees: Double { didSet { defaults.set(peekHFOVDegrees, forKey: Key.peekHFOVDegrees) } }
     /// How much the view moves for a head movement (1 = the head's own angle).
     var peekSensitivity: Double { didSet { defaults.set(peekSensitivity, forKey: Key.peekSensitivity) } }
-    /// Used until the webcam is calibrated.
-    static let assumedHFOVDegrees = 62.0
-
     var peekConfig: HeadPeek.Config {
-        HeadPeek.Config(enabled: peekEnabled, distanceCM: peekDistanceCM,
-                        hfovDegrees: peekHFOVDegrees > 0 ? peekHFOVDegrees : Self.assumedHFOVDegrees,
-                        sensitivity: peekSensitivity)
+        HeadPeek.Config(enabled: peekEnabled, sensitivity: peekSensitivity)
     }
 
     init() {
@@ -54,10 +43,8 @@ final class AppSettings {
         coresPerJob = cores > 0 ? cores : Self.defaultCores
         let trials = defaults.integer(forKey: Key.parallelTrials)
         parallelTrials = trials > 0 ? trials : 1
-        peekEnabled = defaults.bool(forKey: Key.peekEnabled)
-        let distance = defaults.double(forKey: Key.peekDistanceCM)
-        peekDistanceCM = distance > 0 ? distance : 55
-        peekHFOVDegrees = defaults.double(forKey: Key.peekHFOVDegrees)
+        // On unless turned off: the first Shift over the CAD view asks for the camera.
+        peekEnabled = defaults.object(forKey: Key.peekEnabled) as? Bool ?? true
         let sensitivity = defaults.double(forKey: Key.peekSensitivity)
         peekSensitivity = sensitivity > 0 ? sensitivity : 2
     }

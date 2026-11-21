@@ -5,8 +5,6 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppState.self) private var app
-    @State private var calibrating = false
-    @State private var calibrationMessage: String?
 
     var body: some View {
         @Bindable var settings = app.settings
@@ -74,85 +72,37 @@ struct SettingsView: View {
     @ViewBuilder
     private func peekSection(_ settings: AppSettings) -> some View {
         @Bindable var settings = settings
-        let tracker = app.cad.viewer.peek?.tracker
         Section {
-            Toggle("Hold Shift to peek with head tracking", isOn: Binding(
-                get: { settings.peekEnabled },
-                set: { on in
-                    guard on else {
-                        settings.peekEnabled = false
-                        app.applyPeekSettings()
-                        return
-                    }
-                    Task {
-                        let granted = await tracker?.requestAccess() ?? false
-                        settings.peekEnabled = granted
-                        app.applyPeekSettings()
-                    }
-                }))
-            Stepper("Your distance to the screen: \(Int(settings.peekDistanceCM)) cm",
-                    value: $settings.peekDistanceCM, in: 30...120)
-                .onChange(of: settings.peekDistanceCM) { app.applyPeekSettings() }
+            Toggle("Hold Shift to peek with head tracking", isOn: $settings.peekEnabled)
+                .onChange(of: settings.peekEnabled) { app.applyPeekSettings() }
             HStack {
                 Text("Head sensitivity")
                 Slider(value: $settings.peekSensitivity, in: 1...4, step: 0.25)
                 Text(String(format: "%g×", settings.peekSensitivity)).monospacedDigit().frame(width: 36, alignment: .trailing)
             }
             .onChange(of: settings.peekSensitivity) { app.applyPeekSettings() }
-            HStack {
-                Button(calibrating ? "Calibrating…" : "Calibrate") { calibrate(settings) }
-                    .disabled(calibrating || !settings.peekEnabled)
-                Text("Sit at that distance and look at the screen.").foregroundStyle(.secondary)
-            }
-            peekStatus(settings, tracker: tracker)
+            peekStatus(app.cad.viewer.peek?.tracker)
         } header: {
             Text("Head-tracked peek")
         } footer: {
             Text("In the CAD viewer, hold Shift and move your head to look around a part, as if through a window. "
+                 + "Where your head is when you press Shift counts as straight on. "
                  + "Works on the built-in display, where the camera is. Closing one eye makes it stronger.")
         }
     }
 
     @ViewBuilder
-    private func peekStatus(_ settings: AppSettings, tracker: HeadTracker?) -> some View {
+    private func peekStatus(_ tracker: HeadTracker?) -> some View {
         switch tracker?.status {
         case .denied?:
             Label("Camera access is off: System Settings > Privacy & Security > Camera", systemImage: "exclamationmark.triangle")
                 .foregroundStyle(S37.C.clayInk)
-        case .needsPermission? where settings.peekEnabled:
-            HStack {
-                Label("Camera access needed", systemImage: "exclamationmark.triangle").foregroundStyle(S37.C.clayInk)
-                Button("Allow…") { Task { _ = await tracker?.requestAccess() } }
-            }
         case .noCamera?:
             Label("No built-in camera found", systemImage: "exclamationmark.triangle").foregroundStyle(S37.C.clayInk)
+        case .needsPermission?:
+            Label("The first Shift over the CAD view asks for the camera", systemImage: "info.circle").foregroundStyle(.secondary)
         default:
-            if let calibrationMessage {
-                Label(calibrationMessage, systemImage: "exclamationmark.triangle").foregroundStyle(S37.C.clayInk)
-            } else if settings.peekHFOVDegrees > 0 {
-                Label(String(format: "Calibrated: webcam field of view %.1f°", settings.peekHFOVDegrees),
-                      systemImage: "checkmark.circle")
-                    .foregroundStyle(S37.C.sageInk)
-            } else {
-                Label("Not calibrated: \(Int(AppSettings.assumedHFOVDegrees))° field of view assumed",
-                      systemImage: "info.circle")
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func calibrate(_ settings: AppSettings) {
-        guard let peek = app.cad.viewer.peek else { return }
-        calibrating = true
-        calibrationMessage = nil
-        Task {
-            if let hfov = await peek.calibrate(distanceCM: settings.peekDistanceCM) {
-                settings.peekHFOVDegrees = hfov
-                app.applyPeekSettings()
-            } else {
-                calibrationMessage = "No face seen. Sit facing the screen and try again."
-            }
-            calibrating = false
+            EmptyView()
         }
     }
 

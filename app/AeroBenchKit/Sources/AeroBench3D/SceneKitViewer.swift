@@ -324,29 +324,35 @@ public final class SceneKitViewer: Viewer3D {
     /// the view's edges, so what you orbit around stays put and moving your
     /// head looks around it. The eye eases from the normal view to the head.
     private func applyPeekCamera(_ peek: HeadPeek) {
-        let depth = orbit.distance
-        let window = orbit.peekWindow(depth: depth, aspect: aspect)
-        let eye = PeekWindow.eye(rest: orbit.restEye(window: window, depth: depth, boundsRadius: Double(radius)),
-                                 offsetCM: peek.offsetCM ?? .zero, distanceCM: peek.config.distanceCM, blend: peek.blend,
-                                 sensitivity: peek.config.sensitivity)
-        let (position, projection) = orbit.peekCamera(window: window, eye: eye, near: 0.05 * eye.z,
-                                                      far: eye.z + 4 * Double(radius) + depth)
+        // The eye follows the head's real angle, so the off-axis view is
+        // pre-distorted for where your eye really is; sensitivity above 1x
+        // turns the whole view about its target, which does not stretch it.
+        let offset = peek.offsetCM ?? .zero, d = peek.config.distanceCM
+        let extra = (peek.config.sensitivity - 1) * peek.blend
+        let view = orbit.peekTurned(yaw: extra * atan(offset.x / d), pitch: extra * atan(offset.y / d))
+        let depth = view.distance
+        let window = view.peekWindow(depth: depth, aspect: aspect)
+        let eye = PeekWindow.eye(rest: view.restEye(window: window, depth: depth, boundsRadius: Double(radius)),
+                                 offsetCM: offset, distanceCM: d, blend: peek.blend)
+        let (position, projection) = view.peekCamera(window: window, eye: eye, near: 0.05 * eye.z,
+                                                     far: eye.z + 4 * Double(radius) + depth)
         peekCamera.projectionTransform = SCNMatrix4(projection)
         cameraNode.camera = peekCamera
         cameraNode.simdPosition = SIMD3<Float>(position)
-        // Keep the un-peeked orientation: the off-axis frustum does the looking around.
-        cameraNode.simdLook(at: SIMD3<Float>(position + orbit.forward), up: SIMD3<Float>(orbit.screenUp),
+        // Keep the view's own orientation: the off-axis frustum does the looking around.
+        cameraNode.simdLook(at: SIMD3<Float>(position + view.forward), up: SIMD3<Float>(view.screenUp),
                             localFront: SIMD3(0, 0, -1))
 
         // The room: from the window back to just behind the model.
-        let back = max(simd_dot(SIMD3<Double>(center) - orbit.target, orbit.forward) + Double(radius), Double(radius)) * 1.1
-        let r = SIMD3<Float>(orbit.right * window.halfWidth), u = SIMD3<Float>(orbit.up * window.halfHeight)
-        let z = SIMD3<Float>(-orbit.forward * back)
+        let back = max(simd_dot(SIMD3<Double>(center) - view.target, view.forward) + Double(radius), Double(radius)) * 1.1
+        let r = SIMD3<Float>(view.right * window.halfWidth), u = SIMD3<Float>(view.up * window.halfHeight)
+        let z = SIMD3<Float>(-view.forward * back)
         peekRoom.simdTransform = simd_float4x4(columns: (SIMD4(r, 0), SIMD4(u, 0), SIMD4(z, 0), SIMD4(SIMD3<Float>(window.center), 1)))
         peekRoom.opacity = CGFloat(peek.blend)
         peekRoom.isHidden = false
 
-        // Key light from above, in front and to the left of the un-peeked view.
+        // Key light from above, in front and to the left of the un-peeked view:
+        // fixed while you peek, so the shading stays on the model.
         let toLight = simd_normalize(orbit.up * 1.2 - orbit.forward * 0.6 - orbit.right * 0.5)
         let reach = max(window.halfWidth, window.halfHeight, back)
         peekKey.simdPosition = SIMD3<Float>(window.center + toLight * reach * 3)
@@ -449,7 +455,7 @@ public final class SceneKitViewer: Viewer3D {
         if OrbitSCNView.peekHeld(event.modifierFlags), canStartPeek(event) {
             peek.layout = peekLayout()
             peek.press(at: now)
-            if peek.state.wantsCamera { startPeekLink() }
+            startPeekLink()  // runs while Shift is held, even before the first face
         } else {
             peek.release(at: now)
         }
@@ -497,7 +503,7 @@ public final class SceneKitViewer: Viewer3D {
         if !OrbitSCNView.peekHeld(NSEvent.modifierFlags) { peek.release(at: now) }
         peek.tick(at: now)
         applyCamera()  // the last call, at blend 0, puts the normal camera back
-        if peek.blend == 0 { stopPeekLink() }
+        if peek.blend == 0, !peek.state.isHeld { stopPeekLink() }
     }
 
     // MARK: Mouse and trackpad

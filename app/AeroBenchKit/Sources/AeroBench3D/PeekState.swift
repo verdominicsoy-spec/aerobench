@@ -60,6 +60,8 @@ public struct PeekState: Sendable {
         guard let h = headCM, let n = neutralCM else { return nil }
         return SIMD2(h.x - n.x, h.y - n.y)
     }
+    /// Shift is down (and the tracker could be used).
+    public var isHeld: Bool { held }
     /// Whether the webcam should be running.
     public var wantsCamera: Bool {
         held || (lastRelease.map { now - $0 < stopAfter } ?? false)
