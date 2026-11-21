@@ -79,6 +79,11 @@ public struct PeekState: Sendable {
     // Slow, with no lead and no speed-up (beta 0): blinks and the pupil/contour switch must not twitch the eye.
     private var distanceFilter = Self.newDistanceFilter()
     private static func newDistanceFilter() -> OneEuroFilter { OneEuroFilter(minCutoff: 0.4, beta: 0, lead: 0) }
+    /// A quicker smoothing of the same distance, for placing the head sideways: with the
+    /// slow one, leaning in made the head's place swim for a second. Nil before a face.
+    public private(set) var placementDistanceCM: Double?
+    private var placementFilter = Self.newPlacementFilter()
+    private static func newPlacementFilter() -> OneEuroFilter { OneEuroFilter(minCutoff: 1.5, beta: 0, lead: 0) }
     /// The last three raw distances: their median drops a single misread frame.
     private var rawDistances: [Double] = []
 
@@ -93,7 +98,10 @@ public struct PeekState: Sendable {
         guard trackerAvailable else { return }
         held = true
         lastRelease = nil
-        neutralCM = headCM  // nil until the first face: set there
+        // Only a head seen just now counts; otherwise (no face yet, or the face lost and
+        // the head eased to rest) the next face sets it.
+        let fresh = lastFace.map { t - $0 <= faceLostAfter } ?? false
+        neutralCM = fresh ? headCM : nil
     }
 
     public mutating func release(at t: TimeInterval) {
@@ -106,11 +114,17 @@ public struct PeekState: Sendable {
     /// smoothed value, so a raw misread never reaches it. Nil (no face) holds it.
     public mutating func measure(distance: Double?, at t: TimeInterval) {
         guard let distance else { return }
-        if lostFrom != nil, let shown = distanceCM {
-            distanceFilter.reset(to: shown, at: t)  // back after a loss: on from what is shown
+        if lostFrom != nil, let shown = headCM?.z {
+            // Back after a loss: the head has eased back, so go on from the distance shown,
+            // not the old one (that lunged the view in and out).
+            distanceFilter.reset(to: shown, at: t)
+            placementFilter.reset(to: shown, at: t)
+            rawDistances = []
         }
         rawDistances = (rawDistances + [distance]).suffix(3)
-        distanceCM = distanceFilter.filter(rawDistances.sorted()[rawDistances.count / 2], at: t)
+        let median = rawDistances.sorted()[rawDistances.count / 2]
+        distanceCM = distanceFilter.filter(median, at: t)
+        placementDistanceCM = placementFilter.filter(median, at: t)
     }
 
     /// A camera frame: the measured head (cm), or nil when no face was found.
@@ -143,6 +157,8 @@ public struct PeekState: Sendable {
         filters = [OneEuroFilter(), OneEuroFilter(), OneEuroFilter()]
         distanceCM = nil
         distanceFilter = Self.newDistanceFilter()
+        placementDistanceCM = nil
+        placementFilter = Self.newPlacementFilter()
         rawDistances = []
     }
 

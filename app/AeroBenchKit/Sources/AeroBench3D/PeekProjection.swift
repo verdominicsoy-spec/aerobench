@@ -37,6 +37,14 @@ extension OrbitCamera {
         max(simd_dot(center - position, forward) - radius, 0.25 * distance)
     }
 
+    /// The room behind the glass, from the glass back: as wide as the view at the target
+    /// (or the glass, if wider), like a room seen through a smaller window, so the model fits in it.
+    public func peekRoom(window: PeekWindow, aspect: Double) -> PeekWindow {
+        let atTarget = peekWindow(depth: distance, aspect: aspect)
+        return PeekWindow(center: window.center, halfWidth: max(window.halfWidth, atTarget.halfWidth),
+                          halfHeight: max(window.halfHeight, atTarget.halfHeight))
+    }
+
     /// The window at `depth` along forward, sized to what the un-peeked view shows there.
     public func peekWindow(depth: Double, aspect: Double) -> PeekWindow {
         let halfHeight = orthographic ? orthoHalfHeight : depth * tan(fovY / 2)

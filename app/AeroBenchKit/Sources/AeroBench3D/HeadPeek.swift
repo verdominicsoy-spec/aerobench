@@ -101,10 +101,12 @@ public final class HeadPeek {
         guard let layout else { return }
         let time = sample?.time ?? CACurrentMediaTime(), hfov = config.hfovDegrees * .pi / 180
         state.measure(distance: sample.map { HeadGeometry.distance($0, hfov: hfov) }, at: time)
-        let distance = state.distanceCM ?? config.distanceCM
-        let head = sample.map {
-            HeadGeometry.head($0, hfov: hfov, imageAspect: tracker.imageAspect,
-                              distanceCM: distance, layout: layout, mirrored: tracker.mirrored)
+        let placed = state.placementDistanceCM ?? config.distanceCM, depth = state.distanceCM ?? config.distanceCM
+        let head = sample.map { s -> SIMD3<Double> in
+            var h = HeadGeometry.head(s, hfov: hfov, imageAspect: tracker.imageAspect,
+                                      distanceCM: placed, layout: layout, mirrored: tracker.mirrored)
+            h.z = depth  // the eye's depth keeps the slow, steady distance
+            return h
         }
         state.face(head, at: time, rest: state.neutralCM ?? restCM)
     }

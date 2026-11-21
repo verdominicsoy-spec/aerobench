@@ -232,13 +232,42 @@ final class PeekStateTests: XCTestCase {
         }
     }
 
-    func testDistanceDoesNotJumpWhenTheFaceComesBack() {
+    func testDistanceFollowsTheShownHeadWhenTheFaceComesBack() throws {
+        // Leaned in, the face drops out and the head eases back to the press; coming back
+        // at the press distance must not lunge in from the old, leaned-in distance.
         var s = PeekState()
-        feed(&s, distance: 27.5, seconds: 1)
-        let back = 1 + s.faceLostAfter + s.fade + 1
-        s.face(nil, at: back - 0.5, rest: rest)
-        s.measure(distance: 55, at: back); s.face(rest, at: back, rest: rest)
-        XCTAssertEqual(s.distanceCM ?? 0, 27.5, accuracy: 0.3)
+        s.press(at: 0, trackerAvailable: true)
+        var t = 0.0
+        while t < 1 { s.measure(distance: 55, at: t); s.face([0, 0, 55], at: t, rest: [0, 0, 55]); t += dt }
+        while t < 2 { s.measure(distance: 30, at: t); s.face([0, 0, 30], at: t, rest: [0, 0, 55]); t += dt }
+        s.face(nil, at: 2 + s.faceLostAfter + s.fade + 0.5, rest: [0, 0, 55])
+        let back = 3 + s.faceLostAfter + s.fade
+        s.measure(distance: 55, at: back)
+        XCTAssertEqual(try XCTUnwrap(s.distanceCM), 55, accuracy: 0.5)
+        XCTAssertEqual(try XCTUnwrap(s.placementDistanceCM), 55, accuracy: 0.5)
+    }
+
+    func testPlacementDistanceFollowsALeanQuickly() throws {
+        // The head's sideways place uses a quicker distance, so leaning in doesn't swim;
+        // the eye's depth keeps the slow one.
+        var s = PeekState()
+        feed(&s, distance: 55, seconds: 1)
+        feed(&s, distance: 40, from: 1, seconds: 0.3)
+        XCTAssertEqual(try XCTUnwrap(s.placementDistanceCM), 40, accuracy: 2)
+        XCTAssertGreaterThan(try XCTUnwrap(s.distanceCM), 44)
+    }
+
+    func testPressWhileTheFaceIsLostWaitsForAFreshFace() throws {
+        // The head shown then is the eased rest, not where you are: the next face sets "straight on".
+        var s = PeekState()
+        s.press(at: 0, trackerAvailable: true)
+        for i in 0..<30 { s.face([0, 0, 55], at: Double(i) * dt, rest: rest) }
+        s.release(at: 1)
+        s.face(nil, at: 1 + s.faceLostAfter + s.fade + 0.1, rest: [0, 0, 55])
+        s.press(at: 2.5, trackerAvailable: true)
+        s.face([4, -10, 48], at: 2.6, rest: rest)
+        let offset = try XCTUnwrap(s.offsetCM)
+        XCTAssertEqual(simd_length(offset), 0, accuracy: 1e-9)
     }
 
     func testNoDistanceAfterTheCameraStops() {
