@@ -55,10 +55,10 @@ public struct PeekState: Sendable {
     public private(set) var headCM: SIMD3<Double>?
     /// Where the head was when Shift went down: "straight on" for this peek.
     public private(set) var neutralCM: SIMD3<Double>?
-    /// Head movement since Shift was pressed, cm (x right, y up); nil before a face.
-    public var offsetCM: SIMD2<Double>? {
+    /// Head movement since Shift was pressed, cm (x right, y up, z toward you); nil before a face.
+    public var offsetCM: SIMD3<Double>? {
         guard let h = headCM, let n = neutralCM else { return nil }
-        return SIMD2(h.x - n.x, h.y - n.y)
+        return h - n
     }
     /// Shift is down (and the tracker could be used).
     public var isHeld: Bool { held }
@@ -102,23 +102,28 @@ public struct PeekState: Sendable {
         held = false
     }
 
+    /// A camera frame's eye distance (cm), before `face`: the head is placed with the
+    /// smoothed value, so a raw misread never reaches it. Nil (no face) holds it.
+    public mutating func measure(distance: Double?, at t: TimeInterval) {
+        guard let distance else { return }
+        if lostFrom != nil, let shown = distanceCM {
+            distanceFilter.reset(to: shown, at: t)  // back after a loss: on from what is shown
+        }
+        rawDistances = (rawDistances + [distance]).suffix(3)
+        distanceCM = distanceFilter.filter(rawDistances.sorted()[rawDistances.count / 2], at: t)
+    }
+
     /// A camera frame: the measured head (cm), or nil when no face was found.
     /// `rest` is where the head eases to once the face has been gone a while.
-    public mutating func face(_ head: SIMD3<Double>?, distance: Double? = nil,
-                              at t: TimeInterval, rest: SIMD3<Double>) {
+    public mutating func face(_ head: SIMD3<Double>?, at t: TimeInterval, rest: SIMD3<Double>) {
         // Not the fade's clock: a frame landing between ticks would eat tick time.
         if let head {
             if lostFrom != nil, let shown = headCM {
                 // Coming back after a loss: filter on from what is shown, not from the stale value.
                 for i in 0..<3 { filters[i].reset(to: shown[i], at: t) }
-                if let shownDistance = distanceCM { distanceFilter.reset(to: shownDistance, at: t) }
             }
             lostFrom = nil
             lastFace = t
-            if let distance {
-                rawDistances = (rawDistances + [distance]).suffix(3)
-                distanceCM = distanceFilter.filter(rawDistances.sorted()[rawDistances.count / 2], at: t)
-            }
             headCM = SIMD3((0..<3).map { filters[$0].filter(head[$0], at: t) })
             if held, neutralCM == nil { neutralCM = headCM }
             return

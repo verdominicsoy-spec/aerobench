@@ -8,15 +8,14 @@ public struct PeekWindow: Equatable, Sendable {
     public var halfWidth: Double  // world, along OrbitCamera.right
     public var halfHeight: Double  // world, along OrbitCamera.up
 
-    /// The eye for a head that has moved `offsetCM` sideways since Shift went
-    /// down, `blend` of the way in. The view's own field of view is kept (the
-    /// eye stays at `rest.z`) and the eye moves through the same angle the head
-    /// did, seen from the window: pressing Shift changes nothing until the head
-    /// moves. Like the reference demos, this is not the physical scale, which
-    /// would flatten the view to about 19° on a MacBook.
-    public static func eye(rest: SIMD3<Double>, offsetCM: SIMD2<Double>, distanceCM: Double, blend: Double) -> SIMD3<Double> {
-        let lateral = offsetCM * (rest.z / max(distanceCM, 1e-6)) * blend
-        return SIMD3(rest.x + lateral.x, rest.y + lateral.y, rest.z)
+    /// The eye for a head that has moved `offsetCM` since Shift went down (at
+    /// `distanceCM`), `blend` of the way in. One to one, scaled so the rest eye
+    /// stands for where you sat: sideways through the head's own angle, and
+    /// leaning in to half the distance halves the eye's. Pressing Shift changes
+    /// nothing until the head moves. Not the physical scale, which would narrow
+    /// the view's 35° to the pane's 15° or so and flatten it.
+    public static func eye(rest: SIMD3<Double>, offsetCM: SIMD3<Double>, distanceCM: Double, blend: Double) -> SIMD3<Double> {
+        rest + offsetCM * (rest.z / max(distanceCM, 1e-6)) * blend
     }
 
     public init(center: SIMD3<Double>, halfWidth: Double, halfHeight: Double) {

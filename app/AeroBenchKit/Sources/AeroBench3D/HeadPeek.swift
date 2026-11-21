@@ -12,9 +12,8 @@ public final class HeadPeek {
         public var distanceCM: Double
         public var hfovDegrees: Double
 
-        /// distanceCM cancels out (head movement is used as an angle); hfovDegrees is
-        /// the MacBook webcam's, as macOS does not report it, and any error in it
-        /// only scales the movement, which sensitivity covers.
+        /// distanceCM is the seat assumed until the eye gap gives a distance; hfovDegrees
+        /// is the MacBook webcam's, as macOS does not report it.
         public init(enabled: Bool = true, distanceCM: Double = 55, hfovDegrees: Double = 62) {
             self.enabled = enabled
             self.distanceCM = distanceCM
@@ -45,7 +44,9 @@ public final class HeadPeek {
     }
 
     var blend: Double { state.blend }
-    var offsetCM: SIMD2<Double>? { state.offsetCM }
+    var offsetCM: SIMD3<Double>? { state.offsetCM }
+    /// Your distance when Shift went down: the eye's scale for this peek.
+    var pressDistanceCM: Double { state.neutralCM?.z ?? config.distanceCM }
     /// Straight in front of the view's centre.
     var restCM: SIMD3<Double> { SIMD3(0, 0, config.distanceCM) }
 
@@ -98,11 +99,13 @@ public final class HeadPeek {
 
     private func receive(_ sample: HeadGeometry.Sample?) {
         guard let layout else { return }
+        let time = sample?.time ?? CACurrentMediaTime(), hfov = config.hfovDegrees * .pi / 180
+        state.measure(distance: sample.map { HeadGeometry.distance($0, hfov: hfov) }, at: time)
+        let distance = state.distanceCM ?? config.distanceCM
         let head = sample.map {
-            HeadGeometry.head($0, hfov: config.hfovDegrees * .pi / 180, imageAspect: tracker.imageAspect,
-                              distanceCM: config.distanceCM, layout: layout, mirrored: tracker.mirrored)
+            HeadGeometry.head($0, hfov: hfov, imageAspect: tracker.imageAspect,
+                              distanceCM: distance, layout: layout, mirrored: tracker.mirrored)
         }
-        let distance = sample.map { HeadGeometry.distance($0, hfov: config.hfovDegrees * .pi / 180) }
-        state.face(head, distance: distance, at: sample?.time ?? CACurrentMediaTime(), rest: state.neutralCM ?? restCM)
+        state.face(head, at: time, rest: state.neutralCM ?? restCM)
     }
 }

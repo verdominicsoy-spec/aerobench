@@ -326,7 +326,7 @@ public final class SceneKitViewer: Viewer3D {
     private func applyPeekCamera(_ peek: HeadPeek) {
         // The eye follows the head's real angle, so the off-axis view is
         // pre-distorted for where your eye really is. Nothing else moves.
-        let offset = peek.offsetCM ?? .zero, d = peek.config.distanceCM
+        let offset = peek.offsetCM ?? .zero, d = peek.pressDistanceCM
         let view = orbit
         let depth = view.distance
         let window = view.peekWindow(depth: depth, aspect: aspect)

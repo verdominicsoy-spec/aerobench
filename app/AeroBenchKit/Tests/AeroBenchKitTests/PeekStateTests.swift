@@ -190,7 +190,7 @@ final class PeekStateTests: XCTestCase {
     private func feed(_ s: inout PeekState, distance: Double, from: Double = 0, seconds: Double) {
         if from == 0 { s.press(at: 0, trackerAvailable: true) }
         var t = from
-        while t < from + seconds { s.face(rest, distance: distance, at: t, rest: rest); t += dt }
+        while t < from + seconds { s.measure(distance: distance, at: t); s.face(rest, at: t, rest: rest); t += dt }
     }
 
     func testDistanceSettlesOnASteadyFace() throws {
@@ -223,11 +223,11 @@ final class PeekStateTests: XCTestCase {
             var s = PeekState()
             feed(&s, distance: 55, seconds: 1)
             var t = 1.0
-            s.face(rest, distance: spike, at: t, rest: rest)
+            s.measure(distance: spike, at: t); s.face(rest, at: t, rest: rest)
             for _ in 0..<30 {
                 XCTAssertEqual(s.distanceCM ?? 0, 55, accuracy: 0.55, "spike \(spike)")
                 t += dt
-                s.face(rest, distance: 55, at: t, rest: rest)
+                s.measure(distance: 55, at: t); s.face(rest, at: t, rest: rest)
             }
         }
     }
@@ -237,7 +237,7 @@ final class PeekStateTests: XCTestCase {
         feed(&s, distance: 27.5, seconds: 1)
         let back = 1 + s.faceLostAfter + s.fade + 1
         s.face(nil, at: back - 0.5, rest: rest)
-        s.face(rest, distance: 55, at: back, rest: rest)
+        s.measure(distance: 55, at: back); s.face(rest, at: back, rest: rest)
         XCTAssertEqual(s.distanceCM ?? 0, 27.5, accuracy: 0.3)
     }
 
@@ -246,5 +246,21 @@ final class PeekStateTests: XCTestCase {
         feed(&s, distance: 27.5, seconds: 1)
         s.cameraStopped()
         XCTAssertNil(s.distanceCM)
+    }
+
+    func testOffsetIncludesLeaningIn() throws {
+        var s = PeekState()
+        s.press(at: 0, trackerAvailable: true)
+        s.face(SIMD3(0, 0, 55), at: 0, rest: rest)
+        for i in 1...30 { s.face(SIMD3(0, 0, 40), at: Double(i) * dt, rest: rest) }
+        XCTAssertEqual(try XCTUnwrap(s.offsetCM).z, -15, accuracy: 0.1)
+    }
+
+    func testDistanceIsMeasuredBeforeTheHead() throws {
+        // The head is placed with the smoothed distance, so it is read first.
+        var s = PeekState()
+        s.press(at: 0, trackerAvailable: true)
+        s.measure(distance: 40, at: 0)
+        XCTAssertEqual(try XCTUnwrap(s.distanceCM), 40, accuracy: 1e-9)
     }
 }

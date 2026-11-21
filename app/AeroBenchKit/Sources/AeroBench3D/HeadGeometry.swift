@@ -41,8 +41,8 @@ public enum HeadGeometry {
     }
 
     /// Head (eye) position in cm relative to the view centre: x right, y up,
-    /// z = distanceCM. The distance is locked: estimating it from the eye
-    /// separation swung by ±8 cm and made the view stretch (spike, 2026-11-20).
+    /// z = distanceCM: the smoothed eye-gap distance (raw, it swung by ±8 cm and
+    /// stretched the view, spike 2026-11-20; PeekState filters it first).
     public static func head(_ s: Sample, hfov: Double, imageAspect: Double, distanceCM: Double,
                             layout: Layout, mirrored: Bool) -> SIMD3<Double>
     {
@@ -58,7 +58,7 @@ public enum HeadGeometry {
     public static let pupilGapCM = 6.3
 
     /// How far the eyes are from the webcam, cm, from the gap between them in the
-    /// image. Too noisy for the eye position (see `head`), fine smoothed as a gain.
+    /// image. Too noisy for the eye position (see `head`), fine once PeekState has smoothed it.
     public static func distance(_ s: Sample, hfov: Double) -> Double {
         pupilGapCM / (2 * tan(hfov / 2) * max(s.separation, 1e-6))
     }
