@@ -98,7 +98,7 @@ struct SettingsView: View {
         case .noCamera?:
             Label("No built-in camera found", systemImage: "exclamationmark.triangle").foregroundStyle(S37.C.clayInk)
         case .needsPermission?:
-            Label("The first Shift over the CAD view asks for the camera", systemImage: "info.circle").foregroundStyle(.secondary)
+            Label("The first Shift over the CAD or Flow Field view asks for the camera", systemImage: "info.circle").foregroundStyle(.secondary)
         default:
             EmptyView()
         }
