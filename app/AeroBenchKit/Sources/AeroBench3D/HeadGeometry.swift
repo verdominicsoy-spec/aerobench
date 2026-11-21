@@ -31,11 +31,14 @@ public enum HeadGeometry {
         public var eyeMid: SIMD2<Double>
         /// Distance between the eyes as a fraction of the image width.
         public var separation: Double
+        /// The eye line's angle in the image, radians (y up): see `eyeAngle(_:_:)`.
+        public var eyeAngle: Double
         public var time: TimeInterval
 
-        public init(eyeMid: SIMD2<Double>, separation: Double, time: TimeInterval) {
+        public init(eyeMid: SIMD2<Double>, separation: Double, eyeAngle: Double = 0, time: TimeInterval) {
             self.eyeMid = eyeMid
             self.separation = separation
+            self.eyeAngle = eyeAngle
             self.time = time
         }
     }
@@ -52,5 +55,19 @@ public enum HeadGeometry {
         return SIMD3(layout.cameraCM.x + u * 2 * tanH * distanceCM,
                      layout.cameraCM.y + (s.eyeMid.y - 0.5) * 2 * tanV * distanceCM,
                      distanceCM)
+    }
+
+    /// Angle of the line from the image-left eye to the image-right one, radians:
+    /// the order Vision lists the eyes in does not matter.
+    public static func eyeAngle(_ p: SIMD2<Double>, _ q: SIMD2<Double>) -> Double {
+        let (a, b) = p.x <= q.x ? (p, q) : (q, p)
+        return atan2(b.y - a.y, b.x - a.x)
+    }
+
+    /// Head tilt, radians, clockwise as you see it (right ear toward right shoulder).
+    /// The webcam faces you, so that turns the eye line anticlockwise in the image,
+    /// unless the frames are mirrored.
+    public static func tilt(_ s: Sample, mirrored: Bool) -> Double {
+        mirrored ? -s.eyeAngle : s.eyeAngle
     }
 }

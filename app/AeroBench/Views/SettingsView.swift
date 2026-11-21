@@ -85,7 +85,7 @@ struct SettingsView: View {
         } header: {
             Text("Head-tracked peek")
         } footer: {
-            Text("Hold Shift over the CAD or Flow Field view and move your head. Built-in display only.")
+            Text("Hold Shift over the CAD or Flow Field view and move or tilt your head. Built-in display only.")
         }
     }
 

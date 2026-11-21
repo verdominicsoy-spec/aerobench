@@ -403,7 +403,8 @@ corners measure exactly. STL and OBJ carry no units, so pick mm, m or in.
 *Head-tracked peek*: hold Shift over the CAD or Flow Field viewer and move your
 head to look around a part or through the flow, as if the screen were a window
 onto it (the first time, macOS asks for the camera). Where your head is when you press Shift counts as
-straight on; Settings has the head sensitivity and an off switch. It works on
+straight on. Tilt your head toward a shoulder and the model turns the other
+way. Settings has the head sensitivity and an off switch. It works on
 the built-in display only, ignores clicks while you peek, and is strongest
 with one eye closed.
 *Section* cuts the visible parts with a plane across x, y or z (shown in the

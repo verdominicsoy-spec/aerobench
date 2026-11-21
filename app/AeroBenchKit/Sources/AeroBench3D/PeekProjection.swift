@@ -40,6 +40,13 @@ extension OrbitCamera {
         return c
     }
 
+    /// The view's right and up turned about forward by `roll` radians: roll > 0 turns
+    /// the camera clockwise, so the picture turns anticlockwise (the head-tilt peek).
+    public func peekAxes(roll: Double) -> (right: SIMD3<Double>, up: SIMD3<Double>) {
+        let c = cos(roll), s = sin(roll)
+        return (right * c - up * s, up * c + right * s)
+    }
+
     /// The window at `depth` along forward, sized to what the un-peeked view shows there.
     public func peekWindow(depth: Double, aspect: Double) -> PeekWindow {
         let halfHeight = orthographic ? orthoHalfHeight : depth * tan(fovY / 2)
@@ -55,9 +62,10 @@ extension OrbitCamera {
 
     /// Camera position and off-axis projection for an eye at `eye`, in the
     /// window's frame and world units (x along right, y along up, z toward the
-    /// viewer from the window centre). The camera keeps the un-peeked
-    /// orientation. The projection is OpenGL's (column-major, clip depth -1...1).
-    public func peekCamera(window: PeekWindow, eye: SIMD3<Double>, near: Double, far: Double)
+    /// viewer from the window centre), both turned by `roll` (see `peekAxes`). The
+    /// camera keeps the un-peeked orientation, rolled. The projection is OpenGL's
+    /// (column-major, clip depth -1...1).
+    public func peekCamera(window: PeekWindow, eye: SIMD3<Double>, near: Double, far: Double, roll: Double = 0)
         -> (position: SIMD3<Double>, projection: simd_double4x4)
     {
         let n = near, f = far, ez = max(eye.z, 1e-9)
@@ -69,7 +77,8 @@ extension OrbitCamera {
             SIMD4((r + l) / (r - l), (t + b) / (t - b), -(f + n) / (f - n), -1),
             SIMD4(0, 0, -2 * f * n / (f - n), 0)
         ))
-        let position = window.center + right * eye.x + up * eye.y - forward * eye.z
+        let axes = peekAxes(roll: roll)
+        let position = window.center + axes.right * eye.x + axes.up * eye.y - forward * eye.z
         return (position, projection)
     }
 }

@@ -334,18 +334,21 @@ public final class SceneKitViewer: Viewer3D {
         let window = view.peekWindow(depth: depth, aspect: aspect)
         let eye = PeekWindow.eye(rest: view.restEye(window: window, depth: depth, boundsRadius: Double(radius)),
                                  offsetCM: offset, distanceCM: d, blend: peek.blend)
+        // Head tilt: the camera rolls with it, so the model turns the other way on the screen.
+        let roll = peek.config.sensitivity * peek.tiltOffset * peek.blend
+        let axes = view.peekAxes(roll: roll)
         let (position, projection) = view.peekCamera(window: window, eye: eye, near: 0.05 * eye.z,
-                                                     far: eye.z + 4 * Double(radius) + depth)
+                                                     far: eye.z + 4 * Double(radius) + depth, roll: roll)
         peekCamera.projectionTransform = SCNMatrix4(projection)
         cameraNode.camera = peekCamera
         cameraNode.simdPosition = SIMD3<Float>(position)
         // Keep the view's own orientation: the off-axis frustum does the looking around.
-        cameraNode.simdLook(at: SIMD3<Float>(position + view.forward), up: SIMD3<Float>(view.screenUp),
+        cameraNode.simdLook(at: SIMD3<Float>(position + view.forward), up: SIMD3<Float>(axes.up),
                             localFront: SIMD3(0, 0, -1))
 
         // The room: from the window back to just behind the model.
         let back = max(simd_dot(SIMD3<Double>(center) - view.target, view.forward) + Double(radius), Double(radius)) * 1.1
-        let r = SIMD3<Float>(view.right * window.halfWidth), u = SIMD3<Float>(view.up * window.halfHeight)
+        let r = SIMD3<Float>(axes.right * window.halfWidth), u = SIMD3<Float>(axes.up * window.halfHeight)
         let z = SIMD3<Float>(-view.forward * back)
         peekRoom.simdTransform = simd_float4x4(columns: (SIMD4(r, 0), SIMD4(u, 0), SIMD4(z, 0), SIMD4(SIMD3<Float>(window.center), 1)))
         peekRoom.opacity = CGFloat(peek.blend)

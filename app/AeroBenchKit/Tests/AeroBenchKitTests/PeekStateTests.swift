@@ -185,4 +185,32 @@ final class PeekStateTests: XCTestCase {
         s.press(at: 40, trackerAvailable: true)
         XCTAssertTrue(s.wantsCamera)
     }
+    func testTiltIsRecentredAtShift() {
+        // The tilt you hold when Shift goes down is level.
+        var s = PeekState()
+        s.face(rest, tilt: 0.2, at: 0, rest: rest)
+        s.press(at: 0, trackerAvailable: true)
+        XCTAssertEqual(s.tiltOffset, 0, accuracy: 1e-9)
+        for i in 1...30 { s.face(rest, tilt: 0.3, at: Double(i) * dt, rest: rest) }
+        XCTAssertEqual(s.tiltOffset, 0.1, accuracy: 0.005)
+    }
+
+    func testTiltEasesToLevelWhenTheFaceIsLost() {
+        var s = PeekState()
+        s.press(at: 0, trackerAvailable: true)
+        s.face(rest, tilt: 0, at: 0, rest: rest)
+        for i in 1...30 { s.face(rest, tilt: 0.4, at: Double(i) * dt, rest: rest) }
+        XCTAssertGreaterThan(s.tiltOffset, 0.3)
+        let last = 30 * dt
+        s.face(nil, at: last + s.faceLostAfter + s.fade + 0.01, rest: rest)
+        XCTAssertEqual(s.tiltOffset, 0, accuracy: 1e-9)
+    }
+
+    func testNoTiltBeforeAFace() {
+        var s = PeekState()
+        s.press(at: 0, trackerAvailable: true)
+        XCTAssertEqual(s.tiltOffset, 0)
+        s.cameraStopped()
+        XCTAssertEqual(s.tiltOffset, 0)
+    }
 }

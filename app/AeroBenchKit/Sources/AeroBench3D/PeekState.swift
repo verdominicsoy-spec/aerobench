@@ -60,6 +60,11 @@ public struct PeekState: Sendable {
         guard let h = headCM, let n = neutralCM else { return nil }
         return SIMD2(h.x - n.x, h.y - n.y)
     }
+    /// Head tilt since Shift was pressed, radians, clockwise as you see it; 0 before a face.
+    public var tiltOffset: Double {
+        guard let t = tilt, let n = neutralTilt else { return 0 }
+        return t - n
+    }
     /// Shift is down (and the tracker could be used).
     public var isHeld: Bool { held }
     /// Whether the webcam should be running.
@@ -74,6 +79,10 @@ public struct PeekState: Sendable {
     private var lastFace: TimeInterval?
     private var lostFrom: SIMD3<Double>?  // where the head was when the face went
     private var filters = [OneEuroFilter(), OneEuroFilter(), OneEuroFilter()]
+    private var tilt: Double?  // filtered, radians
+    private var neutralTilt: Double?  // the tilt when Shift went down: level for this peek
+    private var tiltLostFrom: Double?
+    private var tiltFilter = OneEuroFilter()
 
     public init(fade: Double = 0.15, faceLostAfter: Double = 0.5, stopAfter: Double = 30) {
         self.fade = fade
@@ -87,6 +96,7 @@ public struct PeekState: Sendable {
         held = true
         lastRelease = nil
         neutralCM = headCM  // nil until the first face: set there
+        neutralTilt = tilt
     }
 
     public mutating func release(at t: TimeInterval) {
@@ -97,23 +107,28 @@ public struct PeekState: Sendable {
 
     /// A camera frame: the measured head (cm), or nil when no face was found.
     /// `rest` is where the head eases to once the face has been gone a while.
-    public mutating func face(_ head: SIMD3<Double>?, at t: TimeInterval, rest: SIMD3<Double>) {
+    public mutating func face(_ head: SIMD3<Double>?, tilt measured: Double = 0, at t: TimeInterval, rest: SIMD3<Double>) {
         // Not the fade's clock: a frame landing between ticks would eat tick time.
         if let head {
             if lostFrom != nil, let shown = headCM {
                 // Coming back after a loss: filter on from what is shown, not from the stale value.
                 for i in 0..<3 { filters[i].reset(to: shown[i], at: t) }
+                if let shownTilt = tilt { tiltFilter.reset(to: shownTilt, at: t) }
             }
             lostFrom = nil
+            tiltLostFrom = nil
             lastFace = t
+            tilt = tiltFilter.filter(measured, at: t)
+            if held, neutralTilt == nil { neutralTilt = tilt }
             headCM = SIMD3((0..<3).map { filters[$0].filter(head[$0], at: t) })
             if held, neutralCM == nil { neutralCM = headCM }
             return
         }
         guard let seen = lastFace, let shown = headCM, t - seen > faceLostAfter else { return }
-        if lostFrom == nil { lostFrom = shown }
-        let p = min(max((t - seen - faceLostAfter) / fade, 0), 1)
-        headCM = simd_mix(lostFrom!, rest, SIMD3(repeating: p * p * (3 - 2 * p)))
+        if lostFrom == nil { lostFrom = shown; tiltLostFrom = tilt }
+        let p = min(max((t - seen - faceLostAfter) / fade, 0), 1), eased = p * p * (3 - 2 * p)
+        headCM = simd_mix(lostFrom!, rest, SIMD3(repeating: eased))
+        if let from = tiltLostFrom { tilt = from + ((neutralTilt ?? from) - from) * eased }  // eases to level
     }
 
     /// The webcam stopped: the last head is stale, so the next peek waits for a fresh face.
@@ -123,6 +138,10 @@ public struct PeekState: Sendable {
         lastFace = nil
         lostFrom = nil
         filters = [OneEuroFilter(), OneEuroFilter(), OneEuroFilter()]
+        tilt = nil
+        neutralTilt = nil
+        tiltLostFrom = nil
+        tiltFilter = OneEuroFilter()
     }
 
     public mutating func tick(at t: TimeInterval) {

@@ -147,4 +147,37 @@ final class PeekProjectionTests: XCTestCase {
             XCTAssertEqual(n.y, 0, accuracy: 1e-9)
         }
     }
+    func testRollTurnsTheCameraClockwise() {
+        // roll > 0 turns the camera clockwise, so the picture turns anticlockwise:
+        // a quarter turn puts the camera's up where its right was.
+        let c = camera()
+        let a = c.peekAxes(roll: .pi / 2)
+        XCTAssertEqual(simd_distance(a.up, c.right), 0, accuracy: 1e-12)
+        XCTAssertEqual(simd_distance(a.right, -c.up), 0, accuracy: 1e-12)
+        let plain = c.peekAxes(roll: 0)
+        XCTAssertEqual(simd_distance(plain.right, c.right), 0, accuracy: 1e-12)
+        XCTAssertEqual(simd_distance(plain.up, c.up), 0, accuracy: 1e-12)
+    }
+
+    func testRolledWindowCornersStayPinned() {
+        // Rolled, the window turns with the camera, so its corners stay on the view's corners.
+        for ortho in [false, true] {
+            let c = camera(ortho: ortho)
+            let d = c.distance * 0.7, roll = 0.35
+            let w = c.peekWindow(depth: d, aspect: aspect)
+            let a = c.peekAxes(roll: roll)
+            for e in [SIMD3(0, 0, d), SIMD3(0.3 * d, -0.2 * d, 0.8 * d)] {
+                let (position, projection) = c.peekCamera(window: w, eye: e, near: 0.01, far: 100, roll: roll)
+                for sx in [-1.0, 1.0] {
+                    for sy in [-1.0, 1.0] {
+                        let corner = w.center + a.right * sx * w.halfWidth + a.up * sy * w.halfHeight
+                        let q = corner - position
+                        let clip = projection * SIMD4(simd_dot(q, a.right), simd_dot(q, a.up), -simd_dot(q, c.forward), 1)
+                        XCTAssertEqual(clip.x / clip.w, sx, accuracy: 1e-9, "ortho \(ortho) eye \(e)")
+                        XCTAssertEqual(clip.y / clip.w, sy, accuracy: 1e-9, "ortho \(ortho) eye \(e)")
+                    }
+                }
+            }
+        }
+    }
 }
