@@ -248,4 +248,34 @@ final class PeekStateTests: XCTestCase {
         s.face(nil, at: 1 + s.faceLostAfter + s.fade + 1, rest: rest)
         XCTAssertEqual(s.gain(reference: 55), 2, accuracy: 1e-6)
     }
+
+    func testOneBadFrameDoesNotJerkTheGain() {
+        for spike in [110.0, 5e6] {
+            var s = PeekState()
+            feed(&s, distance: 55, seconds: 1)
+            var t = 1.0
+            s.face(rest, distance: spike, at: t, rest: rest)
+            for _ in 0..<30 {
+                XCTAssertEqual(s.gain(reference: 55), 1, accuracy: 0.01, "spike \(spike)")
+                t += dt
+                s.face(rest, distance: 55, at: t, rest: rest)
+            }
+        }
+    }
+
+    func testGainDoesNotJumpWhenTheFaceComesBack() {
+        var s = PeekState()
+        feed(&s, distance: 27.5, seconds: 1)
+        let back = 1 + s.faceLostAfter + s.fade + 1
+        s.face(nil, at: back - 0.5, rest: rest)
+        s.face(rest, distance: 55, at: back, rest: rest)
+        XCTAssertEqual(s.gain(reference: 55), 2, accuracy: 0.02)
+    }
+
+    func testGainIsOneAfterTheCameraStops() {
+        var s = PeekState()
+        feed(&s, distance: 27.5, seconds: 1)
+        s.cameraStopped()
+        XCTAssertEqual(s.gain(reference: 55), 1)
+    }
 }

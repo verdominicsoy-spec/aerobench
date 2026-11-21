@@ -85,9 +85,11 @@ public struct PeekState: Sendable {
     private var tiltFilter = OneEuroFilter()
     /// Smoothed eye distance, cm; nil before a face. Held while the face is lost.
     public private(set) var distanceCM: Double?
-    // Slow and without lead: blinks and the pupil/contour switch must not twitch the gain.
+    // Slow, with no lead and no speed-up (beta 0): blinks and the pupil/contour switch must not twitch the gain.
     private var distanceFilter = Self.newDistanceFilter()
-    private static func newDistanceFilter() -> OneEuroFilter { OneEuroFilter(minCutoff: 0.4, beta: 0.005, lead: 0) }
+    private static func newDistanceFilter() -> OneEuroFilter { OneEuroFilter(minCutoff: 0.4, beta: 0, lead: 0) }
+    /// The last three raw distances: their median drops a single misread frame.
+    private var rawDistances: [Double] = []
 
     /// How much livelier the peek is for how close you are: `reference` ÷ distance,
     /// held to 0.5...2 so a misread face can't fling the view; 1 before a face.
@@ -133,7 +135,10 @@ public struct PeekState: Sendable {
             tiltLostFrom = nil
             lastFace = t
             tilt = tiltFilter.filter(measured, at: t)
-            if let distance { distanceCM = distanceFilter.filter(distance, at: t) }
+            if let distance {
+                rawDistances = (rawDistances + [distance]).suffix(3)
+                distanceCM = distanceFilter.filter(rawDistances.sorted()[rawDistances.count / 2], at: t)
+            }
             if held, neutralTilt == nil { neutralTilt = tilt }
             headCM = SIMD3((0..<3).map { filters[$0].filter(head[$0], at: t) })
             if held, neutralCM == nil { neutralCM = headCM }
@@ -159,6 +164,7 @@ public struct PeekState: Sendable {
         tiltFilter = OneEuroFilter()
         distanceCM = nil
         distanceFilter = Self.newDistanceFilter()
+        rawDistances = []
     }
 
     public mutating func tick(at t: TimeInterval) {
