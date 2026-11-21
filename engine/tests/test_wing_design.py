@@ -148,7 +148,9 @@ def test_design_without_rans_returns_ranked_finalists(engine, tmp_path):
 
 
 def test_design_refuses_a_box_too_small(engine, tmp_path):
-    code, _, out = _design(engine, tmp_path, "small", box=[0.0, 0.03, 0.15, 0.08], elements=5, trials=5)
+    # 30 mm tall: four 12 mm slots cannot fit. At 50 mm the tightest layout sat on the minimum-gap
+    # check, and macOS CI's numerics let one through while local runs refused it.
+    code, _, out = _design(engine, tmp_path, "small", box=[0.0, 0.03, 0.15, 0.06], elements=5, trials=5)
     assert code != 0 and "box" in out
 
 
