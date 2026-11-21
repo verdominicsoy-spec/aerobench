@@ -21,7 +21,7 @@ jobs:
           cache-environment: true
       - run: uv sync
         working-directory: engine
-      - run: AEROBENCH_SU2="$MAMBA_ROOT_PREFIX/envs/su2/bin/SU2_CFD" uv run pytest -q -rs
+      - run: AEROBENCH_SU2="$MAMBA_ROOT_PREFIX/envs/su2/bin/SU2_CFD" uv run pytest -q -rs -l  # -l: a failing SU2 run shows its output tail
         working-directory: engine
 
   mac:
