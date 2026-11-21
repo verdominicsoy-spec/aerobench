@@ -41,6 +41,13 @@ public final class SceneKitViewer: Viewer3D {
     /// on the view's edges, which is what makes the depth read (every reference
     /// demo has one).
     private let peekRoom = SceneKitViewer.makePeekRoom()
+    /// While peeking: a key light fixed to the room, so the lit and shaded sides
+    /// stay put as you look around and the model drops a shadow on the room.
+    /// The headlight lights every face you see head-on, which reads as flat.
+    private let peekKey = SceneKitViewer.makePeekKey()
+    private let headLight = SCNLight()
+    private let ambientLight = SCNLight()
+    private static let headIntensity: CGFloat = 900, ambientIntensity: CGFloat = 350
 
     /// Hold Shift to peek with head tracking. nil: no peeking (the Flow Field viewer).
     public var peek: HeadPeek? {
@@ -103,15 +110,16 @@ public final class SceneKitViewer: Viewer3D {
 
         // A headlight that follows the camera, plus soft ambient fill.
         let head = SCNNode()
-        head.light = SCNLight()
-        head.light?.type = .directional
-        head.light?.intensity = 900
+        head.light = headLight
+        headLight.type = .directional
+        headLight.intensity = Self.headIntensity
         cameraNode.addChildNode(head)
         let ambient = SCNNode()
-        ambient.light = SCNLight()
-        ambient.light?.type = .ambient
-        ambient.light?.intensity = 350
+        ambient.light = ambientLight
+        ambientLight.type = .ambient
+        ambientLight.intensity = Self.ambientIntensity
         scene.rootNode.addChildNode(ambient)
+        scene.rootNode.addChildNode(peekKey)
 
         scene.rootNode.addChildNode(modelRoot)
         scene.rootNode.addChildNode(markerRoot)
@@ -300,6 +308,7 @@ public final class SceneKitViewer: Viewer3D {
             applyPeekCamera(peek)
         } else {
             peekRoom.isHidden = true
+            setPeekLighting(0)
             cameraNode.camera = normalCamera
             cameraNode.simdPosition = SIMD3<Float>(orbit.position)
             cameraNode.simdLook(at: SIMD3<Float>(orbit.target), up: SIMD3<Float>(orbit.screenUp), localFront: SIMD3(0, 0, -1))
@@ -335,6 +344,41 @@ public final class SceneKitViewer: Viewer3D {
         peekRoom.simdTransform = simd_float4x4(columns: (SIMD4(r, 0), SIMD4(u, 0), SIMD4(z, 0), SIMD4(SIMD3<Float>(window.center), 1)))
         peekRoom.opacity = CGFloat(peek.blend)
         peekRoom.isHidden = false
+
+        // Key light from above, in front and to the left of the un-peeked view.
+        let toLight = simd_normalize(orbit.up * 1.2 - orbit.forward * 0.6 - orbit.right * 0.5)
+        let reach = max(window.halfWidth, window.halfHeight, back)
+        peekKey.simdPosition = SIMD3<Float>(window.center + toLight * reach * 3)
+        peekKey.simdLook(at: SIMD3<Float>(window.center), up: SIMD3<Float>(orbit.forward), localFront: SIMD3(0, 0, -1))
+        peekKey.light?.orthographicScale = CGFloat(reach * 1.6)
+        peekKey.light?.zFar = CGFloat(reach * 8)
+        peekCamera.screenSpaceAmbientOcclusionRadius = CGFloat(radius) * 0.04
+        setPeekLighting(peek.blend)
+    }
+
+    /// 0: the normal view's lights. 1: the peek's key light, shadows and occlusion.
+    private func setPeekLighting(_ blend: Double) {
+        let t = CGFloat(blend)
+        headLight.intensity = Self.headIntensity * (1 - 0.7 * t)
+        ambientLight.intensity = Self.ambientIntensity * (1 - 0.45 * t)
+        peekKey.light?.intensity = 1100 * t
+        peekKey.isHidden = blend == 0
+        peekCamera.screenSpaceAmbientOcclusionIntensity = 1.2 * t
+    }
+
+    private static func makePeekKey() -> SCNNode {
+        let light = SCNLight()
+        light.type = .directional
+        light.castsShadow = true
+        light.shadowMapSize = CGSize(width: 2048, height: 2048)
+        light.shadowSampleCount = 16
+        light.shadowRadius = 6
+        light.shadowColor = NSColor(white: 0, alpha: 0.55)
+        light.zNear = 0.001
+        let node = SCNNode()
+        node.light = light
+        node.isHidden = true
+        return node
     }
 
     /// A unit grid room: x and y in -1...1, z from 0 (the window) to -1 (the back wall).
@@ -360,6 +404,21 @@ public final class SceneKitViewer: Viewer3D {
         let node = SCNNode(geometry: geometry)
         node.isHidden = true
         node.renderingOrder = -1
+        node.castsShadow = false
+        // Shadow catchers: the floor and the back wall show the model's shadow and nothing else.
+        let catcher = SCNMaterial()
+        catcher.lightingModel = .shadowOnly
+        catcher.isDoubleSided = true
+        for (size, position, angle) in [(CGSize(width: 2, height: 1), SCNVector3(0, -1, -0.5), -CGFloat.pi / 2),
+                                         (CGSize(width: 2, height: 2), SCNVector3(0, 0, -1), 0)] {
+            let plane = SCNPlane(width: size.width, height: size.height)
+            plane.materials = [catcher]
+            let wall = SCNNode(geometry: plane)
+            wall.position = position
+            wall.eulerAngles.x = angle
+            wall.castsShadow = false
+            node.addChildNode(wall)
+        }
         return node
     }
 
